@@ -18,27 +18,13 @@ function formatDateLabel(d: Date) {
   return d.toLocaleDateString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function getInitialDate(shows: PublicShow[]) {
-  const today = new Date()
-  const hasToday = shows.some((show) => {
-    const showDate = new Date(show.date)
-    return (
-      showDate.getFullYear() === today.getFullYear() &&
-      showDate.getMonth() === today.getMonth() &&
-      showDate.getDate() === today.getDate()
-    )
-  })
-
-  return hasToday ? today : undefined
-}
-
 interface Props {
   shows: PublicShow[]
   userCountry?: string
 }
 
 export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
-  const [date, setDate] = useState<Date | undefined>(() => getInitialDate(shows))
+  const [date, setDate] = useState<Date | undefined>(undefined)
 
   const filtered = shows.filter((show) => {
     if (!date) return true
@@ -92,7 +78,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
           </div>
 
           {/* Event grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 lg:col-start-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 lg:col-start-2 gap-5">
             {filtered.length === 0 ? (
               <div className="col-span-full text-center py-12">
                 {date
