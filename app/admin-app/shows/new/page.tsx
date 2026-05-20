@@ -1,8 +1,10 @@
+import Image from 'next/image'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { ToastActionForm } from '@/components/toast-action-form'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cloneShowAction, createShowAction } from '../actions'
+import { getClubAccess } from '@/lib/club-auth'
 
 
 export default async function NewShowPage({
@@ -11,10 +13,19 @@ export default async function NewShowPage({
   searchParams: Promise<{ from?: string }>
 }) {
   const { from } = await searchParams
+  const clubAccess = await getClubAccess()
 
   if (from) {
     const db = createAdminClient()
-    const { data: template } = await db.from('shows').select('*').eq('id', from).single()
+    let templateQuery = db.from('shows').select('*').eq('id', from)
+
+    if (clubAccess.clubIds.length === 0) {
+      templateQuery = templateQuery.eq('id', '00000000-0000-0000-0000-000000000000')
+    } else {
+      templateQuery = templateQuery.in('club_id', clubAccess.clubIds)
+    }
+
+    const { data: template } = await templateQuery.single()
 
     if (template) {
       return (
@@ -79,11 +90,19 @@ export default async function NewShowPage({
 
   // Template picker + blank option
   const db = createAdminClient()
-  const { data: shows } = await db
+  let showsQuery = db
     .from('shows')
-    .select('id, title, date, venue_address, venue_name')
+    .select('id, title, date, start_time, venue_address, venue_name, poster_url')
     .order('date', { ascending: false })
-    .limit(30)
+    .limit(5)
+
+  if (clubAccess.clubIds.length === 0) {
+    showsQuery = showsQuery.eq('id', '00000000-0000-0000-0000-000000000000')
+  } else {
+    showsQuery = showsQuery.in('club_id', clubAccess.clubIds)
+  }
+
+  const { data: shows } = await showsQuery
 
   return (
     <div>
@@ -139,19 +158,39 @@ export default async function NewShowPage({
           <div className="rounded-2xl border bg-card p-5 shadow-sm md:p-6">
             <div className="mb-5 space-y-1">
               <h2 className="font-semibold text-sm">Klon fra eksisterende show</h2>
-              <p className="text-sm text-muted-foreground">Bruk et tidligere show som utgangspunkt for å spare tid.</p>
+              <p className="text-sm text-muted-foreground">Bruk en av de 5 siste malene som utgangspunkt for å spare tid.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {(shows ?? []).map(s => (
                 <Link
                   key={s.id}
                   href={`/admin-app/shows/new?from=${s.id}`}
-                  className="group rounded-xl border bg-background/80 p-4 transition-colors hover:border-primary hover:bg-primary/5"
+                  className="group overflow-hidden rounded-xl border bg-background/80 transition-colors hover:border-primary hover:bg-primary/5"
                 >
-                  <p className="font-semibold text-sm group-hover:text-primary transition-colors">{s.title}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {s.date}{(s.venue_address ?? s.venue_name) ? ` · ${s.venue_address ?? s.venue_name}` : ''}
-                  </p>
+                  <div className="relative aspect-[3/4] border-b bg-muted/20">
+                    {s.poster_url ? (
+                      <Image
+                        src={s.poster_url}
+                        alt={s.title}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 33vw"
+                        className="object-contain transition duration-300 group-hover:scale-[1.01]"
+                      />
+                    ) : (
+                      <div className="flex h-full items-end bg-black p-4 text-white">
+                        <p className="text-lg font-semibold leading-tight">{s.title}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1 p-4">
+                    <p className="font-semibold text-sm transition-colors group-hover:text-primary">{s.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {s.start_time ? s.start_time.slice(0, 5) : 'Tid kommer'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {s.venue_address ?? s.venue_name ?? 'Sted kommer'}
+                    </p>
+                  </div>
                 </Link>
               ))}
             </div>

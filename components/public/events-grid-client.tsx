@@ -25,8 +25,20 @@ interface Props {
 
 export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
   const [date, setDate] = useState<Date | undefined>(undefined)
+  const [city, setCity] = useState('Alle')
+
+  const cityOptions = [
+    'Alle',
+    ...new Set(
+      shows
+        .map((show) => show.clubCity?.trim())
+        .filter((value): value is string => Boolean(value))
+        .sort((a, b) => a.localeCompare(b, 'nb-NO'))
+    ),
+  ]
 
   const filtered = shows.filter((show) => {
+    if (city !== 'Alle' && show.clubCity !== city) return false
     if (!date) return true
     const showDate = new Date(show.date)
     return (
@@ -67,6 +79,34 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
             </Popover>
           </div>
         </div>
+
+        {cityOptions.length > 1 && (
+          <div className="mb-6 flex flex-wrap gap-2 animate-fade-in" style={{ animationDelay: '0.85s', animationFillMode: 'both' }}>
+            {cityOptions.map((option) => {
+              const active = option === city
+              const count = option === 'Alle'
+                ? shows.length
+                : shows.filter((show) => show.clubCity === option).length
+
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setCity(option)}
+                  className={cn(
+                    'inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] transition-colors',
+                    active
+                      ? 'border-black bg-black text-white'
+                      : 'border-black bg-white text-black hover:bg-[#ff6bff]'
+                  )}
+                >
+                  <span>{option}</span>
+                  <span className={cn('text-[10px]', active ? 'text-white/75' : 'text-zinc-500')}>{count}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8 lg:gap-12 mt-8 md:mt-16">
           {/* Desktop calendar */}
@@ -157,8 +197,13 @@ function EventCard({ show }: { show: PublicShow }) {
             )}
           </div>
           <div>
+            {show.clubName && (
+              <div className="mb-2 inline-flex border border-black px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-700">
+                {show.clubName}
+              </div>
+            )}
             <h3 className="text-xl font-medium leading-tight tracking-normal">{show.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-500">{showLocation} · {formatTicketPrice(show)}</p>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-500">{[show.clubCity, showLocation, formatTicketPrice(show)].filter(Boolean).join(' · ')}</p>
           </div>
         </div>
 

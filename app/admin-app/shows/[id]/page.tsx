@@ -18,6 +18,7 @@ import { LineupTab } from './lineup-tab'
 import { MarketingTemplateUploadButton } from './marketing-template-upload-button'
 import { PosterGenerateButton } from './poster-generate-button'
 import { artistMatchesRole } from '@/lib/artist-roles'
+import { assertShowAccess } from '@/lib/club-auth'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, ShowMarketingDesign } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
@@ -37,6 +38,7 @@ export default async function ShowDetailPage({
 }) {
   const { id } = await params
   const { tab = 'overview' } = await searchParams
+  await assertShowAccess(id)
   const db = createAdminClient()
   const shouldLoadTickets = tab === 'tickets'
   const shouldLoadMarketingTasks = tab === 'marketing'

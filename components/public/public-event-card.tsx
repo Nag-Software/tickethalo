@@ -37,9 +37,14 @@ export function PublicEventCard({ show, priority = false, compact = false }: { s
             <span>{formatShowTime(show)}</span>
             <ArrowUpRight className="size-4 transition group-hover:text-[#ff6bff]" />
           </div>
+          {show.clubName && (
+            <div className="mb-2 inline-flex border border-black px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-700">
+              {show.clubName}
+            </div>
+          )}
           <h3 className={`font-medium leading-tight tracking-normal ${compact ? 'min-h-0 text-base' : 'min-h-0 text-lg sm:min-h-12 sm:text-xl'}`}>{show.title}</h3>
           <p className={`mt-2 text-zinc-500 ${compact ? 'text-xs' : 'text-sm'}`}>
-            {showLocation ?? 'Sted kommer'} · {formatTicketPrice(show)}
+            {[show.clubCity, showLocation ?? 'Sted kommer', formatTicketPrice(show)].filter(Boolean).join(' · ')}
           </p>
         </div>
         {soldOut ? (

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestPathname } from '@/lib/request-pathname'
+import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
 const navItems = [
   { label: 'Oversikt', href: '/artist-app' },
@@ -25,6 +26,11 @@ export default async function ArtistLayout({ children }: { children: React.React
   if (!user) {
     if (pathname === '/artist-app' || pathname === '/artist-app/') return children
     redirect(`/artist-app/login?next=${encodeURIComponent(pathname)}`)
+  }
+
+  const destination = await getPortalDestinationForAuthUser(user.id)
+  if (destination && destination !== '/artist-app' && !destination.startsWith('/artist-app?') && !destination.startsWith('/artist-app/')) {
+    redirect(destination)
   }
 
   const db = createAdminClient()

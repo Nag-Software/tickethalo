@@ -54,6 +54,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const lowStock = remaining !== null && remaining > 0 && (remaining <= 10 || fillPercent >= 80)
   const [day, month = ''] = formatShortDate(show.date).split(' ')
   const showLocation = show.venue_name ?? show.venue_address
+  const showClub = show.clubName
   const availabilityText = soldOut ? 'Utsolgt' : 'Billetter tilgjengelig'
   const ticketWarning = soldOut
     ? 'Utsolgt'
@@ -103,9 +104,15 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
             </div>
 
             <div className="flex flex-col gap-7 p-5 sm:p-7 md:p-9">
+              {showClub && (
+                <div className="inline-flex w-fit border border-black px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-700">
+                  {showClub}
+                </div>
+              )}
               <h1 className="text-4xl font-medium leading-tight tracking-normal md:text-5xl lg:text-6xl">{show.title}</h1>
 
               <dl className="divide-y divide-black/10 border-y border-black/10">
+                {showClub && <Info label="Klubb" text={showClub} />}
                 <Info label="Sted" text={showLocation ?? 'Sted kommer'} />
                 <Info label="Dato" text={formatShowDate(show.date)} />
                 <Info label="Tid" text={formatShowTime(show)} />

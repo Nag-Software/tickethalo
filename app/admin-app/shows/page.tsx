@@ -7,6 +7,7 @@ import { deleteShowAction } from './actions'
 import type { Artist, ConfirmedSpot, Show, ShowRequirement, ShowStatus } from '@/types/database'
 import { cn } from '@/lib/utils'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
+import { getClubAccess } from '@/lib/club-auth'
 
 type ShowRow = Pick<Show, 'id' | 'title' | 'date' | 'venue_name' | 'venue_address' | 'status' | 'capacity' | 'ticket_price' | 'currency' | 'published_at' | 'slug' | 'poster_url'>
 type RequirementRow = Pick<ShowRequirement, 'id' | 'show_id' | 'role_name' | 'quantity' | 'lineup_position'>
@@ -56,12 +57,21 @@ export default async function ShowsPage({
 }) {
   const { status } = await searchParams
   const db = createAdminClient()
+  const clubAccess = await getClubAccess()
 
-  const { data: allShows } = await db
+  let showsQuery = db
     .from('shows')
     .select('id, title, date, venue_name, venue_address, status, capacity, ticket_price, currency, published_at, slug, poster_url')
     .order('date', { ascending: true })
     .limit(200)
+
+  if (clubAccess.clubIds.length > 0) {
+    showsQuery = showsQuery.in('club_id', clubAccess.clubIds)
+  } else {
+    showsQuery = showsQuery.eq('id', '00000000-0000-0000-0000-000000000000') // no results
+  }
+
+  const { data: allShows } = await showsQuery
 
   const showIds = (allShows ?? []).map((show) => show.id)
   const [{ data: requirementRows }, { data: spotRows }, { data: ticketRows }] = await Promise.all([
@@ -204,10 +214,10 @@ export default async function ShowsPage({
 
 function UpcomingShowsGrid({ rows }: { rows: EnrichedShowRow[] }) {
   return (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
+    <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 ">
       <Link
         href="/admin-app/shows/new"
-        className="flex min-h-[32rem] flex-col items-center justify-center gap-6 rounded-lg border bg-muted/60 p-8 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+        className="flex min-h-[30rem] max-h-60 flex-col items-center justify-center gap-6 rounded-lg border bg-muted/60 p-8 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
       >
         <div className="text-7xl font-light leading-none text-foreground">+</div>
         <div className="space-y-2">

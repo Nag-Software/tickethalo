@@ -7,6 +7,7 @@ import { createShow, updateShowStatus } from '@/lib/actions/shows'
 import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
 import { generateShowPoster } from '@/lib/actions/ai'
 import { runAfterResponse } from '@/lib/background'
+import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
 import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
@@ -297,6 +298,7 @@ async function cloneMarketingDesigns(
 }
 
 export async function createShowAction(formData: FormData) {
+  const clubId = await getDefaultClubIdForAdmin()
   const input = {
     title: formData.get('title') as string,
     slug: formData.get('slug') as string,
@@ -308,6 +310,7 @@ export async function createShowAction(formData: FormData) {
     capacity: formData.get('capacity') ? Number(formData.get('capacity')) : undefined,
     ticket_price: formData.get('ticket_price') ? Math.round(Number(formData.get('ticket_price')) * 100) : undefined,
     currency: (formData.get('currency') as string) || 'NOK',
+    club_id: clubId,
   }
 
   const show = await createShow(input)
@@ -316,6 +319,8 @@ export async function createShowAction(formData: FormData) {
 
 export async function cloneShowAction(formData: FormData) {
   const templateId = formData.get('template_id') as string
+  await assertShowAccess(templateId)
+  const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
 
   // Create the new show
@@ -329,6 +334,7 @@ export async function cloneShowAction(formData: FormData) {
     capacity: optionalInteger(formData.get('capacity')) ?? undefined,
     ticket_price: optionalMoneyToMinor(formData.get('ticket_price')) ?? undefined,
     currency: optionalText(formData.get('currency')) ?? 'NOK',
+    club_id: clubId,
   })
 
   // Collect requirements from indexed form fields (req_0_*, req_1_*, …)
@@ -404,6 +410,7 @@ export async function uploadMarketingDesignAction(formData: FormData) {
   const designFile = formData.get('design_file')
 
   if (!showId) throw new Error('Show mangler.')
+  await assertShowAccess(showId)
   if (!(designFile instanceof File) || designFile.size === 0) {
     throw new Error('Velg en bildefil først.')
   }
@@ -473,6 +480,7 @@ export async function selectMarketingDesignAction(formData: FormData) {
   const db = createAdminClient()
 
   if (!showId) throw new Error('Show mangler.')
+  await assertShowAccess(showId)
 
   if (designId) {
     const { data: design, error } = await db
@@ -500,6 +508,7 @@ export async function deleteMarketingDesignAction(formData: FormData) {
   const db = createAdminClient()
 
   if (!showId || !designId) throw new Error('Mangler show eller design.')
+  await assertShowAccess(showId)
 
   const { data: design, error } = await db
     .from('show_marketing_designs')
@@ -530,6 +539,7 @@ export async function deleteMarketingDesignAction(formData: FormData) {
 
 export async function addRequirementAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   const db = createAdminClient()
   const input = await getRequirementWriteInput(formData, showId)
 
@@ -546,6 +556,7 @@ export async function addRequirementAction(formData: FormData) {
 
 export async function startBookingAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   const db = createAdminClient()
 
   const { data: reqs, error: reqError } = await db
@@ -573,6 +584,7 @@ export async function startBookingAction(formData: FormData) {
 
 export async function sendFallbackOffersAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   runAfterResponse(`fallback-offers-${showId}`, async () => {
     await sendFallbackOffersForShow(showId)
     revalidatePath(`/admin-app/shows/${showId}`)
@@ -583,6 +595,7 @@ export async function sendFallbackOffersAction(formData: FormData) {
 
 export async function updateShowDetailsAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   const db = createAdminClient()
 
   const { error } = await db.from('shows').update({
@@ -606,6 +619,7 @@ export async function updateShowDetailsAction(formData: FormData) {
 export async function updateRequirementAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const reqId = formData.get('req_id') as string
+  await assertRequirementAccess(showId, reqId)
   const db = createAdminClient()
   const input = await getRequirementWriteInput(formData, showId)
 
@@ -623,6 +637,7 @@ export async function openRequirementEnergyLevelsAction(formData: FormData) {
   const db = createAdminClient()
 
   if (!showId || !reqId) throw new Error('Mangler show eller spot.')
+  await assertRequirementAccess(showId, reqId)
 
   const { error } = await db
     .from('show_requirements')
@@ -644,6 +659,8 @@ export async function reorderRequirementsAction(formData: FormData) {
     throw new Error('Mangler lineup-rekkefølge.')
   }
 
+  await assertShowAccess(showId)
+
   const db = createAdminClient()
   const results = await Promise.all(
     orderedIds.map((id, index) =>
@@ -664,6 +681,7 @@ export async function reorderRequirementsAction(formData: FormData) {
 export async function deleteRequirementAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const reqId = formData.get('req_id') as string
+  await assertRequirementAccess(showId, reqId)
   const db = createAdminClient()
   const { error } = await db.from('show_requirements').delete().eq('id', reqId)
   if (error) throw new Error(error.message)
@@ -674,6 +692,7 @@ export async function deleteRequirementAction(formData: FormData) {
 
 export async function bookShowAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   const result = await bookShow(showId)
   if (result.offersCreated === 0) {
     throw new Error(result.candidatesMatched === 0
@@ -685,6 +704,7 @@ export async function bookShowAction(formData: FormData) {
 
 export async function publishShowAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   const db = createAdminClient()
   await db.from('shows').update({
     status: 'published',
@@ -696,6 +716,7 @@ export async function publishShowAction(formData: FormData) {
 export async function updateShowStatusAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const status = formData.get('status') as ShowStatus
+  await assertShowAccess(showId)
   await updateShowStatus(showId, status)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
@@ -704,6 +725,7 @@ export async function updateOfferStatusAction(formData: FormData) {
   const offerId = formData.get('offer_id') as string
   const showId = formData.get('show_id') as string
   const status = formData.get('status') as BookingOfferStatus
+  await assertOfferAccess(showId, offerId)
   const db = createAdminClient()
 
   if (status === 'accepted') {
@@ -729,6 +751,7 @@ export async function updateOfferStatusAction(formData: FormData) {
 export async function cancelOfferAction(formData: FormData) {
   const offerId = formData.get('offer_id') as string
   const showId = formData.get('show_id') as string
+  await assertOfferAccess(showId, offerId)
   const db = createAdminClient()
 
   const { data: offer, error: offerError } = await db
@@ -751,8 +774,9 @@ export async function cancelOfferAction(formData: FormData) {
 export async function removeSpotAction(formData: FormData) {
   const spotId = formData.get('spot_id') as string
   const showId = formData.get('show_id') as string
+  await assertSpotAccess(showId, spotId)
   const db = createAdminClient()
-  await db.from('confirmed_spots').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', spotId)
+  await db.from('confirmed_spots').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', spotId).eq('show_id', showId)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -760,6 +784,8 @@ export async function removeSpotAndReopenAction(formData: FormData) {
   const spotId = formData.get('spot_id') as string
   const showId = formData.get('show_id') as string
   const db = createAdminClient()
+
+  await assertSpotAccess(showId, spotId)
 
   const { data: spot } = await db
     .from('confirmed_spots')
@@ -800,6 +826,8 @@ export async function moveSpotAction(formData: FormData) {
   const spotId = formData.get('spot_id') as string
   const newReqId = formData.get('show_requirement_id') as string
   const showId = formData.get('show_id') as string
+  await assertSpotAccess(showId, spotId)
+  await assertRequirementAccess(showId, newReqId)
   const db = createAdminClient()
 
   const [{ data: req }, { count: filled }] = await Promise.all([
@@ -818,6 +846,7 @@ export async function moveSpotAction(formData: FormData) {
     .from('confirmed_spots')
     .update({ show_requirement_id: newReqId })
     .eq('id', spotId)
+    .eq('show_id', showId)
 
   if (error) throw new Error(error.message)
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -830,6 +859,8 @@ export async function movePendingOfferAction(formData: FormData) {
   const db = createAdminClient()
 
   if (!offerId || !newReqId || !showId) throw new Error('Mangler tilbud, spot eller show.')
+  await assertOfferAccess(showId, offerId)
+  await assertRequirementAccess(showId, newReqId)
 
   const [{ data: offer }, { data: requirement }, { count: filled }] = await Promise.all([
     db
@@ -874,6 +905,7 @@ export async function swapArtistAction(formData: FormData) {
   const spotId = formData.get('spot_id') as string
   const newArtistId = formData.get('new_artist_id') as string
   const showId = formData.get('show_id') as string
+  await assertSpotAccess(showId, spotId)
   const db = createAdminClient()
 
   const { data: oldSpot } = await db
@@ -898,6 +930,7 @@ export async function swapArtistAction(formData: FormData) {
     .from('confirmed_spots')
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
     .eq('id', spotId)
+    .eq('show_id', showId)
 
   const { error } = await db
     .from('confirmed_spots')
@@ -920,6 +953,7 @@ export async function addArtistToRequirementAction(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   const requirementId = formData.get('show_requirement_id') as string
   const currency = (formData.get('currency') as string | null) ?? 'NOK'
+  const requirement = await assertRequirementAccess(showId, requirementId)
   const db = createAdminClient()
 
   const { data: existingSpot } = await db
@@ -932,16 +966,10 @@ export async function addArtistToRequirementAction(formData: FormData) {
 
   if (existingSpot) throw new Error('Denne artisten er allerede i lineupen.')
 
-  const [{ count: filled }, { data: requirement }] = await Promise.all([
-    db.from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', requirementId)
-      .in('status', ['confirmed', 'completed', 'paid']),
-    db.from('show_requirements')
-      .select('quantity, compensation_type, compensation_amount')
-      .eq('id', requirementId)
-      .single(),
-  ])
+  const { count: filled } = await db.from('confirmed_spots')
+    .select('*', { count: 'exact', head: true })
+    .eq('show_requirement_id', requirementId)
+    .in('status', ['confirmed', 'completed', 'paid'])
 
   if (requirement && (filled ?? 0) >= requirement.quantity) {
     throw new Error('Denne rollen er allerede fylt.')
@@ -986,6 +1014,8 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
     return manualSpotState('error', 'Velg artist og rolle før du legger til i lineup.')
   }
 
+  const requirement = await assertRequirementAccess(showId, requirementId)
+
   const { data: existingSpot } = await db
     .from('confirmed_spots')
     .select('id')
@@ -996,16 +1026,10 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
 
   if (existingSpot) return manualSpotState('error', 'Denne artisten er allerede i lineupen.')
 
-  const [{ count: filled }, { data: requirement }] = await Promise.all([
-    db.from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', requirementId)
-      .in('status', ['confirmed', 'completed', 'paid']),
-    db.from('show_requirements')
-      .select('quantity')
-      .eq('id', requirementId)
-      .single(),
-  ])
+  const { count: filled } = await db.from('confirmed_spots')
+    .select('*', { count: 'exact', head: true })
+    .eq('show_requirement_id', requirementId)
+    .in('status', ['confirmed', 'completed', 'paid'])
 
   if (requirement && (filled ?? 0) >= requirement.quantity) {
     return manualSpotState('error', 'Denne rollen er allerede fylt. Øk antall plasser eller fjern en artist først.')
@@ -1034,6 +1058,8 @@ export async function updateSpotAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const status = formData.get('status') as ConfirmedSpotStatus
   const feeAmount = optionalMoneyToMinor(formData.get('fee_amount'))
+  await assertSpotAccess(showId, spotId)
+  await assertRequirementAccess(showId, formData.get('show_requirement_id') as string)
   const db = createAdminClient()
 
   const { error } = await db.from('confirmed_spots').update({
@@ -1043,7 +1069,7 @@ export async function updateSpotAction(formData: FormData) {
     status,
     cancelled_at: status === 'cancelled' ? new Date().toISOString() : null,
     confirmed_at: status === 'confirmed' ? new Date().toISOString() : undefined,
-  }).eq('id', spotId)
+  }).eq('id', spotId).eq('show_id', showId)
 
   if (error) throw new Error(error.message)
   scheduleFullbookedAutomation(showId, 'update-spot')
@@ -1054,6 +1080,7 @@ export async function generatePosterAction(formData: FormData) {
   const showId = formData.get('show_id') as string
 
   if (!showId) throw new Error('Mangler show-id for plakatgenerering.')
+  await assertShowAccess(showId)
 
   const posterUrl = await generatePosterForShow(showId)
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -1148,8 +1175,9 @@ export async function completeMarketingTask(formData: FormData) {
   const taskId = formData.get('task_id') as string
   const showId = formData.get('show_id') as string
   const isCompleted = formData.get('is_completed') === 'true'
+  await assertShowAccess(showId)
   const db = createAdminClient()
-  await db.from('marketing_tasks').update({ is_completed: !isCompleted }).eq('id', taskId)
+  await db.from('marketing_tasks').update({ is_completed: !isCompleted }).eq('id', taskId).eq('show_id', showId)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -1162,6 +1190,7 @@ export async function completeMarketingTask(formData: FormData) {
  */
 export async function confirmLineupAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
 
   const result = await automateFullbookedShow(showId)
   if (!result.fullbooked) {
@@ -1174,6 +1203,7 @@ export async function confirmLineupAction(formData: FormData) {
 
 export async function deleteShowAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
   const db = createAdminClient()
   await db.from('shows').delete().eq('id', showId)
   revalidatePath('/admin-app/shows')

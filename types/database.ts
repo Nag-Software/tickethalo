@@ -1,6 +1,6 @@
 // Auto-generated types matching the database schema in 001_initial_schema.sql
 
-export type Role = 'owner' | 'admin' | 'staff' | 'artist'
+export type Role = 'superadmin' | 'owner' | 'admin' | 'staff' | 'artist'
 export type ArtistStatus = 'pending_review' | 'approved' | 'rejected' | 'inactive' | 'flagged'
 export type ArtistGender = 'male' | 'female' | 'other'
 export type RequirementGender = 'male' | 'female' | 'any'
@@ -27,6 +27,28 @@ export type MarketingDesignFileType = 'image'
 // ─────────────────────────────────────────────────────────────
 // Row types
 // ─────────────────────────────────────────────────────────────
+
+export type Club = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  logo_url: string | null
+  header_image_url: string | null
+  gallery_image_urls: string[]
+  location_name: string | null
+  address_line: string | null
+  city: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ClubMembership = {
+  id: string
+  club_id: string
+  profile_id: string
+  created_at: string
+}
 
 export type Profile = {
   id: string
@@ -90,6 +112,7 @@ export type Show = {
   stripe_price_id: string | null
   is_template: boolean
   published_at: string | null
+  club_id: string | null
   created_at: string
   updated_at: string
 }
@@ -320,6 +343,7 @@ export type Database = {
           stripe_price_id?: string | null
           is_template?: boolean
           published_at?: string | null
+          club_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -511,6 +535,36 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ShowArtistBookingExclusion>
+        Relationships: []
+      }
+      clubs: {
+        Row: Club
+        Insert: {
+          id?: string
+          name: string
+          slug: string
+          description?: string | null
+          logo_url?: string | null
+          header_image_url?: string | null
+          gallery_image_urls?: string[]
+          location_name?: string | null
+          address_line?: string | null
+          city?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Club>
+        Relationships: []
+      }
+      club_memberships: {
+        Row: ClubMembership
+        Insert: {
+          id?: string
+          club_id: string
+          profile_id: string
+          created_at?: string
+        }
+        Update: Partial<ClubMembership>
         Relationships: []
       }
     }

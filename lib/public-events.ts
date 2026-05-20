@@ -1,7 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Artist, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
 
-export type PublicShow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status'> & {
+export type PublicShow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id'> & {
+  clubName: string | null
+  clubCity: string | null
   soldTickets: number
 }
 
@@ -16,7 +18,7 @@ export async function getUpcomingPublishedShows(limit?: number): Promise<PublicS
   const today = new Date().toISOString().slice(0, 10)
   let query = db
     .from('shows')
-    .select('id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status')
+    .select('id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status, club_id')
     .eq('status', 'published')
     .gte('date', today)
     .order('date', { ascending: true })
@@ -31,7 +33,7 @@ export async function getPublishedShowBySlug(slug: string): Promise<PublicShow |
   const db = createAdminClient()
   const { data: show } = await db
     .from('shows')
-    .select('id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status')
+    .select('id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status, club_id')
     .eq('slug', slug)
     .eq('status', 'published')
     .single()
@@ -99,14 +101,28 @@ export function ticketFillPercent(show: Pick<Show, 'capacity'> & { soldTickets: 
   return Math.min(Math.round((show.soldTickets / show.capacity) * 100), 100)
 }
 
-async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status'>>): Promise<PublicShow[]> {
+async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id'>>): Promise<PublicShow[]> {
   const db = createAdminClient()
+  const clubIds = [...new Set(shows.map((show) => show.club_id).filter((clubId): clubId is string => Boolean(clubId)))]
+  const { data: clubs } = clubIds.length > 0
+    ? await db.from('clubs').select('id, name, city').in('id', clubIds)
+    : { data: [] as Array<{ id: string; name: string; city: string | null }> }
+  const clubMap = new Map((clubs ?? []).map((club) => [club.id, club]))
+
   return Promise.all(shows.map(async (show) => {
     const { count } = await db
       .from('tickets')
       .select('id', { count: 'exact', head: true })
       .eq('show_id', show.id)
       .in('status', ['valid', 'used'])
-    return { ...show, soldTickets: count ?? 0 }
+
+    const club = show.club_id ? clubMap.get(show.club_id) : null
+
+    return {
+      ...show,
+      clubName: club?.name ?? null,
+      clubCity: club?.city ?? null,
+      soldTickets: count ?? 0,
+    }
   }))
 }

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ScannerClient } from './scanner-client'
 import { getTicketsForShow } from '../actions'
+import { assertShowAccess } from '@/lib/club-auth'
 
 export default async function ShowScannerPage({
   params,
@@ -9,6 +10,7 @@ export default async function ShowScannerPage({
   params: Promise<{ showId: string }>
 }) {
   const { showId } = await params
+  await assertShowAccess(showId)
   const db = createAdminClient()
 
   const { data: show } = await db

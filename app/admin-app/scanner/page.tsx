@@ -1,14 +1,24 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
+import { getClubAccess } from '@/lib/club-auth'
 
 export default async function ScannerPickShowPage() {
   const db = createAdminClient()
-  const { data: shows } = await db
+  const clubAccess = await getClubAccess()
+  let query = db
     .from('shows')
     .select('id, title, date, venue_name, venue_address, status')
     .in('status', ['published', 'fullbooked', 'completed', 'booking'])
     .order('date', { ascending: false })
     .limit(50)
+
+  if (clubAccess.clubIds.length === 0) {
+    query = query.eq('id', '00000000-0000-0000-0000-000000000000')
+  } else {
+    query = query.in('club_id', clubAccess.clubIds)
+  }
+
+  const { data: shows } = await query
 
   const STATUS_LABEL: Record<string, string> = {
     published: 'Publisert',

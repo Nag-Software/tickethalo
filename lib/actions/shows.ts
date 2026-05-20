@@ -17,6 +17,7 @@ export async function createShow(input: {
   capacity?: number
   ticket_price?: number
   currency?: string
+  club_id?: string | null
 }) {
   const admin = createAdminClient()
 
@@ -34,6 +35,7 @@ export async function createShow(input: {
       capacity: input.capacity ?? null,
       ticket_price: input.ticket_price ?? null,
       currency: input.currency ?? 'NOK',
+      club_id: input.club_id ?? null,
       status: 'draft',
     })
     .select('id')

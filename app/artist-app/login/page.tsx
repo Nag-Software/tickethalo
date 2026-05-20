@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { PublicHeader } from '@/components/public/public-header'
 import { LoginForm } from '@/components/login-form'
 import { createClient } from '@/lib/supabase/server'
+import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
 export default async function ArtistLoginPage({
   searchParams,
@@ -14,12 +15,11 @@ export default async function ArtistLoginPage({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
-    const db = (await import('@/lib/supabase/admin')).createAdminClient()
-    const { data: artist } = await db.from('artists').select('id').eq('auth_user_id', user.id).single()
-    if (!artist) {
-      redirect('/artist-app/logout')
+    const destination = await getPortalDestinationForAuthUser(user.id)
+    if (destination?.startsWith('/artist-app')) {
+      redirect(next || '/artist-app')
     }
-    redirect(next || '/artist-app')
+    if (destination) redirect(destination)
   }
 
   return (

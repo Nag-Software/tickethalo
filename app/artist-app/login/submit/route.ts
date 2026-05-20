@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
 export async function POST(request: Request) {
   const origin = `${request.headers.get('x-forwarded-proto') ?? 'http'}://${request.headers.get('host') ?? new URL(request.url).host}`
@@ -25,19 +25,16 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303)
   }
 
-  const db = createAdminClient()
-  const { data: artist } = await db
-    .from('artists')
-    .select('id')
-    .eq('auth_user_id', data.user.id)
-    .single()
-
-  if (!artist) {
-    await supabase.auth.signOut()
+  const destination = await getPortalDestinationForAuthUser(data.user.id)
+  if (!destination) {
     return NextResponse.redirect(new URL(`${artistPrefix}/signup?error=missing`, origin), 303)
   }
 
-  return NextResponse.redirect(new URL(nextPath, origin), 303)
+  if (destination.startsWith('/artist-app')) {
+    return NextResponse.redirect(new URL(nextPath, origin), 303)
+  }
+
+  return NextResponse.redirect(new URL(destination, origin), 303)
 }
 
 function normalizeNext(value: string) {

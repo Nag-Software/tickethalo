@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { assertShowAccess } from '@/lib/club-auth'
 
 export type CheckInResult =
   | { notFound: true }
@@ -9,7 +10,8 @@ export type CheckInResult =
   | { invalid: true; status: string }
   | { ok: true; ticketId: string; buyerName: string | null; buyerEmail: string | null }
 
-export async function checkInByCode(rawCode: string): Promise<CheckInResult> {
+export async function checkInByCode(showId: string, rawCode: string): Promise<CheckInResult> {
+  await assertShowAccess(showId)
   const code = rawCode.trim().toUpperCase()
   if (!code) return { notFound: true }
 
@@ -17,6 +19,7 @@ export async function checkInByCode(rawCode: string): Promise<CheckInResult> {
   const { data: ticket } = await db
     .from('tickets')
     .select('id, ticket_code, status, checked_in_at, order_id, show_id')
+    .eq('show_id', showId)
     .eq('ticket_code', code)
     .maybeSingle()
 
@@ -46,11 +49,13 @@ export async function checkInByCode(rawCode: string): Promise<CheckInResult> {
 }
 
 export async function uncheckIn(ticketId: string, showId: string): Promise<{ ok: boolean }> {
+  await assertShowAccess(showId)
   const db = createAdminClient()
   await db
     .from('tickets')
     .update({ status: 'valid', checked_in_at: null })
     .eq('id', ticketId)
+    .eq('show_id', showId)
     .eq('status', 'used')
 
   revalidatePath(`/admin-app/scanner/${showId}`)
@@ -67,6 +72,7 @@ export type TicketRow = {
 }
 
 export async function getTicketsForShow(showId: string): Promise<TicketRow[]> {
+  await assertShowAccess(showId)
   const db = createAdminClient()
   const { data: tickets } = await db
     .from('tickets')

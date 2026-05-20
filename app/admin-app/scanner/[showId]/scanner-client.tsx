@@ -67,7 +67,7 @@ export function ScannerClient({
       processingRef.current = true
       setIsProcessing(true)
       try {
-        const result = await checkInByCode(normalized)
+        const result = await checkInByCode(showId, normalized)
 
         if ('notFound' in result) {
           showScanResult({ tone: 'error', title: 'Ikke funnet', subtitle: `Ukjent kode: ${normalized}` })

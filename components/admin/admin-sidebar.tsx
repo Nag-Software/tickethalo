@@ -3,7 +3,9 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { ClubSwitcher } from '@/components/admin/club-switcher'
 import {
+  Building2,
   Users,
   CalendarDays,
   ShoppingCart,
@@ -25,15 +27,19 @@ import {
 const navItems = [
   { label: 'Shows', href: '/shows', icon: CalendarDays },
   { label: 'Komikere', href: '/artists', icon: Users },
-  { label: 'Orders', href: '/orders', icon: ShoppingCart },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: 'Ordre', href: '/orders', icon: ShoppingCart },
+  { label: 'Min klubb', href: '/min-klubb', icon: Building2 },
+  { label: 'Innstillinger', href: '/settings', icon: Settings },
 ]
 
 interface AdminSidebarProps {
-  user: { email: string; name: string; role: string }
+  user: { email: string; name: string; role: string; clubName?: string | null }
+  clubs?: Array<{ id: string; name: string; city: string | null }>
+  selectedClubId?: string | null
+  showClubSwitcher?: boolean
 }
 
-export function AdminSidebar({ user }: AdminSidebarProps) {
+export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClubSwitcher = false }: AdminSidebarProps) {
   const rawPathname = usePathname()
   const pathPrefix = '/admin-app'
   const pathname = rawPathname.replace(/^\/admin-app/, '') || '/'
@@ -41,21 +47,25 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href={`${pathPrefix}/shows`}>
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Image src="/favicon.svg" className="rounded-full p-0 outline-2 border-1" alt="" width={32} height={32} />
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold">Bookingsystem</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {showClubSwitcher ? (
+          <ClubSwitcher clubs={clubs} selectedClubId={selectedClubId} />
+        ) : (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" asChild>
+                <Link href={`${pathPrefix}/shows`}>
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <Image src="/favicon.svg" className="rounded-full p-0 outline-2 border-1" alt="" width={32} height={32} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 leading-none">
+                    <span className="font-semibold">{user.clubName ?? 'Bookingsystem'}</span>
+                    <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
       </SidebarHeader>
 
       <SidebarContent>

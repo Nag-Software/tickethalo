@@ -1,11 +1,9 @@
 import Image from 'next/image'
 import { PublicHeader } from '@/components/public/public-header'
-import { EventsCarouselClient } from '@/components/public/events-carousel-client'
 import { RotatingBadge } from '@/components/public/rotating-badge'
 import { EventsGridClient } from '@/components/public/events-grid-client'
 import { CityTicker } from '@/components/public/city-ticker'
 import { getUpcomingPublishedShows } from '@/lib/public-events'
-import Link from 'next/link'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
