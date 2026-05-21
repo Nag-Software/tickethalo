@@ -8,6 +8,7 @@ export type ClubOption = {
   id: string
   name: string
   city: string | null
+  logo_url: string | null
 }
 
 export type ClubAccess = {
@@ -40,7 +41,7 @@ export async function getClubAccess(): Promise<ClubAccess> {
   if (profile.role === 'superadmin') {
     const { data: clubs } = await db
       .from('clubs')
-      .select('id, name, city')
+      .select('id, name, city, logo_url')
       .order('name')
 
     const clubOptions = clubs ?? []
@@ -61,7 +62,7 @@ export async function getClubAccess(): Promise<ClubAccess> {
 
   const { data: memberships } = await db
     .from('club_memberships')
-    .select('club_id, clubs(id, name, city)')
+    .select('club_id, clubs(id, name, city, logo_url)')
     .eq('profile_id', profile.id)
 
   const clubs = (memberships ?? [])

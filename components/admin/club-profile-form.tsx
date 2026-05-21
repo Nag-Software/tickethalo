@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Building2, ImagePlus, Images, MapPin, Sparkles, Trash2, UploadCloud } from 'lucide-react'
+import { Building2, MapPin, Sparkles, Trash2, UploadCloud } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,7 +10,7 @@ import { saveClubProfileAction } from '@/app/admin-app/min-klubb/actions'
 import type { Club } from '@/types/database'
 
 type ClubProfileFormProps = {
-  club: Pick<Club, 'id' | 'name' | 'slug' | 'description' | 'logo_url' | 'header_image_url' | 'gallery_image_urls' | 'location_name' | 'address_line' | 'city'>
+  club: Pick<Club, 'id' | 'name' | 'slug' | 'description' | 'logo_url' | 'header_image_url' | 'location_name' | 'address_line' | 'city'>
 }
 
 function Dropzone({
@@ -90,15 +90,11 @@ function Dropzone({
 export function ClubProfileForm({ club }: ClubProfileFormProps) {
   const logoInputRef = useRef<HTMLInputElement>(null)
   const headerInputRef = useRef<HTMLInputElement>(null)
-  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
   const [headerPreview, setHeaderPreview] = useState<string | null>(club.header_image_url)
-  const [galleryExisting, setGalleryExisting] = useState<string[]>(club.gallery_image_urls)
-  const [galleryNewPreviews, setGalleryNewPreviews] = useState<string[]>([])
   const [logoActive, setLogoActive] = useState(false)
   const [headerActive, setHeaderActive] = useState(false)
-  const [galleryActive, setGalleryActive] = useState(false)
 
   function replaceSingleFile(input: HTMLInputElement | null, file: File | null, setPreview: (value: string | null) => void) {
     if (!input) return
@@ -114,30 +110,13 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
     input.files = transfer.files
   }
 
-  function appendGalleryFiles(files: File[]) {
-    if (!galleryInputRef.current || files.length === 0) return
-
-    const transfer = new DataTransfer()
-    const currentFiles = Array.from(galleryInputRef.current.files ?? [])
-    for (const file of [...currentFiles, ...files].slice(0, 8)) {
-      transfer.items.add(file)
-    }
-
-    galleryInputRef.current.files = transfer.files
-    setGalleryNewPreviews(Array.from(transfer.files).map((file) => URL.createObjectURL(file)))
-  }
-
   return (
     <ToastActionForm action={saveClubProfileAction} successMessage="Klubbprofilen ble oppdatert." className="space-y-6">
       <input ref={logoInputRef} type="file" name="logoFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(logoInputRef.current, event.currentTarget.files?.[0] ?? null, setLogoPreview)} />
       <input ref={headerInputRef} type="file" name="headerFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(headerInputRef.current, event.currentTarget.files?.[0] ?? null, setHeaderPreview)} />
-      <input ref={galleryInputRef} type="file" name="galleryFiles" accept="image/*" multiple className="hidden" onChange={(event) => setGalleryNewPreviews(Array.from(event.currentTarget.files ?? []).map((file) => URL.createObjectURL(file)))} />
 
       <input type="hidden" name="existingLogoUrl" value={logoPreview && logoPreview === club.logo_url ? club.logo_url ?? '' : ''} />
       <input type="hidden" name="existingHeaderImageUrl" value={headerPreview && headerPreview === club.header_image_url ? club.header_image_url ?? '' : ''} />
-      {galleryExisting.map((url) => (
-        <input key={url} type="hidden" name="galleryExisting" value={url} />
-      ))}
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
         <div className="space-y-6">
@@ -213,85 +192,6 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
             </div>
           </div>
 
-          <div className="rounded-[2rem] border bg-white p-6 shadow-sm">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black text-white">
-                <Images className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight">Bildegalleri</h3>
-                <p className="text-sm text-muted-foreground">Dra inn stemningsbilder fra scenen, lokalet eller publikum. Maks 8 bilder.</p>
-              </div>
-            </div>
-
-            <div
-              onDrop={(event) => {
-                event.preventDefault()
-                setGalleryActive(false)
-                appendGalleryFiles(Array.from(event.dataTransfer.files).filter((file) => file.type.startsWith('image/')))
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-                setGalleryActive(true)
-              }}
-              onDragLeave={() => setGalleryActive(false)}
-              className={`rounded-[1.75rem] border border-dashed p-5 transition ${galleryActive ? 'border-black bg-black/5 shadow-[0_0_0_4px_rgba(24,24,27,0.06)]' : 'border-zinc-300 bg-[linear-gradient(135deg,_#fff,_#faf8f2)]'}`}
-            >
-              <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-                <div>
-                  <div className="text-sm font-medium text-foreground">Galleri for klubbprofilen</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Slipp flere bilder rett inn i feltet, eller åpne filvelgeren.</div>
-                </div>
-                <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
-                  <ImagePlus className="h-4 w-4" />
-                  Legg til bilder
-                </Button>
-              </div>
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {galleryExisting.map((url) => (
-                  <div key={url} className="group relative overflow-hidden rounded-[1.5rem] border bg-zinc-100">
-                    <img src={url} alt="" className="aspect-[4/3] h-full w-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setGalleryExisting((current) => current.filter((entry) => entry !== url))}
-                      className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm transition hover:scale-105"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-
-                {galleryNewPreviews.map((url, index) => (
-                  <div key={`${url}-${index}`} className="overflow-hidden rounded-[1.5rem] border border-dashed border-black/15 bg-zinc-100">
-                    <img src={url} alt="" className="aspect-[4/3] h-full w-full object-cover" />
-                  </div>
-                ))}
-
-                {!galleryExisting.length && !galleryNewPreviews.length ? (
-                  <div className="flex aspect-[4/3] items-center justify-center rounded-[1.5rem] border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center text-sm text-muted-foreground">
-                    Ingen galleribilder ennå
-                  </div>
-                ) : null}
-              </div>
-
-              {galleryNewPreviews.length ? (
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      if (!galleryInputRef.current) return
-                      galleryInputRef.current.value = ''
-                      setGalleryNewPreviews([])
-                    }}
-                  >
-                    Tøm nye bilder
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </div>
         </div>
 
         <div className="space-y-6">
@@ -381,7 +281,6 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <span className="rounded-full border bg-white px-3 py-1.5">{club.address_line || 'Adresse mangler'}</span>
-                  <span className="rounded-full border bg-white px-3 py-1.5">{galleryExisting.length + galleryNewPreviews.length} bildeflater</span>
                 </div>
               </div>
             </div>

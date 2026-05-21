@@ -20,7 +20,7 @@ import {
 import { cn } from '@/lib/utils'
 
 type ClubSwitcherProps = {
-  clubs: Array<{ id: string; name: string; city: string | null }>
+  clubs: Array<{ id: string; name: string; city: string | null; logo_url: string | null }>
   selectedClubId: string | null
 }
 
@@ -45,8 +45,8 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg" disabled>
-            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Image src="/favicon.svg" className="rounded-full p-0 outline-2 border-1" alt="" width={32} height={32} />
+            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground overflow-hidden">
+              <Image src="/favicon.svg" alt="" width={32} height={32} className="rounded-full" />
             </div>
             <div className="flex flex-col gap-0.5 leading-none">
               <span className="font-semibold">Ingen klubber</span>
@@ -67,8 +67,12 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Image src="/favicon.svg" className="rounded-full p-0 outline-2 border-1" alt="" width={32} height={32} />
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground overflow-hidden">
+                {selectedClub.logo_url ? (
+                  <Image src={selectedClub.logo_url} alt="" width={32} height={32} className="h-full w-full object-cover" />
+                ) : (
+                  <Image src="/favicon.svg" alt="" width={32} height={32} className="rounded-full" />
+                )}
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{selectedClub.name}</span>
@@ -89,8 +93,12 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
             {clubs.map((club) => (
               <DropdownMenuItem key={club.id} asChild>
                 <Link href={`/admin-app/select-club?club=${club.id}&next=${encodeURIComponent(nextPath)}`} className="flex items-center gap-2 p-2">
-                  <div className="flex size-6 items-center justify-center rounded-md border">
-                    <Image src="/favicon.svg" alt="" width={16} height={16} />
+                  <div className="flex size-6 items-center justify-center rounded-md border overflow-hidden bg-zinc-100">
+                    {club.logo_url ? (
+                      <Image src={club.logo_url} alt="" width={24} height={24} className="h-full w-full object-cover" />
+                    ) : (
+                      <Image src="/favicon.svg" alt="" width={16} height={16} />
+                    )}
                   </div>
                   <div className="grid flex-1 text-left leading-tight">
                     <span className="truncate text-sm font-medium">{club.name}</span>

@@ -49,6 +49,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     name: profile.full_name ?? profile.email ?? user.email ?? 'Admin',
     role: profile.role ?? 'admin',
     clubName: selectedClub?.name ?? null,
+    clubLogoUrl: selectedClub?.logo_url ?? null,
   }
 
   if (pathname.startsWith('/admin-app/scanner')) {

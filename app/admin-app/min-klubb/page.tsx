@@ -61,28 +61,6 @@ export default async function MinKlubbPage() {
             </div>
 
             <div className="space-y-3">
-              <div className="rounded-[1.5rem] border border-white/60 bg-white/85 p-4 shadow-sm backdrop-blur">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Header</div>
-                    <div className="mt-1 text-lg font-semibold text-foreground">Egen bildeflate</div>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-black text-white">
-                    <ImageIcon className="h-4 w-4" />
-                  </div>
-                </div>
-
-                <div className="overflow-hidden rounded-[1.25rem] border border-black/10 bg-zinc-100">
-                  {club.header_image_url ? (
-                    <img src={club.header_image_url} alt="" className="aspect-[16/8] h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex aspect-[16/8] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(0,0,0,0.06),_transparent_45%),linear-gradient(135deg,_#fff,_#faf8f2)] px-6 text-center text-sm text-muted-foreground">
-                      Ingen header lastet opp ennå
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div className="grid gap-3 sm:grid-cols-2">
                 <StatCard label="Shows" value={String(showCount ?? 0)} icon={Building2} />
                 <StatCard label="Galleri" value={`${club.gallery_image_urls.length} bilder`} icon={Images} />

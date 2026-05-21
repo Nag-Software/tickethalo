@@ -33,8 +33,8 @@ const navItems = [
 ]
 
 interface AdminSidebarProps {
-  user: { email: string; name: string; role: string; clubName?: string | null }
-  clubs?: Array<{ id: string; name: string; city: string | null }>
+  user: { email: string; name: string; role: string; clubName?: string | null; clubLogoUrl?: string | null }
+  clubs?: Array<{ id: string; name: string; city: string | null; logo_url: string | null }>
   selectedClubId?: string | null
   showClubSwitcher?: boolean
 }
@@ -54,8 +54,12 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild>
                 <Link href={`${pathPrefix}/shows`}>
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Image src="/favicon.svg" className="rounded-full p-0 outline-2 border-1" alt="" width={32} height={32} />
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground overflow-hidden">
+                    {user.clubLogoUrl ? (
+                      <Image src={user.clubLogoUrl} alt="" width={32} height={32} className="h-full w-full object-cover" />
+                    ) : (
+                      <Image src="/favicon.svg" alt="" width={32} height={32} className="rounded-full p-0" />
+                    )}
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">
                     <span className="font-semibold">{user.clubName ?? 'Bookingsystem'}</span>
