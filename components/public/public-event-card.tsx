@@ -16,9 +16,9 @@ export function PublicEventCard({ show, priority = false, compact = false }: { s
   return (
     <article className="group border border-black bg-white transition hover:-translate-y-0.5 hover:shadow-[2px_2px_0_black/10]">
       <Link href={`/events/${show.slug}`} className="block">
-        <div className="relative aspect-[3/4] border-b border-black bg-black">
+        <div className="relative aspect-[2/3] border-b border-black bg-zinc-950 overflow-hidden">
           {show.poster_url ? (
-            <Image src={show.poster_url} alt={show.title} fill priority={priority} sizes={compact ? '(max-width: 768px) 92vw, 31vw' : '(max-width: 768px) 92vw, (max-width: 1024px) 45vw, 31vw'} className="object-contain transition duration-500 group-hover:opacity-95" />
+            <Image src={show.poster_url} alt={show.title} fill priority={priority} sizes={compact ? '(max-width: 768px) 92vw, 31vw' : '(max-width: 768px) 92vw, (max-width: 1024px) 45vw, 31vw'} className="object-cover transition aspect-[2/3] duration-500 group-hover:scale-[1.02]" />
           ) : (
             <div className={`flex h-full flex-col justify-between bg-black text-white ${compact ? 'p-4' : 'p-5'}`}>
               <span className="text-xs font-bold uppercase tracking-widest">humor.events</span>

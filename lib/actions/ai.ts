@@ -41,6 +41,171 @@ type PosterDesignReference = {
   promptLine: string
 }
 
+type PosterPromptContext = {
+  title: string
+  dateText: string
+  timeText: string
+  venue: string
+  sorted: PosterArtist[]
+  headliners: PosterArtist[]
+  supporting: PosterArtist[]
+  designReference: PosterDesignReference | null
+  designReferenceIndex: number | null
+  posterPlan: ReturnType<typeof createPosterPlan> | null
+  identityMapIndex: number
+  artistReferenceStartIndex: number
+  artistReferenceEndIndex: number
+  referencePackage: PosterReferencePackage
+}
+
+function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
+  const {
+    title,
+    dateText,
+    timeText,
+    venue,
+    sorted,
+    headliners,
+    supporting,
+    designReference,
+    designReferenceIndex,
+    posterPlan,
+    identityMapIndex,
+    artistReferenceStartIndex,
+    artistReferenceEndIndex,
+    referencePackage,
+  } = ctx
+
+  const artistCount = sorted.length
+  const headlinerNames = headliners.map(a => a.name).join(' og ')
+  const supportNames = supporting.map(a => a.name).join(', ')
+  const allNames = sorted.map(a => a.name).join(', ')
+  const referenceArtistCount = referencePackage.identityLines.length
+  const dateLine = timeText ? `${dateText} · ${timeText}` : dateText
+  const templateLabel = designReference?.promptLine.replace('{index}', String(designReferenceIndex)) ?? ''
+
+  const portraitCountRule = referenceArtistCount > 0
+    ? `Final poster: exactly ${referenceArtistCount} supplied portrait${referenceArtistCount === 1 ? '' : 's'} — one per profile photo. No duplicates, mirrors, extra headshots, or invented comedians.`
+    : `No profile photos supplied. Do not invent prominent comedian faces; let typography and event details carry the poster.`
+
+  const referenceList = referencePackage.identityLines.length > 0
+    ? referencePackage.identityLines.join('\n')
+    : sorted.map((artist) => `${artist.name}${artist.roleName ? ` (${artist.roleName})` : ''} — no reference photo`).join('\n')
+
+  const faceMappingBlock = referencePackage.images.length > 0
+    ? [
+      `Input image ${identityMapIndex} = IDENTITY MAP (mapping only — never reproduce this grid in the final poster).`,
+      `Input images ${artistReferenceStartIndex}–${artistReferenceEndIndex} = profile photos in the same numbered order as the identity list.`,
+      `Preserve each face exactly: geometry, skin tone, expression, hair, glasses, beard, age. No beautifying, caricature, merging, or swapping.`,
+    ].join('\n')
+    : `No reference photos: use names in typography only; do not fabricate portraits.`
+
+  const conciseCopyBlock = [
+    `CONCISE NORWEGIAN COPY (mandatory):`,
+    `- Write like a top-tier venue poster: scannable in 3 seconds at phone width (~400px).`,
+    `- Show title: use exactly "${title}" — prefer one strong line.`,
+    `- Comedian names: stage names only (${allNames}). No bios, no quotes, no hashtags.`,
+    headliners.length > 0 && supporting.length > 0
+      ? `- Hierarchy: headliner(s) "${headlinerNames}" most prominent; supporting "${supportNames}" secondary.`
+      : null,
+    `- Date/time: "${dateLine}" — compact, no filler words.`,
+    `- Venue: "${venue}" — shorten to city or short venue name if the template is tight.`,
+    `- Hard limit: max 6 text elements on the entire poster (title, names, date, venue, footer brand).`,
+    `- Forbidden: paragraphs, ticket prices, URLs, QR codes, sponsor invented text, "kveld med", "presenterer", marketing slogans.`,
+  ]
+
+  const lineupAdaptationBlock = designReference
+    ? [
+      `ADAPT TEMPLATE TO THIS LINEUP (${artistCount} comedian${artistCount === 1 ? '' : 's'}):`,
+      `- First study input image 1: note photo frames, name areas, title block, date/venue zones, and visual hierarchy.`,
+      `- This show lineup (${artistCount}): ${allNames}.`,
+      artistCount === 1
+        ? `- Solo show: one portrait only. Remove or neutralize extra template photo slots without breaking the layout. No duplicate thumbnails or badges.`
+        : null,
+      artistCount > 1
+        ? `- Ensemble: ${artistCount} distinct comedians — one portrait per person, matched to the correct name.`
+        : null,
+      `- More template slots than comedians: hide or tone down empty slots using the template's own background/texture; never invent people.`,
+      `- Fewer template slots than comedians: headliner(s) in the largest slot(s); list remaining names in existing text areas only — do not add portrait frames.`,
+      `- Rebalance spacing only if needed so ${artistCount} face(s) read clearly; keep the template's shapes, masks, and color system.`,
+    ]
+    : null
+
+  const templateModeBlock = designReference
+    ? [
+      `TASK: TEMPLATE EDIT — not a new design.`,
+      `You are a senior poster retoucher. Input image 1 is the club's master template and design system.`,
+      templateLabel,
+      ``,
+      `TEMPLATE AS DESIGN CONTEXT:`,
+      `- Treat the template as law for: color palette, typography style, grid, margins, textures, backgrounds, logos, sponsor marks, decorative graphics.`,
+      `- Your job: adapt this exact visual system to the current show — same club, new lineup and event facts.`,
+      `- The result must look like a designer manually updated the template in Photoshop/Figma, not like a new AI poster.`,
+      ``,
+      `ALLOWED CHANGES ONLY:`,
+      `1. Insert supplied profile photos into existing photo areas (same shape, frame, crop style as template).`,
+      `2. Replace outdated event text (title, comedian names, date, time, venue) with SHOW DETAILS below.`,
+      `3. Adjust lineup layout only to fit the actual comedian count (see ADAPT TEMPLATE below).`,
+      ``,
+      `FORBIDDEN CHANGES:`,
+      `- New layout, new palette, new fonts, new logos, new decorative elements, new photo frame shapes.`,
+      `- Redrawing, moving, or restyling existing logos, brand marks, venue marks, or sponsor graphics.`,
+      `- Circles/bubbles/collage if the template uses rectangles; no extra portrait frames.`,
+      ...(lineupAdaptationBlock ?? []),
+      ``,
+      `PRIORITY: 1) preserve template branding/layout  2) correct face-to-name mapping  3) concise updated copy.`,
+    ]
+    : [
+      `TASK: CREATE a new Norwegian standup comedy poster (portrait 2:3).`,
+      `You are a senior event poster designer (venue / festival / ticketing quality).`,
+      ``,
+      `DESIGN EXCELLENCE (state-of-the-art):`,
+      `- Mobile-first: must sell tickets in Instagram feed and ticketing thumbnails.`,
+      `- One clear focal point; max 3 hierarchy levels (headline → lineup/date → footer).`,
+      `- Generous whitespace; punchy contrast; no clutter or generic AI gloss.`,
+      `- Credible Norwegian comedy poster (Latter, Stand Up Norge, club standards) — not movie poster, not stock ad.`,
+      ``,
+      `SHOW-SPECIFIC PLAN:`,
+      posterPlan ? `- Concept: ${posterPlan.concept}` : null,
+      posterPlan ? `- Composition: ${posterPlan.composition}` : null,
+      posterPlan ? `- Photo treatment: ${posterPlan.photoTreatment}` : null,
+      posterPlan ? `- Palette: ${posterPlan.palette}` : null,
+      posterPlan ? `- Typography: ${posterPlan.typography}` : null,
+      posterPlan ? `- Texture: ${posterPlan.texture}` : null,
+      `- Footer exactly: "BILLETTER · HUMOR.EVENTS".`,
+      `- Title "${title}" = dominant readable element.`,
+      ``,
+      `PRIORITY: 1) exact artist identity  2) concise readable facts  3) strong composition  4) subtle texture.`,
+    ]
+
+  return [
+    ...templateModeBlock,
+    ``,
+    `SHOW DETAILS (source of truth for all text):`,
+    `- Title: "${title}"`,
+    `- Lineup (${artistCount}): ${allNames}`,
+    headliners.length > 0 ? `- Headliner(s): ${headlinerNames || allNames}` : null,
+    supporting.length > 0 ? `- Supporting: ${supportNames}` : null,
+    `- Date/time: ${dateLine}`,
+    `- Venue: ${venue}`,
+    ``,
+    ...conciseCopyBlock,
+    ``,
+    `ARTIST PHOTOS & IDENTITY:`,
+    referenceList,
+    portraitCountRule,
+    faceMappingBlock,
+    ``,
+    `QUALITY BAR:`,
+    designReference
+      ? `- Final image = input image 1 with photos and event text updated for this show only.`
+      : `- Distinct, premium, instantly readable; faces authentic over stylized.`,
+    `- Name beside each portrait must match IDENTITY MAP. Never swap names.`,
+    `- No audience faces, lookalikes, or background people mistaken for lineup.`,
+    `- No fake names, malformed faces, or duplicate representations.`,
+  ].filter(Boolean).join('\n')
+}
+
 export async function generateShowPoster(showId: string, opts: {
   title: string
   date: string
@@ -74,76 +239,22 @@ export async function generateShowPoster(showId: string, opts: {
       ? [designReference.file, ...referencePackage.images]
       : referencePackage.images
 
-    const headlinerNames = headliners.map(a => a.name).join(' og ')
-    const supportNames   = supporting.map(a => a.name).join(', ')
-    const allNames       = sorted.map(a => a.name).join(', ')
-    const referenceArtistCount = referencePackage.identityLines.length
-    const portraitCountRule = referenceArtistCount > 0
-      ? `The final poster must contain exactly ${referenceArtistCount} supplied comedian portrait${referenceArtistCount === 1 ? '' : 's'}: one portrait per supplied profile photo, no repeated faces, no duplicate cutouts, no mirrored copies, no extra headshots, and no generated additional comedians.`
-      : `No supplied artist photos are available. Do not create prominent fake comedian faces; use typography, venue atmosphere, graphic motifs, and event details to carry the design.`
-    const referenceList = referencePackage.identityLines.length > 0
-      ? referencePackage.identityLines.join('\n')
-      : sorted.map((artist) => `${artist.name}${artist.roleName ? ` (${artist.roleName})` : ''} - no reference photo`).join('\n')
-
-    const prompt = [
-      designReference
-        ? `Edit the selected poster template in input image 1. Do not create a new poster.`
-        : `Create a ticket-selling Norwegian standup comedy show poster in portrait format (2:3 ratio).`,
-      ``,
-      `PRIMARY GOAL:`,
-      designReference
-        ? `- Preserve the uploaded template as the base artwork. The AI is acting as an editing tool, not a poster designer.`
-        : `- Make a real audience want to buy tickets: high-impact, premium, funny, confident, and instantly readable in a social feed or ticketing page thumbnail.`,
-      designReference
-        ? `- Only make these edits: insert the current artist photos into existing photo areas, and replace outdated event text with current show details.`
-        : `- The poster must still feel like a credible Norwegian comedy venue poster, not generic AI art, stock advertising, or a movie poster parody.`,
-      designReference
-        ? `- Priority order: 1) preserve template logos/branding/layout, 2) exact artist identity, 3) replace text cleanly.`
-        : `- Priority order: 1) exact artist identity, 2) readable title/date/venue, 3) attention-grabbing composition, 4) tasteful texture and details.`,
-      ``,
-      `SHOW DETAILS:`,
-      `- Title: "${opts.title}"`,
-      `- Headliner comedian(s): ${headlinerNames || allNames}`,
-      supporting.length > 0 ? `- Supporting comedians: ${supportNames}` : null,
-      `- Date: ${dateText}${timeText ? `, ${timeText}` : ''}`,
-      `- Venue: ${venue}`,
-      ``,
-      `REFERENCE PHOTOS AND FACE RULES:`,
-      referenceList,
-      portraitCountRule,
-      referencePackage.images.length > 0
-        ? `Input image ${identityMapIndex} is a labeled IDENTITY MAP. The name printed directly under each face is the canonical mapping. Match every face to that exact printed name. Input images ${artistReferenceStartIndex} through ${artistReferenceEndIndex} are normalized PNG versions of the Supabase profile photos in the exact same numbered order as the identity list above. Use only those artist profile photos as the source of truth for the comedians. Preserve identity, face geometry, skin tone, expression, hair, glasses, beard, and distinctive features with high fidelity. Do not invent replacement faces, do not beautify, do not age-change, do not caricature, do not merge faces, and do not change body type or age. Use the supplied photos as authentic press/profile imagery in the poster composition.`
-        : `For the named artists, rely on names and typography instead of fabricated portraits.`,
-      designReference ? `` : null,
-      designReference ? `SELECTED CLUB DESIGN TEMPLATE:` : null,
-      designReference ? designReference.promptLine.replace('{index}', String(designReferenceIndex)) : null,
-      designReference ? `STRICT EDIT MODE: Treat input image 1 as the base canvas. Preserve all existing non-text artwork: logos, venue logos, sponsor logos, icons, footer marks, backgrounds, textures, color palette, borders, splashes, decorative elements, layout grid, spacing, and typography style. Do not redraw, restyle, replace, move, or reinterpret logos or branding. Do not invent new graphic elements.` : null,
-      designReference ? `ALLOWED EDITS ONLY: 1) Put the supplied artist photos into existing blank/photo areas. 2) Replace old names, date/time, venue, title, and event copy with the current show details above. Keep text in the same approximate positions, sizes, alignment, color, and hierarchy as the template. If a piece of existing text is a logo/brand mark, preserve it unchanged.` : null,
-      designReference ? `PHOTO SLOT RULES: If the template contains rectangular blank photo boxes, place photos inside those same rectangles. Do not convert rectangles into circles, bubbles, badges, arches, stickers, or a collage. Do not add extra portrait frames. If there are more template slots than artists, leave extra slots visually consistent with the template instead of inventing people.` : null,
-      designReference ? `The final image should look like input image 1 was manually edited for this show, with only photos and editable event text changed.` : null,
-      designReference ? null : ``,
-      designReference ? null : `POSTER PLAN FOR THIS SPECIFIC SHOW:`,
-      posterPlan ? `- Concept: ${posterPlan.concept}` : null,
-      posterPlan ? `- Composition: ${posterPlan.composition}` : null,
-      posterPlan ? `- Photo treatment: ${posterPlan.photoTreatment}` : null,
-      posterPlan ? `- Palette: ${posterPlan.palette}` : null,
-      posterPlan ? `- Typography: ${posterPlan.typography}` : null,
-      posterPlan ? `- Texture/detail: ${posterPlan.texture}` : null,
-      ``,
-      `DESIGN REQUIREMENTS:`,
-      designReference ? `- Do not invent a new layout. Preserve the selected template's exact grid and visual system as the dominant requirement.` : `- Make this poster visually distinct from other humor.events posters; follow the show-specific plan above.`,
-      designReference ? `- Do not change logos, brand marks, footer logos, sponsor marks, background photography, textures, decorative marks, or color system from the template.` : `- Norwegian comedy poster quality: credible enough for Latter, Stand Up Norge, venue posters, and ticketing pages.`,
-      designReference ? `- Replace only editable event text. Keep existing logo text and brand text unchanged.` : `- Title "${opts.title}" must be the dominant readable text, with a strong silhouette and high contrast.`,
-      designReference ? `- Keep date, time, venue, title, and artist names legible within the template's existing text areas.` : `- Include date, time, and venue clearly. They must remain legible at phone-screen size.`,
-      designReference ? null : `- Include a small footer exactly as: "BILLETTER · HUMOR.EVENTS".`,
-      `- Keep faces crisp, undistorted, and recognizable. Authenticity is more important than stylization, humor, or visual novelty.`,
-      `- The visible artist name next to or above each portrait must match the face according to the labeled IDENTITY MAP. Never swap names between faces.`,
-      `- Do not copy the IDENTITY MAP layout, numbers, grid, or reference labels into the final poster; use it only to map each name to the correct face.`,
-      designReference ? `- Avoid unrelated decoration, new palettes, new mask shapes, new footer text, new logos, fake sponsors, fake QR codes, or a new composition that does not exist in the template.` : `- Use clean negative space, strong hierarchy, and punchy color contrast. Avoid clutter, tiny unreadable text, fake QR codes, fake sponsors, fake prices, and extra decorative labels.`,
-      `- Do not add unrelated people, audience faces, celebrity lookalikes, random host portraits, or background faces that could be mistaken for lineup members.`,
-      `- No fake names, no extra comedians, no malformed faces, no duplicated people.`,
-      sorted.length === 1 ? `- There is exactly 1 comedian in this lineup. Include exactly ONE portrait of this person. Do not add badges, secondary thumbnails, or any duplicate representation of the same comedian.` : null,
-    ].filter(Boolean).join('\n')
+    const prompt = buildPosterGenerationPrompt({
+      title: opts.title,
+      dateText,
+      timeText,
+      venue,
+      sorted,
+      headliners,
+      supporting,
+      designReference,
+      designReferenceIndex,
+      posterPlan,
+      identityMapIndex,
+      artistReferenceStartIndex,
+      artistReferenceEndIndex,
+      referencePackage,
+    })
 
     const openai = getOpenAI()
     const response = referenceImages.length > 0
@@ -251,7 +362,7 @@ async function buildPosterDesignReference(template: PosterDesignTemplate | null 
 
     return {
       file,
-      promptLine: `Input image {index} is the selected club design template "${label}" (normalized uploaded image file). Treat it as the base image to edit, not as loose inspiration. Preserve its non-text artwork and branding.`,
+      promptLine: `Input image {index} = club poster template "${label}". This is the full design context: layout, typography, colors, photo frames, logos, and branding. Edit this file — do not use it as loose inspiration.`,
     }
   } catch (error) {
     throw new Error(`Selected poster template "${template.fileName}" could not be prepared for image generation.`, { cause: error })

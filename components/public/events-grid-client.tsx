@@ -49,8 +49,8 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
   })
 
   return (
-    <section id="events-section" className="px-4 md:px-8 pb-16 pt-6 md:pt-16">
-      <div>
+    <section id="events-section" className="px-4 md:px-8 pb-16 pt-6 md:pt-20">
+      <div className="max-w-8xl mx-auto">
         <div className="flex flex-wrap items-center gap-0 mb-6 md:mb-8 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'both' }}>
           <h2 className="text-base md:text-lg lg:text-xl font-normal w-full sm:w-auto mb-2 sm:mb-0">
             Norges morsomste
@@ -118,7 +118,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
           </div>
 
           {/* Event grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 lg:col-start-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 2xl:grid-cols-3 lg:col-start-2 gap-5">
             {filtered.length === 0 ? (
               <div className="col-span-full text-center py-12">
                 {date
@@ -156,22 +156,22 @@ function EventCard({ show }: { show: PublicShow }) {
   return (
     <article className="group flex h-full flex-col overflow-hidden border border-black bg-white transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_rgba(0,0,0,0.12)]">
       <Link href={eventHref} className="block">
-        <div className="relative flex justify-center border-b border-black bg-zinc-950 p-3 sm:p-4">
-          <div className="absolute left-3 top-3 z-10 grid size-12 place-items-center border border-black bg-white text-center text-black shadow-[2px_2px_0_rgba(255,255,255,0.18)] sm:left-4 sm:top-4 sm:size-14">
+        <div className="relative overflow-hidden border-b border-black bg-zinc-950">
+          <div className="absolute left-3 top-3 z-10 grid size-12 place-items-center border border-black bg-white text-center text-black sm:left-4 sm:top-4 sm:size-14">
             <div>
               <div className="text-2xl font-medium leading-none">{Number(day)}</div>
               <div className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-zinc-500 sm:text-[10px]">{month.replace('.', '')}</div>
             </div>
           </div>
 
-          <div className="relative aspect-[3/4] w-[54%] min-w-28 max-w-40 overflow-hidden border border-white/70 bg-white transition duration-500 group-hover:scale-[1.015] sm:max-w-44">
+          <div className="relative aspect-[2/3] w-full overflow-hidden transition duration-500 group-hover:scale-[1.02]">
             {show.poster_url ? (
               <Image
                 src={show.poster_url}
                 alt={show.title}
                 fill
-                className="object-contain"
-                sizes="(max-width: 640px) 64vw, (max-width: 1024px) 34vw, 16vw"
+                className="object-cover"
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 34vw, 16vw"
               />
             ) : (
               <div className="flex h-full flex-col justify-between bg-black p-4 text-white">

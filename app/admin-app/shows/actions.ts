@@ -18,7 +18,10 @@ export type ManualSpotActionState = {
 }
 
 const MARKETING_DESIGN_BUCKET = 'show-marketing-designs'
+const POSTER_BUCKET = 'generated-posters'
 const MAX_MARKETING_DESIGN_BYTES = 50 * 1024 * 1024
+const MAX_POSTER_UPLOAD_BYTES = 20 * 1024 * 1024
+const POSTER_UPLOAD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const MARKETING_DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'heic', 'heif'])
 const MARKETING_DESIGN_IMAGE_MIME_TYPES = new Set([
   'image/png',
@@ -1087,6 +1090,53 @@ export async function generatePosterAction(formData: FormData) {
   revalidatePath('/admin-app/marketing')
 
   return { posterUrl }
+}
+
+export async function uploadShowPosterAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  const posterFile = formData.get('poster_file')
+
+  if (!showId) throw new Error('Mangler show-id for plakatopplasting.')
+  await assertShowAccess(showId)
+  if (!(posterFile instanceof File) || posterFile.size === 0) {
+    throw new Error('Velg et bilde først.')
+  }
+
+  if (posterFile.size > MAX_POSTER_UPLOAD_BYTES) {
+    throw new Error('Plakatfilen kan maks være 20 MB.')
+  }
+
+  const mimeType = posterFile.type || 'image/jpeg'
+  if (!POSTER_UPLOAD_MIME_TYPES.has(mimeType)) {
+    throw new Error('Plakat må være PNG, JPG eller WebP.')
+  }
+
+  const db = createAdminClient()
+  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+  const filePath = `${showId}/poster-upload-${Date.now()}.${extension}`
+
+  const { error: uploadError } = await db.storage
+    .from(POSTER_BUCKET)
+    .upload(filePath, posterFile, { contentType: mimeType, upsert: true })
+
+  if (uploadError) throw new Error('Plakaten kunne ikke lastes opp akkurat nå.')
+
+  const { data: { publicUrl } } = db.storage.from(POSTER_BUCKET).getPublicUrl(filePath)
+  const { error: updateError } = await db.from('shows').update({ poster_url: publicUrl }).eq('id', showId)
+  if (updateError) throw new Error(updateError.message)
+
+  const { error: taskError } = await db.from('marketing_tasks').upsert({
+    show_id: showId,
+    task_key: 'upload_poster',
+    label: 'Lineup-plakat lastet opp',
+    is_completed: true,
+  }, { onConflict: 'show_id,task_key', ignoreDuplicates: false })
+  if (taskError) console.warn('[Poster] Marketing task update failed:', taskError)
+
+  revalidatePath(`/admin-app/shows/${showId}`)
+  revalidatePath('/admin-app/marketing')
+
+  return { posterUrl: publicUrl }
 }
 
 async function generatePosterForShow(showId: string) {

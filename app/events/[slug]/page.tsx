@@ -66,7 +66,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     <main className="min-h-screen bg-white text-black">
       <PublicHeader transparent tone="light" />
 
-      <section className="mx-auto max-w-4xl px-4 pb-16 pt-16 md:px-8 md:pt-24">
+      <section className="mx-auto max-w-5xl px-4 pb-16 pt-16 md:px-8 md:pt-24">
         <Link href="/events" className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-medium text-zinc-500 transition-colors hover:text-[#ff6bff]">
           <ArrowLeft className="size-4" /> Alle events
         </Link>
@@ -89,13 +89,6 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                 </div>
               )}
 
-              <div className="absolute left-4 top-4 z-10 grid size-16 place-items-center border border-black bg-white text-center text-black shadow-[2px_2px_0_rgba(0,0,0,0.35)] md:left-5 md:top-5 md:size-20">
-                <div>
-                  <div className="text-3xl font-medium leading-none md:text-4xl">{Number(day)}</div>
-                  <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500 md:text-xs">{month.replace('.', '')}</div>
-                </div>
-              </div>
-
               {ticketWarning && (
                 <span className={`absolute right-4 top-4 z-10 rounded-full border border-black px-4 py-1.5 text-xs font-bold uppercase tracking-[0.22em] shadow-[2px_2px_0_rgba(0,0,0,0.35)] md:right-5 md:top-5 ${soldOut ? 'bg-black text-white' : 'bg-[#ff6bff] text-black'}`}>
                   {ticketWarning}
@@ -109,7 +102,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   {showClub}
                 </div>
               )}
-              <h1 className="text-4xl font-medium leading-tight tracking-normal md:text-5xl lg:text-6xl">{show.title}</h1>
+              <h1 className="text-2xl font-medium leading-tight tracking-normal md:text-3xl lg:text-5xl break-words overflow-wrap-anywhere">{show.title}</h1>
 
               <dl className="divide-y divide-black/10 border-y border-black/10">
                 {showClub && <Info label="Klubb" text={showClub} />}

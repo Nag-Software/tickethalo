@@ -12,11 +12,13 @@ import {
   selectMarketingDesignAction,
   updateShowDetailsAction,
   uploadMarketingDesignAction,
+  uploadShowPosterAction,
 } from '../actions'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
 import { MarketingTemplateUploadButton } from './marketing-template-upload-button'
 import { PosterGenerateButton } from './poster-generate-button'
+import { PosterUploadButton } from './poster-upload-button'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, ShowMarketingDesign } from '@/types/database'
@@ -355,9 +357,12 @@ export default async function ShowDetailPage({
               <div className="rounded-xl border bg-card p-5 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="font-semibold text-sm">Plakat</h2>
-                  <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
-                    Regenerer
-                  </PosterGenerateButton>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <PosterUploadButton showId={show.id} action={uploadShowPosterAction} />
+                    <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
+                      Lag plakat på nytt
+                    </PosterGenerateButton>
+                  </div>
                 </div>
                 <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border bg-muted/20">
                   <Image src={show.poster_url} alt={`Plakat for ${show.title}`} fill sizes="(max-width: 768px) 92vw, 50vw" className="object-contain" />
@@ -440,16 +445,19 @@ export default async function ShowDetailPage({
           <div className="space-y-6">
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-7 items-start">
               <div className="rounded-xl border bg-card p-5 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="font-semibold text-sm">Lineup-plakat</h2>
                     {selectedMarketingDesign && (
                       <p className="mt-0.5 text-xs text-muted-foreground">Bruker {selectedMarketingDesign.label || selectedMarketingDesign.file_name}</p>
                     )}
                   </div>
-                  <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
-                    {show.poster_url ? 'Regenerer' : 'Generer'}
-                  </PosterGenerateButton>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <PosterUploadButton showId={show.id} action={uploadShowPosterAction} />
+                    <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
+                      {show.poster_url ? 'Lag plakat på nytt' : 'Lag plakat'}
+                    </PosterGenerateButton>
+                  </div>
                 </div>
                 {show.poster_url ? (
                   <div className="space-y-2">
@@ -461,8 +469,8 @@ export default async function ShowDetailPage({
                     </a>
                   </div>
                 ) : (
-                  <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] items-center justify-center rounded-lg border border-dashed bg-muted/30 text-sm text-muted-foreground">
-                    {show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet.' : 'Ingen plakat generert ennå.'}
+                  <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
+                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — lag med AI eller last opp egen.'}</p>
                   </div>
                 )}
               </div>
