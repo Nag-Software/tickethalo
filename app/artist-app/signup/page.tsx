@@ -1,5 +1,6 @@
 import { PublicHeader } from '@/components/public/public-header'
 import { ArtistSignupForm } from '@/components/artist/artist-signup-form'
+import { Footer } from '@/components/Footer';
 
 export const metadata = { title: 'Registrer artistprofil — humor.events' }
 
@@ -23,18 +24,6 @@ export default async function ArtistSignupPage({
         />
 
         <PublicHeader transparent tone="light" />
-
-        <div className="relative mx-auto max-w-6xl px-4 pb-8 pt-8 md:px-6 md:pb-10 md:pt-10 lg:px-8">
-          <div className="mb-5 inline-flex border border-zinc-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em]">
-            Portal / humor.events
-          </div>
-          <h1 className="max-w-[760px] text-[clamp(2.75rem,6.8vw,5.6rem)] font-black uppercase leading-[0.82] tracking-[-0.035em]">
-            Registrer komikerprofil
-          </h1>
-          <p className="mt-4 max-w-2xl text-sm font-medium text-zinc-700 md:text-base">
-            Send inn profil, video og kontaktinfo så bookingteamet kan vurdere deg til kommende kvelder hos humor.events.
-          </p>
-        </div>
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-4 py-8 md:px-6 lg:px-8">
@@ -60,6 +49,7 @@ export default async function ArtistSignupPage({
           }
         />
       </section>
+      <Footer />
     </main>
   )
 }

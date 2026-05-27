@@ -61,10 +61,10 @@ export default async function Page() {
       {shows.length > 0 && (
         <section className="px-4 md:px-8 pt-2 pb-4">
           <div className="max-w-6xl mx-auto">
-          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-400 mb-5 animate-fade-in" style={{ animationDelay: '0.7s', animationFillMode: 'both' }}>
+          <p className="hidden sm:block text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-400 mb-5 animate-fade-in" style={{ animationDelay: '0.7s', animationFillMode: 'both' }}>
             Kommende show
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {shows.slice(0, 3).map((show, i) => (
               <div
                 key={show.id}

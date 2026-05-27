@@ -38,7 +38,7 @@ export default async function EventsPage() {
             Artister <ArrowRight className="size-4" />
           </Link>
         </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 lg:col-start-2 gap-5">
           {shows.map((show, index) => <PublicEventCard key={show.id} show={show} priority={index < 3} />)}
         </div>
         {shows.length === 0 && (

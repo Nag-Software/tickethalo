@@ -496,26 +496,26 @@ export async function automateFullbookedShow(showId: string) {
 
   let posterUrl = show.poster_url ?? null
 
-  if (!posterUrl) {
-    const { data: selectedDesign } = show.selected_marketing_design_id
-      ? await admin
-        .from('show_marketing_designs')
-        .select('label, file_url, file_path, file_name, mime_type, file_type')
-        .eq('id', show.selected_marketing_design_id)
-        .eq('show_id', showId)
-        .maybeSingle()
-      : { data: null }
-    const { data: fallbackDesign } = selectedDesign
-      ? { data: null }
-      : await admin
-        .from('show_marketing_designs')
-        .select('label, file_url, file_path, file_name, mime_type, file_type')
-        .eq('show_id', showId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    const posterDesign = selectedDesign ?? fallbackDesign
+  const { data: selectedDesign } = show.selected_marketing_design_id
+    ? await admin
+      .from('show_marketing_designs')
+      .select('label, file_url, file_path, file_name, mime_type, file_type')
+      .eq('id', show.selected_marketing_design_id)
+      .eq('show_id', showId)
+      .maybeSingle()
+    : { data: null }
+  const { data: fallbackDesign } = selectedDesign
+    ? { data: null }
+    : await admin
+      .from('show_marketing_designs')
+      .select('label, file_url, file_path, file_name, mime_type, file_type')
+      .eq('show_id', showId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  const posterDesign = selectedDesign ?? fallbackDesign
 
+  if (posterDesign) {
     posterUrl = await generateShowPoster(showId, {
       title: show.title,
       date: show.date,
@@ -530,15 +530,13 @@ export async function automateFullbookedShow(showId: string) {
           role_name: requirementById.get(spot.show_requirement_id) ?? null,
         }]
       }),
-      designTemplate: posterDesign
-        ? {
-          label: posterDesign.label,
-          fileUrl: posterDesign.file_url,
-          filePath: posterDesign.file_path,
-          fileName: posterDesign.file_name,
-          mimeType: posterDesign.mime_type,
-        }
-        : null,
+      designTemplate: {
+        label: posterDesign.label,
+        fileUrl: posterDesign.file_url,
+        filePath: posterDesign.file_path,
+        fileName: posterDesign.file_name,
+        mimeType: posterDesign.mime_type,
+      },
     })
   }
 

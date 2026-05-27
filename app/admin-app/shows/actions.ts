@@ -1182,6 +1182,10 @@ async function generatePosterForShow(showId: string) {
       .maybeSingle()
   const posterDesign = selectedDesign ?? fallbackDesign
 
+  if (!posterDesign) {
+    throw new Error('Velg eller last opp en template før plakat kan genereres.')
+  }
+
   const posterUrl = await generateShowPoster(showId, {
     title: show.title,
     date: show.date,
@@ -1196,15 +1200,13 @@ async function generatePosterForShow(showId: string) {
         role_name: requirementById.get(spot.show_requirement_id) ?? null,
       }]
     }),
-    designTemplate: posterDesign
-      ? {
-        label: posterDesign.label,
-        fileUrl: posterDesign.file_url,
-        filePath: posterDesign.file_path,
-        fileName: posterDesign.file_name,
-        mimeType: posterDesign.mime_type,
-      }
-      : null,
+    designTemplate: {
+      label: posterDesign.label,
+      fileUrl: posterDesign.file_url,
+      filePath: posterDesign.file_path,
+      fileName: posterDesign.file_name,
+      mimeType: posterDesign.mime_type,
+    },
     throwOnError: true,
   })
 

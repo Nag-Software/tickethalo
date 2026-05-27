@@ -470,7 +470,7 @@ export default async function ShowDetailPage({
                   </div>
                 ) : (
                   <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
-                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — lag med AI eller last opp egen.'}</p>
+                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — lag automatisk fra template eller last opp egen.'}</p>
                   </div>
                 )}
               </div>
@@ -478,7 +478,7 @@ export default async function ShowDetailPage({
               <div className="rounded-xl border bg-card p-5 min-h-[640px] flex flex-col gap-4">
                 <div className="space-y-1">
                   <h2 className="font-semibold text-sm">Plakat templates</h2>
-                  <p className="text-xs text-muted-foreground">Design AI-en skal jobbe ut fra.</p>
+                  <p className="text-xs text-muted-foreground">Designet brukes som uendret base ved automatisk plakatbygging.</p>
                 </div>
 
                 <div className="flex-1 space-y-3">
