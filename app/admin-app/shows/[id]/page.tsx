@@ -470,7 +470,7 @@ export default async function ShowDetailPage({
                   </div>
                 ) : (
                   <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
-                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — lag automatisk fra template eller last opp egen.'}</p>
+                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — lag automatisk (med eller uten template) eller last opp egen.'}</p>
                   </div>
                 )}
               </div>

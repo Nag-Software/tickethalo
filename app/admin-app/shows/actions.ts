@@ -1081,11 +1081,16 @@ export async function updateSpotAction(formData: FormData) {
 
 export async function generatePosterAction(formData: FormData) {
   const showId = formData.get('show_id') as string
+  const isRegeneration = formData.get('is_regeneration') === 'true'
+  const changeRequest = optionalText(formData.get('change_request'))
 
   if (!showId) throw new Error('Mangler show-id for plakatgenerering.')
   await assertShowAccess(showId)
 
-  const posterUrl = await generatePosterForShow(showId)
+  const posterUrl = await generatePosterForShow(showId, {
+    isRegeneration,
+    changeRequest,
+  })
   revalidatePath(`/admin-app/shows/${showId}`)
   revalidatePath('/admin-app/marketing')
 
@@ -1139,7 +1144,13 @@ export async function uploadShowPosterAction(formData: FormData) {
   return { posterUrl: publicUrl }
 }
 
-async function generatePosterForShow(showId: string) {
+async function generatePosterForShow(
+  showId: string,
+  options?: {
+    isRegeneration?: boolean
+    changeRequest?: string | null
+  }
+) {
   const db = createAdminClient()
 
   const [{ data: show }, { data: spots }] = await Promise.all([
@@ -1181,10 +1192,15 @@ async function generatePosterForShow(showId: string) {
       .limit(1)
       .maybeSingle()
   const posterDesign = selectedDesign ?? fallbackDesign
-
-  if (!posterDesign) {
-    throw new Error('Velg eller last opp en template før plakat kan genereres.')
-  }
+  const designTemplate = posterDesign
+    ? {
+      label: posterDesign.label,
+      fileUrl: posterDesign.file_url,
+      filePath: posterDesign.file_path,
+      fileName: posterDesign.file_name,
+      mimeType: posterDesign.mime_type,
+    }
+    : undefined
 
   const posterUrl = await generateShowPoster(showId, {
     title: show.title,
@@ -1200,13 +1216,9 @@ async function generatePosterForShow(showId: string) {
         role_name: requirementById.get(spot.show_requirement_id) ?? null,
       }]
     }),
-    designTemplate: {
-      label: posterDesign.label,
-      fileUrl: posterDesign.file_url,
-      filePath: posterDesign.file_path,
-      fileName: posterDesign.file_name,
-      mimeType: posterDesign.mime_type,
-    },
+    designTemplate,
+    changeRequest: options?.changeRequest,
+    forceOpenAI: options?.isRegeneration,
     throwOnError: true,
   })
 

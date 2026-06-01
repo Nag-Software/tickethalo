@@ -58,6 +58,7 @@ type PosterPromptContext = {
   artistReferenceStartIndex: number
   artistReferenceEndIndex: number
   referencePackage: PosterReferencePackage
+  changeRequest: string | null
 }
 
 type PosterFramePlan = {
@@ -106,6 +107,7 @@ function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
     artistReferenceStartIndex,
     artistReferenceEndIndex,
     referencePackage,
+    changeRequest,
   } = ctx
 
   const artistCount = sorted.length
@@ -145,6 +147,14 @@ function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
     `- Hard limit: max 6 text elements on the entire poster (title, names, date, venue, footer brand).`,
     `- Forbidden: paragraphs, ticket prices, URLs, QR codes, sponsor invented text, "kveld med", "presenterer", marketing slogans.`,
   ]
+
+  const changeRequestBlock = changeRequest
+    ? [
+      `BRUKERØNSKE FOR NY VERSJON (høy prioritet):`,
+      `- ${changeRequest}`,
+      `- Gjør synlige justeringer i denne retningen, men behold korrekt lineup-identitet og eventfakta.`,
+    ]
+    : null
 
   const lineupAdaptationBlock = designReference
     ? [
@@ -215,6 +225,7 @@ function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
 
   return [
     ...templateModeBlock,
+    ...(changeRequestBlock ?? []),
     ``,
     `SHOW DETAILS (source of truth for all text):`,
     `- Title: "${title}"`,
@@ -248,6 +259,8 @@ export async function generateShowPoster(showId: string, opts: {
   venue: string
   artists: PosterArtistInput[]
   designTemplate?: PosterDesignTemplate | null
+  changeRequest?: string | null
+  forceOpenAI?: boolean
   throwOnError?: boolean
 }): Promise<string | null> {
   const admin = createAdminClient()
@@ -257,38 +270,51 @@ export async function generateShowPoster(showId: string, opts: {
     const headliners = artists.filter(a => isHeadlinerRole(a.roleName))
     const supporting = artists.filter(a => !isHeadlinerRole(a.roleName))
     const sorted = [...headliners, ...supporting]
+    const changeRequest = normalizeChangeRequest(opts.changeRequest)
+    const shouldForceOpenAI = Boolean(opts.forceOpenAI || changeRequest)
 
-    if (opts.designTemplate) {
-      const renderedPoster = await renderTemplatePosterWithAutoLayout({
-        artists: sorted,
-        template: opts.designTemplate,
-      })
+    if (opts.designTemplate && !shouldForceOpenAI) {
+      try {
+        const renderedPoster = await renderTemplatePosterWithAutoLayout({
+          artists: sorted,
+          template: opts.designTemplate,
+        })
 
-      const fileName = `${showId}/poster-${Date.now()}.png`
-      const { error: uploadError } = await admin.storage
-        .from('generated-posters')
-        .upload(fileName, renderedPoster, { contentType: 'image/png', upsert: true })
+        const fileName = `${showId}/poster-${Date.now()}.png`
+        const { error: uploadError } = await admin.storage
+          .from('generated-posters')
+          .upload(fileName, renderedPoster, { contentType: 'image/png', upsert: true })
 
-      if (uploadError) {
-        throw new Error(`Kunne ikke laste opp plakat: ${uploadError.message}`)
+        if (uploadError) {
+          throw new Error(`Kunne ikke laste opp plakat: ${uploadError.message}`)
+        }
+
+        const { data: { publicUrl } } = admin.storage
+          .from('generated-posters')
+          .getPublicUrl(fileName)
+
+        const { error: updateError } = await admin.from('shows').update({ poster_url: publicUrl }).eq('id', showId)
+        if (updateError) {
+          throw new Error(`Kunne ikke lagre plakat på showet: ${updateError.message}`)
+        }
+
+        return publicUrl
+      } catch (templateError) {
+        console.warn('[Poster] Template auto-layout failed, falling back to OpenAI generation:', templateError)
       }
-
-      const { data: { publicUrl } } = admin.storage
-        .from('generated-posters')
-        .getPublicUrl(fileName)
-
-      const { error: updateError } = await admin.from('shows').update({ poster_url: publicUrl }).eq('id', showId)
-      if (updateError) {
-        throw new Error(`Kunne ikke lagre plakat på showet: ${updateError.message}`)
-      }
-
-      return publicUrl
     }
 
     const dateText = formatPosterDate(opts.date)
     const timeText = opts.startTime ? `kl. ${opts.startTime.slice(0, 5)}` : ''
     const venue = opts.venue || 'humor.events'
-    const designReference = await buildPosterDesignReference(opts.designTemplate)
+    let designReference: PosterDesignReference | null = null
+    if (opts.designTemplate) {
+      try {
+        designReference = await buildPosterDesignReference(opts.designTemplate)
+      } catch (referenceError) {
+        console.warn('[Poster] Could not prepare template reference, continuing without template context:', referenceError)
+      }
+    }
     const posterPlan = designReference ? null : createPosterPlan(showId, opts.title, opts.date, sorted.length)
     const identityMapIndex = designReference ? 2 : 1
     const artistReferenceStartIndex = identityMapIndex + 1
@@ -316,6 +342,7 @@ export async function generateShowPoster(showId: string, opts: {
       artistReferenceStartIndex,
       artistReferenceEndIndex,
       referencePackage,
+      changeRequest,
     })
 
     const openai = getOpenAI()
@@ -1450,6 +1477,12 @@ function extractJsonObject(text: string): string | null {
 function clampNumber(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, value))
+}
+
+function normalizeChangeRequest(input: string | null | undefined) {
+  const normalized = String(input ?? '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return null
+  return normalized.slice(0, 400)
 }
 
 function normalizePosterArtists(input: PosterArtistInput[]): PosterArtist[] {
