@@ -11,7 +11,7 @@ import { ToastActionForm } from '@/components/toast-action-form'
 import { Button } from '@/components/ui/button'
 import { startCheckoutAction } from '@/app/events/actions'
 import type { PublicShow } from '@/lib/public-events'
-import { formatShortDate, formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-events'
+import { formatShortDate, formatShowTime, formatTicketPrice, getPublicShowHref, remainingTickets, ticketFillPercent } from '@/lib/public-events'
 import { nb } from 'date-fns/locale'
 
 function formatDateLabel(d: Date) {
@@ -81,7 +81,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
         </div>
 
         {cityOptions.length > 1 && (
-          <div className="mb-6 flex flex-wrap gap-2 animate-fade-in" style={{ animationDelay: '0.85s', animationFillMode: 'both' }}>
+          <div className="mb-6 hidden sm:flex flex-wrap gap-2 animate-fade-in" style={{ animationDelay: '0.85s', animationFillMode: 'both' }}>
             {cityOptions.map((option) => {
               const active = option === city
               const count = option === 'Alle'
@@ -118,7 +118,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
           </div>
 
           {/* Event grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-5 lg:col-start-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 2xl:grid-cols-5 lg:col-start-2 gap-5">
             {filtered.length === 0 ? (
               <div className="col-span-full text-center py-12">
                 {date
@@ -149,7 +149,7 @@ function EventCard({ show }: { show: PublicShow }) {
   const fillPercent = ticketFillPercent(show)
   const lowStock = remaining !== null && remaining > 0 && (remaining <= 10 || fillPercent >= 80)
   const [day, month = ''] = formatShortDate(show.date).split(' ')
-  const eventHref = `/events/${show.slug ?? show.id}`
+  const eventHref = getPublicShowHref(show)
   const showLocation = show.venue_name ?? show.venue_address ?? 'Sted kommer'
   const statusLabel = soldOut ? 'Utsolgt' : lowStock ? 'Få igjen' : null
 
@@ -184,7 +184,7 @@ function EventCard({ show }: { show: PublicShow }) {
       </Link>
 
       <div className="flex flex-1 flex-col gap-7 bg-white p-4 sm:p-5">
-        <div className="grid gap-3">
+        <div className="grid gap-0">
           <div className="flex min-h-8 items-start justify-between gap-3">
             <span className="text-sm font-medium uppercase tracking-[0.22em] text-zinc-500">{formatShowTime(show)}</span>
             {statusLabel && (
@@ -197,11 +197,6 @@ function EventCard({ show }: { show: PublicShow }) {
             )}
           </div>
           <div>
-            {show.clubName && (
-              <div className="mb-2 inline-flex border border-black px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-700">
-                {show.clubName}
-              </div>
-            )}
             <h3 className="text-xl font-medium leading-tight tracking-normal">{show.title}</h3>
             <p className="mt-2 text-sm leading-relaxed text-zinc-500">{[show.clubCity, showLocation, formatTicketPrice(show)].filter(Boolean).join(' · ')}</p>
           </div>
@@ -214,6 +209,7 @@ function EventCard({ show }: { show: PublicShow }) {
           <ToastActionForm action={startCheckoutAction} className="w-full">
             <input type="hidden" name="show_id" value={show.id} />
             <input type="hidden" name="slug" value={show.slug ?? show.id} />
+            <input type="hidden" name="club_slug" value={show.clubSlug ?? ''} />
             <Button type="submit" className="h-11 w-full rounded-none border border-black bg-black text-sm font-medium text-white hover:border-[#ff6bff] hover:bg-[#ff6bff] hover:text-black disabled:opacity-45" disabled={soldOut}>
               <Ticket className="size-5" /> {soldOut ? 'Utsolgt' : 'Kjøp'}
             </Button>

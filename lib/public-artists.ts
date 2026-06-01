@@ -18,6 +18,7 @@ export type PublicArtistShow = Pick<Show,
   | 'id'
   | 'title'
   | 'slug'
+  | 'club_id'
   | 'date'
   | 'start_time'
   | 'end_time'
@@ -25,6 +26,7 @@ export type PublicArtistShow = Pick<Show,
   | 'venue_address'
   | 'poster_url'
 > & {
+  clubSlug: string | null
   role_name: string | null
 }
 
@@ -69,15 +71,21 @@ export async function getPublicArtistShows(artistId: string): Promise<PublicArti
     showIds.length
       ? db
           .from('shows')
-          .select('id, title, slug, date, start_time, end_time, venue_name, venue_address, poster_url')
+          .select('id, title, slug, club_id, date, start_time, end_time, venue_name, venue_address, poster_url')
           .in('id', showIds)
           .eq('status', 'published')
           .order('date', { ascending: true })
-      : Promise.resolve({ data: [] as Array<Pick<Show, 'id' | 'title' | 'slug' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'poster_url'>> }),
+      : Promise.resolve({ data: [] as Array<Pick<Show, 'id' | 'title' | 'slug' | 'club_id' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'poster_url'>> }),
     requirementIds.length
       ? db.from('show_requirements').select('id, role_name').in('id', requirementIds)
       : Promise.resolve({ data: [] as Array<{ id: string; role_name: string }> }),
   ])
+
+  const clubIds = [...new Set((shows ?? []).map((show) => show.club_id).filter((clubId): clubId is string => Boolean(clubId)))]
+  const { data: clubs } = clubIds.length > 0
+    ? await db.from('clubs').select('id, slug').in('id', clubIds)
+    : { data: [] as Array<{ id: string; slug: string }> }
+  const clubSlugById = new Map((clubs ?? []).map((club) => [club.id, club.slug]))
 
   const roleByShowId = new Map(
     (spots ?? []).map((spot) => [spot.show_id, roles?.find((role) => role.id === spot.show_requirement_id)?.role_name ?? null])
@@ -85,6 +93,7 @@ export async function getPublicArtistShows(artistId: string): Promise<PublicArti
 
   return (shows ?? []).map((show) => ({
     ...show,
+    clubSlug: show.club_id ? clubSlugById.get(show.club_id) ?? null : null,
     role_name: roleByShowId.get(show.id) ?? null,
   }))
 }

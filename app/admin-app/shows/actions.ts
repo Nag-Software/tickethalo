@@ -596,6 +596,17 @@ export async function sendFallbackOffersAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
+export async function updatePosterModeAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  const mode = formData.get('poster_mode') as string
+  if (!showId || !['framed', 'ai_generated'].includes(mode)) throw new Error('Ugyldig poster-modus.')
+  await assertShowAccess(showId)
+  const db = createAdminClient()
+  const { error } = await db.from('shows').update({ poster_mode: mode as 'framed' | 'ai_generated' }).eq('id', showId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/admin-app/shows/${showId}?tab=marketing`)
+}
+
 export async function updateShowDetailsAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
@@ -1272,4 +1283,38 @@ export async function deleteShowAction(formData: FormData) {
   await db.from('shows').delete().eq('id', showId)
   revalidatePath('/admin-app/shows')
   redirect('/admin-app/shows')
+}
+
+export async function savePerformanceReviewAction(formData: FormData) {
+  const confirmedSpotId = formData.get('confirmed_spot_id') as string
+  const artistId = formData.get('artist_id') as string
+  const showId = formData.get('show_id') as string
+  const clubId = (formData.get('club_id') as string) || null
+  const scoreRaw = formData.get('score') as string | null
+  const score = scoreRaw ? Number(scoreRaw) : null
+  const notes = (formData.get('notes') as string | null) || null
+
+  if (!confirmedSpotId || !artistId || !showId || !score) {
+    throw new Error('Mangler nødvendige felter for vurdering.')
+  }
+
+  await assertShowAccess(showId)
+
+  const db = createAdminClient()
+  const { error } = await db.from('artist_performance_reviews').upsert(
+    {
+      confirmed_spot_id: confirmedSpotId,
+      artist_id: artistId,
+      show_id: showId,
+      club_id: clubId,
+      score,
+      notes,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'confirmed_spot_id' }
+  )
+
+  if (error) throw new Error(error.message)
+
+  revalidatePath(`/admin-app/shows/${showId}`)
 }

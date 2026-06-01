@@ -19,16 +19,15 @@ const Logo = () => (
   </svg>
 )
 
-const navLinks = [
-  { href: '/events', label: 'EVENTER' },
-  { href: '/artists', label: 'KOMIKERE' },
-  { href: '/artist-app/login', label: 'PORTAL' },
-]
-
-export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boolean; tone?: 'dark' | 'light' }) {
+export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: { transparent?: boolean; tone?: 'dark' | 'light'; eventsHref?: string }) {
   void transparent
   void tone
   const [open, setOpen] = useState(false)
+  const navLinks = [
+    //{ href: eventsHref, label: 'EVENTER' },
+    //{ href: '/artists', label: 'KOMIKERE' },
+    { href: '/artist-app/login', label: 'KOMIKERPORTAL' },
+  ]
 
   return (
     <>

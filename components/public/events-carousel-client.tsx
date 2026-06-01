@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import type { PublicShow } from '@/lib/public-events'
+import { getPublicShowHref, type PublicShow } from '@/lib/public-events'
 
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 
@@ -16,7 +16,7 @@ function formatCarouselTime(show: Pick<PublicShow, 'start_time'>) {
 }
 
 interface Props {
-  shows: Pick<PublicShow, 'id' | 'title' | 'slug' | 'date' | 'start_time' | 'poster_url' | 'venue_name' | 'venue_address'>[]
+  shows: Pick<PublicShow, 'id' | 'title' | 'slug' | 'date' | 'start_time' | 'poster_url' | 'venue_name' | 'venue_address' | 'clubSlug'>[]
 }
 
 export function EventsCarouselClient({ shows }: Props) {
@@ -31,7 +31,7 @@ export function EventsCarouselClient({ shows }: Props) {
           {multiplied.map((show, index) => (
             <Link
               key={`${show.id}-${index}`}
-              href={`/events/${show.slug ?? show.id}`}
+              href={getPublicShowHref(show)}
               className="relative flex-shrink-0 w-auto min-h-[400px] aspect-[3/4] max-h-[500px] overflow-hidden animate-fade-in block"
               style={{ animationDelay: `${index * 0.1}s`, animationFillMode: 'both' }}
             >

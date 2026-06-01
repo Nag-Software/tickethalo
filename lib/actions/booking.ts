@@ -199,13 +199,17 @@ export async function bookShow(showId: string) {
 
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, status')
+    .select('id, title, date, status, start_time, venue_name, venue_address, club_id, currency')
     .eq('id', showId)
     .single()
   if (showError || !show) throw new Error('Show not found')
   if (!ACTIVE_BOOKING_STATUSES.includes(show.status as (typeof ACTIVE_BOOKING_STATUSES)[number])) {
     return { offersCreated, candidatesMatched }
   }
+
+  const clubName = show.club_id
+    ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? null
+    : null
 
   const { data: requirements, error: reqError } = await admin
     .from('show_requirements')
@@ -384,6 +388,10 @@ export async function bookShow(showId: string) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   for (const { artistId, req } of assignments) {
     const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
+    const feeAmountOere = req.compensation_type === 'fixed' && req.compensation_amount
+      ? Math.round(Number(req.compensation_amount) * 100)
+      : null
+    const currency = show.currency ?? 'NOK'
     const { data: offer, error: offerError } = await admin
       .from('booking_offers')
       .insert({
@@ -393,6 +401,7 @@ export async function bookShow(showId: string) {
         status: 'sent',
         sent_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        ...(feeAmountOere ? { fee_amount: feeAmountOere, currency } : {}),
       })
       .select('token')
       .single()
@@ -405,6 +414,11 @@ export async function bookShow(showId: string) {
       full_name: artist.full_name,
       show_title: show.title,
       show_date: show.date,
+      show_start_time: show.start_time,
+      club_name: clubName,
+      venue: show.venue_name ?? show.venue_address,
+      fee_amount: feeAmountOere,
+      currency,
       token: offer.token,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,
     })
@@ -475,7 +489,7 @@ export async function automateFullbookedShow(showId: string) {
 
   const { data: show } = await admin
     .from('shows')
-    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id')
+    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, poster_mode')
     .eq('id', showId)
     .single()
 
@@ -515,30 +529,34 @@ export async function automateFullbookedShow(showId: string) {
       .maybeSingle()
   const posterDesign = selectedDesign ?? fallbackDesign
 
-  if (posterDesign) {
-    posterUrl = await generateShowPoster(showId, {
-      title: show.title,
-      date: show.date,
-      startTime: show.start_time,
-      venue: show.venue_name ?? show.venue_address ?? '',
-      artists: (spots ?? []).flatMap((spot) => {
-        const artist = artistById.get(spot.artist_id)
-        if (!artist) return []
-        return [{
-          name: artist.stage_name ?? artist.full_name,
-          profile_image_url: artist.profile_image_url,
-          role_name: requirementById.get(spot.show_requirement_id) ?? null,
-        }]
-      }),
-      designTemplate: {
+  const useAI = (show.poster_mode ?? 'ai_generated') === 'ai_generated'
+  const designTemplate = (!useAI && posterDesign)
+    ? {
         label: posterDesign.label,
         fileUrl: posterDesign.file_url,
         filePath: posterDesign.file_path,
         fileName: posterDesign.file_name,
         mimeType: posterDesign.mime_type,
-      },
-    })
-  }
+      }
+    : null
+
+  posterUrl = await generateShowPoster(showId, {
+    title: show.title,
+    date: show.date,
+    startTime: show.start_time,
+    venue: show.venue_name ?? show.venue_address ?? '',
+    artists: (spots ?? []).flatMap((spot) => {
+      const artist = artistById.get(spot.artist_id)
+      if (!artist) return []
+      return [{
+        name: artist.stage_name ?? artist.full_name,
+        profile_image_url: artist.profile_image_url,
+        role_name: requirementById.get(spot.show_requirement_id) ?? null,
+      }]
+    }),
+    designTemplate,
+    forceOpenAI: useAI,
+  }) ?? show.poster_url ?? null
 
   const alreadyPublished = Boolean(show.published_at)
   const publishedAt = show.published_at ?? new Date().toISOString()
@@ -737,11 +755,17 @@ export async function createManualBookingOffer(formData: FormData) {
   const admin = createAdminClient()
 
   const [{ data: show }, { data: artist }] = await Promise.all([
-    admin.from('shows').select('id, title, date').eq('id', showId).single(),
+    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, club_id').eq('id', showId).single(),
     admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
   ])
 
   if (!show || !artist) throw new Error('Show eller artist ikke funnet')
+
+  const clubName = show.club_id
+    ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? null
+    : null
+
+  const feeAmountOere = feeRaw ? Math.round(parseFloat(feeRaw) * 100) : null
 
   const { data: offer, error } = await admin
     .from('booking_offers')
@@ -752,7 +776,7 @@ export async function createManualBookingOffer(formData: FormData) {
       status: 'sent',
       sent_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      ...(feeRaw ? { fee_amount: Math.round(parseFloat(feeRaw) * 100), currency: 'NOK' } : {}),
+      ...(feeRaw ? { fee_amount: feeAmountOere, currency: 'NOK' } : {}),
     })
     .select('token')
     .single()
@@ -764,6 +788,11 @@ export async function createManualBookingOffer(formData: FormData) {
     full_name: artist.full_name,
     show_title: show.title,
     show_date: show.date,
+    show_start_time: show.start_time,
+    club_name: clubName,
+    venue: show.venue_name ?? show.venue_address,
+    fee_amount: feeAmountOere,
+    currency: 'NOK',
     token: offer.token,
     response_url: `${publicAppUrl()}/booking-offer/${offer.token}`,
   })

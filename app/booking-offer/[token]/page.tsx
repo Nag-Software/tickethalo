@@ -24,7 +24,7 @@ export default async function PublicBookingOfferPage({
 
   const [{ data: show }, { data: req }] = await Promise.all([
     db.from('shows').select('title, date, start_time, venue_name, venue_address').eq('id', offer.show_id).single(),
-    db.from('show_requirements').select('role_name').eq('id', offer.show_requirement_id).single(),
+    db.from('show_requirements').select('role_name, compensation_type, compensation_amount, compensation_percent').eq('id', offer.show_requirement_id).single(),
   ])
 
   const formatDate = (value: string) =>
@@ -33,9 +33,18 @@ export default async function PublicBookingOfferPage({
     )
 
   const formatMoney = (amount: number | null, currency: string) => {
-    if (amount == null) return 'Ikke satt'
-    return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: currency || 'NOK', maximumFractionDigits: 0 }).format(amount)
+    if (amount == null) return null
+    return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: currency || 'NOK', maximumFractionDigits: 0 }).format(amount / 100)
   }
+
+  const honorarLabel = (() => {
+    if (offer.fee_amount != null) return formatMoney(offer.fee_amount, offer.currency)
+    if (req?.compensation_type === 'percent' && req.compensation_percent != null) return `${req.compensation_percent}% av billettinntekter`
+    if (req?.compensation_type === 'fixed' && req.compensation_amount != null) {
+      return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: offer.currency || 'NOK', maximumFractionDigits: 0 }).format(Number(req.compensation_amount))
+    }
+    return 'Ikke satt'
+  })()
 
   if (result === 'accepted') {
     return (
@@ -92,16 +101,15 @@ export default async function PublicBookingOfferPage({
   const canRespond = offer.status === 'sent' && !isExpired
 
   return (
-    <main className="min-h-screen bg-[#f3ead9] text-zinc-950">
+    <main className="min-h-screen w-full bg-[#f3ead9] text-zinc-950">
       <PublicHeader transparent tone="light" />
-      <section className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-[0.85fr_1fr] md:px-6 lg:px-8">
-        <div className="md:pt-8">
-          <div className="mb-5 inline-flex border border-zinc-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em]">Booking</div>
-          <h1 className="text-[clamp(3rem,7vw,6rem)] font-black uppercase leading-[0.82] tracking-[-0.04em]">Bookingtilbud</h1>
+      <section className="mx-auto mt-15 sm:mt-5 w-full grid max-w-xl gap-8 px-4 py-12 md:px-6 lg:px-8">
+        <div className="md:pt-8 mx-auto">
+          <h1 className="text-4xl sm:text-center font-black uppercase leading-[0.82] tracking-[-0.04em]">Bookingtilbud</h1>
           <p className="mt-5 max-w-md text-base font-medium text-zinc-700">Du har mottatt et tilbud om å opptre. Svar på tilbudet under.</p>
         </div>
 
-        <div className="w-full max-w-xl space-y-5">
+        <div className="w-full mx-auto space-y-5">
         <div className="border-2 border-zinc-950 bg-[#fbf7ec] shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
           <div className="border-b-2 border-zinc-950 px-6 py-4">
             <h2 className="text-2xl font-black tracking-tight">{show?.title ?? 'Show'}</h2>
@@ -111,7 +119,7 @@ export default async function PublicBookingOfferPage({
           </div>
           <div className="p-6 grid grid-cols-2 gap-4">
             <InfoCell label="Rolle" value={req?.role_name ?? 'Ikke satt'} />
-            <InfoCell label="Honorar" value={formatMoney(offer.fee_amount, offer.currency)} />
+            <InfoCell label="Honorar" value={honorarLabel ?? 'Ikke satt'} />
             <InfoCell label="Tidspunkt" value={show?.start_time?.slice(0, 5) ?? 'Kommer'} />
             <InfoCell label="Sted" value={show?.venue_name ?? show?.venue_address ?? 'Ikke satt'} />
           </div>

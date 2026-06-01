@@ -15,10 +15,11 @@ export default async function CheckoutSuccessPage({
   const { session_id } = await searchParams
   const session = session_id ? await getSession(session_id) : null
   const completion = session ? await finalizeCheckoutSession(session) : null
+  const clubHomeHref = session?.metadata?.club_slug ? `/${session.metadata.club_slug}` : '/'
 
   return (
     <main className="min-h-svh bg-[#f3ead9] text-zinc-950">
-      <PublicHeader transparent tone="light" />
+      <PublicHeader transparent tone="light" eventsHref={clubHomeHref} />
       <section className="mx-auto flex max-w-6xl items-center justify-center px-4 py-16 md:px-6 lg:px-8">
       <div className="w-full max-w-lg border-2 border-zinc-950 bg-[#fbf7ec] p-8 text-center shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
         <CheckCircle2 className="mx-auto size-12 text-[#b83224]" />
@@ -41,7 +42,7 @@ export default async function CheckoutSuccessPage({
           </div>
         )}
         <div className="mt-7 flex justify-center gap-2">
-          <Button asChild className="rounded-none border-2 border-zinc-950 bg-[#b83224] font-bold text-white hover:bg-[#9f2d21]"><Link href="/events">Se flere events</Link></Button>
+          <Button asChild className="rounded-none border-2 border-zinc-950 bg-[#b83224] font-bold text-white hover:bg-[#9f2d21]"><Link href={clubHomeHref}>Tilbake til klubben</Link></Button>
           <Button asChild variant="outline" className="rounded-none border-2 border-zinc-950 bg-transparent font-bold hover:bg-zinc-950 hover:text-white"><Link href="/">Forsiden</Link></Button>
         </div>
       </div>

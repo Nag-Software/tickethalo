@@ -16,8 +16,6 @@ export const dynamic = 'force-dynamic'
 
 export default async function ArtistsPage() {
   const artists = await getPublicArtists()
-  const highEnergy = artists.filter((artist) => artist.admin_energy_level === 'high').length
-  const languages = new Set(artists.map((artist) => artist.language).filter(Boolean)).size
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -38,7 +36,7 @@ export default async function ArtistsPage() {
       <section className="mx-auto max-w-6xl px-4 py-10 md:px-6 lg:px-8">
         <div className="mb-5 flex items-end justify-between gap-4">
           <h2 className="text-2xl font-medium">Alle artister</h2>
-          <Link href="/events" className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-[#ff6bff]">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-[#ff6bff]">
             Events <ArrowRight className="size-4" />
           </Link>
         </div>

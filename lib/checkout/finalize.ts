@@ -29,7 +29,8 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
   const showId = session.metadata?.show_id
 
   if (!showId) return { result: 'missing_show' }
-  if (session.payment_status && session.payment_status !== 'paid') return { result: 'unpaid' }
+  // 'no_payment_required' is the status for free (0-amount) Stripe checkout sessions
+  if (session.payment_status && session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') return { result: 'unpaid' }
 
   const buyerEmail = session.customer_details?.email ?? session.customer_email ?? ''
   const buyerName = session.customer_details?.name ?? ''

@@ -107,6 +107,7 @@ export type Show = {
   ticket_url: string | null
   poster_url: string | null
   selected_marketing_design_id: string | null
+  poster_mode: 'framed' | 'ai_generated'
   status: ShowStatus
   stripe_product_id: string | null
   stripe_price_id: string | null
@@ -260,6 +261,30 @@ export type ShowArtistBookingExclusion = {
   created_at: string
 }
 
+export type ArtistClubScore = {
+  id: string
+  artist_id: string
+  club_id: string
+  approved: boolean
+  score: number | null
+  notes: string | null
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ArtistPerformanceReview = {
+  id: string
+  confirmed_spot_id: string
+  artist_id: string
+  show_id: string
+  club_id: string | null
+  score: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 // ─────────────────────────────────────────────────────────────
 // Supabase Database generic type (supabase-js v2 format)
 // Fields with DB defaults are optional in Insert, all optional in Update.
@@ -338,6 +363,7 @@ export type Database = {
           ticket_url?: string | null
           poster_url?: string | null
           selected_marketing_design_id?: string | null
+          poster_mode?: 'framed' | 'ai_generated'
           status?: ShowStatus
           stripe_product_id?: string | null
           stripe_price_id?: string | null
@@ -565,6 +591,38 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ClubMembership>
+        Relationships: []
+      }
+      artist_club_scores: {
+        Row: ArtistClubScore
+        Insert: {
+          id?: string
+          artist_id: string
+          club_id: string
+          approved?: boolean
+          score?: number | null
+          notes?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<ArtistClubScore, 'id' | 'artist_id' | 'club_id' | 'created_at'>>
+        Relationships: []
+      }
+      artist_performance_reviews: {
+        Row: ArtistPerformanceReview
+        Insert: {
+          id?: string
+          confirmed_spot_id: string
+          artist_id: string
+          show_id: string
+          club_id?: string | null
+          score: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<ArtistPerformanceReview, 'id' | 'confirmed_spot_id' | 'artist_id' | 'show_id' | 'created_at'>>
         Relationships: []
       }
     }

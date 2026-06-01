@@ -9,7 +9,9 @@ import {
   deleteMarketingDesignAction,
   deleteShowAction,
   generatePosterAction,
+  savePerformanceReviewAction,
   selectMarketingDesignAction,
+  updatePosterModeAction,
   updateShowDetailsAction,
   uploadMarketingDesignAction,
   uploadShowPosterAction,
@@ -79,7 +81,7 @@ export default async function ShowDetailPage({
   const lineupArtistIds = [...new Set((lineup ?? []).map(s => s.artist_id))]
   const allArtistIds = [...new Set([...offerArtistIds, ...lineupArtistIds])]
 
-  const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }] = await Promise.all([
+  const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }, { data: performanceReviews }] = await Promise.all([
     shouldLoadRelatedArtists && allArtistIds.length
       ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_score, admin_energy_level').in('id', allArtistIds)
       : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }> }),
@@ -94,11 +96,22 @@ export default async function ShowDetailPage({
     shouldLoadSelectableArtists
       ? db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', id)
       : Promise.resolve({ data: [] as Array<{ artist_id: string }> }),
+    db.from('artist_performance_reviews').select('*').eq('show_id', id),
   ])
   const artistMap = Object.fromEntries((artistRows ?? []).map(a => [a.id, a]))
+  const performanceReviewMap = Object.fromEntries((performanceReviews ?? []).map(r => [r.confirmed_spot_id, r]))
 
   // Compute fill status per requirement
   const activeLineup = (lineup ?? []).filter(s => ['confirmed', 'completed', 'paid'].includes(s.status))
+
+  // Ensure artistMap covers lineup artists (needed for performance reviews on overview tab)
+  if (tab === 'overview' && activeLineup.length > 0) {
+    const missingIds = activeLineup.map(s => s.artist_id).filter(aid => !artistMap[aid])
+    if (missingIds.length > 0) {
+      const { data: extra } = await db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_score, admin_energy_level').in('id', missingIds)
+      for (const a of (extra ?? [])) artistMap[a.id] = a
+    }
+  }
   const reqFillStatus = (requirements ?? []).map(r => {
     const filled = activeLineup.filter(s => s.show_requirement_id === r.id).length
     const pendingOffers = (offers ?? []).filter(o => o.show_requirement_id === r.id && o.status === 'sent').length
@@ -369,6 +382,81 @@ export default async function ShowDetailPage({
                 </div>
               </div>
             )}
+
+            {/* ── Etter-show vurderinger ── */}
+            {activeLineup.length > 0 && (
+              <section className="rounded-xl border bg-card p-5 space-y-3">
+                <h2 className="font-semibold text-sm">Etter-show vurderinger</h2>
+                <div className="divide-y">
+                  {activeLineup.map((spot) => {
+                    const artist = artistMap[spot.artist_id]
+                    const existing = performanceReviewMap[spot.id]
+                    const name = artist?.stage_name ?? artist?.full_name ?? spot.artist_id
+                    const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                    const role = (requirements ?? []).find(r => r.id === spot.show_requirement_id)?.role_name
+                    return (
+                      <ToastActionForm
+                        key={spot.id}
+                        action={savePerformanceReviewAction}
+                        className="py-4 first:pt-0 last:pb-0 space-y-3"
+                        successMessage="Vurdering lagret."
+                      >
+                        <input type="hidden" name="confirmed_spot_id" value={spot.id} />
+                        <input type="hidden" name="artist_id" value={spot.artist_id} />
+                        <input type="hidden" name="show_id" value={show.id} />
+                        {show.club_id && <input type="hidden" name="club_id" value={show.club_id} />}
+
+                        <div className="flex items-center gap-3">
+                          {artist?.profile_image_url ? (
+                            <Image
+                              src={artist.profile_image_url}
+                              alt={name}
+                              width={36}
+                              height={36}
+                              className="rounded-full object-cover size-9 shrink-0"
+                            />
+                          ) : (
+                            <div className="size-9 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground shrink-0">
+                              {initials}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium leading-tight truncate">{name}</p>
+                            {role && <p className="text-[11px] text-muted-foreground">{role}</p>}
+                          </div>
+                          {existing?.score && (
+                            <span className="text-xs font-bold tabular-nums text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full shrink-0">{existing.score}/10</span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                            <label key={n} className="cursor-pointer">
+                              <input type="radio" name="score" value={n} defaultChecked={existing?.score === n} className="sr-only peer" />
+                              <span className="flex h-7 w-7 items-center justify-center rounded-md border text-xs font-semibold transition-colors peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:border-primary hover:bg-muted select-none">
+                                {n}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <input
+                            name="notes"
+                            defaultValue={existing?.notes ?? ''}
+                            placeholder="Notat..."
+                            className="flex-1 border border-input rounded-md px-2.5 py-1.5 text-xs bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          <button type="submit" className="shrink-0 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
+                            Lagre
+                          </button>
+                        </div>
+                      </ToastActionForm>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
@@ -479,6 +567,29 @@ export default async function ShowDetailPage({
                 <div className="space-y-1">
                   <h2 className="font-semibold text-sm">Plakat templates</h2>
                   <p className="text-xs text-muted-foreground">Designet brukes som uendret base ved automatisk plakatbygging.</p>
+                </div>
+
+                {/* Poster mode toggle */}
+                <div className="rounded-lg border bg-muted/30 p-1 flex gap-1">
+                  {([
+                    { value: 'framed', label: 'Ramme', desc: 'Legger lineup på template' },
+                    { value: 'ai_generated', label: 'AI-plakat', desc: '100% AI-generert bilde' },
+                  ] as const).map(({ value, label, desc }) => {
+                    const active = (show.poster_mode ?? 'ai_generated') === value
+                    return (
+                      <ToastActionForm key={value} action={updatePosterModeAction} className="flex-1">
+                        <input type="hidden" name="show_id" value={show.id} />
+                        <input type="hidden" name="poster_mode" value={value} />
+                        <button
+                          type="submit"
+                          className={`w-full rounded-md px-3 py-2 text-left transition-colors ${active ? 'bg-card shadow-sm border' : 'hover:bg-muted/60'}`}
+                        >
+                          <p className={`text-xs font-semibold ${active ? 'text-foreground' : 'text-muted-foreground'}`}>{label}</p>
+                          <p className="text-[10px] text-muted-foreground">{desc}</p>
+                        </button>
+                      </ToastActionForm>
+                    )
+                  })}
                 </div>
 
                 <div className="flex-1 space-y-3">

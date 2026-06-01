@@ -93,7 +93,7 @@ export async function saveClubProfileAction(formData: FormData) {
 
   const { data: currentClub, error: currentClubError } = await admin
     .from('clubs')
-    .select('id, logo_url, header_image_url, gallery_image_urls')
+    .select('id, slug, logo_url, header_image_url, gallery_image_urls')
     .eq('id', clubId)
     .single()
 
@@ -163,4 +163,6 @@ export async function saveClubProfileAction(formData: FormData) {
 
   revalidatePath('/admin-app')
   revalidatePath('/admin-app/min-klubb')
+  revalidatePath('/')
+  revalidatePath(`/${currentClub.slug}`)
 }

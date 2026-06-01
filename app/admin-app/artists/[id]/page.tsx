@@ -13,6 +13,7 @@ import {
   deleteArtistAction,
 } from './actions'
 import { DeleteButton } from '@/components/admin/delete-button'
+import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 
 export default async function ArtistDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -21,6 +22,12 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
   const { data: artist } = await db.from('artists').select('*').eq('id', id).single()
 
   if (!artist) notFound()
+
+  const clubId = await getDefaultClubIdForAdmin()
+  const [{ data: clubRecord }, { data: clubScore }] = await Promise.all([
+    db.from('clubs').select('id, name').eq('id', clubId).single(),
+    db.from('artist_club_scores').select('*').eq('artist_id', id).eq('club_id', clubId).maybeSingle(),
+  ])
 
   const scoreOptions = Array.from({ length: 10 }, (_, i) => i + 1)
   const normalizedCategories = normalizeArtistRoleList(artist.category ?? [])
@@ -65,6 +72,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
 
             <ToastActionForm action={saveArtistAdminReview} className="space-y-5" successMessage="Vurderingen er lagret.">
               <input type="hidden" name="artist_id" value={artist.id} />
+              <input type="hidden" name="club_id" value={clubId} />
 
               {/* Kjønn */}
               <AdminChipGroup
@@ -88,9 +96,17 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 ]}
               />
 
-              {/* Score */}
+              {/* Score — per club */}
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Score</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">Score{clubRecord ? ` — ${clubRecord.name}` : ''}</p>
+                  {clubScore?.approved === true && (
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">✓ Godkjent</span>
+                  )}
+                  {clubScore?.approved === false && (
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">✕ Avvist</span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {scoreOptions.map((n) => (
                     <label key={n} className="cursor-pointer">
@@ -98,7 +114,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                         type="radio"
                         name="admin_score"
                         value={n}
-                        defaultChecked={artist.admin_score === n}
+                        defaultChecked={(clubScore?.score ?? artist.admin_score) === n}
                         className="sr-only peer"
                       />
                       <span className="flex h-8 w-8 items-center justify-center rounded-md border text-xs font-semibold transition-colors peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:border-primary hover:bg-muted select-none">
@@ -188,6 +204,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 <div className="flex gap-2">
                   <ToastActionForm action={approveArtistAction} className="flex-1">
                     <input type="hidden" name="artist_id" value={artist.id} />
+                    <input type="hidden" name="club_id" value={clubId} />
                     <input type="hidden" name="admin_score" value={artist.admin_score ?? 7} />
                     <button type="submit"
                       className="w-full text-xs px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
@@ -196,6 +213,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                   </ToastActionForm>
                   <ToastActionForm action={rejectArtistAction} className="flex-1">
                     <input type="hidden" name="artist_id" value={artist.id} />
+                    <input type="hidden" name="club_id" value={clubId} />
                     <button type="submit"
                       className="w-full text-xs px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors">
                       ✕ Avvis

@@ -4,6 +4,19 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+const RESERVED_CLUB_SLUGS = new Set([
+  'admin-app',
+  'api',
+  'artist-app',
+  'artists',
+  'booking-offer',
+  'checkout',
+  'events',
+  'login',
+  'signup',
+  'superadmin',
+])
+
 // ─────────────────────────────────────────────────────────────
 // Create club
 // ─────────────────────────────────────────────────────────────
@@ -21,6 +34,9 @@ export async function createClubAction(formData: FormData) {
     .replace(/[å]/g, 'a')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
+
+  if (!slug) throw new Error('Klubbnavnet må inneholde minst én bokstav eller ett tall.')
+  if (RESERVED_CLUB_SLUGS.has(slug)) throw new Error('Dette klubbnavnet gir en reservert slug. Velg et annet navn.')
 
   const db = createAdminClient()
   const { data, error } = await db

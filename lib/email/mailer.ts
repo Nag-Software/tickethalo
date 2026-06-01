@@ -78,19 +78,42 @@ export async function sendBookingOfferEmail(opts: {
   full_name: string
   show_title: string
   show_date: string
+  show_start_time?: string | null
+  club_name?: string | null
+  venue?: string | null
+  fee_amount?: number | null   // stored in øre/cents
+  currency?: string | null
   token: string
   response_url: string
 }): Promise<EmailResult> {
   const subject = `Bookingtilbud: ${opts.show_title}`
+
+  const feeFormatted = opts.fee_amount
+    ? `${Math.round(opts.fee_amount / 100).toLocaleString('nb-NO')} ${opts.currency ?? 'NOK'}`
+    : null
+
+  const detailRows = [
+    opts.club_name  ? `<tr><td style="color:#71717a;padding:6px 0;width:110px">Klubb</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.club_name)}</td></tr>` : '',
+    opts.venue      ? `<tr><td style="color:#71717a;padding:6px 0">Sted</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.venue)}</td></tr>` : '',
+    opts.show_date  ? `<tr><td style="color:#71717a;padding:6px 0">Dato</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.show_date)}</td></tr>` : '',
+    opts.show_start_time ? `<tr><td style="color:#71717a;padding:6px 0">Showstart</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.show_start_time.slice(0, 5))}</td></tr>` : '',
+    feeFormatted    ? `<tr><td style="color:#71717a;padding:6px 0">Honorar</td><td style="padding:6px 0;font-weight:500">${escapeHtml(feeFormatted)}</td></tr>` : '',
+  ].join('')
+
   try {
     const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
       to: opts.email,
       subject,
       html: `
-        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55">
-          <h2>Hei ${opts.full_name}!</h2>
-          <p>Du har mottatt et bookingtilbud for <strong>${opts.show_title}</strong> den ${opts.show_date}.</p>
+        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55;max-width:540px">
+          <h2 style="margin-bottom:4px">Hei ${escapeHtml(opts.full_name)}!</h2>
+          <p>Du har mottatt et bookingtilbud for <strong>${escapeHtml(opts.show_title)}</strong>.</p>
+
+          <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px">
+            ${detailRows}
+          </table>
+
           <p style="margin:22px 0">
             <a href="${opts.response_url}?response=accept" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px">Ja, jeg kan</a>
             <a href="${opts.response_url}?response=decline" style="display:inline-block;border:1px solid #d4d4d8;color:#18181b;text-decoration:none;padding:9px 14px;border-radius:8px">Nei, denne passer ikke</a>

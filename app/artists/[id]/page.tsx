@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { ArrowLeft, ArrowUpRight, CalendarDays, Languages, MapPin, Mic2 } from 'lucide-react'
 import { formatArtistRoleSummary } from '@/lib/artist-roles'
 import { artistDisplayName, artistInitials, getPublicArtistById, getPublicArtistShows } from '@/lib/public-artists'
+import { getPublicShowHref } from '@/lib/public-events'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { PublicHeader } from '@/components/public/public-header'
 import { formatShortDate, formatShowTime } from '@/lib/public-events'
@@ -89,7 +90,7 @@ export default async function ArtistDetailPage({ params }: Props) {
             <h2 className="border-b border-black/10 pb-3 text-2xl font-medium">Kommende events</h2>
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
               {shows.map((show) => (
-                <Link key={show.id} href={`/events/${show.slug}`} className="group relative cursor-pointer block">
+                <Link key={show.id} href={getPublicShowHref(show)} className="group relative cursor-pointer block">
                   <div className="overflow-hidden mb-3 aspect-square bg-gray-100 relative">
                     {show.poster_url ? (
                       <Image
