@@ -86,7 +86,7 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
     })
 
     const price = await stripe.prices.create({
-      unit_amount: show.ticket_price,
+      unit_amount: show.ticket_price!,
       currency: show.currency.toLowerCase(),
       product: product?.id,
     })
