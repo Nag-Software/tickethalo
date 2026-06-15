@@ -62,19 +62,22 @@ export async function registerArtist(input: RegisterArtistInput) {
     })
     if (profileError) throw new Error(profileError.message)
 
-    // 3. Upload profile image if provided
-    let profile_image_url: string | undefined
-    if (input.profile_image_file) {
-      const ext = input.profile_image_file.name.split('.').pop()
-      const path = `${authUserId}/profile.${ext}`
-      const { error: uploadError } = await admin.storage
-        .from('artist-images')
-        .upload(path, input.profile_image_file, { upsert: true })
-      if (!uploadError) {
-        const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
-        profile_image_url = urlData.publicUrl
-      }
+    // 3. Upload required profile image
+    if (!input.profile_image_file) {
+      throw new Error('Required fields missing')
     }
+
+    const ext = input.profile_image_file.name.split('.').pop()
+    const path = `${authUserId}/profile.${ext}`
+    const { error: uploadError } = await admin.storage
+      .from('artist-images')
+      .upload(path, input.profile_image_file, { upsert: true })
+    if (uploadError) {
+      throw new Error('Profile image upload failed')
+    }
+
+    const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
+    const profile_image_url = urlData.publicUrl
 
     // 4. Create artist with status = pending_review
     const { data: artist, error: artistError } = await admin.from('artists').insert({
@@ -171,10 +174,12 @@ export async function completeArtistRegistration(input: CompleteArtistRegistrati
     const { error: uploadError } = await admin.storage
       .from('artist-images')
       .upload(path, input.profile_image_file, { upsert: true })
-    if (!uploadError) {
-      const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
-      profile_image_url = urlData.publicUrl
+    if (uploadError) {
+      throw new Error('Profile image upload failed')
     }
+
+    const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
+    profile_image_url = urlData.publicUrl
   } else if (input.keepExistingProfileImage) {
     const { data: storedImage } = await admin.storage.from('artist-images').list(`${input.authUserId}`, {
       limit: 1,
@@ -186,6 +191,10 @@ export async function completeArtistRegistration(input: CompleteArtistRegistrati
         .getPublicUrl(`${input.authUserId}/${storedImage[0].name}`)
       profile_image_url = urlData.publicUrl
     }
+  }
+
+  if (!profile_image_url) {
+    throw new Error('Required fields missing')
   }
 
   const { data: artist, error: artistError } = await admin.from('artists').insert({

@@ -144,7 +144,18 @@ export function ArtistSignupForm({
           </div>
         </aside>
 
-        <form action={action} method="post" encType="multipart/form-data" className="space-y-8 p-6 md:p-8">
+        <form
+          action={action}
+          method="post"
+          encType="multipart/form-data"
+          className="space-y-8 p-6 md:p-8"
+          onSubmit={(event) => {
+            if (!values.profile_image_file) {
+              event.preventDefault()
+              toast.error('Last opp et artistbilde for å registrere profilen.')
+            }
+          }}
+        >
           {completionMode && draft?.hasProfileImage && (
             <input type="hidden" name="existing_profile_image" value="1" />
           )}
@@ -209,33 +220,38 @@ export function ArtistSignupForm({
 
           <section className="space-y-4">
             <SectionHeader icon={Camera} title="Profil" />
-            <label htmlFor="profile_image_file" className="flex cursor-pointer items-center gap-4 border-2 border-dashed border-zinc-950 bg-[#f3ead9] p-4 transition-colors hover:bg-white/60">
-              <div className="flex size-12 items-center justify-center border-2 border-zinc-950 bg-white/70 text-zinc-500">
-                <ImagePlus className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">Profilbilde</p>
-                <p className="truncate text-sm font-medium text-zinc-700">
-                  {imageName ?? (draft?.hasProfileImage ? 'Eksisterende profilbilde lagret' : 'PNG, JPG eller WebP')}
-                </p>
-              </div>
-              <span className="border-2 border-zinc-950 bg-white px-3 py-1.5 text-sm font-bold">
-                {draft?.hasProfileImage ? 'Bytt bilde' : 'Velg bilde'}
-              </span>
-              <input
-                id="profile_image_file"
-                name="profile_image_file"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                required={!draft?.hasProfileImage}
-                className="sr-only"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  setImageName(file?.name ?? null)
-                  setValues((prev) => ({ ...prev, profile_image_file: Boolean(file) }))
-                }}
-              />
-            </label>
+            <div className="space-y-2">
+              <label htmlFor="profile_image_file" className="flex cursor-pointer items-center gap-4 border-2 border-dashed border-zinc-950 bg-[#f3ead9] p-4 transition-colors hover:bg-white/60">
+                <div className="flex size-12 items-center justify-center border-2 border-zinc-950 bg-white/70 text-zinc-500">
+                  <ImagePlus className="size-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">Profilbilde</p>
+                  <p className="truncate text-sm font-medium text-zinc-700">
+                    {imageName ?? (draft?.hasProfileImage ? 'Eksisterende profilbilde lagret' : 'PNG, JPG eller WebP')}
+                  </p>
+                </div>
+                <span className="border-2 border-zinc-950 bg-white px-3 py-1.5 text-sm font-bold">
+                  {draft?.hasProfileImage ? 'Bytt bilde' : 'Velg bilde'}
+                </span>
+                <input
+                  id="profile_image_file"
+                  name="profile_image_file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  required={!values.profile_image_file}
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    setImageName(file?.name ?? null)
+                    setValues((prev) => ({ ...prev, profile_image_file: Boolean(file) || Boolean(draft?.hasProfileImage) }))
+                  }}
+                />
+              </label>
+              <Label className="text-xs text-muted-foreground">
+                Velg et artistbilde. Det vil brukes på plakat ved booking.
+              </Label>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
