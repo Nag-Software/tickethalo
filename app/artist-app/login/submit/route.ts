@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createRouteHandlerClient } from '@/lib/supabase/server'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
 export async function POST(request: Request) {
@@ -9,36 +9,44 @@ export async function POST(request: Request) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
   const password = String(formData.get('password') ?? '')
   const nextPath = normalizeNext(String(formData.get('next') ?? artistPrefix))
+  const { supabase, withSessionCookies } = await createRouteHandlerClient()
 
   if (!email || !password) {
-    return NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303)
+    return withSessionCookies(
+      NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303),
+    )
   }
 
-  const supabase = await createClient()
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error || !data.user) {
     const errorCode = error?.message.toLowerCase().includes('email not confirmed') ? 'unconfirmed' : 'invalid'
     if (errorCode === 'unconfirmed') {
-      return NextResponse.redirect(new URL(`${artistPrefix}/signup?error=unconfirmed`, origin), 303)
+      return withSessionCookies(
+        NextResponse.redirect(new URL(`${artistPrefix}/signup?error=unconfirmed`, origin), 303),
+      )
     }
-    return NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303)
+    return withSessionCookies(
+      NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303),
+    )
   }
 
   const destination = await getPortalDestinationForAuthUser(data.user.id)
   if (!destination) {
-    return NextResponse.redirect(new URL(`${artistPrefix}/signup?error=missing`, origin), 303)
+    return withSessionCookies(
+      NextResponse.redirect(new URL(`${artistPrefix}/signup?error=missing`, origin), 303),
+    )
   }
 
   if (destination.startsWith('/artist-app/signup')) {
-    return NextResponse.redirect(new URL(destination, origin), 303)
+    return withSessionCookies(NextResponse.redirect(new URL(destination, origin), 303))
   }
 
   if (destination.startsWith('/artist-app')) {
-    return NextResponse.redirect(new URL(nextPath, origin), 303)
+    return withSessionCookies(NextResponse.redirect(new URL(nextPath, origin), 303))
   }
 
-  return NextResponse.redirect(new URL(destination, origin), 303)
+  return withSessionCookies(NextResponse.redirect(new URL(destination, origin), 303))
 }
 
 function normalizeNext(value: string) {

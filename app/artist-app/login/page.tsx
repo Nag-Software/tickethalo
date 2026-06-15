@@ -17,11 +17,8 @@ export default async function ArtistLoginPage({
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
     const destination = await getPortalDestinationForAuthUser(user.id)
-    if (destination === '/artist-app') {
-      redirect(next || '/artist-app')
-    }
     if (destination?.startsWith('/artist-app')) {
-      redirect(destination)
+      redirect(next || destination)
     }
     if (destination) redirect(destination)
   }

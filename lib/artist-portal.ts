@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getRequestPathname } from '@/lib/request-pathname'
 import type { Artist } from '@/types/database'
 
 export const MIN_BOOKABLE_SCORE = 6
@@ -68,7 +69,11 @@ export async function getCurrentArtist() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) redirect('/artist-app/login')
+  if (!user) {
+    const pathname = await getRequestPathname()
+    const next = pathname.startsWith('/artist-app') ? pathname : '/artist-app'
+    redirect(`/artist-app/login?next=${encodeURIComponent(next)}`)
+  }
 
   const db = createAdminClient()
   const { data: artist } = await db

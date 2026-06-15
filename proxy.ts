@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 function hasSupabaseAuthCookie(request: NextRequest) {
   return request.cookies
     .getAll()
-    .some(({ name }) => name.startsWith('sb-') && name.includes('-auth-token'))
+    .some(({ name }) => name.startsWith('sb-'))
 }
 
 function isTimeoutError(error: unknown) {
