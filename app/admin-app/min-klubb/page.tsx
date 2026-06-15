@@ -1,12 +1,13 @@
 import { Building2, ImageIcon, Images, MapPin } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { ClubProfileForm } from '@/components/admin/club-profile-form'
+import { ClubPosterDefaultsForm } from '@/components/admin/club-poster-defaults-form'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: React.ComponentType<{ className?: string }> }) {
   return (
-    <div className="rounded-[1.5rem] border border-white/60 bg-white/80 p-4 shadow-sm backdrop-blur">
+    <div className="rounded-lg border border-white/60 bg-white/80 p-4 shadow-sm backdrop-blur">
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-black text-white">
         <Icon className="h-4 w-4" />
       </div>
@@ -23,7 +24,7 @@ export default async function MinKlubbPage() {
   const [{ data: club, error: clubError }, { count: showCount }] = await Promise.all([
     db
       .from('clubs')
-      .select('id, name, slug, description, logo_url, header_image_url, gallery_image_urls, location_name, address_line, city')
+      .select('id, name, slug, description, logo_url, header_image_url, gallery_image_urls, location_name, address_line, city, default_ai_poster_reference_url, default_frame_background_url')
       .eq('id', clubId)
       .single(),
     db
@@ -40,7 +41,7 @@ export default async function MinKlubbPage() {
     <div>
       <AdminHeader title="Min klubb" description="Branding, bilder og klubbinfo for admin-appen og offentlig profil." />
       <div className="space-y-6 p-6">
-        <section className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-[radial-gradient(circle_at_top_left,_rgba(255,224,178,0.65),_transparent_28%),linear-gradient(135deg,_#fffdf7,_#fff_42%,_#f7f7f5)] p-6 shadow-sm">
+        <section className="overflow-hidden rounded-xl border border-zinc-200 bg-[radial-gradient(circle_at_top_left,_rgba(255,224,178,0.65),_transparent_28%),linear-gradient(135deg,_#fffdf7,_#fff_42%,_#f7f7f5)] p-6 shadow-sm">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_460px] lg:items-end">
             <div className="space-y-4 text-foreground">
               <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/80 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
@@ -72,6 +73,12 @@ export default async function MinKlubbPage() {
         </section>
 
         <ClubProfileForm club={club} />
+
+        <ClubPosterDefaultsForm
+          clubId={club.id}
+          defaultAiPosterReferenceUrl={club.default_ai_poster_reference_url}
+          defaultFrameBackgroundUrl={club.default_frame_background_url}
+        />
       </div>
     </div>
   )

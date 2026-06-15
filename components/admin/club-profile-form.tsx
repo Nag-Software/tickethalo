@@ -1,13 +1,28 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Building2, MapPin, Sparkles, Trash2, UploadCloud } from 'lucide-react'
-import { ToastActionForm } from '@/components/toast-action-form'
-import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
 import { saveClubProfileAction } from '@/app/admin-app/min-klubb/actions'
 import type { Club } from '@/types/database'
+
+type FormValues = {
+  name: string
+  city: string
+  locationName: string
+  addressLine: string
+  description: string
+}
+
+type SaveSnapshot = FormValues & {
+  logoPreview: string | null
+  headerPreview: string | null
+}
+
+const AUTOSAVE_DELAY_MS = 1200
 
 type ClubProfileFormProps = {
   club: Pick<Club, 'id' | 'name' | 'slug' | 'description' | 'logo_url' | 'header_image_url' | 'location_name' | 'address_line' | 'city'>
@@ -68,7 +83,7 @@ function Dropzone({
       >
         {preview ? (
           <div className="relative aspect-[16/10] overflow-hidden rounded-[1.25rem] border border-black/10 bg-zinc-100">
-            <img src={preview} alt="" className="h-full w-full object-cover" />
+            <img src={preview} alt="" className="h-full w-full object-contain" />
             <div className="absolute inset-x-3 bottom-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur">
               Slipp nytt bilde her for å erstatte
             </div>
@@ -88,13 +103,39 @@ function Dropzone({
 }
 
 export function ClubProfileForm({ club }: ClubProfileFormProps) {
+  const router = useRouter()
   const logoInputRef = useRef<HTMLInputElement>(null)
   const headerInputRef = useRef<HTMLInputElement>(null)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedRef = useRef<SaveSnapshot>({
+    name: club.name,
+    city: club.city ?? '',
+    locationName: club.location_name ?? '',
+    addressLine: club.address_line ?? '',
+    description: club.description ?? '',
+    logoPreview: club.logo_url,
+    headerPreview: club.header_image_url,
+  })
+  const savedLogoUrlRef = useRef(club.logo_url)
+  const savedHeaderUrlRef = useRef(club.header_image_url)
+  const logoPreviewRef = useRef(club.logo_url)
+  const headerPreviewRef = useRef(club.header_image_url)
 
+  const [values, setValues] = useState<FormValues>({
+    name: club.name,
+    city: club.city ?? '',
+    locationName: club.location_name ?? '',
+    addressLine: club.address_line ?? '',
+    description: club.description ?? '',
+  })
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
   const [headerPreview, setHeaderPreview] = useState<string | null>(club.header_image_url)
+  logoPreviewRef.current = logoPreview
+  headerPreviewRef.current = headerPreview
   const [logoActive, setLogoActive] = useState(false)
   const [headerActive, setHeaderActive] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   function replaceSingleFile(input: HTMLInputElement | null, file: File | null, setPreview: (value: string | null) => void) {
     if (!input) return
@@ -110,17 +151,147 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
     input.files = transfer.files
   }
 
+  function updateValue<K extends keyof FormValues>(field: K, value: FormValues[K]) {
+    setValues((current) => ({ ...current, [field]: value }))
+  }
+
+  function buildFormData(snapshot: SaveSnapshot) {
+    const formData = new FormData()
+    formData.set('name', snapshot.name)
+    formData.set('city', snapshot.city)
+    formData.set('locationName', snapshot.locationName)
+    formData.set('addressLine', snapshot.addressLine)
+    formData.set('description', snapshot.description)
+
+    const logoFile = logoInputRef.current?.files?.[0]
+    const headerFile = headerInputRef.current?.files?.[0]
+
+    if (logoFile) {
+      formData.set('logoFile', logoFile)
+    }
+
+    if (headerFile) {
+      formData.set('headerFile', headerFile)
+    }
+
+    const existingLogoUrl =
+      snapshot.logoPreview &&
+      (snapshot.logoPreview === savedLogoUrlRef.current || snapshot.logoPreview === club.logo_url)
+        ? savedLogoUrlRef.current ?? ''
+        : ''
+    const existingHeaderImageUrl =
+      snapshot.headerPreview &&
+      (snapshot.headerPreview === savedHeaderUrlRef.current || snapshot.headerPreview === club.header_image_url)
+        ? savedHeaderUrlRef.current ?? ''
+        : ''
+
+    formData.set('existingLogoUrl', existingLogoUrl)
+    formData.set('existingHeaderImageUrl', existingHeaderImageUrl)
+
+    return formData
+  }
+
+  async function persist(snapshot: SaveSnapshot) {
+    if (!snapshot.name.trim()) return
+
+    setSaveStatus('saving')
+
+    try {
+      await saveClubProfileAction(buildFormData(snapshot))
+      lastSavedRef.current = snapshot
+      setSaveStatus('saved')
+      router.refresh()
+
+      if (savedStatusTimeoutRef.current) {
+        clearTimeout(savedStatusTimeoutRef.current)
+      }
+
+      savedStatusTimeoutRef.current = setTimeout(() => {
+        setSaveStatus('idle')
+      }, 2000)
+    } catch (error) {
+      setSaveStatus('error')
+      toast.error(error instanceof Error ? error.message : 'Kunne ikke lagre klubbprofilen.')
+    }
+  }
+
+  function scheduleAutosave(snapshot: SaveSnapshot) {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null
+
+      const lastSaved = lastSavedRef.current
+      const hasChanges =
+        snapshot.name !== lastSaved.name ||
+        snapshot.city !== lastSaved.city ||
+        snapshot.locationName !== lastSaved.locationName ||
+        snapshot.addressLine !== lastSaved.addressLine ||
+        snapshot.description !== lastSaved.description ||
+        snapshot.logoPreview !== lastSaved.logoPreview ||
+        snapshot.headerPreview !== lastSaved.headerPreview
+
+      if (!hasChanges) return
+
+      void persist(snapshot)
+    }, AUTOSAVE_DELAY_MS)
+  }
+
+  useEffect(() => {
+    savedLogoUrlRef.current = club.logo_url
+    savedHeaderUrlRef.current = club.header_image_url
+
+    if (club.logo_url && logoPreviewRef.current?.startsWith('blob:')) {
+      if (logoInputRef.current) {
+        logoInputRef.current.files = new DataTransfer().files
+      }
+      setLogoPreview(club.logo_url)
+      lastSavedRef.current = { ...lastSavedRef.current, logoPreview: club.logo_url }
+    }
+
+    if (club.header_image_url && headerPreviewRef.current?.startsWith('blob:')) {
+      if (headerInputRef.current) {
+        headerInputRef.current.files = new DataTransfer().files
+      }
+      setHeaderPreview(club.header_image_url)
+      lastSavedRef.current = { ...lastSavedRef.current, headerPreview: club.header_image_url }
+    }
+  }, [club.logo_url, club.header_image_url])
+
+  useEffect(() => {
+    const snapshot: SaveSnapshot = {
+      ...values,
+      logoPreview,
+      headerPreview,
+    }
+
+    scheduleAutosave(snapshot)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [values, logoPreview, headerPreview])
+
+  useEffect(() => {
+    return () => {
+      if (savedStatusTimeoutRef.current) {
+        clearTimeout(savedStatusTimeoutRef.current)
+      }
+    }
+  }, [])
+
   return (
-    <ToastActionForm action={saveClubProfileAction} successMessage="Klubbprofilen ble oppdatert." className="space-y-6">
+    <div className="space-y-6">
       <input ref={logoInputRef} type="file" name="logoFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(logoInputRef.current, event.currentTarget.files?.[0] ?? null, setLogoPreview)} />
       <input ref={headerInputRef} type="file" name="headerFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(headerInputRef.current, event.currentTarget.files?.[0] ?? null, setHeaderPreview)} />
 
-      <input type="hidden" name="existingLogoUrl" value={logoPreview && logoPreview === club.logo_url ? club.logo_url ?? '' : ''} />
-      <input type="hidden" name="existingHeaderImageUrl" value={headerPreview && headerPreview === club.header_image_url ? club.header_image_url ?? '' : ''} />
-
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
         <div className="space-y-6">
-          <div className="rounded-[2rem] border bg-white p-6 shadow-sm">
+          <div className="rounded-xl border bg-white p-6 shadow-sm">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-amber-700">
@@ -142,7 +313,7 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
                   <FieldTitle>Klubbnavn</FieldTitle>
                 </FieldLabel>
                 <FieldContent>
-                  <Input id="club-name" name="name" defaultValue={club.name} placeholder="Latter Oslo" required />
+                  <Input id="club-name" name="name" value={values.name} onChange={(event) => updateValue('name', event.target.value)} placeholder="Latter Oslo" required />
                   <FieldDescription>Vises i admin-app, på events og i klubbvalg.</FieldDescription>
                 </FieldContent>
               </Field>
@@ -152,7 +323,7 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
                   <FieldTitle>By</FieldTitle>
                 </FieldLabel>
                 <FieldContent>
-                  <Input id="club-city" name="city" defaultValue={club.city ?? ''} placeholder="Oslo" />
+                  <Input id="club-city" name="city" value={values.city} onChange={(event) => updateValue('city', event.target.value)} placeholder="Oslo" />
                   <FieldDescription>Brukes i filtre, etiketter og oversikter.</FieldDescription>
                 </FieldContent>
               </Field>
@@ -162,7 +333,7 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
                   <FieldTitle>Lokasjon</FieldTitle>
                 </FieldLabel>
                 <FieldContent>
-                  <Input id="club-location" name="locationName" defaultValue={club.location_name ?? ''} placeholder="Sentrum Scene" />
+                  <Input id="club-location" name="locationName" value={values.locationName} onChange={(event) => updateValue('locationName', event.target.value)} placeholder="Sentrum Scene" />
                   <FieldDescription>Navnet på klubbens faste venue eller rom.</FieldDescription>
                 </FieldContent>
               </Field>
@@ -172,7 +343,7 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
                   <FieldTitle>Adresse</FieldTitle>
                 </FieldLabel>
                 <FieldContent>
-                  <Input id="club-address" name="addressLine" defaultValue={club.address_line ?? ''} placeholder="Arbeidersamfunnets plass 1" />
+                  <Input id="club-address" name="addressLine" value={values.addressLine} onChange={(event) => updateValue('addressLine', event.target.value)} placeholder="Arbeidersamfunnets plass 1" />
                   <FieldDescription>Full adresse for publikum og artister.</FieldDescription>
                 </FieldContent>
               </Field>
@@ -183,7 +354,8 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
               <textarea
                 id="club-description"
                 name="description"
-                defaultValue={club.description ?? ''}
+                value={values.description}
+                onChange={(event) => updateValue('description', event.target.value)}
                 placeholder="Fortell kort om stemningen, publikumet og hva som gjør klubben spesiell."
                 rows={7}
                 className="min-h-40 w-full resize-y rounded-[1.5rem] border border-input bg-white px-4 py-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -195,7 +367,7 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-[2rem] border bg-white p-6 shadow-sm">
+          <div className="rounded-xl border bg-white p-6 shadow-sm">
             <div className="mb-5 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black text-white">
                 <Building2 className="h-5 w-5" />
@@ -269,30 +441,33 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
                     {logoPreview ? <img src={logoPreview} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-6 w-6" />}
                   </div>
                   <div>
-                    <div className="text-lg font-semibold leading-tight">{club.name}</div>
-                    <div className="text-xs text-white/75">{club.city || 'By mangler'} • {club.location_name || 'Lokasjon mangler'}</div>
+                    <div className="text-lg font-semibold leading-tight">{values.name || 'Klubbnavn'}</div>
+                    <div className="text-xs text-white/75">{values.city || 'By mangler'} • {values.locationName || 'Lokasjon mangler'}</div>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3 p-4">
                 <div className="rounded-2xl bg-zinc-50 p-3 text-sm text-muted-foreground">
-                  {club.description || 'Om klubben-teksten kommer til å vises her når du lagrer.'}
+                  {values.description || 'Om klubben-teksten kommer til å vises her.'}
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span className="rounded-full border bg-white px-3 py-1.5">{club.address_line || 'Adresse mangler'}</span>
+                  <span className="rounded-full border bg-white px-3 py-1.5">{values.addressLine || 'Adresse mangler'}</span>
                 </div>
               </div>
             </div>
 
             <div className="mt-5 flex justify-end">
-              <Button type="submit" size="lg">
-                Lagre klubbprofil
-              </Button>
+              <p className={`text-sm ${saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'} ${saveStatus === 'saving' ? 'animate-pulse' : ''}`}>
+                {saveStatus === 'saving' && 'Lagrer…'}
+                {saveStatus === 'saved' && 'Lagret'}
+                {saveStatus === 'error' && 'Lagring feilet'}
+                {saveStatus === 'idle' && 'Endringer lagres automatisk'}
+              </p>
             </div>
           </div>
         </div>
       </section>
-    </ToastActionForm>
+    </div>
   )
 }

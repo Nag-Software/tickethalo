@@ -6,6 +6,7 @@ import { toFile, type Uploadable } from 'openai'
 import sharp from 'sharp'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOpenAI } from '@/lib/openai'
+import type { PosterDesignTemplate, PosterMode } from '@/lib/poster-assets'
 
 type PosterArtistInput = string | {
   name: string
@@ -19,13 +20,7 @@ type PosterArtist = {
   roleName: string | null
 }
 
-type PosterDesignTemplate = {
-  label: string | null
-  fileUrl: string
-  filePath: string
-  fileName: string
-  mimeType: string
-}
+type PosterDesignTemplateInput = PosterDesignTemplate
 
 type PosterReferencePhoto = {
   artist: PosterArtist & { profileImageUrl: string }
@@ -59,6 +54,7 @@ type PosterPromptContext = {
   artistReferenceEndIndex: number
   referencePackage: PosterReferencePackage
   changeRequest: string | null
+  referenceSource: 'show' | 'club' | null
 }
 
 type PosterFramePlan = {
@@ -108,6 +104,7 @@ function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
     artistReferenceEndIndex,
     referencePackage,
     changeRequest,
+    referenceSource,
   } = ctx
 
   const artistCount = sorted.length
@@ -175,30 +172,33 @@ function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
 
   const templateModeBlock = designReference
     ? [
-      `TASK: TEMPLATE EDIT — not a new design.`,
-      `You are a senior poster retoucher. Input image 1 is the club's master template and design system.`,
+      `TASK: IDENTITETSBEVARENDE REDIGERING — not a new design.`,
+      referenceSource === 'club'
+        ? `Input image 1 is the club's standard reference poster. Preserve this visual identity across all shows.`
+        : `Input image 1 is this show's reference poster. Preserve this exact visual identity.`,
       templateLabel,
       ``,
       `TEMPLATE AS DESIGN CONTEXT:`,
-      `- Treat the template as law for: color palette, typography style, grid, margins, textures, backgrounds, logos, sponsor marks, decorative graphics.`,
-      `- Your job: adapt this exact visual system to the current show — same club, new lineup and event facts.`,
-      `- The result must look like a designer manually updated the template in Photoshop/Figma, not like a new AI poster.`,
+      `- Treat the reference as law for: color palette, typography style, grid, margins, textures, backgrounds, logos, sponsor marks, decorative graphics.`,
+      `- Your job: adapt this exact visual system to the current show — same club identity, new lineup and event facts.`,
+      `- The result must look like a designer manually updated the reference in Photoshop/Figma, not like a new AI poster.`,
       ``,
       `ALLOWED CHANGES ONLY:`,
       `0. Keep input image 1 as an immutable base layer (Layer 1).`,
-      `1. Insert supplied profile photos into existing photo areas (same shape, frame, crop style as template).`,
-      `2. Replace outdated event text (title, comedian names, date, time, venue) with SHOW DETAILS below.`,
-      `3. Adjust lineup layout only to fit the actual comedian count (see ADAPT TEMPLATE below).`,
-      `4. Composite all new/updated elements as Layer 2 above the template, then flatten for final export.`,
+      `1. Replace comedian profile photos inside existing photo areas only (same shape, frame, crop style as reference).`,
+      `2. Replace event text (title, comedian names, date, time, venue) with SHOW DETAILS below.`,
+      `3. Adjust person-slot layout only when comedian count changes (see ADAPT TEMPLATE below).`,
+      `4. Composite all new/updated elements as Layer 2 above the reference, then flatten for final export.`,
       ``,
       `FORBIDDEN CHANGES:`,
-      `- Do not alter, redraw, remove, regenerate, or restyle template pixels on Layer 1.`,
+      `- Do not alter, redraw, remove, regenerate, or restyle reference pixels on Layer 1.`,
+      `- Do NOT add new frames, overlays, collages, bubbles, or portrait tiles on top of the reference.`,
+      `- Do NOT place photos or text outside existing template slots unless adapting lineup count.`,
       `- New layout, new palette, new fonts, new logos, new decorative elements, new photo frame shapes.`,
       `- Redrawing, moving, or restyling existing logos, brand marks, venue marks, or sponsor graphics.`,
-      `- Circles/bubbles/collage if the template uses rectangles; no extra portrait frames.`,
       ...(lineupAdaptationBlock ?? []),
       ``,
-      `PRIORITY: 1) preserve template branding/layout  2) correct face-to-name mapping  3) concise updated copy.`,
+      `PRIORITY: 1) preserve reference branding/layout  2) correct face-to-name mapping  3) concise updated copy.`,
     ]
     : [
       `TASK: CREATE a new Norwegian standup comedy poster (portrait 2:3).`,
@@ -253,14 +253,16 @@ function buildPosterGenerationPrompt(ctx: PosterPromptContext): string {
 }
 
 export async function generateShowPoster(showId: string, opts: {
+  mode: PosterMode
   title: string
   date: string
   startTime?: string | null
   venue: string
   artists: PosterArtistInput[]
-  designTemplate?: PosterDesignTemplate | null
+  aiReference?: PosterDesignTemplate | null
+  frameBackground?: PosterDesignTemplate | null
+  aiReferenceSource?: 'show' | 'club' | null
   changeRequest?: string | null
-  forceOpenAI?: boolean
   throwOnError?: boolean
 }): Promise<string | null> {
   const admin = createAdminClient()
@@ -271,50 +273,29 @@ export async function generateShowPoster(showId: string, opts: {
     const supporting = artists.filter(a => !isHeadlinerRole(a.roleName))
     const sorted = [...headliners, ...supporting]
     const changeRequest = normalizeChangeRequest(opts.changeRequest)
-    const shouldForceOpenAI = Boolean(opts.forceOpenAI || changeRequest)
 
-    if (opts.designTemplate && !shouldForceOpenAI) {
-      try {
-        const renderedPoster = await renderTemplatePosterWithAutoLayout({
-          artists: sorted,
-          template: opts.designTemplate,
-        })
-
-        const fileName = `${showId}/poster-${Date.now()}.png`
-        const { error: uploadError } = await admin.storage
-          .from('generated-posters')
-          .upload(fileName, renderedPoster, { contentType: 'image/png', upsert: true })
-
-        if (uploadError) {
-          throw new Error(`Kunne ikke laste opp plakat: ${uploadError.message}`)
-        }
-
-        const { data: { publicUrl } } = admin.storage
-          .from('generated-posters')
-          .getPublicUrl(fileName)
-
-        const { error: updateError } = await admin.from('shows').update({ poster_url: publicUrl }).eq('id', showId)
-        if (updateError) {
-          throw new Error(`Kunne ikke lagre plakat på showet: ${updateError.message}`)
-        }
-
-        return publicUrl
-      } catch (templateError) {
-        console.warn('[Poster] Template auto-layout failed, falling back to OpenAI generation:', templateError)
+    if (opts.mode === 'framed') {
+      if (!opts.frameBackground) {
+        throw new Error('Ramme-modus krever en bakgrunn uten personer eller tekst. Last opp bakgrunn eller sett klubb-standard.')
       }
+
+      const renderedPoster = await renderTemplatePosterWithAutoLayout({
+        artists: sorted,
+        template: opts.frameBackground,
+      })
+
+      return await uploadGeneratedPoster(admin, showId, renderedPoster)
     }
 
     const dateText = formatPosterDate(opts.date)
     const timeText = opts.startTime ? `kl. ${opts.startTime.slice(0, 5)}` : ''
     const venue = opts.venue || 'humor.events'
     let designReference: PosterDesignReference | null = null
-    if (opts.designTemplate) {
-      try {
-        designReference = await buildPosterDesignReference(opts.designTemplate)
-      } catch (referenceError) {
-        console.warn('[Poster] Could not prepare template reference, continuing without template context:', referenceError)
-      }
+
+    if (opts.aiReference) {
+      designReference = await buildPosterDesignReference(opts.aiReference)
     }
+
     const posterPlan = designReference ? null : createPosterPlan(showId, opts.title, opts.date, sorted.length)
     const identityMapIndex = designReference ? 2 : 1
     const artistReferenceStartIndex = identityMapIndex + 1
@@ -343,6 +324,7 @@ export async function generateShowPoster(showId: string, opts: {
       artistReferenceEndIndex,
       referencePackage,
       changeRequest,
+      referenceSource: opts.aiReferenceSource ?? (opts.aiReference?.source === 'club_default' ? 'club' : opts.aiReference ? 'show' : null),
     })
 
     const openai = getOpenAI()
@@ -372,25 +354,7 @@ export async function generateShowPoster(showId: string, opts: {
     }
 
     const imageBuffer = Buffer.from(imageBase64, 'base64')
-    const fileName = `${showId}/poster-${Date.now()}.png`
-    const { error: uploadError } = await admin.storage
-      .from('generated-posters')
-      .upload(fileName, imageBuffer, { contentType: 'image/png', upsert: true })
-
-    if (uploadError) {
-      throw new Error(`Kunne ikke laste opp plakat: ${uploadError.message}`)
-    }
-
-    const { data: { publicUrl } } = admin.storage
-      .from('generated-posters')
-      .getPublicUrl(fileName)
-
-    const { error: updateError } = await admin.from('shows').update({ poster_url: publicUrl }).eq('id', showId)
-    if (updateError) {
-      throw new Error(`Kunne ikke lagre plakat på showet: ${updateError.message}`)
-    }
-
-    return publicUrl
+    return await uploadGeneratedPoster(admin, showId, imageBuffer)
   } catch (err) {
     console.error('[Poster] Generation failed:', err)
     if (opts.throwOnError) {
@@ -401,9 +365,35 @@ export async function generateShowPoster(showId: string, opts: {
   }
 }
 
+async function uploadGeneratedPoster(
+  admin: ReturnType<typeof createAdminClient>,
+  showId: string,
+  imageBuffer: Buffer,
+) {
+  const fileName = `${showId}/poster-${Date.now()}.png`
+  const { error: uploadError } = await admin.storage
+    .from('generated-posters')
+    .upload(fileName, imageBuffer, { contentType: 'image/png', upsert: true })
+
+  if (uploadError) {
+    throw new Error(`Kunne ikke laste opp plakat: ${uploadError.message}`)
+  }
+
+  const { data: { publicUrl } } = admin.storage
+    .from('generated-posters')
+    .getPublicUrl(fileName)
+
+  const { error: updateError } = await admin.from('shows').update({ poster_url: publicUrl }).eq('id', showId)
+  if (updateError) {
+    throw new Error(`Kunne ikke lagre plakat på showet: ${updateError.message}`)
+  }
+
+  return publicUrl
+}
+
 async function renderTemplatePosterWithAutoLayout(input: {
   artists: PosterArtist[]
-  template: PosterDesignTemplate
+  template: PosterDesignTemplateInput
 }): Promise<Buffer> {
   const { artists, template } = input
   if (artists.length === 0) {
@@ -1517,7 +1507,7 @@ async function buildPosterReferences(artists: PosterArtist[], firstArtistInputIn
   return { images: [identityMap, ...originalFiles], identityLines }
 }
 
-async function buildPosterDesignReference(template: PosterDesignTemplate | null | undefined): Promise<PosterDesignReference | null> {
+async function buildPosterDesignReference(template: PosterDesignTemplateInput | null | undefined): Promise<PosterDesignReference | null> {
   if (!template) return null
 
   try {
@@ -1535,7 +1525,7 @@ async function buildPosterDesignReference(template: PosterDesignTemplate | null 
 
     return {
       file,
-      promptLine: `Input image {index} = club poster template "${label}". This file is immutable Layer 1. Preserve it exactly and only add show-specific updates as a separate Layer 2 before final flattening. This is the full design context: layout, typography, colors, photo frames, logos, and branding. Edit this file — do not use it as loose inspiration.`,
+      promptLine: `Input image {index} = reference poster "${label}". This file is immutable Layer 1. Preserve it exactly and only replace comedian photos, names, title, date, time, and venue inside existing slots. Do not add overlays or new frames on top.`,
     }
   } catch (error) {
     throw new Error(`Selected poster template "${template.fileName}" could not be prepared for image generation.`, { cause: error })

@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogTitle,
 } from '@/components/ui/dialog'
 
 type PosterGenerateButtonProps = {
@@ -92,7 +93,7 @@ export function PosterGenerateButton({ showId, posterUrl, action, children }: Po
         <DialogContent className="max-w-md gap-0 border-border/50 p-0 shadow-lg">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
-            <p className="text-sm font-medium">Hva skal endres på?</p>
+            <DialogTitle className="text-sm font-medium">Hva skal endres på?</DialogTitle>
             <DialogClose asChild>
               <button
                 type="button"

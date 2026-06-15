@@ -3,10 +3,13 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import type { MarketingDesignKind } from '@/types/database'
 
 type MarketingTemplateUploadButtonProps = {
   showId: string
+  designKind: MarketingDesignKind
   action: (formData: FormData) => Promise<unknown>
+  label?: string
 }
 
 function getErrorMessage(error: unknown) {
@@ -23,7 +26,7 @@ function isNextControlFlowError(error: unknown) {
   return digest.startsWith('NEXT_REDIRECT') || digest.startsWith('NEXT_NOT_FOUND')
 }
 
-export function MarketingTemplateUploadButton({ showId, action }: MarketingTemplateUploadButtonProps) {
+export function MarketingTemplateUploadButton({ showId, designKind, action, label }: MarketingTemplateUploadButtonProps) {
   const router = useRouter()
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [isPending, startTransition] = React.useTransition()
@@ -42,6 +45,7 @@ export function MarketingTemplateUploadButton({ showId, action }: MarketingTempl
           const formData = new FormData()
           formData.append('show_id', showId)
           formData.append('design_file', file)
+          formData.append('design_kind', designKind)
 
           startTransition(async () => {
             try {
@@ -64,7 +68,7 @@ export function MarketingTemplateUploadButton({ showId, action }: MarketingTempl
         className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-70"
       >
         <span aria-hidden="true">+</span>
-        {isPending ? 'Laster opp...' : 'Last opp template'}
+        {isPending ? 'Laster opp...' : (label ?? 'Last opp')}
       </button>
     </div>
   )

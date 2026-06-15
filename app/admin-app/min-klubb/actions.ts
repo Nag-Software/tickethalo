@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { validateFrameBackgroundImage } from '@/lib/poster-validation'
 
 const CLUB_MEDIA_BUCKET = 'club-media'
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
@@ -67,7 +68,7 @@ function getFileExtension(file: File) {
   return fromMime || 'jpg'
 }
 
-async function uploadClubImage(clubId: string, folder: 'logo' | 'header' | 'gallery', file: File) {
+async function uploadClubImage(clubId: string, folder: 'logo' | 'header' | 'gallery' | 'poster-ai-reference' | 'poster-frame-background', file: File) {
   const admin = createAdminClient()
   const extension = getFileExtension(file)
   const path = `${clubId}/${folder}/${Date.now()}-${crypto.randomUUID()}.${extension}`
@@ -165,4 +166,42 @@ export async function saveClubProfileAction(formData: FormData) {
   revalidatePath('/admin-app/min-klubb')
   revalidatePath('/')
   revalidatePath(`/${currentClub.slug}`)
+}
+
+export async function saveClubPosterDefaultsAction(formData: FormData) {
+  const clubId = await getDefaultClubIdForAdmin()
+  const admin = createAdminClient()
+
+  const aiReferenceFile = getSingleImage(formData, 'ai_reference_file', 'AI-referanseplakat')
+  const frameBackgroundFile = getSingleImage(formData, 'frame_background_file', 'Ramme-bakgrunn')
+
+  if (!aiReferenceFile && !frameBackgroundFile) {
+    throw new Error('Velg minst én fil å lagre.')
+  }
+
+  const update: {
+    default_ai_poster_reference_url?: string
+    default_frame_background_url?: string
+  } = {}
+
+  if (aiReferenceFile) {
+    update.default_ai_poster_reference_url = await uploadClubImage(clubId, 'poster-ai-reference', aiReferenceFile)
+  }
+
+  if (frameBackgroundFile) {
+    const validation = await validateFrameBackgroundImage(Buffer.from(await frameBackgroundFile.arrayBuffer()))
+    if (!validation.ok) {
+      throw new Error(validation.reason)
+    }
+
+    update.default_frame_background_url = await uploadClubImage(clubId, 'poster-frame-background', frameBackgroundFile)
+  }
+
+  const { error } = await admin.from('clubs').update(update).eq('id', clubId)
+  if (error) {
+    throw new Error('Kunne ikke lagre plakat-standarder.')
+  }
+
+  revalidatePath('/admin-app/min-klubb')
+  revalidatePath('/admin-app/shows')
 }

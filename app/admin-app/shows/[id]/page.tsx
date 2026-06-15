@@ -15,6 +15,7 @@ import {
   updateShowDetailsAction,
   uploadMarketingDesignAction,
   uploadShowPosterAction,
+  useCurrentPosterAsReferenceAction,
 } from '../actions'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
@@ -23,6 +24,7 @@ import { PosterGenerateButton } from './poster-generate-button'
 import { PosterUploadButton } from './poster-upload-button'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
+import { resolvePosterContext } from '@/lib/poster-assets'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, ShowMarketingDesign } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
@@ -75,6 +77,14 @@ export default async function ShowDetailPage({
   ])
 
   if (!show) notFound()
+
+  const { data: clubPosterDefaults } = tab === 'marketing' && show.club_id
+    ? await db
+      .from('clubs')
+      .select('default_ai_poster_reference_url, default_frame_background_url')
+      .eq('id', show.club_id)
+      .maybeSingle()
+    : { data: null as { default_ai_poster_reference_url: string | null; default_frame_background_url: string | null } | null }
 
   // Fetch related artist/requirement data (split queries — no Relationships in DB types)
   const offerArtistIds = [...new Set((offers ?? []).map(o => o.artist_id))]
@@ -190,7 +200,14 @@ export default async function ShowDetailPage({
   }
 
   const showLocation = show.venue_address ?? show.venue_name
-  const selectedMarketingDesign = (marketingDesigns ?? []).find((design) => design.id === show.selected_marketing_design_id) ?? (marketingDesigns ?? [])[0] ?? null
+  const posterMode = show.poster_mode ?? 'ai_generated'
+  const posterContext = tab === 'marketing'
+    ? resolvePosterContext({ show, club: clubPosterDefaults, designs: marketingDesigns ?? [] })
+    : null
+  const aiReferenceDesigns = (marketingDesigns ?? []).filter((design) => design.design_kind === 'ai_reference')
+  const frameBackgroundDesigns = (marketingDesigns ?? []).filter((design) => design.design_kind === 'frame_background')
+  const selectedAiReference = aiReferenceDesigns.find((design) => design.id === show.selected_ai_reference_id) ?? aiReferenceDesigns[0] ?? null
+  const selectedFrameBackground = frameBackgroundDesigns.find((design) => design.id === show.selected_frame_background_id) ?? frameBackgroundDesigns[0] ?? null
 
   return (
     <div>
@@ -535,9 +552,26 @@ export default async function ShowDetailPage({
               <div className="rounded-xl border bg-card p-5 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="font-semibold text-sm">Lineup-plakat</h2>
-                    {selectedMarketingDesign && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">Bruker {selectedMarketingDesign.label || selectedMarketingDesign.file_name}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-semibold text-sm">Lineup-plakat</h2>
+                      <span className="rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        {posterMode === 'ai_generated' ? 'AI-plakat' : 'Ramme'}
+                      </span>
+                    </div>
+                    {posterMode === 'ai_generated' ? (
+                      posterContext?.aiReference ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Bruker referanse{posterContext.aiReferenceSource === 'club' ? ' (klubb-standard)' : ''}: {posterContext.aiReference.label || posterContext.aiReference.fileName}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-xs text-muted-foreground">AI lager en helt ny plakat uten referanse.</p>
+                      )
+                    ) : posterContext?.frameBackground ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Legger lineup på bakgrunn{posterContext.frameBackgroundSource === 'club' ? ' (klubb-standard)' : ''}: {posterContext.frameBackground.label || posterContext.frameBackground.fileName}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-destructive">Ramme-modus krever en ren bakgrunn uten personer eller tekst.</p>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
@@ -558,26 +592,25 @@ export default async function ShowDetailPage({
                   </div>
                 ) : (
                   <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
-                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — lag automatisk (med eller uten template) eller last opp egen.'}</p>
+                    <p>{show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet, eller last opp egen.' : 'Ingen plakat ennå — velg modus til høyre og lag automatisk, eller last opp egen.'}</p>
                   </div>
                 )}
               </div>
 
               <div className="rounded-xl border bg-card p-5 min-h-[640px] flex flex-col gap-4">
                 <div className="space-y-1">
-                  <h2 className="font-semibold text-sm">Plakat templates</h2>
-                  <p className="text-xs text-muted-foreground">Designet brukes som uendret base ved automatisk plakatbygging.</p>
+                  <h2 className="font-semibold text-sm">Plakatmodus</h2>
+                  <p className="text-xs text-muted-foreground">Velg hvordan lineup-plakaten skal lages for dette showet.</p>
                 </div>
 
-                {/* Poster mode toggle */}
                 <div className="rounded-lg border bg-muted/30 p-1 flex gap-1">
                   {([
-                    { value: 'framed', label: 'Ramme', desc: 'Legger lineup på template' },
-                    { value: 'ai_generated', label: 'AI-plakat', desc: '100% AI-generert bilde' },
+                    { value: 'ai_generated', label: 'AI-plakat', desc: 'AI lager hele plakaten. Med referanse beholder du klubbens identitet — kun bilder, navn, tittel og dato endres.' },
+                    { value: 'framed', label: 'Ramme', desc: 'Legger komiker-bilder og navn oppå et rent bakgrunnsbilde uten personer eller tekst.' },
                   ] as const).map(({ value, label, desc }) => {
-                    const active = (show.poster_mode ?? 'ai_generated') === value
+                    const active = posterMode === value
                     return (
-                      <ToastActionForm key={value} action={updatePosterModeAction} className="flex-1">
+                      <ToastActionForm key={value} action={updatePosterModeAction} className="flex-1" successMessage="Plakatmodus oppdatert.">
                         <input type="hidden" name="show_id" value={show.id} />
                         <input type="hidden" name="poster_mode" value={value} />
                         <button
@@ -592,55 +625,132 @@ export default async function ShowDetailPage({
                   })}
                 </div>
 
-                <div className="flex-1 space-y-3">
-                  {(marketingDesigns ?? []).length > 0 ? (
-                    (marketingDesigns ?? []).map((design) => {
-                      const isSelected = design.id === selectedMarketingDesign?.id
-                      const fileSize = formatFileSize(design.file_size)
-
-                      return (
-                        <div key={design.id} className={`rounded-lg border p-2 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/30'}`}>
-                          <ToastActionForm action={selectMarketingDesignAction} successMessage="Template valgt.">
-                            <input type="hidden" name="show_id" value={show.id} />
-                            <input type="hidden" name="design_id" value={design.id} />
-                            <button type="submit" className="block w-full text-left">
-                              <div className="flex items-center justify-between gap-2 pb-2">
-                                <div className="min-w-0">
-                                  <p className="truncate text-xs font-semibold">{design.label || design.file_name}</p>
-                                  <p className="text-[11px] text-muted-foreground uppercase">{design.file_type}{fileSize ? ` · ${fileSize}` : ''}</p>
-                                </div>
-                                {isSelected && (
-                                  <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Valgt</span>
-                                )}
-                              </div>
-                              <div className="relative aspect-[3/4] overflow-hidden rounded-md border bg-muted/20">
-                                <Image src={design.file_url} alt={design.label || design.file_name} fill sizes="260px" className="object-contain" />
-                              </div>
-                            </button>
-                          </ToastActionForm>
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <a href={design.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">
-                              Åpne fil
-                            </a>
-                            <ToastActionForm action={deleteMarketingDesignAction} successMessage="Template slettet.">
-                              <input type="hidden" name="show_id" value={show.id} />
-                              <input type="hidden" name="design_id" value={design.id} />
-                              <button type="submit" className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
-                                Slett
-                              </button>
-                            </ToastActionForm>
-                          </div>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-                      Ingen templates lagt til.
+                {posterMode === 'ai_generated' ? (
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold">Referanseplakat (valgfritt)</h3>
+                      <p className="text-xs text-muted-foreground">Last opp en tidligere plakat for å beholde samme visuelle identitet. AI bytter kun personer, navn, tittel og dato.</p>
                     </div>
-                  )}
-                </div>
 
-                <MarketingTemplateUploadButton showId={show.id} action={uploadMarketingDesignAction} />
+                    {show.poster_url ? (
+                      <ToastActionForm action={useCurrentPosterAsReferenceAction} successMessage="Nåværende plakat er satt som referanse.">
+                        <input type="hidden" name="show_id" value={show.id} />
+                        <button type="submit" className="w-full rounded-md border px-3 py-2 text-xs font-semibold transition-colors hover:bg-muted/60">
+                          Bruk nåværende plakat som referanse
+                        </button>
+                      </ToastActionForm>
+                    ) : null}
+
+                    <div className="flex-1 space-y-3">
+                      {aiReferenceDesigns.length > 0 ? (
+                        aiReferenceDesigns.map((design) => {
+                          const isSelected = design.id === selectedAiReference?.id
+                          const fileSize = formatFileSize(design.file_size)
+
+                          return (
+                            <div key={design.id} className={`rounded-lg border p-2 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/30'}`}>
+                              <ToastActionForm action={selectMarketingDesignAction} successMessage="Referanse valgt.">
+                                <input type="hidden" name="show_id" value={show.id} />
+                                <input type="hidden" name="design_id" value={design.id} />
+                                <input type="hidden" name="design_kind" value="ai_reference" />
+                                <button type="submit" className="block w-full text-left">
+                                  <div className="flex items-center justify-between gap-2 pb-2">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-xs font-semibold">{design.label || design.file_name}</p>
+                                      <p className="text-[11px] text-muted-foreground uppercase">{design.file_type}{fileSize ? ` · ${fileSize}` : ''}</p>
+                                    </div>
+                                    {isSelected && (
+                                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Valgt</span>
+                                    )}
+                                  </div>
+                                  <div className="relative aspect-[3/4] overflow-hidden rounded-md border bg-muted/20">
+                                    <Image src={design.file_url} alt={design.label || design.file_name} fill sizes="260px" className="object-contain" />
+                                  </div>
+                                </button>
+                              </ToastActionForm>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <a href={design.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">
+                                  Åpne fil
+                                </a>
+                                <ToastActionForm action={deleteMarketingDesignAction} successMessage="Referanse slettet.">
+                                  <input type="hidden" name="show_id" value={show.id} />
+                                  <input type="hidden" name="design_id" value={design.id} />
+                                  <button type="submit" className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
+                                    Slett
+                                  </button>
+                                </ToastActionForm>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 text-center text-sm text-muted-foreground">
+                          Ingen referanse lagt til. Uten referanse lager AI en helt ny plakat.
+                        </div>
+                      )}
+                    </div>
+
+                    <MarketingTemplateUploadButton showId={show.id} designKind="ai_reference" action={uploadMarketingDesignAction} label="Last opp referanseplakat" />
+                  </div>
+                ) : (
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold">Bakgrunn</h3>
+                      <p className="text-xs text-muted-foreground">Bakgrunnen skal være ren — ingen personer, navn eller show-tekst. Komikere og navn legges på i etterkant.</p>
+                    </div>
+
+                    <div className="flex-1 space-y-3">
+                      {frameBackgroundDesigns.length > 0 ? (
+                        frameBackgroundDesigns.map((design) => {
+                          const isSelected = design.id === selectedFrameBackground?.id
+                          const fileSize = formatFileSize(design.file_size)
+
+                          return (
+                            <div key={design.id} className={`rounded-lg border p-2 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/30'}`}>
+                              <ToastActionForm action={selectMarketingDesignAction} successMessage="Bakgrunn valgt.">
+                                <input type="hidden" name="show_id" value={show.id} />
+                                <input type="hidden" name="design_id" value={design.id} />
+                                <input type="hidden" name="design_kind" value="frame_background" />
+                                <button type="submit" className="block w-full text-left">
+                                  <div className="flex items-center justify-between gap-2 pb-2">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-xs font-semibold">{design.label || design.file_name}</p>
+                                      <p className="text-[11px] text-muted-foreground uppercase">{design.file_type}{fileSize ? ` · ${fileSize}` : ''}</p>
+                                    </div>
+                                    {isSelected && (
+                                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Valgt</span>
+                                    )}
+                                  </div>
+                                  <div className="relative aspect-[3/4] overflow-hidden rounded-md border bg-muted/20">
+                                    <Image src={design.file_url} alt={design.label || design.file_name} fill sizes="260px" className="object-contain" />
+                                  </div>
+                                </button>
+                              </ToastActionForm>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <a href={design.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">
+                                  Åpne fil
+                                </a>
+                                <ToastActionForm action={deleteMarketingDesignAction} successMessage="Bakgrunn slettet.">
+                                  <input type="hidden" name="show_id" value={show.id} />
+                                  <input type="hidden" name="design_id" value={design.id} />
+                                  <button type="submit" className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
+                                    Slett
+                                  </button>
+                                </ToastActionForm>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 text-center text-sm text-muted-foreground">
+                          Ingen bakgrunn lagt til. Last opp et rent design uten personer eller tekst.
+                        </div>
+                      )}
+                    </div>
+
+                    <MarketingTemplateUploadButton showId={show.id} designKind="frame_background" action={uploadMarketingDesignAction} label="Last opp bakgrunn" />
+                  </div>
+                )}
               </div>
             </div>
 

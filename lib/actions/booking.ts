@@ -9,6 +9,7 @@ import {
   sendSpotAvailableEmail,
 } from '@/lib/email/mailer'
 import { generateShowPoster } from '@/lib/actions/ai'
+import { loadResolvedPosterContext } from '@/lib/poster-assets'
 import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
 
 const MIN_BOOKABLE_SCORE = 6
@@ -510,37 +511,10 @@ export async function automateFullbookedShow(showId: string) {
 
   let posterUrl = show.poster_url ?? null
 
-  const { data: selectedDesign } = show.selected_marketing_design_id
-    ? await admin
-      .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, file_type')
-      .eq('id', show.selected_marketing_design_id)
-      .eq('show_id', showId)
-      .maybeSingle()
-    : { data: null }
-  const { data: fallbackDesign } = selectedDesign
-    ? { data: null }
-    : await admin
-      .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, file_type')
-      .eq('show_id', showId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  const posterDesign = selectedDesign ?? fallbackDesign
-
-  const useAI = (show.poster_mode ?? 'ai_generated') === 'ai_generated'
-  const designTemplate = (!useAI && posterDesign)
-    ? {
-        label: posterDesign.label,
-        fileUrl: posterDesign.file_url,
-        filePath: posterDesign.file_path,
-        fileName: posterDesign.file_name,
-        mimeType: posterDesign.mime_type,
-      }
-    : null
+  const posterContext = await loadResolvedPosterContext(showId)
 
   posterUrl = await generateShowPoster(showId, {
+    mode: posterContext.mode,
     title: show.title,
     date: show.date,
     startTime: show.start_time,
@@ -554,8 +528,9 @@ export async function automateFullbookedShow(showId: string) {
         role_name: requirementById.get(spot.show_requirement_id) ?? null,
       }]
     }),
-    designTemplate,
-    forceOpenAI: useAI,
+    aiReference: posterContext.aiReference,
+    frameBackground: posterContext.frameBackground,
+    aiReferenceSource: posterContext.aiReferenceSource,
   }) ?? show.poster_url ?? null
 
   const alreadyPublished = Boolean(show.published_at)

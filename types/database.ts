@@ -22,6 +22,7 @@ export type MarketingTaskKey =
   | 'share_facebook_groups'
   | 'send_calendar_partners'
   | 'schedule_email'
+export type MarketingDesignKind = 'ai_reference' | 'frame_background'
 export type MarketingDesignFileType = 'image'
 
 // ─────────────────────────────────────────────────────────────
@@ -39,6 +40,8 @@ export type Club = {
   location_name: string | null
   address_line: string | null
   city: string | null
+  default_ai_poster_reference_url: string | null
+  default_frame_background_url: string | null
   created_at: string
   updated_at: string
 }
@@ -107,6 +110,8 @@ export type Show = {
   ticket_url: string | null
   poster_url: string | null
   selected_marketing_design_id: string | null
+  selected_ai_reference_id: string | null
+  selected_frame_background_id: string | null
   poster_mode: 'framed' | 'ai_generated'
   status: ShowStatus
   stripe_product_id: string | null
@@ -128,6 +133,7 @@ export type ShowMarketingDesign = {
   mime_type: string
   file_type: MarketingDesignFileType
   file_size: number | null
+  design_kind: MarketingDesignKind
   created_at: string
   updated_at: string
 }
@@ -363,6 +369,8 @@ export type Database = {
           ticket_url?: string | null
           poster_url?: string | null
           selected_marketing_design_id?: string | null
+          selected_ai_reference_id?: string | null
+          selected_frame_background_id?: string | null
           poster_mode?: 'framed' | 'ai_generated'
           status?: ShowStatus
           stripe_product_id?: string | null
@@ -388,6 +396,7 @@ export type Database = {
           mime_type: string
           file_type: MarketingDesignFileType
           file_size?: number | null
+          design_kind?: MarketingDesignKind
           created_at?: string
           updated_at?: string
         }
@@ -576,6 +585,8 @@ export type Database = {
           location_name?: string | null
           address_line?: string | null
           city?: string | null
+          default_ai_poster_reference_url?: string | null
+          default_frame_background_url?: string | null
           created_at?: string
           updated_at?: string
         }

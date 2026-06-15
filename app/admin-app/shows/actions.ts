@@ -6,10 +6,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createShow, updateShowStatus } from '@/lib/actions/shows'
 import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
 import { generateShowPoster } from '@/lib/actions/ai'
+import { loadResolvedPosterContext } from '@/lib/poster-assets'
+import { validateFrameBackgroundImage } from '@/lib/poster-validation'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
-import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
+import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
 export type ManualSpotActionState = {
   status: 'idle' | 'success' | 'error'
@@ -240,10 +242,10 @@ async function cloneMarketingDesigns(
   newShowId: string,
 ) {
   const [{ data: templateShow }, { data: templateDesigns }] = await Promise.all([
-    db.from('shows').select('selected_marketing_design_id').eq('id', templateShowId).single(),
+    db.from('shows').select('selected_marketing_design_id, selected_ai_reference_id, selected_frame_background_id').eq('id', templateShowId).single(),
     db
       .from('show_marketing_designs')
-      .select('id, label, file_url, file_path, file_name, mime_type, file_type, file_size')
+      .select('id, label, file_url, file_path, file_name, mime_type, file_type, file_size, design_kind')
       .eq('show_id', templateShowId)
       .order('created_at'),
   ])
@@ -251,6 +253,8 @@ async function cloneMarketingDesigns(
   if (!templateDesigns?.length) return
 
   let selectedMarketingDesignId: string | null = null
+  let selectedAiReferenceId: string | null = null
+  let selectedFrameBackgroundId: string | null = null
 
   for (const design of templateDesigns) {
     const safeName = sanitizeStorageFileName(design.file_name)
@@ -279,6 +283,7 @@ async function cloneMarketingDesigns(
         mime_type: design.mime_type,
         file_type: design.file_type as MarketingDesignFileType,
         file_size: design.file_size,
+        design_kind: design.design_kind ?? 'ai_reference',
       })
       .select('id')
       .single()
@@ -288,16 +293,24 @@ async function cloneMarketingDesigns(
     if (design.id === templateShow?.selected_marketing_design_id) {
       selectedMarketingDesignId = clonedDesign.id
     }
+    if (design.id === templateShow?.selected_ai_reference_id) {
+      selectedAiReferenceId = clonedDesign.id
+    }
+    if (design.id === templateShow?.selected_frame_background_id) {
+      selectedFrameBackgroundId = clonedDesign.id
+    }
   }
 
-  if (selectedMarketingDesignId) {
-    const { error } = await db
-      .from('shows')
-      .update({ selected_marketing_design_id: selectedMarketingDesignId })
-      .eq('id', newShowId)
+  const { error } = await db
+    .from('shows')
+    .update({
+      selected_marketing_design_id: selectedMarketingDesignId,
+      selected_ai_reference_id: selectedAiReferenceId,
+      selected_frame_background_id: selectedFrameBackgroundId,
+    })
+    .eq('id', newShowId)
 
-    if (error) throw new Error(error.message)
-  }
+  if (error) throw new Error(error.message)
 }
 
 export async function createShowAction(formData: FormData) {
@@ -408,9 +421,34 @@ export async function cloneShowAction(formData: FormData) {
   redirect(`/admin-app/shows/${show.id}?tab=lineup`)
 }
 
+function parseDesignKind(value: FormDataEntryValue | null): MarketingDesignKind {
+  return value === 'frame_background' ? 'frame_background' : 'ai_reference'
+}
+
+async function setSelectedDesignForKind(
+  db: ReturnType<typeof createAdminClient>,
+  showId: string,
+  designId: string | null,
+  kind: MarketingDesignKind,
+) {
+  const update = kind === 'frame_background'
+    ? {
+      selected_frame_background_id: designId,
+      selected_marketing_design_id: designId,
+    }
+    : {
+      selected_ai_reference_id: designId,
+      selected_marketing_design_id: designId,
+    }
+
+  const { error } = await db.from('shows').update(update).eq('id', showId)
+  if (error) throw new Error(error.message)
+}
+
 export async function uploadMarketingDesignAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const designFile = formData.get('design_file')
+  const designKind = parseDesignKind(formData.get('design_kind'))
 
   if (!showId) throw new Error('Show mangler.')
   await assertShowAccess(showId)
@@ -425,6 +463,13 @@ export async function uploadMarketingDesignAction(formData: FormData) {
   const fileType = marketingDesignFileType(designFile)
   if (!fileType) {
     throw new Error('Design må være PNG, JPG, WebP, GIF, AVIF eller HEIC/HEIF.')
+  }
+
+  if (designKind === 'frame_background') {
+    const validation = await validateFrameBackgroundImage(Buffer.from(await designFile.arrayBuffer()))
+    if (!validation.ok) {
+      throw new Error(validation.reason)
+    }
   }
 
   const db = createAdminClient()
@@ -450,6 +495,7 @@ export async function uploadMarketingDesignAction(formData: FormData) {
       mime_type: mimeType,
       file_type: fileType,
       file_size: designFile.size,
+      design_kind: designKind,
     })
     .select('id')
     .single()
@@ -459,27 +505,14 @@ export async function uploadMarketingDesignAction(formData: FormData) {
     throw new Error(insertError.message)
   }
 
-  const { data: show } = await db
-    .from('shows')
-    .select('selected_marketing_design_id')
-    .eq('id', showId)
-    .single()
-
-  if (!show?.selected_marketing_design_id) {
-    const { error } = await db
-      .from('shows')
-      .update({ selected_marketing_design_id: design.id })
-      .eq('id', showId)
-
-    if (error) throw new Error(error.message)
-  }
-
+  await setSelectedDesignForKind(db, showId, design.id, designKind)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
 export async function selectMarketingDesignAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const designId = optionalText(formData.get('design_id'))
+  const designKind = parseDesignKind(formData.get('design_kind'))
   const db = createAdminClient()
 
   if (!showId) throw new Error('Show mangler.')
@@ -488,21 +521,75 @@ export async function selectMarketingDesignAction(formData: FormData) {
   if (designId) {
     const { data: design, error } = await db
       .from('show_marketing_designs')
-      .select('id')
+      .select('id, design_kind')
       .eq('id', designId)
       .eq('show_id', showId)
       .single()
 
     if (error || !design) throw new Error('Designmalen finnes ikke på dette showet.')
+    if (design.design_kind !== designKind) {
+      throw new Error('Designmalen matcher ikke valgt plakat-modus.')
+    }
   }
 
-  const { error } = await db
-    .from('shows')
-    .update({ selected_marketing_design_id: designId })
-    .eq('id', showId)
-
-  if (error) throw new Error(error.message)
+  await setSelectedDesignForKind(db, showId, designId, designKind)
   revalidatePath(`/admin-app/shows/${showId}`)
+}
+
+export async function useCurrentPosterAsReferenceAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  if (!showId) throw new Error('Show mangler.')
+  await assertShowAccess(showId)
+
+  const db = createAdminClient()
+  const { data: show, error: showError } = await db
+    .from('shows')
+    .select('poster_url')
+    .eq('id', showId)
+    .single()
+
+  if (showError || !show?.poster_url) {
+    throw new Error('Ingen plakat å bruke som referanse.')
+  }
+
+  const response = await fetch(show.poster_url, { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error('Kunne ikke hente nåværende plakat.')
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer())
+  const filePath = `${showId}/${crypto.randomUUID()}-current-poster-reference.png`
+
+  const { error: uploadError } = await db.storage
+    .from(MARKETING_DESIGN_BUCKET)
+    .upload(filePath, buffer, { contentType: 'image/png', upsert: false })
+
+  if (uploadError) throw new Error('Referanseplakaten kunne ikke lagres.')
+
+  const { data: urlData } = db.storage.from(MARKETING_DESIGN_BUCKET).getPublicUrl(filePath)
+  const { data: design, error: insertError } = await db
+    .from('show_marketing_designs')
+    .insert({
+      show_id: showId,
+      label: 'Nåværende plakat',
+      file_url: urlData.publicUrl,
+      file_path: filePath,
+      file_name: 'current-poster-reference.png',
+      mime_type: 'image/png',
+      file_type: 'image',
+      file_size: buffer.length,
+      design_kind: 'ai_reference',
+    })
+    .select('id')
+    .single()
+
+  if (insertError) {
+    await db.storage.from(MARKETING_DESIGN_BUCKET).remove([filePath])
+    throw new Error(insertError.message)
+  }
+
+  await setSelectedDesignForKind(db, showId, design.id, 'ai_reference')
+  revalidatePath(`/admin-app/shows/${showId}?tab=marketing`)
 }
 
 export async function deleteMarketingDesignAction(formData: FormData) {
@@ -515,18 +602,29 @@ export async function deleteMarketingDesignAction(formData: FormData) {
 
   const { data: design, error } = await db
     .from('show_marketing_designs')
-    .select('file_path')
+    .select('file_path, design_kind')
     .eq('id', designId)
     .eq('show_id', showId)
     .single()
 
   if (error || !design) throw new Error('Designmalen finnes ikke på dette showet.')
 
+  const clearSelection: {
+    selected_marketing_design_id: null
+    selected_ai_reference_id?: null
+    selected_frame_background_id?: null
+  } = { selected_marketing_design_id: null }
+  if (design.design_kind === 'ai_reference') {
+    clearSelection.selected_ai_reference_id = null
+  } else {
+    clearSelection.selected_frame_background_id = null
+  }
+
   await db
     .from('shows')
-    .update({ selected_marketing_design_id: null })
+    .update(clearSelection)
     .eq('id', showId)
-    .eq('selected_marketing_design_id', designId)
+    .or(`selected_marketing_design_id.eq.${designId},selected_ai_reference_id.eq.${designId},selected_frame_background_id.eq.${designId}`)
 
   const { error: deleteError } = await db
     .from('show_marketing_designs')
@@ -1164,9 +1262,10 @@ async function generatePosterForShow(
 ) {
   const db = createAdminClient()
 
-  const [{ data: show }, { data: spots }] = await Promise.all([
-    db.from('shows').select('title, date, start_time, venue_name, venue_address, selected_marketing_design_id').eq('id', showId).single(),
+  const [{ data: show }, { data: spots }, posterContext] = await Promise.all([
+    db.from('shows').select('title, date, start_time, venue_name, venue_address, poster_mode').eq('id', showId).single(),
     db.from('confirmed_spots').select('artist_id, show_requirement_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
+    loadResolvedPosterContext(showId),
   ])
 
   const spotRows = spots ?? []
@@ -1185,35 +1284,8 @@ async function generatePosterForShow(
 
   if (!show) throw new Error('Show not found')
 
-  const { data: selectedDesign } = show.selected_marketing_design_id
-    ? await db
-      .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, file_type')
-      .eq('id', show.selected_marketing_design_id)
-      .eq('show_id', showId)
-      .maybeSingle()
-    : { data: null }
-  const { data: fallbackDesign } = selectedDesign
-    ? { data: null }
-    : await db
-      .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, file_type')
-      .eq('show_id', showId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  const posterDesign = selectedDesign ?? fallbackDesign
-  const designTemplate = posterDesign
-    ? {
-      label: posterDesign.label,
-      fileUrl: posterDesign.file_url,
-      filePath: posterDesign.file_path,
-      fileName: posterDesign.file_name,
-      mimeType: posterDesign.mime_type,
-    }
-    : undefined
-
   const posterUrl = await generateShowPoster(showId, {
+    mode: posterContext.mode,
     title: show.title,
     date: show.date,
     startTime: show.start_time,
@@ -1227,9 +1299,10 @@ async function generatePosterForShow(
         role_name: requirementById.get(spot.show_requirement_id) ?? null,
       }]
     }),
-    designTemplate,
-    changeRequest: options?.changeRequest,
-    forceOpenAI: options?.isRegeneration,
+    aiReference: posterContext.aiReference,
+    frameBackground: posterContext.frameBackground,
+    aiReferenceSource: posterContext.aiReferenceSource,
+    changeRequest: options?.isRegeneration ? options.changeRequest : null,
     throwOnError: true,
   })
 

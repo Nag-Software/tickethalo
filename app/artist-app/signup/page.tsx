@@ -12,7 +12,7 @@ export default async function ArtistSignupPage({
   const { status, error } = await searchParams
 
   return (
-    <main className="min-h-svh bg-[#f3ead9] text-zinc-950">
+    <main className="min-h-svh bg-[#f3ead9]/10 text-zinc-950">
       <section className="relative isolate overflow-hidden border-b-2 border-zinc-950 bg-[#f3ead9] text-zinc-950">
         <div
           aria-hidden
