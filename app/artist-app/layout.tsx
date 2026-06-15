@@ -1,18 +1,21 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { ArtistTopbar } from '@/components/artist/artist-topbar'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
-const navItems = [
+export const dynamic = 'force-dynamic'
+
+const baseNavItems = [
   { label: 'Oversikt', href: '/artist-app' },
   { label: 'Tilbud', href: '/artist-app/booking-offers' },
   { label: 'Bookinger', href: '/artist-app/bookings' },
+  { label: 'Tilgjengelighet', href: '/artist-app/available-dates' },
   { label: 'Profil', href: '/artist-app/profile' },
 ]
 
-export const metadata = { title: 'Artistportal — humor.events' }
+export const metadata = { title: 'Komikerportal — humor.events' }
 
 export default async function ArtistLayout({ children }: { children: React.ReactNode }) {
   const pathname = await getRequestPathname()
@@ -36,51 +39,28 @@ export default async function ArtistLayout({ children }: { children: React.React
   const db = createAdminClient()
   const { data: artist } = await db
     .from('artists')
-    .select('full_name, stage_name, email, status')
+    .select('id, full_name, stage_name, email, status, admin_score')
     .eq('auth_user_id', user.id)
     .single()
 
   if (!artist) redirect('/artist-app/signup?error=missing')
 
+  const { count: pendingOffers } = await db
+    .from('booking_offers')
+    .select('id', { count: 'exact', head: true })
+    .eq('artist_id', artist.id)
+    .eq('status', 'sent')
+
+  const items = baseNavItems.map((item) =>
+    item.href === '/artist-app/booking-offers'
+      ? { ...item, badge: pendingOffers ?? 0 }
+      : item,
+  )
+
   return (
     <div className="flex min-h-svh flex-col bg-white text-black">
-      <ArtistTopbar pathname={pathname} name={artist.stage_name ?? artist.full_name} />
+      <ArtistTopbar name={artist.stage_name ?? artist.full_name} navItems={items} />
       <main className="flex flex-1 flex-col">{children}</main>
     </div>
-  )
-}
-
-function ArtistTopbar({ pathname, name }: { pathname: string; name: string }) {
-  return (
-    <header className="sticky top-0 z-30 border-b-2 border-zinc-950 bg-zinc-950 px-4 text-white md:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-6xl items-center justify-between py-4">
-        <div className="flex items-center gap-4">
-          <Link href="/artist-app" className="text-xl font-bold tracking-tight">
-            humor.events
-          </Link>
-          <span className="hidden border border-white/25 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-white/75 md:inline-flex">
-            Komikerportal
-          </span>
-        </div>
-        <nav className="flex items-center gap-5 text-sm text-white/55">
-          {navItems.map((item) => {
-            const active = item.href === '/artist-app'
-              ? pathname === '/artist-app' || pathname === '/artist-app/'
-              : pathname.startsWith(item.href)
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={active ? 'font-medium text-[#ff6bff] transition-colors' : 'transition-colors hover:text-white'}
-              >
-                {item.label}
-              </Link>
-            )
-          })}
-        </nav>
-        <span className="hidden text-sm text-white/40 md:inline">{name}</span>
-      </div>
-    </header>
   )
 }

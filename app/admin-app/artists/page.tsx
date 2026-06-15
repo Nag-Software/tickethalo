@@ -125,7 +125,7 @@ export default async function ArtistsPage({
                 <th className="text-left px-4 py-2.5 font-medium">Komiker</th>
                 <th className="text-left px-4 py-2.5 font-medium">E-post</th>
                 <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                <th className="text-center px-4 py-2.5 font-medium">Score</th>
+                <th className="text-center px-4 py-2.5 font-medium">Erfaringsnivå</th>
                 <th className="text-left px-4 py-2.5 font-medium">Energi</th>
                 <th className="text-left px-4 py-2.5 font-medium">Dato</th>
                 <th className="px-4 py-2.5" />

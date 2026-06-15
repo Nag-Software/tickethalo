@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, MapPin, Sparkles, Trash2, UploadCloud } from 'lucide-react'
+import { Building2, ImagePlus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
+import { Field, FieldContent, FieldLabel } from '@/components/ui/field'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { saveClubProfileAction } from '@/app/admin-app/min-klubb/actions'
 import type { Club } from '@/types/database'
 
@@ -28,10 +29,11 @@ type ClubProfileFormProps = {
   club: Pick<Club, 'id' | 'name' | 'slug' | 'description' | 'logo_url' | 'header_image_url' | 'location_name' | 'address_line' | 'city'>
 }
 
-function Dropzone({
-  title,
-  description,
+function ImageUpload({
+  label,
+  hint,
   preview,
+  aspectClass,
   emptyLabel,
   active,
   onClick,
@@ -40,9 +42,10 @@ function Dropzone({
   onDragLeave,
   onClear,
 }: {
-  title: string
-  description: string
+  label: string
+  hint: string
   preview?: string | null
+  aspectClass: string
   emptyLabel: string
   active: boolean
   onClick: () => void
@@ -52,15 +55,19 @@ function Dropzone({
   onClear?: () => void
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-2">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-sm font-medium text-foreground">{title}</div>
-          <div className="text-xs text-muted-foreground">{description}</div>
+          <p className="text-sm font-medium">{label}</p>
+          <p className="text-xs text-muted-foreground">{hint}</p>
         </div>
         {preview && onClear ? (
-          <button type="button" onClick={onClear} className="inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground">
-            <Trash2 className="h-3.5 w-3.5" />
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
+          >
+            <Trash2 className="size-3.5" />
             Fjern
           </button>
         ) : null}
@@ -79,26 +86,32 @@ function Dropzone({
             onClick()
           }
         }}
-        className={`group relative overflow-hidden rounded-[1.75rem] border border-dashed p-4 transition ${active ? 'border-black bg-black/5 shadow-[0_0_0_4px_rgba(24,24,27,0.06)]' : 'border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50'}`}
+        className={`group relative overflow-hidden rounded-xl border border-dashed transition-colors ${aspectClass} ${active ? 'border-primary bg-primary/5' : 'border-border bg-muted/30 hover:border-foreground/25 hover:bg-muted/50'}`}
       >
         {preview ? (
-          <div className="relative aspect-[16/10] overflow-hidden rounded-[1.25rem] border border-black/10 bg-zinc-100">
-            <img src={preview} alt="" className="h-full w-full object-contain" />
-            <div className="absolute inset-x-3 bottom-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur">
-              Slipp nytt bilde her for å erstatte
-            </div>
-          </div>
+          <img src={preview} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex aspect-[16/10] flex-col items-center justify-center rounded-[1.25rem] bg-[radial-gradient(circle_at_top,_rgba(0,0,0,0.06),_transparent_45%),linear-gradient(135deg,_#fff,_#faf8f2)] px-6 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white shadow-sm">
-              <UploadCloud className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-medium text-foreground">{emptyLabel}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Dra et bilde hit eller trykk for å velge fil</p>
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+            <ImagePlus className="size-5 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">{emptyLabel}</p>
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+function SaveStatus({ status }: { status: 'idle' | 'saving' | 'saved' | 'error' }) {
+  const label =
+    status === 'saving' ? 'Lagrer…'
+    : status === 'saved' ? 'Lagret'
+    : status === 'error' ? 'Lagring feilet'
+    : 'Lagres automatisk'
+
+  return (
+    <span className={`text-xs ${status === 'error' ? 'text-destructive' : 'text-muted-foreground'} ${status === 'saving' ? 'animate-pulse' : ''}`}>
+      {label}
+    </span>
   )
 }
 
@@ -289,185 +302,148 @@ export function ClubProfileForm({ club }: ClubProfileFormProps) {
       <input ref={logoInputRef} type="file" name="logoFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(logoInputRef.current, event.currentTarget.files?.[0] ?? null, setLogoPreview)} />
       <input ref={headerInputRef} type="file" name="headerFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(headerInputRef.current, event.currentTarget.files?.[0] ?? null, setHeaderPreview)} />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
-        <div className="space-y-6">
-          <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-amber-700">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Identitet
-                </div>
-                <h3 className="mt-3 text-xl font-semibold tracking-tight">Gi klubben et tydelig uttrykk</h3>
-                <p className="mt-1 text-sm text-muted-foreground">Oppdater navn, fortelling og lokasjon slik at klubbprofilen føles ferdig.</p>
-              </div>
-              <div className="rounded-2xl border bg-zinc-50 px-3 py-2 text-right text-xs text-muted-foreground">
-                <div className="font-medium text-foreground">/{club.slug}</div>
-                <div>Intern klubbslug</div>
-              </div>
-            </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Grunnleggende info</CardTitle>
+          <CardDescription>Navn, beskrivelse og adresse vises på klubbens profil.</CardDescription>
+          <CardAction>
+            <SaveStatus status={saveStatus} />
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Field>
+            <FieldLabel htmlFor="club-name">Klubbnavn</FieldLabel>
+            <FieldContent>
+              <Input id="club-name" name="name" value={values.name} onChange={(event) => updateValue('name', event.target.value)} placeholder="Latter Oslo" required />
+            </FieldContent>
+          </Field>
 
-            <div className="grid gap-5 md:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="club-name">
-                  <FieldTitle>Klubbnavn</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-name" name="name" value={values.name} onChange={(event) => updateValue('name', event.target.value)} placeholder="Latter Oslo" required />
-                  <FieldDescription>Vises i admin-app, på events og i klubbvalg.</FieldDescription>
-                </FieldContent>
-              </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="club-city">By</FieldLabel>
+              <FieldContent>
+                <Input id="club-city" name="city" value={values.city} onChange={(event) => updateValue('city', event.target.value)} placeholder="Oslo" />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="club-location">Lokasjon</FieldLabel>
+              <FieldContent>
+                <Input id="club-location" name="locationName" value={values.locationName} onChange={(event) => updateValue('locationName', event.target.value)} placeholder="Sentrum Scene" />
+              </FieldContent>
+            </Field>
+          </div>
 
-              <Field>
-                <FieldLabel htmlFor="club-city">
-                  <FieldTitle>By</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-city" name="city" value={values.city} onChange={(event) => updateValue('city', event.target.value)} placeholder="Oslo" />
-                  <FieldDescription>Brukes i filtre, etiketter og oversikter.</FieldDescription>
-                </FieldContent>
-              </Field>
+          <Field>
+            <FieldLabel htmlFor="club-address">Adresse</FieldLabel>
+            <FieldContent>
+              <Input id="club-address" name="addressLine" value={values.addressLine} onChange={(event) => updateValue('addressLine', event.target.value)} placeholder="Arbeidersamfunnets plass 1" />
+            </FieldContent>
+          </Field>
 
-              <Field>
-                <FieldLabel htmlFor="club-location">
-                  <FieldTitle>Lokasjon</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-location" name="locationName" value={values.locationName} onChange={(event) => updateValue('locationName', event.target.value)} placeholder="Sentrum Scene" />
-                  <FieldDescription>Navnet på klubbens faste venue eller rom.</FieldDescription>
-                </FieldContent>
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="club-address">
-                  <FieldTitle>Adresse</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-address" name="addressLine" value={values.addressLine} onChange={(event) => updateValue('addressLine', event.target.value)} placeholder="Arbeidersamfunnets plass 1" />
-                  <FieldDescription>Full adresse for publikum og artister.</FieldDescription>
-                </FieldContent>
-              </Field>
-            </div>
-
-            <div className="mt-5 rounded-[1.5rem] border bg-zinc-50/80 p-4">
-              <label htmlFor="club-description" className="mb-2 block text-sm font-medium text-foreground">Om klubben</label>
+          <Field>
+            <FieldLabel htmlFor="club-description">Om klubben</FieldLabel>
+            <FieldContent>
               <textarea
                 id="club-description"
                 name="description"
                 value={values.description}
                 onChange={(event) => updateValue('description', event.target.value)}
-                placeholder="Fortell kort om stemningen, publikumet og hva som gjør klubben spesiell."
-                rows={7}
-                className="min-h-40 w-full resize-y rounded-[1.5rem] border border-input bg-white px-4 py-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                placeholder="Kort beskrivelse av klubben og stemningen."
+                rows={4}
+                className="min-h-24 w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
-              <p className="mt-2 text-xs text-muted-foreground">Kort, tydelig og visuelt. Denne teksten bør føles som klubbens egen intro.</p>
-            </div>
+            </FieldContent>
+          </Field>
+
+          <p className="text-xs text-muted-foreground">URL: /{club.slug}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Logo og header</CardTitle>
+          <CardDescription>Bildene brukes i admin, på events og på klubbens offentlige side.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-5 sm:grid-cols-[140px_1fr]">
+            <ImageUpload
+              label="Logo"
+              hint="Kvadratisk, min. 200×200 px"
+              preview={logoPreview}
+              aspectClass="aspect-square"
+              emptyLabel="Last opp logo"
+              active={logoActive}
+              onClick={() => logoInputRef.current?.click()}
+              onDrop={(event) => {
+                event.preventDefault()
+                setLogoActive(false)
+                replaceSingleFile(logoInputRef.current, Array.from(event.dataTransfer.files).find((file) => file.type.startsWith('image/')) ?? null, setLogoPreview)
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setLogoActive(true)
+              }}
+              onDragLeave={() => setLogoActive(false)}
+              onClear={() => replaceSingleFile(logoInputRef.current, null, setLogoPreview)}
+            />
+
+            <ImageUpload
+              label="Headerbilde"
+              hint="Bredt bilde, anbefalt 16:9"
+              preview={headerPreview}
+              aspectClass="aspect-[16/9]"
+              emptyLabel="Last opp headerbilde"
+              active={headerActive}
+              onClick={() => headerInputRef.current?.click()}
+              onDrop={(event) => {
+                event.preventDefault()
+                setHeaderActive(false)
+                replaceSingleFile(headerInputRef.current, Array.from(event.dataTransfer.files).find((file) => file.type.startsWith('image/')) ?? null, setHeaderPreview)
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setHeaderActive(true)
+              }}
+              onDragLeave={() => setHeaderActive(false)}
+              onClear={() => replaceSingleFile(headerInputRef.current, null, setHeaderPreview)}
+            />
           </div>
+        </CardContent>
+      </Card>
 
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black text-white">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight">Brand assets</h3>
-                <p className="text-sm text-muted-foreground">Logo og header brukes som klubbens signaturflater.</p>
-              </div>
-            </div>
-
-            <div className="space-y-5">
-              <Dropzone
-                title="Logo"
-                description="Best som kvadratisk merke eller enkel logotype."
-                preview={logoPreview}
-                emptyLabel="Slipp inn klubbens logo"
-                active={logoActive}
-                onClick={() => logoInputRef.current?.click()}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setLogoActive(false)
-                  replaceSingleFile(logoInputRef.current, Array.from(event.dataTransfer.files).find((file) => file.type.startsWith('image/')) ?? null, setLogoPreview)
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setLogoActive(true)
-                }}
-                onDragLeave={() => setLogoActive(false)}
-                onClear={() => replaceSingleFile(logoInputRef.current, null, setLogoPreview)}
-              />
-
-              <Dropzone
-                title="Headerbilde"
-                description="Et bredt bilde som setter stemning øverst på klubbkortet og siden."
-                preview={headerPreview}
-                emptyLabel="Slipp inn et hero-bilde"
-                active={headerActive}
-                onClick={() => headerInputRef.current?.click()}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setHeaderActive(false)
-                  replaceSingleFile(headerInputRef.current, Array.from(event.dataTransfer.files).find((file) => file.type.startsWith('image/')) ?? null, setHeaderPreview)
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setHeaderActive(true)
-                }}
-                onDragLeave={() => setHeaderActive(false)}
-                onClear={() => replaceSingleFile(headerInputRef.current, null, setHeaderPreview)}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border bg-[radial-gradient(circle_at_top_left,_rgba(255,224,178,0.5),_transparent_24%),linear-gradient(135deg,_#fff,_#faf8f2)] p-6 shadow-sm">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-foreground shadow-sm">
-                <MapPin className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight">Preview</h3>
-                <p className="text-sm text-muted-foreground">Slik ser klubbens profil ut med dagens innhold.</p>
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-[1.75rem] border bg-white shadow-sm">
-              <div className="relative aspect-[16/9] bg-zinc-100">
-                {headerPreview ? <img src={headerPreview} alt="" className="h-full w-full object-cover" /> : null}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
-                <div className="absolute inset-x-4 bottom-4 flex items-end gap-3 text-white">
-                  <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/15 backdrop-blur">
-                    {logoPreview ? <img src={logoPreview} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-6 w-6" />}
-                  </div>
-                  <div>
-                    <div className="text-lg font-semibold leading-tight">{values.name || 'Klubbnavn'}</div>
-                    <div className="text-xs text-white/75">{values.city || 'By mangler'} • {values.locationName || 'Lokasjon mangler'}</div>
-                  </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Forhåndsvisning</CardTitle>
+          <CardDescription>Slik ser profilen ut med dagens innhold.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
+            <div className="relative aspect-[2/1] bg-muted">
+              {headerPreview ? <img src={headerPreview} alt="" className="h-full w-full object-cover" /> : null}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+              <div className="absolute inset-x-4 bottom-4 flex items-end gap-3 text-white">
+                <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/15 ring-1 ring-white/20">
+                  {logoPreview ? <img src={logoPreview} alt="" className="h-full w-full object-cover" /> : <Building2 className="size-5" />}
                 </div>
-              </div>
-
-              <div className="space-y-3 p-4">
-                <div className="rounded-2xl bg-zinc-50 p-3 text-sm text-muted-foreground">
-                  {values.description || 'Om klubben-teksten kommer til å vises her.'}
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span className="rounded-full border bg-white px-3 py-1.5">{values.addressLine || 'Adresse mangler'}</span>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{values.name || 'Klubbnavn'}</p>
+                  <p className="truncate text-xs text-white/75">
+                    {[values.city, values.locationName].filter(Boolean).join(' · ') || 'By og lokasjon'}
+                  </p>
                 </div>
               </div>
             </div>
-
-            <div className="mt-5 flex justify-end">
-              <p className={`text-sm ${saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'} ${saveStatus === 'saving' ? 'animate-pulse' : ''}`}>
-                {saveStatus === 'saving' && 'Lagrer…'}
-                {saveStatus === 'saved' && 'Lagret'}
-                {saveStatus === 'error' && 'Lagring feilet'}
-                {saveStatus === 'idle' && 'Endringer lagres automatisk'}
+            <div className="space-y-2 p-4">
+              <p className="text-sm text-muted-foreground">
+                {values.description || 'Beskrivelse vises her.'}
               </p>
+              {values.addressLine ? (
+                <p className="text-xs text-muted-foreground">{values.addressLine}</p>
+              ) : null}
             </div>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   )
 }

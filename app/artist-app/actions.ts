@@ -2,10 +2,13 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { getCurrentArtist } from '@/lib/artist-portal'
+import {
+  MAX_ARTIST_AVAILABILITY_DATES,
+  canAddAvailabilityDate,
+  todayIsoDate,
+} from '@/lib/artist-availability'
+import { ensureArtistApprovedForAvailability, getCurrentArtist } from '@/lib/artist-portal'
 import { canonicalRoleValues } from '@/lib/artist-roles'
-
-const MIN_BOOKABLE_SCORE = 6
 
 export async function updateArtistProfileAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
@@ -39,33 +42,45 @@ export async function updateArtistProfileAction(formData: FormData) {
 }
 
 export async function toggleAvailabilityAction(formData: FormData) {
-  const { artist, db } = await getCurrentArtist()
+  const { artist: currentArtist, db } = await getCurrentArtist()
+  const artist = await ensureArtistApprovedForAvailability(currentArtist, db)
+
   const date = textValue(formData.get('available_date'))
   if (!date) throw new Error('Dato mangler.')
-  if (artist.status !== 'approved') throw new Error('Profilen din må være godkjent før du kan velge datoer.')
-  if ((artist.admin_score ?? 0) < MIN_BOOKABLE_SCORE) throw new Error('Du må ha score 6 eller høyere for å velge ledige bookingdatoer.')
+
+  const today = todayIsoDate()
+  if (date < today) throw new Error('Du kan bare markere dagens dato eller fremtidige datoer.')
 
   const { data: existing } = await db
     .from('artist_availability')
     .select('id')
     .eq('artist_id', artist.id)
     .eq('available_date', date)
-    .single()
+    .maybeSingle()
 
   if (existing) {
     await db.from('artist_availability').delete().eq('id', existing.id)
   } else {
-    const { count } = await db
+    const { data: activeRows } = await db
       .from('artist_availability')
-      .select('id', { count: 'exact', head: true })
+      .select('available_date')
       .eq('artist_id', artist.id)
-      .gte('available_date', new Date().toISOString().slice(0, 10))
+      .gte('available_date', today)
 
-    if ((count ?? 0) >= 3) throw new Error('Du kan maksimalt velge tre kommende datoer.')
-    await db.from('artist_availability').insert({ artist_id: artist.id, available_date: date })
+    if (!canAddAvailabilityDate(activeRows ?? [], today)) {
+      throw new Error(`Du kan maksimalt velge ${MAX_ARTIST_AVAILABILITY_DATES} datoer om gangen. Fjern en dato før du legger til en ny.`)
+    }
+
+    const { error } = await db.from('artist_availability').insert({
+      artist_id: artist.id,
+      available_date: date,
+    })
+    if (error) throw new Error(error.message)
   }
 
   revalidatePath('/artist-app/available-dates')
+  revalidatePath('/artist-app')
+  revalidatePath('/artist-app/profile')
 }
 
 export async function acceptOfferAction(formData: FormData) {

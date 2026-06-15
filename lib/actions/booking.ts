@@ -10,129 +10,89 @@ import {
 } from '@/lib/email/mailer'
 import { generateShowPoster } from '@/lib/actions/ai'
 import { loadResolvedPosterContext } from '@/lib/poster-assets'
-import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
+import { normalizeArtistRole } from '@/lib/artist-roles'
+import {
+  computeFinalScore,
+  applyBookingFairnessFilters,
+  expandCandidatesForDemand,
+  getGlobalBookingCap,
+  getRoleBookingCount,
+  getRoleExpansionOptions,
+  matchesHardRequirements,
+  selectFallbackCandidates,
+  strictFilter,
+  autoBookingOfferExpiresAt,
+  OFFER_BUDGET_STATUSES,
+  selectExcessSentOfferIdsToCancel,
+  type ClubBookingSettings,
+  type ClubFairnessContext,
+  type ScoringArtist,
+  type ScoringRequirement,
+} from '@/lib/booking-scoring'
+import { buildClubFairnessContext, loadClubBookingSettings } from '@/lib/club-booking-settings'
 
-const MIN_BOOKABLE_SCORE = 6
 const ACTIVE_BOOKING_STATUSES = ['booking'] as const
+const REOPEN_BOOKING_STATUSES = ['booking', 'fullbooked', 'published'] as const
 
-// ─── Scoring config ───────────────────────────────────────────────────────────
-
-type ScoringConfig = {
-  quality_weight: number
-  availability_bonus: number
-  role_match_bonus: number
-  busy_penalty_per_booking: number
-  busy_window_days: number
-  offers_per_slot: number
-  fallback_limit: number
-}
-
-const DEFAULT_SCORING_CONFIG: ScoringConfig = {
-  quality_weight: 100,
-  availability_bonus: 30,
-  role_match_bonus: 15,
-  busy_penalty_per_booking: 15,
-  busy_window_days: 30,
-  offers_per_slot: 10,
-  fallback_limit: 5,
-}
-
-async function loadScoringConfig(admin: ReturnType<typeof createAdminClient>): Promise<ScoringConfig> {
-  const { data } = await admin.from('booking_scoring_config').select('*').eq('id', 'default').single()
-  if (!data) return DEFAULT_SCORING_CONFIG
-  return {
-    quality_weight: Number(data.quality_weight),
-    availability_bonus: Number(data.availability_bonus),
-    role_match_bonus: Number(data.role_match_bonus),
-    busy_penalty_per_booking: Number(data.busy_penalty_per_booking),
-    busy_window_days: data.busy_window_days,
-    offers_per_slot: data.offers_per_slot,
-    fallback_limit: data.fallback_limit,
-  }
-}
-
-/**
- * Counts confirmed bookings per artist for shows in the last N days + all future shows.
- * Used to deprioritise artists who are already heavily booked.
- */
-async function buildBusyMap(
-  admin: ReturnType<typeof createAdminClient>,
-  windowDays: number,
-): Promise<Map<string, number>> {
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - windowDays)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
-
-  const { data: windowShows } = await admin.from('shows').select('id').gte('date', cutoffStr)
-  if (!windowShows?.length) return new Map()
-
-  const { data: spots } = await admin
-    .from('confirmed_spots')
-    .select('artist_id')
-    .in('show_id', windowShows.map(s => s.id))
-    .in('status', ['confirmed', 'completed', 'paid'])
-
-  const busyMap = new Map<string, number>()
-  for (const spot of spots ?? []) {
-    busyMap.set(spot.artist_id, (busyMap.get(spot.artist_id) ?? 0) + 1)
-  }
-  return busyMap
-}
-
-type ArtistRow = {
-  id: string
+type ArtistRow = ScoringArtist & {
   email: string
   full_name: string
-  admin_score: number | null
-  admin_energy_level: string | null
-  gender: string | null
-  category: string[] | null
 }
 
-type RequirementRow = {
+type RequirementRow = ScoringRequirement & {
   id: string
-  role_name: string
   quantity: number
-  min_score: number | null
-  energy_level: string
-  required_gender: string
+  booking_mode?: string
+  compensation_type?: string | null
+  compensation_amount?: number | null
 }
 
-/**
- * Priority score for a candidate artist.
- * Higher = more likely to receive an offer.
- */
-function computeScore(
-  artist: ArtistRow,
+function applyFairCapFilter<T extends ScoringArtist>(
+  candidates: T[],
   roleName: string,
-  config: ScoringConfig,
+  fairnessContext: ClubFairnessContext,
+  poolSize: number,
+  rosterSize: number,
+): T[] {
+  return applyBookingFairnessFilters(candidates, roleName, fairnessContext, poolSize, rosterSize)
+}
+
+function sortCandidatesByScore(
+  artists: ArtistRow[],
+  roleName: string,
+  config: ClubBookingSettings,
   availableSet: Set<string>,
-  busyMap: Map<string, number>,
-): number {
-  const quality     = ((artist.admin_score ?? 0) / 10) * config.quality_weight
-  const availability = availableSet.has(artist.id) ? config.availability_bonus : 0
-  const roleMatch   = artistMatchesRole(roleName, artist) ? config.role_match_bonus : 0
-  const penalty     = (busyMap.get(artist.id) ?? 0) * config.busy_penalty_per_booking
-  return quality + availability + roleMatch - penalty
-}
+  fairnessContext: ClubFairnessContext,
+  totalRolePoolSize: number,
+  rosterSize: number,
+) {
+  const poolContext = { eligiblePoolSize: Math.max(1, totalRolePoolSize) }
+  const bookedCounts = [...fairnessContext.bookingCountByArtist.values()].filter(count => count > 0)
+  const catchUpClub = bookedCounts.length > 0
+    && bookedCounts.filter(count => count >= 2).length >= 3
+    && Math.max(...bookedCounts) >= 4
+  return [...artists].sort((a, b) => {
+    const globalA = fairnessContext.bookingCountByArtist.get(a.id) ?? 0
+    const globalB = fairnessContext.bookingCountByArtist.get(b.id) ?? 0
+    if (globalA !== globalB) {
+      return catchUpClub ? globalB - globalA : globalA - globalB
+    }
 
-function strictFilter(
-  artist: ArtistRow,
-  req: RequirementRow,
-  alreadyInvolved: Set<string>,
-): boolean {
-  if (alreadyInvolved.has(artist.id)) return false
-  if (!matchesHardRequirements(artist, req)) return false
-  const minScore = Math.max(req.min_score ?? MIN_BOOKABLE_SCORE, MIN_BOOKABLE_SCORE)
-  if ((artist.admin_score ?? 0) < minScore) return false
-  return true
-}
+    const countA = getRoleBookingCount(a.id, roleName, fairnessContext)
+    const countB = getRoleBookingCount(b.id, roleName, fairnessContext)
+    if (countA !== countB) {
+      return catchUpClub ? countB - countA : countA - countB
+    }
 
-function matchesHardRequirements(artist: ArtistRow, req: RequirementRow): boolean {
-  if (!artistMatchesRole(req.role_name, artist)) return false
-  if (req.energy_level !== 'any' && artist.admin_energy_level !== req.energy_level) return false
-  if (req.required_gender && req.required_gender !== 'any' && artist.gender !== req.required_gender) return false
-  return true
+    if (globalA > 0) {
+      const scoreA = a.admin_score ?? 0
+      const scoreB = b.admin_score ?? 0
+      if (scoreA !== scoreB) return scoreA - scoreB
+    }
+
+    return computeFinalScore(b, roleName, config, availableSet, fairnessContext, poolContext)
+      - computeFinalScore(a, roleName, config, availableSet, fairnessContext, poolContext)
+  })
 }
 
 function requirementRolePriority(roleName: string | null | undefined) {
@@ -144,53 +104,59 @@ function requirementRolePriority(roleName: string | null | undefined) {
   return 4
 }
 
-/**
- * Fallback: only called when zero artists pass strict criteria.
- * Relaxes score step-by-step, but never relaxes role, energy or gender.
- * Sorted by admin_score only (not the new composite formula).
- */
-function selectFallbackCandidates(
-  allArtists: ArtistRow[],
-  req: RequirementRow,
-  alreadyInvolved: Set<string>,
-  limit: number,
-): ArtistRow[] {
-  const minScore = Math.max(req.min_score ?? MIN_BOOKABLE_SCORE, MIN_BOOKABLE_SCORE)
-  const base = allArtists.filter(a => !alreadyInvolved.has(a.id) && matchesHardRequirements(a, req))
-  const byScore = (a: ArtistRow, b: ArtistRow) => (b.admin_score ?? 0) - (a.admin_score ?? 0)
-
-  const steps: Array<(a: ArtistRow) => boolean> = [
-    a => (a.admin_score ?? 0) >= minScore - 1,
-    a => (a.admin_score ?? 0) >= minScore - 2,
-  ]
-
-  for (const step of steps) {
-    const found = base.filter(step).sort(byScore).slice(0, limit)
-    if (found.length > 0) return found
-  }
-  return []
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 function publicAppUrl() {
   return (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 }
 
+async function enforceCascadeOfferIntegrity(
+  admin: ReturnType<typeof createAdminClient>,
+  showId: string,
+  keepPerRequirement: number,
+) {
+  const { data: sentOffers, error } = await admin
+    .from('booking_offers')
+    .select('id, show_requirement_id, sent_at')
+    .eq('show_id', showId)
+    .eq('status', 'sent')
+    .not('show_requirement_id', 'is', null)
 
+  if (error) throw new Error(error.message)
+
+  const duplicateIds = selectExcessSentOfferIdsToCancel(sentOffers ?? [], keepPerRequirement)
+  if (duplicateIds.length === 0) return
+
+  const { error: updateError } = await admin
+    .from('booking_offers')
+    .update({ status: 'cancelled', responded_at: new Date().toISOString() })
+    .in('id', duplicateIds)
+
+  if (updateError) throw new Error(updateError.message)
+}
+
+async function countActiveSentOffers(
+  admin: ReturnType<typeof createAdminClient>,
+  requirementId: string,
+) {
+  const { count, error } = await admin
+    .from('booking_offers')
+    .select('*', { count: 'exact', head: true })
+    .eq('show_requirement_id', requirementId)
+    .eq('status', 'sent')
+
+  if (error) throw new Error(error.message)
+  return count ?? 0
+}
 
 /**
  * Book show: selects and sends offers for all unfilled requirements.
  *
- * Scoring (configurable via booking_scoring_config table):
- *   score = (admin_score/10 × quality_weight) + availability_bonus? + role_match_bonus? − busy_count × busy_penalty
+ * Scoring (configurable via club_booking_settings):
+ *   FinalScore = BaseScore × fairnessMultiplier × consecutiveMultiplier × dominanceMultiplier + underbookedBoost
  *
- * Round-based assignment:
- *   1. Count open slots and existing pending offers per requirement.
- *   2. Send offers in rounds, one wave per open slot, across all requirements.
- *      This prevents the first identical role from consuming the whole pool.
- *   3. effectiveInvolved grows as artists are assigned, so each artist only gets
- *      one active opportunity per show.
+ * Cascade assignment:
+ *   1. At most offers_per_wave active sent offers per requirement.
+ *   2. At most offers_per_wave new offers per requirement per bookShow invocation.
+ *   3. offers_per_slot caps total attempts (declined/expired/sent) per open slot over time.
  * Falls back to relaxed criteria only when no strict candidates remain for a requirement.
  */
 export async function bookShow(showId: string) {
@@ -200,7 +166,7 @@ export async function bookShow(showId: string) {
 
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, status, start_time, venue_name, venue_address, club_id, currency')
+    .select('id, title, date, status, start_time, venue_name, venue_address, club_id, currency, created_at')
     .eq('id', showId)
     .single()
   if (showError || !show) throw new Error('Show not found')
@@ -222,20 +188,28 @@ export async function bookShow(showId: string) {
   if (!requirements?.length) return { offersCreated, candidatesMatched }
 
   const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
-    loadScoringConfig(admin),
+    loadClubBookingSettings(admin, show.club_id),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
       .eq('is_flagged', false),
   ])
+
+  await enforceCascadeOfferIntegrity(admin, showId, config.offers_per_wave)
+
   if (!allArtists?.length) return { offersCreated, candidatesMatched }
 
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
-  const busyMap = await buildBusyMap(admin, config.busy_window_days)
+  const fairnessContext = await buildClubFairnessContext(admin, show.club_id, {
+    id: show.id,
+    date: show.date,
+    start_time: show.start_time,
+    created_at: show.created_at ?? show.date,
+  }, config)
 
   const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
-    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', ['sent', 'accepted']),
+    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', [...OFFER_BUDGET_STATUSES]),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
@@ -269,8 +243,16 @@ export async function bookShow(showId: string) {
   ])
 
   const pendingOffersByRequirement = new Map<string, number>()
+  const offersUsedByRequirement = new Map<string, number>()
   for (const offer of activeExistingOffers) {
-    if (offer.status !== 'sent' || !offer.show_requirement_id) continue
+    if (!offer.show_requirement_id) continue
+    if (OFFER_BUDGET_STATUSES.includes(offer.status as (typeof OFFER_BUDGET_STATUSES)[number])) {
+      offersUsedByRequirement.set(
+        offer.show_requirement_id,
+        (offersUsedByRequirement.get(offer.show_requirement_id) ?? 0) + 1,
+      )
+    }
+    if (offer.status !== 'sent') continue
     pendingOffersByRequirement.set(
       offer.show_requirement_id,
       (pendingOffersByRequirement.get(offer.show_requirement_id) ?? 0) + 1,
@@ -281,11 +263,14 @@ export async function bookShow(showId: string) {
     req: NonNullable<typeof requirements>[number]
     slotsNeeded: number
     currentPendingOffers: number
+    offersUsed: number
     initialStrictCount: number
     maxNewOffers: number
   }> = []
 
   for (const req of requirements) {
+    if (req.booking_mode === 'manual') continue
+
     const { count: filled } = await admin
       .from('confirmed_spots')
       .select('*', { count: 'exact', head: true })
@@ -295,13 +280,14 @@ export async function bookShow(showId: string) {
     const slotsNeeded = req.quantity - (filled ?? 0)
     if (slotsNeeded <= 0) continue
 
-    const targetPendingOffers = slotsNeeded * config.offers_per_slot
+    const offerBudget = slotsNeeded * config.offers_per_slot
+    const offersUsed = offersUsedByRequirement.get(req.id) ?? 0
     const currentPendingOffers = pendingOffersByRequirement.get(req.id) ?? 0
-    const maxNewOffers = Math.max(0, targetPendingOffers - currentPendingOffers)
-    if (maxNewOffers <= 0) continue
+    const maxNewOffers = Math.max(0, offerBudget - offersUsed)
+    if (maxNewOffers <= 0 || currentPendingOffers >= config.offers_per_wave) continue
 
-    const initialStrictCount = (allArtists as ArtistRow[]).filter(a => strictFilter(a, req, alreadyInvolved)).length
-    reqEntries.push({ req, slotsNeeded, currentPendingOffers, initialStrictCount, maxNewOffers })
+    const initialStrictCount = (allArtists as ArtistRow[]).filter(a => strictFilter(a, req, alreadyInvolved, config)).length
+    reqEntries.push({ req, slotsNeeded, currentPendingOffers, offersUsed, initialStrictCount, maxNewOffers })
   }
 
   if (!reqEntries.length) return { offersCreated, candidatesMatched }
@@ -315,13 +301,53 @@ export async function bookShow(showId: string) {
     limit: number,
     fallbackLimit: number,
   ) {
-    let candidates = (allArtists as ArtistRow[])
-      .filter(a => strictFilter(a, req, effectiveInvolved))
-      .sort((a, b) => computeScore(b, req.role_name, config, availableSet, busyMap) - computeScore(a, req.role_name, config, availableSet, busyMap))
-      .slice(0, limit)
+    const dedicatedPoolSize = (allArtists as ArtistRow[]).filter(a =>
+      strictFilter(a, req, new Set(), config),
+    ).length
+    const demandRatio = fairnessContext.totalClubEvents / Math.max(1, dedicatedPoolSize)
+    const filterOptions = getRoleExpansionOptions(req.role_name, demandRatio, dedicatedPoolSize)
+    const hasRoleExpansion = Object.keys(filterOptions).length > 0
+
+    const totalRolePoolSize = hasRoleExpansion
+      ? (allArtists as ArtistRow[]).filter(a => strictFilter(a, req, new Set(), config, filterOptions)).length
+      : dedicatedPoolSize
+
+    let strictCandidates = (allArtists as ArtistRow[]).filter(a =>
+      strictFilter(a, req, effectiveInvolved, config, filterOptions),
+    )
+
+    if (demandRatio >= 1.2 && (dedicatedPoolSize <= 12 || hasRoleExpansion)) {
+      strictCandidates = expandCandidatesForDemand(allArtists as ArtistRow[], req, effectiveInvolved, config, filterOptions)
+    }
+
+    const globalCap = getGlobalBookingCap(fairnessContext.totalClubEvents, (allArtists as ArtistRow[]).length)
+    const underGlobalCap = strictCandidates.filter(
+      artist => (fairnessContext.bookingCountByArtist.get(artist.id) ?? 0) < globalCap,
+    )
+    if (underGlobalCap.length > 0) {
+      strictCandidates = underGlobalCap
+    }
+
+    strictCandidates = applyFairCapFilter(
+      strictCandidates,
+      req.role_name,
+      fairnessContext,
+      Math.max(totalRolePoolSize, strictCandidates.length),
+      (allArtists as ArtistRow[]).length,
+    )
+
+    let candidates = sortCandidatesByScore(
+      strictCandidates,
+      req.role_name,
+      config,
+      availableSet,
+      fairnessContext,
+      Math.max(totalRolePoolSize, strictCandidates.length),
+      (allArtists as ArtistRow[]).length,
+    ).slice(0, limit)
 
     if (candidates.length === 0 && fallbackLimit > 0) {
-      candidates = selectFallbackCandidates(allArtists as ArtistRow[], req, effectiveInvolved, Math.min(limit, fallbackLimit))
+      candidates = selectFallbackCandidates(allArtists as ArtistRow[], req, effectiveInvolved, config, Math.min(limit, fallbackLimit))
     }
 
     return candidates
@@ -335,59 +361,41 @@ export async function bookShow(showId: string) {
     }
   }
 
-  const coverageEntries = [...reqEntries]
-    .filter(entry => entry.currentPendingOffers < entry.slotsNeeded)
-    .sort((a, b) => {
-      const aMissing = a.slotsNeeded - a.currentPendingOffers
-      const bMissing = b.slotsNeeded - b.currentPendingOffers
-      return requirementRolePriority(a.req.role_name) - requirementRolePriority(b.req.role_name)
-        || bMissing - aMissing
-        || a.req.lineup_position - b.req.lineup_position
-        || a.initialStrictCount - b.initialStrictCount
-    })
-
-  for (const entry of coverageEntries) {
-    const alreadyAssignedForReq = assignedByRequirement.get(entry.req.id) ?? 0
-    const missingCoverage = Math.max(0, entry.slotsNeeded - entry.currentPendingOffers - alreadyAssignedForReq)
-    const remainingForReq = entry.maxNewOffers - alreadyAssignedForReq
-    if (missingCoverage <= 0 || remainingForReq <= 0) continue
-
-    const fallbackRemaining = Math.max(0, config.fallback_limit - alreadyAssignedForReq)
-    const candidates = chooseCandidates(entry.req, Math.min(missingCoverage, remainingForReq), fallbackRemaining)
-    assignCandidates(entry.req, candidates)
-  }
-
-  const extraEntries = [...reqEntries].sort((a, b) => {
+  const cascadeEntries = [...reqEntries].sort((a, b) => {
     const rolePriority = requirementRolePriority(a.req.role_name) - requirementRolePriority(b.req.role_name)
     if (rolePriority !== 0) return rolePriority
 
     if ((a.initialStrictCount === 0) !== (b.initialStrictCount === 0)) {
       return a.initialStrictCount === 0 ? 1 : -1
     }
+
     return a.initialStrictCount - b.initialStrictCount
       || a.req.lineup_position - b.req.lineup_position
   })
 
-  const maxRounds = Math.max(...extraEntries.map(entry => Math.ceil(entry.maxNewOffers / entry.slotsNeeded)))
+  for (const entry of cascadeEntries) {
+    const alreadyAssignedForReq = assignedByRequirement.get(entry.req.id) ?? 0
+    const remainingForReq = entry.maxNewOffers - alreadyAssignedForReq
+    if (remainingForReq <= 0) continue
 
-  for (let round = 0; round < maxRounds; round++) {
-    for (const { req, slotsNeeded, maxNewOffers } of extraEntries) {
-      const alreadyAssignedForReq = assignedByRequirement.get(req.id) ?? 0
-      const remainingForReq = maxNewOffers - alreadyAssignedForReq
-      if (remainingForReq <= 0) continue
+    const waveSize = Math.min(
+      config.offers_per_wave - entry.currentPendingOffers - alreadyAssignedForReq,
+      remainingForReq,
+    )
+    if (waveSize <= 0) continue
 
-      const waveSize = Math.min(slotsNeeded, remainingForReq)
-      const fallbackRemaining = Math.max(0, config.fallback_limit - alreadyAssignedForReq)
-      const candidates = chooseCandidates(req, waveSize, fallbackRemaining)
-      assignCandidates(req, candidates)
-    }
+    const fallbackRemaining = Math.max(0, config.fallback_limit - entry.offersUsed - alreadyAssignedForReq)
+    const candidates = chooseCandidates(entry.req, waveSize, fallbackRemaining)
+    assignCandidates(entry.req, candidates)
   }
 
   candidatesMatched = assignments.length
   if (!assignments.length) return { offersCreated, candidatesMatched }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
   for (const { artistId, req } of assignments) {
+    if (await countActiveSentOffers(admin, req.id) >= config.offers_per_wave) continue
+
     const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
     const feeAmountOere = req.compensation_type === 'fixed' && req.compensation_amount
       ? Math.round(Number(req.compensation_amount) * 100)
@@ -401,13 +409,18 @@ export async function bookShow(showId: string) {
         show_requirement_id: req.id,
         status: 'sent',
         sent_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at: autoBookingOfferExpiresAt(),
         ...(feeAmountOere ? { fee_amount: feeAmountOere, currency } : {}),
       })
       .select('token')
       .single()
 
-    if (offerError || !offer) continue
+    if (offerError) {
+      // Unique index: one sent offer per requirement (concurrent bookShow race).
+      if (offerError.code === '23505') continue
+      continue
+    }
+    if (!offer) continue
     offersCreated++
 
     await sendBookingOfferEmail({
@@ -426,6 +439,39 @@ export async function bookShow(showId: string) {
   }
 
   return { offersCreated, candidatesMatched }
+}
+
+/**
+ * Expire sent offers past their deadline and cascade to the next candidate.
+ * Intended to run on a schedule (e.g. hourly cron).
+ */
+export async function expireStaleBookingOffers() {
+  const admin = createAdminClient()
+  const now = new Date().toISOString()
+
+  const { data: staleOffers, error } = await admin
+    .from('booking_offers')
+    .select('id, show_id')
+    .eq('status', 'sent')
+    .lt('expires_at', now)
+
+  if (error) throw new Error(error.message)
+  if (!staleOffers?.length) return { expired: 0, showsProcessed: 0 }
+
+  const offerIds = staleOffers.map(offer => offer.id)
+  const { error: updateError } = await admin
+    .from('booking_offers')
+    .update({ status: 'expired', responded_at: now })
+    .in('id', offerIds)
+
+  if (updateError) throw new Error(updateError.message)
+
+  const showIds = [...new Set(staleOffers.map(offer => offer.show_id))]
+  for (const showId of showIds) {
+    await runAutomaticBookingForShow(showId)
+  }
+
+  return { expired: offerIds.length, showsProcessed: showIds.length }
 }
 
 
@@ -817,12 +863,17 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const admin = createAdminClient()
 
   const [{ data: show }, { data: requirement }] = await Promise.all([
-    admin.from('shows').select('id, title, date, status').eq('id', showId).single(),
+    admin.from('shows').select('id, title, date, status, start_time, club_id, created_at').eq('id', showId).single(),
     admin.from('show_requirements').select('*').eq('id', requirementId).single(),
   ])
 
   if (!show || !requirement) return
-  if (!ACTIVE_BOOKING_STATUSES.includes(show.status as (typeof ACTIVE_BOOKING_STATUSES)[number])) return
+  if (requirement.booking_mode === 'manual') return
+  if (!REOPEN_BOOKING_STATUSES.includes(show.status as (typeof REOPEN_BOOKING_STATUSES)[number])) return
+
+  if (show.status !== 'booking') {
+    await admin.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['fullbooked', 'published'])
+  }
 
   const { count: filled } = await admin
     .from('confirmed_spots')
@@ -833,41 +884,115 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   if ((filled ?? 0) >= requirement.quantity) return
 
   const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
-    loadScoringConfig(admin),
+    loadClubBookingSettings(admin, show.club_id),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
       .eq('is_flagged', false),
   ])
+
+  await enforceCascadeOfferIntegrity(admin, showId, config.offers_per_wave)
+
   if (!allArtists?.length) return
 
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
-  const busyMap = await buildBusyMap(admin, config.busy_window_days)
+  const fairnessContext = await buildClubFairnessContext(admin, show.club_id, {
+    id: show.id,
+    date: show.date,
+    start_time: show.start_time,
+    created_at: show.created_at ?? show.date,
+  }, config)
 
   const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
-    admin.from('booking_offers').select('artist_id').eq('show_id', showId).eq('status', 'sent'),
+    admin.from('booking_offers').select('artist_id, show_requirement_id, status').eq('show_id', showId).in('status', [...OFFER_BUDGET_STATUSES]),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
+
+  const slotsNeeded = requirement.quantity - (filled ?? 0)
+
+  const currentPendingOffers = (existingOffers ?? []).filter(
+    offer => offer.show_requirement_id === requirementId && offer.status === 'sent',
+  ).length
+  if (currentPendingOffers >= config.offers_per_wave) return
+
+  const offersUsed = (existingOffers ?? []).filter(
+    offer => offer.show_requirement_id === requirementId
+      && OFFER_BUDGET_STATUSES.includes(offer.status as (typeof OFFER_BUDGET_STATUSES)[number]),
+  ).length
+  const offerBudget = slotsNeeded * config.offers_per_slot
+  if (offersUsed >= offerBudget) return
+
   const alreadyInvolved = new Set([
     ...(existingOffers ?? []).map(o => o.artist_id),
     ...(existingSpots ?? []).map(s => s.artist_id),
     ...(excludedArtists ?? []).map(row => row.artist_id),
   ])
 
-  const slotsNeeded = requirement.quantity - (filled ?? 0)
-  let candidates = (allArtists as ArtistRow[])
-    .filter(a => strictFilter(a, requirement, alreadyInvolved))
-    .sort((a, b) => computeScore(b, requirement.role_name, config, availableSet, busyMap) - computeScore(a, requirement.role_name, config, availableSet, busyMap))
-    .slice(0, slotsNeeded * config.offers_per_slot)
+  const rosterSize = (allArtists as ArtistRow[]).length
+  const dedicatedPoolSize = (allArtists as ArtistRow[]).filter(a =>
+    strictFilter(a, requirement, new Set(), config),
+  ).length
+  const demandRatio = fairnessContext.totalClubEvents / Math.max(1, dedicatedPoolSize)
+  const filterOptions = getRoleExpansionOptions(requirement.role_name, demandRatio, dedicatedPoolSize)
+  const hasRoleExpansion = Object.keys(filterOptions).length > 0
+  const totalRolePoolSize = hasRoleExpansion
+    ? (allArtists as ArtistRow[]).filter(a => strictFilter(a, requirement, new Set(), config, filterOptions)).length
+    : dedicatedPoolSize
+
+  let strictCandidates = (allArtists as ArtistRow[]).filter(a =>
+    strictFilter(a, requirement, alreadyInvolved, config, filterOptions),
+  )
+  if (demandRatio >= 1.2 && (dedicatedPoolSize <= 12 || hasRoleExpansion)) {
+    strictCandidates = expandCandidatesForDemand(allArtists as ArtistRow[], requirement, alreadyInvolved, config, filterOptions)
+  }
+
+  const globalCap = getGlobalBookingCap(fairnessContext.totalClubEvents, rosterSize)
+  const underGlobalCap = strictCandidates.filter(
+    artist => (fairnessContext.bookingCountByArtist.get(artist.id) ?? 0) < globalCap,
+  )
+  if (underGlobalCap.length > 0) {
+    strictCandidates = underGlobalCap
+  }
+
+  strictCandidates = applyFairCapFilter(
+    strictCandidates,
+    requirement.role_name,
+    fairnessContext,
+    Math.max(totalRolePoolSize, strictCandidates.length),
+    rosterSize,
+  )
+
+  const waveSize = Math.min(
+    config.offers_per_wave - currentPendingOffers,
+    offerBudget - offersUsed,
+  )
+
+  let candidates = sortCandidatesByScore(
+    strictCandidates,
+    requirement.role_name,
+    config,
+    availableSet,
+    fairnessContext,
+    Math.max(totalRolePoolSize, strictCandidates.length),
+    rosterSize,
+  ).slice(0, Math.max(0, waveSize))
 
   if (candidates.length === 0) {
-    candidates = selectFallbackCandidates(allArtists as ArtistRow[], requirement, alreadyInvolved, config.fallback_limit)
+    candidates = selectFallbackCandidates(
+      allArtists as ArtistRow[],
+      requirement,
+      alreadyInvolved,
+      config,
+      Math.min(Math.max(0, waveSize), config.fallback_limit),
+    )
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   for (const artist of candidates) {
+    if (await countActiveSentOffers(admin, requirementId) >= config.offers_per_wave) break
+
     const { data: offer, error } = await admin
       .from('booking_offers')
       .insert({
@@ -876,12 +1001,16 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
         show_requirement_id: requirementId,
         status: 'sent',
         sent_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at: autoBookingOfferExpiresAt(),
       })
       .select('token')
       .single()
 
-    if (error || !offer) continue
+    if (error) {
+      if (error.code === '23505') break
+      continue
+    }
+    if (!offer) continue
 
     await sendSpotAvailableEmail({
       email: artist.email,

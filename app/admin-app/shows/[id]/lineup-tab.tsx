@@ -12,7 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-import { shouldBypassImageOptimization } from '@/lib/utils'
+import { shouldBypassImageOptimization, cn } from '@/lib/utils'
 import {
   removeSpotAndReopenAction,
   moveSpotAction,
@@ -23,7 +23,7 @@ import {
   updateOfferStatusAction,
   openRequirementEnergyLevelsAction,
 } from '../actions'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import type { RequirementBookingMode, RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 type Artist = {
   id: string
@@ -52,6 +52,7 @@ type Requirement = {
   min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  booking_mode: RequirementBookingMode
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -72,6 +73,8 @@ type BookingOffer = {
   show_requirement_id: string | null
   status: string
   sent_at: string | null
+  expires_at: string | null
+  responded_at: string | null
 }
 
 type DragItem =
@@ -82,6 +85,25 @@ const STATUS_COLORS: Record<string, string> = {
   confirmed: 'bg-emerald-100 text-emerald-700',
   completed: 'bg-sky-100 text-sky-700',
   paid: 'bg-purple-100 text-purple-700',
+}
+
+const OFFER_HISTORY_STATUSES = ['declined', 'expired', 'filled_by_other'] as const
+
+const OFFER_STATUS_LABELS: Record<string, string> = {
+  declined: 'Avslått',
+  expired: 'Utløpt',
+  filled_by_other: 'Fylt av annen',
+}
+
+const OFFER_STATUS_COLORS: Record<string, string> = {
+  declined: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
+  expired: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+  filled_by_other: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300',
+}
+
+function formatOfferTimestamp(value: string | null) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' })
 }
 
 const LINEUP_REFRESH_INTERVAL_MS = 4000
@@ -98,6 +120,11 @@ const GENDER_LABELS: Record<RequirementGender, string> = {
   any: 'Alle',
   male: 'Mann',
   female: 'Dame',
+}
+
+const BOOKING_MODE_LABELS: Record<RequirementBookingMode, string> = {
+  auto: 'Automatisk',
+  manual: 'Manuell',
 }
 
 function formatEditableNumber(value: number | null) {
@@ -122,9 +149,10 @@ function requirementSummary(requirement: Requirement, currency: string) {
       : 'Ikke satt'
 
   return [
-    `Score ${requirement.min_score ?? 'any'}`,
+    `Erfaringsnivå ${requirement.min_score ?? 'any'}`,
     `Energi ${ENERGY_LABELS[requirement.energy_level] ?? requirement.energy_level}`,
     `Kjønn ${GENDER_LABELS[requirement.required_gender] ?? requirement.required_gender}`,
+    `Booking ${BOOKING_MODE_LABELS[requirement.booking_mode ?? 'auto']}`,
     honorar,
   ]
 }
@@ -169,6 +197,7 @@ export function LineupTab({
 
   // Requirement info panel per spot
   const [openInfoReqId, setOpenInfoReqId] = useState<string | null>(null)
+  const [openHistoryReqId, setOpenHistoryReqId] = useState<string | null>(null)
   const [energyPromptStartedAtByReq, setEnergyPromptStartedAtByReq] = useState<Record<string, number>>({})
   const [energyPromptClock, setEnergyPromptClock] = useState(() => Date.now())
 
@@ -185,7 +214,7 @@ export function LineupTab({
     const reqSpots = activeSpots.filter(s => s.show_requirement_id === req.id)
     const reqPending = allOffers.filter(o => o.show_requirement_id === req.id && o.status === 'sent')
     const hasSuggestion = Boolean(energyRelaxationSuggestions[req.id])
-    return showStatus === 'booking' && hasSuggestion && reqSpots.length === 0 && reqPending.length === 0
+    return showStatus === 'booking' && hasSuggestion && reqSpots.length === 0 && reqPending.length === 0 && req.booking_mode !== 'manual'
       ? [req.id]
       : []
   }).join('|')
@@ -246,9 +275,16 @@ export function LineupTab({
       const fd = new FormData()
       fd.set('spot_id', spotId)
       fd.set('show_id', showId)
+      const spot = activeSpots.find(s => s.id === spotId)
+      const req = requirements.find(r => r.id === spot?.show_requirement_id)
+      const isManualBooking = req?.booking_mode === 'manual'
       try {
         await removeSpotAndReopenAction(fd)
-        toast.success('Artist fjernet. Ny tilbudsrunde starter automatisk.')
+        toast.success(
+          isManualBooking
+            ? 'Artist fjernet.'
+            : 'Artist fjernet. Ny tilbudsrunde starter automatisk.'
+        )
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
@@ -441,6 +477,16 @@ export function LineupTab({
         const reqPending = allOffers.filter(
           o => o.show_requirement_id === req.id && o.status === 'sent'
         )
+        const reqHistory = allOffers
+          .filter(o => o.show_requirement_id === req.id && OFFER_HISTORY_STATUSES.includes(o.status as (typeof OFFER_HISTORY_STATUSES)[number]))
+          .sort((a, b) => {
+            const aTime = a.responded_at ?? a.sent_at ?? ''
+            const bTime = b.responded_at ?? b.sent_at ?? ''
+            return bTime.localeCompare(aTime)
+          })
+        const declinedCount = reqHistory.filter(o => o.status === 'declined').length
+        const expiredCount = reqHistory.filter(o => o.status === 'expired').length
+        const isHistoryOpen = openHistoryReqId === req.id
         const isLocked = reqSpots.length >= req.quantity
         const canAcceptDraggedItem = Boolean(dragItem) && !isLocked
         const isDragOver = dragOverReqId === req.id && canAcceptDraggedItem
@@ -449,9 +495,11 @@ export function LineupTab({
         const energySuggestion = energyRelaxationSuggestions[req.id]
         const energyPromptStartedAt = energyPromptStartedAtByReq[req.id]
         const movableOffers = allOffers.filter(o => o.status === 'sent' && o.show_requirement_id !== req.id)
+        const isManualBooking = req.booking_mode === 'manual'
         const shouldShowEnergyPrompt = Boolean(
           energySuggestion &&
           showStatus === 'booking' &&
+          !isManualBooking &&
           energyPromptStartedAt &&
           energyPromptClock - energyPromptStartedAt >= EMPTY_STATE_ENERGY_PROMPT_DELAY_MS
         )
@@ -477,6 +525,22 @@ export function LineupTab({
                     {reqPending.length} venter svar
                   </span>
                 )}
+                {(declinedCount > 0 || expiredCount > 0) && (
+                  <span className="text-xs text-muted-foreground">
+                    {[
+                      declinedCount > 0 ? `${declinedCount} avslått` : null,
+                      expiredCount > 0 ? `${expiredCount} utløpt` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+                <span className={cn(
+                  'text-[10px] font-medium px-1.5 py-0.5 rounded-md ring-1',
+                  isManualBooking
+                    ? 'bg-muted text-muted-foreground ring-border'
+                    : 'bg-primary/10 text-primary ring-primary/20'
+                )}>
+                  {BOOKING_MODE_LABELS[req.booking_mode ?? 'auto']}
+                </span>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {!isLocked && (
@@ -695,8 +759,14 @@ export function LineupTab({
                       <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
                         Venter svar
                       </span>
-                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {offer.sent_at ? new Date(offer.sent_at).toLocaleDateString('nb-NO') : '—'}
+                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums text-right">
+                        {offer.sent_at ? `Sendt ${formatOfferTimestamp(offer.sent_at)}` : '—'}
+                        {offer.expires_at ? (
+                          <>
+                            <br />
+                            Utløper {formatOfferTimestamp(offer.expires_at)}
+                          </>
+                        ) : null}
                       </span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -730,6 +800,60 @@ export function LineupTab({
               </div>
             )}
 
+            {!isLocked && reqHistory.length > 0 && (
+              <div className="border-t bg-muted/10">
+                <button
+                  type="button"
+                  onClick={() => setOpenHistoryReqId(isHistoryOpen ? null : req.id)}
+                  className="w-full px-4 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted/20 transition-colors"
+                >
+                  {isHistoryOpen ? 'Skjul' : 'Vis'} {reqHistory.length} tidligere tilbud
+                </button>
+                {isHistoryOpen && (
+                  <div className="divide-y border-t">
+                    {reqHistory.map(offer => {
+                      const artist = artistMap[offer.artist_id]
+                      const statusLabel = OFFER_STATUS_LABELS[offer.status] ?? offer.status
+                      const statusColor = OFFER_STATUS_COLORS[offer.status] ?? 'bg-muted text-muted-foreground'
+                      const eventTime = offer.status === 'expired'
+                        ? offer.responded_at ?? offer.expires_at
+                        : offer.responded_at ?? offer.sent_at
+
+                      return (
+                        <div
+                          key={offer.id}
+                          className="flex items-center gap-3 px-4 py-2.5 border-l-2 border-l-muted-foreground/20 opacity-80"
+                        >
+                          <div className="size-9 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground shrink-0">
+                            {(artist?.full_name ?? '?').charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={`/admin-app/artists/${offer.artist_id}`}
+                                className="text-sm truncate text-muted-foreground hover:underline underline-offset-2"
+                              >
+                                {artist?.full_name ?? '—'}
+                              </Link>
+                              {artist?.admin_score != null && (
+                                <span className="text-xs text-muted-foreground/60 shrink-0">⭐ {artist.admin_score}</span>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                            {formatOfferTimestamp(eventTime)}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Empty state */}
             {reqSpots.length === 0 && reqPending.length === 0 && (
               shouldShowEnergyPrompt ? (
@@ -741,7 +865,7 @@ export function LineupTab({
                       </p>
                       <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
                         {energySuggestion.candidates > 0
-                          ? `${energySuggestion.candidates} kandidat${energySuggestion.candidates === 1 ? '' : 'er'} matcher rolle, kjønn og score hvis energi settes til Alle.`
+                          ? `${energySuggestion.candidates} kandidat${energySuggestion.candidates === 1 ? '' : 'er'} matcher rolle, kjønn og erfaringsnivå hvis energi settes til Alle.`
                           : 'Åpner energikravet for denne spotten og starter ny tilbudsrunde.'}
                       </p>
                     </div>
@@ -758,8 +882,12 @@ export function LineupTab({
               ) : (
                 <p className="px-4 py-5 text-sm text-muted-foreground">
                   {showStatus === 'draft'
-                    ? 'Start booking for å sende tilbud til artister.'
-                    : 'Ingen aktive tilbud eller bekreftede artister ennå.'}
+                    ? isManualBooking
+                      ? 'Manuell plass — legg til komiker selv når booking er startet.'
+                      : 'Start booking for å sende tilbud til artister.'
+                    : isManualBooking
+                      ? 'Manuell plass — bruk + Legg til for å fylle spotten.'
+                      : 'Ingen aktive tilbud eller bekreftede artister ennå.'}
                 </p>
               )
             )}

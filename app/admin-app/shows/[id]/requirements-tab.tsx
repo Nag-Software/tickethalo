@@ -23,13 +23,6 @@ import {
 } from '@/components/ui/select'
 import { ToastActionForm } from '@/components/toast-action-form'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
   addRequirementAction,
   reorderRequirementsAction,
   updateRequirementAction,
@@ -37,7 +30,7 @@ import {
   startBookingAction,
 } from '../actions'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import type { RequirementBookingMode, RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +41,7 @@ type Requirement = {
   min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  booking_mode: RequirementBookingMode
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -59,6 +53,7 @@ type ReqState = {
   min_score: string
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  booking_mode: RequirementBookingMode
   compensation_type: RequirementCompensationType | ''
   compensation_amount: string
   compensation_percent: string
@@ -91,6 +86,7 @@ const WIZARD_INITIAL: WizardState = {
   min_score: '',
   energy_level: 'any',
   required_gender: 'any',
+  booking_mode: 'auto',
   compensation_type: '',
   compensation_amount: '',
   compensation_percent: '',
@@ -123,6 +119,11 @@ const GENDER_LABELS: Record<RequirementGender, string> = {
   male: 'Mann',
   female: 'Dame',
 }
+
+const BOOKING_MODE_OPTIONS: { value: RequirementBookingMode; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'manual', label: 'Manuell' },
+]
 
 const COMPENSATION_TYPE_OPTIONS: Array<{
   value: RequirementCompensationType | ''
@@ -174,6 +175,7 @@ function stateFromRequirement(requirement: Requirement): ReqState {
     min_score: requirement.min_score != null ? String(requirement.min_score) : '',
     energy_level: requirement.energy_level,
     required_gender: requirement.required_gender,
+    booking_mode: requirement.booking_mode ?? 'auto',
     compensation_type: requirement.compensation_type ?? '',
     compensation_amount: requirement.compensation_amount != null ? formatEditableNumber(requirement.compensation_amount / 100) : '',
     compensation_percent: requirement.compensation_percent != null ? formatEditableNumber(requirement.compensation_percent) : '',
@@ -190,6 +192,7 @@ function buildFormData(showId: string, reqId: string, state: ReqState): FormData
   fd.set('min_score', state.min_score)
   fd.set('energy_level', state.energy_level)
   fd.set('required_gender', state.required_gender)
+  fd.set('booking_mode', state.booking_mode ?? 'auto')
   fd.set('compensation_type', state.compensation_type)
   fd.set('compensation_amount', state.compensation_amount)
   fd.set('compensation_percent', state.compensation_percent)
@@ -202,6 +205,7 @@ function isSameReqState(left: ReqState, right: ReqState) {
     && left.min_score === right.min_score
     && left.energy_level === right.energy_level
     && left.required_gender === right.required_gender
+    && left.booking_mode === right.booking_mode
     && left.compensation_type === right.compensation_type
     && left.compensation_amount === right.compensation_amount
     && left.compensation_percent === right.compensation_percent
@@ -218,8 +222,16 @@ function loadRequirementDrafts(showId: string) {
       return {} as Record<string, ReqState>
     }
 
-    const parsed = JSON.parse(raw) as Record<string, ReqState>
-    return parsed ?? {}
+    const parsed = JSON.parse(raw) as Record<string, Partial<ReqState>>
+    return Object.fromEntries(
+      Object.entries(parsed ?? {}).map(([id, draft]) => [
+        id,
+        {
+          ...draft,
+          booking_mode: draft.booking_mode === 'manual' ? 'manual' : 'auto',
+        } satisfies Partial<ReqState>,
+      ])
+    ) as Record<string, ReqState>
   } catch {
     return {} as Record<string, ReqState>
   }
@@ -460,8 +472,8 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
   )
 
   const flushAutosave = React.useCallback(
-    (id: string) => {
-      const current = reqStatesRef.current[id]
+    (id: string, stateOverride?: ReqState) => {
+      const current = stateOverride ?? reqStatesRef.current[id]
       if (!current) return
 
       const blockingIssue = blockingCompensationIssue(orderedIds, reqStatesRef.current, id, current)
@@ -576,6 +588,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     fd.set('min_score', "any")
     fd.set('energy_level', "any")
     fd.set('required_gender', "any")
+    fd.set('booking_mode', "auto")
     fd.set('compensation_type', "")
     fd.set('compensation_amount', "")
     fd.set('compensation_percent', "")
@@ -600,6 +613,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     fd.set('min_score', wizard.min_score)
     fd.set('energy_level', wizard.energy_level)
     fd.set('required_gender', wizard.required_gender)
+    fd.set('booking_mode', wizard.booking_mode)
     fd.set('compensation_type', wizard.compensation_type)
     fd.set('compensation_amount', wizard.compensation_amount)
     fd.set('compensation_percent', wizard.compensation_percent)
@@ -705,7 +719,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     value={state.role_name}
                     onChange={(e) => updateField(req.id, 'role_name', e.target.value)}
                     onBlur={() => flushAutosave(req.id)}
-                    className="h-7 min-w-0 flex-1 rounded-md border-transparent bg-transparent px-1.5 text-sm font-semibold shadow-none outline-none focus:border focus:border-border focus:bg-background"
+                    className="h-7 min-w-0 max-w-fit flex-1 rounded-md border-transparent bg-transparent px-1.5 text-sm font-semibold shadow-none outline-none focus:border focus:border-border focus:bg-background"
                   >
                     {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
                       <option key={role} value={role}>{role}</option>
@@ -723,67 +737,58 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                         …
                       </span>
                     )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-7 w-7 rounded-md text-muted-foreground"
-                          aria-label="Handlinger"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-36">
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            const fd = new FormData()
-                            fd.set('show_id', showId)
-                            fd.set('role_name', state.role_name)
-                            fd.set('quantity', '1')
-                            fd.set('min_score', state.min_score)
-                            fd.set('energy_level', state.energy_level)
-                            fd.set('required_gender', state.required_gender)
-                            fd.set('compensation_type', state.compensation_type)
-                            fd.set('compensation_amount', state.compensation_amount)
-                            fd.set('compensation_percent', state.compensation_percent)
-                            startAdding(async () => {
-                              try {
-                                await addRequirementAction(fd)
-                                toast.success('Lineup-plass duplisert')
-                                router.refresh()
-                              } catch (err: unknown) {
-                                toast.error((err as Error)?.message ?? 'Feil ved duplisering')
-                              }
-                            })
-                          }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                          Dupliser
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <ToastActionForm action={deleteRequirementAction}>
-                          <input type="hidden" name="show_id" value={showId} />
-                          <input type="hidden" name="req_id" value={req.id} />
-                          <DropdownMenuItem
-                            asChild
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <button type="submit" className="w-full">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                              Slett
-                            </button>
-                          </DropdownMenuItem>
-                        </ToastActionForm>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Dupliser"
+                      className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      disabled={isAdding}
+                      onClick={() => {
+                        const fd = new FormData()
+                        fd.set('show_id', showId)
+                        fd.set('role_name', state.role_name)
+                        fd.set('quantity', '1')
+                        fd.set('min_score', state.min_score)
+                        fd.set('energy_level', state.energy_level)
+                        fd.set('required_gender', state.required_gender)
+                        fd.set('booking_mode', state.booking_mode)
+                        fd.set('compensation_type', state.compensation_type)
+                        fd.set('compensation_amount', state.compensation_amount)
+                        fd.set('compensation_percent', state.compensation_percent)
+                        startAdding(async () => {
+                          try {
+                            await addRequirementAction(fd)
+                            toast.success('Lineup-plass duplisert')
+                            router.refresh()
+                          } catch (err: unknown) {
+                            toast.error((err as Error)?.message ?? 'Feil ved duplisering')
+                          }
+                        })
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    </Button>
+                    <ToastActionForm action={deleteRequirementAction} className="contents">
+                      <input type="hidden" name="show_id" value={showId} />
+                      <input type="hidden" name="req_id" value={req.id} />
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Slett"
+                        className="h-7 w-7 rounded-md text-destructive focus:text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </Button>
+                    </ToastActionForm>
                   </div>
                 </div>
 
                 {/* ── Field table ── */}
-                <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 md:grid-cols-5 md:divide-y-0">
-                  <FieldCell label="Score">
+                <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 md:grid-cols-6 md:divide-y-0">
+                  <FieldCell label="Erfaringsnivå">
                     <Select
                       value={state.min_score || '__none'}
                       onValueChange={(value) => updateField(req.id, 'min_score', value === '__none' ? '' : value)}
@@ -793,7 +798,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectLabel>Velg minimumsscore</SelectLabel>
+                          <SelectLabel>Velg min. erfaringsnivå</SelectLabel>
                         <SelectItem value="__none">Ingen krav</SelectItem>
                         {SCORE_OPTIONS.map((score) => (
                           <SelectItem key={score} value={score}>≥ {score}</SelectItem>
@@ -836,6 +841,25 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                         {GENDER_OPTIONS.map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </FieldCell>
+
+                  <FieldCell label="Booking">
+                    <Select
+                      value={state.booking_mode}
+                      onValueChange={(value) => updateField(req.id, 'booking_mode', value)}
+                    >
+                      <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectLabel>Bookingmodus</SelectLabel>
+                          {BOOKING_MODE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
                         </SelectGroup>
                       </SelectContent>
                     </Select>
@@ -1049,7 +1073,7 @@ function AddWizard({
   // Breadcrumb trail of already-answered steps
   const trail = [
     wizard.step > 1 && wizard.role_name,
-    wizard.step > 2 && (wizard.min_score ? `score ≥ ${wizard.min_score}` : 'alle scorer'),
+    wizard.step > 2 && (wizard.min_score ? `erfaringsnivå ≥ ${wizard.min_score}` : 'alle erfaringsnivåer'),
     wizard.step > 3 && ENERGY_LABELS[wizard.energy_level],
     wizard.step > 4 && (wizard.compensation_type === 'fixed'
       ? 'fast beløp'
@@ -1130,12 +1154,12 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 2: Score ───────────────────────────────────────────────── */}
+        {/* ── Step 2: Erfaringsnivå ───────────────────────────────────────── */}
         {wizard.step === 2 && (
           <div className="space-y-5">
             <div>
-              <h3 className="text-base font-semibold mb-1">Minimum score?</h3>
-              <p className="text-sm text-muted-foreground">Admin-score for artist (1–10)</p>
+              <h3 className="text-base font-semibold mb-1">Minimum erfaringsnivå?</h3>
+              <p className="text-sm text-muted-foreground">Erfaringsnivå for artist (1–10)</p>
             </div>
             <Select
               value={wizard.min_score || '__none'}
@@ -1145,7 +1169,7 @@ function AddWizard({
               }}
             >
               <SelectTrigger className="w-full h-10">
-                <SelectValue placeholder="Velg min. score" />
+                <SelectValue placeholder="Velg min. erfaringsnivå" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none">Ingen krav</SelectItem>
@@ -1322,7 +1346,7 @@ function AddWizard({
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="text-muted-foreground">Rolle: <strong className="text-foreground">{wizard.role_name}</strong></span>
-                <span className="text-muted-foreground">Score: <strong className="text-foreground">{wizard.min_score ? `≥ ${wizard.min_score}` : '—'}</strong></span>
+                <span className="text-muted-foreground">Erfaringsnivå: <strong className="text-foreground">{wizard.min_score ? `≥ ${wizard.min_score}` : '—'}</strong></span>
                 <span className="text-muted-foreground">Energi: <strong className="text-foreground">{ENERGY_LABELS[wizard.energy_level]}</strong></span>
                 <span className="text-muted-foreground">Honorar: <strong className="text-foreground">{compensationSummary(wizard, showCurrency)}</strong></span>
                 <span className="text-muted-foreground">Kjønn: <strong className="text-foreground">{GENDER_LABELS[wizard.required_gender]}</strong></span>

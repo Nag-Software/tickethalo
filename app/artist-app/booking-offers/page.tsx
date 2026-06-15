@@ -1,11 +1,19 @@
 import Link from 'next/link'
-import { ArtistHeader } from '@/components/artist/artist-header'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ToastActionForm } from '@/components/toast-action-form'
-import { acceptOfferAction, declineOfferAction } from '../actions'
+import {
+  ArtistBadge,
+  ArtistEmpty,
+  ArtistList,
+  ArtistListRow,
+  ArtistNotice,
+  ArtistPage,
+  ArtistPageHeader,
+  artistSecondaryButtonClass,
+  formatArtistDate,
+  offerStatusLabel,
+} from '@/components/artist/artist-ui'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { BookingOfferStatusToast } from './status-toast'
+import { OfferButtons } from './offer-buttons'
 
 export default async function BookingOffersPage({
   searchParams,
@@ -14,79 +22,85 @@ export default async function BookingOffersPage({
 }) {
   const { status } = await searchParams
   const { artist, db } = await getCurrentArtist()
-  const { data: offers } = await db.from('booking_offers').select('*').eq('artist_id', artist.id).order('created_at', { ascending: false })
+  const { data: offers } = await db
+    .from('booking_offers')
+    .select('*')
+    .eq('artist_id', artist.id)
+    .order('created_at', { ascending: false })
+
   const showIds = [...new Set((offers ?? []).map((offer) => offer.show_id))]
   const { data: shows } = showIds.length > 0
     ? await db.from('shows').select('id, title, date, venue_name, status').in('id', showIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
+  const today = new Date().toISOString().slice(0, 10)
+  const pending = (offers ?? []).filter((offer) => offer.status === 'sent' && !(showMap.get(offer.show_id)?.date && showMap.get(offer.show_id)!.date! < today))
 
   return (
-    <>
+    <ArtistPage>
       <BookingOfferStatusToast status={status} />
-      <ArtistHeader title="Booking Offers" description="Tilbud er først bekreftet når du aksepterer og plassen fortsatt er ledig." />
-      <main className="space-y-6 p-4 md:p-6">
-        {status && <StatusMessage status={status} />}
-        <Card>
-          <CardHeader>
-            <CardTitle>Tilbud</CardTitle>
-            <CardDescription>Aksepterte tilbud kan bli fylt av andre hvis showet allerede er fullt.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {(offers ?? []).map((offer) => {
-              const show = showMap.get(offer.show_id)
-              const today = new Date().toISOString().slice(0, 10)
-              const showPast = show?.date ? show.date < today : false
-              const active = offer.status === 'sent' && !showPast
-              return (
-                <div key={offer.id} className={`grid gap-3 rounded-lg border p-4 lg:grid-cols-[1fr_auto] lg:items-center${showPast ? ' opacity-50' : ''}`}>
-                  <div>
-                    <div className="font-medium">{show?.title ?? 'Show'}</div>
-                    <div className="text-sm text-muted-foreground">{show?.date ? formatDate(show.date) : 'Dato kommer'} {show?.venue_name ? `· ${show.venue_name}` : ''}</div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full bg-muted px-2 py-1">{offer.status.replaceAll('_', ' ')}</span>
-                      <span className="rounded-full bg-muted px-2 py-1">{formatMoney(offer.fee_amount, offer.currency)}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline"><Link href={`/booking-offers/${offer.token}`}>Åpne</Link></Button>
-                    {active && <OfferButtons token={offer.token} />}
-                  </div>
-                </div>
-              )
-            })}
-            {(offers ?? []).length === 0 && <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Ingen bookingtilbud ennå.</div>}
-          </CardContent>
-        </Card>
-      </main>
-    </>
-  )
-}
+      <ArtistPageHeader
+        title="Tilbud"
+        description={pending.length > 0 ? `${pending.length} venter på svar` : 'Oversikt over alle bookingtilbud'}
+      />
 
-export function OfferButtons({ token }: { token: string }) {
-  return (
-    <>
-      <ToastActionForm action={acceptOfferAction}><input type="hidden" name="token" value={token} /><Button type="submit">Aksepter</Button></ToastActionForm>
-      <ToastActionForm action={declineOfferAction}><input type="hidden" name="token" value={token} /><Button type="submit" variant="outline">Avslå</Button></ToastActionForm>
-    </>
+      {status && <StatusMessage status={status} />}
+
+      {(offers ?? []).length === 0 ? (
+        <ArtistEmpty text="Ingen bookingtilbud ennå." />
+      ) : (
+        <ArtistList>
+          {(offers ?? []).map((offer) => {
+            const show = showMap.get(offer.show_id)
+            const showPast = show?.date ? show.date < today : false
+            const active = offer.status === 'sent' && !showPast
+
+            return (
+              <ArtistListRow
+                key={offer.id}
+                title={show?.title ?? 'Bookingtilbud'}
+                meta={[
+                  show?.date ? formatArtistDate(show.date, 'weekday') : 'Dato kommer',
+                  show?.venue_name,
+                  formatMoney(offer.fee_amount, offer.currency),
+                ].filter(Boolean).join(' · ')}
+                aside={
+                  <>
+                    <ArtistBadge variant={active ? 'accent' : 'muted'}>
+                      {offerStatusLabel(offer.status)}
+                    </ArtistBadge>
+                    {showPast && <ArtistBadge variant="muted">Showet har vært</ArtistBadge>}
+                  </>
+                }
+                actions={
+                  <>
+                    <Link href={`/artist-app/booking-offers/${offer.token}`} className={artistSecondaryButtonClass}>
+                      Detaljer
+                    </Link>
+                    {active && <OfferButtons token={offer.token} />}
+                  </>
+                }
+              />
+            )
+          })}
+        </ArtistList>
+      )}
+    </ArtistPage>
   )
 }
 
 function StatusMessage({ status }: { status: string }) {
   const text = status === 'accepted'
-    ? 'Du er bekreftet på showet. Detaljer ligger under Confirmed Bookings.'
+    ? 'Du er bekreftet på showet. Se detaljene under Bookinger.'
     : status === 'filled_by_other'
-      ? 'Takk for rask respons. Plassen ble fylt av en annen artist før du rakk å bekrefte.'
+      ? 'Plassen ble fylt av en annen komiker før du rakk å bekrefte.'
       : status === 'already_booked'
-        ? 'Du er allerede bekreftet på dette showet. En artist kan bare ha én spot per lineup.'
+        ? 'Du er allerede booket på dette showet.'
         : status === 'declined'
-          ? 'Takk for svaret. Tilbudet er avslått.'
+          ? 'Tilbudet er avslått.'
           : status === 'denied'
-            ? 'Dette tilbudet tilhører ikke artistkontoen din.'
+            ? 'Dette tilbudet tilhører ikke kontoen din.'
             : 'Status er oppdatert.'
-  return <div className="rounded-lg border bg-muted p-4 text-sm font-medium">{text}</div>
-}
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+  return <ArtistNotice tone={status === 'accepted' ? 'success' : 'neutral'}>{text}</ArtistNotice>
 }

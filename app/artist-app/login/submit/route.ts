@@ -30,6 +30,10 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL(`${artistPrefix}/signup?error=missing`, origin), 303)
   }
 
+  if (destination.startsWith('/artist-app/signup')) {
+    return NextResponse.redirect(new URL(destination, origin), 303)
+  }
+
   if (destination.startsWith('/artist-app')) {
     return NextResponse.redirect(new URL(nextPath, origin), 303)
   }

@@ -9,6 +9,7 @@ export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
 export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'completed' | 'cancelled'
 export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
 export type RequirementCompensationType = 'fixed' | 'percent'
+export type RequirementBookingMode = 'auto' | 'manual'
 export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 'filled_by_other' | 'cancelled'
 export type ConfirmedSpotStatus = 'confirmed' | 'cancelled' | 'completed' | 'paid'
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled'
@@ -147,6 +148,7 @@ export type ShowRequirement = {
   min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  booking_mode: RequirementBookingMode
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -256,6 +258,25 @@ export type BookingScoringConfig = {
   busy_window_days: number
   offers_per_slot: number
   fallback_limit: number
+  updated_at: string
+}
+
+export type ClubBookingSettingsRow = {
+  club_id: string
+  fairness_window_months: number
+  fairness_multiplier_0: number
+  fairness_multiplier_1: number
+  fairness_multiplier_2: number
+  fairness_multiplier_3: number
+  fairness_multiplier_4_plus: number
+  consecutive_event_multiplier: number
+  quality_weight: number
+  availability_bonus: number
+  role_match_bonus: number
+  offers_per_slot: number
+  offers_per_wave: number
+  fallback_limit: number
+  min_bookable_score: number
   updated_at: string
 }
 
@@ -414,6 +435,7 @@ export type Database = {
           min_score?: number | null
           energy_level?: RequirementEnergy
           required_gender?: RequirementGender
+          booking_mode?: RequirementBookingMode
           compensation_type?: RequirementCompensationType | null
           compensation_amount?: number | null
           compensation_percent?: number | null
@@ -558,6 +580,29 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Omit<BookingScoringConfig, 'id'>>
+        Relationships: []
+      }
+      club_booking_settings: {
+        Row: ClubBookingSettingsRow
+        Insert: {
+          club_id: string
+          fairness_window_months?: number
+          fairness_multiplier_0?: number
+          fairness_multiplier_1?: number
+          fairness_multiplier_2?: number
+          fairness_multiplier_3?: number
+          fairness_multiplier_4_plus?: number
+          consecutive_event_multiplier?: number
+          quality_weight?: number
+          availability_bonus?: number
+          role_match_bonus?: number
+          offers_per_slot?: number
+          offers_per_wave?: number
+          fallback_limit?: number
+          min_bookable_score?: number
+          updated_at?: string
+        }
+        Update: Partial<Omit<ClubBookingSettingsRow, 'club_id'>>
         Relationships: []
       }
       show_artist_booking_exclusions: {

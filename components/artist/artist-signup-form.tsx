@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ARTIST_ROLE_LABEL_OPTIONS } from '@/lib/artist-roles'
+import type { ArtistSignupDraft } from '@/lib/artist-registration-draft'
 import { Label } from "../ui/label"
 
 const categories = ARTIST_ROLE_LABEL_OPTIONS
@@ -42,31 +43,42 @@ const fieldClassName = 'h-11 rounded-none border-2 border-zinc-950 bg-white/70 s
 const selectClassName = 'h-11 w-full rounded-none border-2 border-zinc-950 bg-white/70 px-3 text-sm outline-none transition-colors focus-visible:border-zinc-950 focus-visible:ring-0'
 const textareaClassName = 'min-h-28 w-full rounded-none border-2 border-zinc-950 bg-white/70 px-3 py-2 text-sm outline-none transition-colors placeholder:text-zinc-500 focus-visible:border-zinc-950 focus-visible:ring-0'
 
+function buildInitialValues(draft?: ArtistSignupDraft): Record<RequiredFieldId, boolean> {
+  const completionMode = draft?.mode === 'complete'
+
+  return {
+    full_name: Boolean(draft?.full_name?.trim()),
+    stage_name: Boolean(draft?.stage_name?.trim()),
+    email: Boolean(draft?.email?.trim()),
+    password: completionMode,
+    profile_image_file: Boolean(draft?.hasProfileImage),
+    phone: Boolean(draft?.phone?.trim()),
+    language: Boolean(draft?.language),
+    gender: Boolean(draft?.gender),
+    category: (draft?.category?.length ?? 0) > 0,
+    youtube: Boolean(draft?.youtube?.trim()),
+  }
+}
+
 export function ArtistSignupForm({
   className,
   action = "/artist-app/signup/submit",
+  draft,
   errorMessage,
   successMessage,
   ...props
 }: React.ComponentProps<"div"> & {
   action?: string
+  draft?: ArtistSignupDraft
   errorMessage?: string
   successMessage?: string
 }) {
-  const [values, setValues] = useState<Record<RequiredFieldId, boolean>>({
-    full_name: false,
-    stage_name: false,
-    email: false,
-    password: false,
-    profile_image_file: false,
-    phone: false,
-    language: false,
-    gender: false,
-    category: false,
-    youtube: false,
-  })
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [imageName, setImageName] = useState<string | null>(null)
+  const completionMode = draft?.mode === 'complete'
+  const [values, setValues] = useState<Record<RequiredFieldId, boolean>>(() => buildInitialValues(draft))
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(draft?.category ?? [])
+  const [imageName, setImageName] = useState<string | null>(
+    draft?.hasProfileImage ? 'Eksisterende profilbilde' : null,
+  )
 
   useEffect(() => {
     if (errorMessage) toast.error(errorMessage)
@@ -103,9 +115,13 @@ export function ArtistSignupForm({
         <aside className="border-b-2 border-zinc-950 bg-[#f3ead9] p-6 lg:border-b-0 lg:border-r-2">
           <div className="lg:sticky lg:top-6">
             <Link href="/" className="inline-flex border border-zinc-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-950">humor.events</Link>
-            <h1 className="mt-6 text-3xl font-black uppercase leading-none tracking-tight">Søknad</h1>
+            <h1 className="mt-6 text-3xl font-black uppercase leading-none tracking-tight">
+              {completionMode ? 'Fullfør profil' : 'Søknad'}
+            </h1>
             <p className="mt-3 text-sm font-medium leading-6 text-zinc-600">
-              Søknaden sendes til booking-teamet for vurdering.
+              {completionMode
+                ? 'Kontoen din finnes allerede. Fyll ut resten av profilen for å bli vurdert til bookinger.'
+                : 'Søknaden sendes til booking-teamet for vurdering.'}
             </p>
 
             <div className="mt-6 border-2 border-zinc-950 bg-white/60 p-4">
@@ -129,6 +145,14 @@ export function ArtistSignupForm({
         </aside>
 
         <form action={action} method="post" encType="multipart/form-data" className="space-y-8 p-6 md:p-8">
+          {completionMode && draft?.hasProfileImage && (
+            <input type="hidden" name="existing_profile_image" value="1" />
+          )}
+          {completionMode && (
+            <div className="border-2 border-zinc-950 bg-[#f3ead9] px-4 py-3 text-sm font-medium text-zinc-700">
+              Du er innlogget som {draft?.email}. Eksisterende info er fylt inn — fullfør feltene som mangler.
+            </div>
+          )}
           {successMessage && (
             <div className="border-2 border-zinc-950 bg-white px-3 py-2 text-sm font-medium text-zinc-950">
               {successMessage}
@@ -143,18 +167,34 @@ export function ArtistSignupForm({
           <section className="space-y-4">
             <SectionHeader icon={User} title="Identitet" />
             <div className="grid gap-4 md:grid-cols-2">
-              <LabeledInput icon={User} id="full_name" name="full_name" label="Fullt navn" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
-              <LabeledInput icon={Clapperboard} id="stage_name" name="stage_name" label="Scenenavn" autoComplete="organization-title" onValue={(value) => updateTextField("stage_name", value)} required />
-              <LabeledInput icon={AtSign} id="email" name="email" label="E-post" type="email" placeholder="navn@eksempel.no" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
-              <LabeledInput icon={Lock} id="password" name="password" label="Passord" type="password" minLength={8} autoComplete="new-password" onValue={(value) => updateTextField("password", value)} required />
-              <LabeledInput icon={Phone} id="phone" name="phone" label="Telefon" type="tel" autoComplete="tel" onValue={(value) => updateTextField("phone", value)} required />
+              <LabeledInput icon={User} id="full_name" name="full_name" label="Fullt navn" autoComplete="name" defaultValue={draft?.full_name} onValue={(value) => updateTextField("full_name", value)} required />
+              <LabeledInput icon={Clapperboard} id="stage_name" name="stage_name" label="Scenenavn" autoComplete="organization-title" defaultValue={draft?.stage_name} onValue={(value) => updateTextField("stage_name", value)} required />
+              <LabeledInput icon={AtSign} id="email" name="email" label="E-post" type="email" placeholder="navn@eksempel.no" autoComplete="email" defaultValue={draft?.email} readOnly={completionMode} onValue={(value) => updateTextField("email", value)} required />
+              <LabeledInput
+                icon={Lock}
+                id="password"
+                name="password"
+                label={completionMode ? 'Nytt passord (valgfritt)' : 'Passord'}
+                type="password"
+                minLength={completionMode ? undefined : 8}
+                autoComplete={completionMode ? 'current-password' : 'new-password'}
+                onValue={(value) => {
+                  if (completionMode) {
+                    setValues((prev) => ({ ...prev, password: true }))
+                    return
+                  }
+                  updateTextField('password', value)
+                }}
+                required={!completionMode}
+              />
+              <LabeledInput icon={Phone} id="phone" name="phone" label="Telefon" type="tel" autoComplete="tel" defaultValue={draft?.phone} onValue={(value) => updateTextField("phone", value)} required />
               <div className="space-y-2">
                 <label htmlFor="language" className="text-sm font-medium">Språk</label>
                 <select
                   id="language"
                   name="language"
                   required
-                  defaultValue=""
+                  defaultValue={draft?.language ?? ''}
                   onChange={(event) => updateTextField("language", event.target.value)}
                   className={selectClassName}
                 >
@@ -175,15 +215,19 @@ export function ArtistSignupForm({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">Profilbilde</p>
-                <p className="truncate text-sm font-medium text-zinc-700">{imageName ?? "PNG, JPG eller WebP"}</p>
+                <p className="truncate text-sm font-medium text-zinc-700">
+                  {imageName ?? (draft?.hasProfileImage ? 'Eksisterende profilbilde lagret' : 'PNG, JPG eller WebP')}
+                </p>
               </div>
-              <span className="border-2 border-zinc-950 bg-white px-3 py-1.5 text-sm font-bold">Velg bilde</span>
+              <span className="border-2 border-zinc-950 bg-white px-3 py-1.5 text-sm font-bold">
+                {draft?.hasProfileImage ? 'Bytt bilde' : 'Velg bilde'}
+              </span>
               <input
                 id="profile_image_file"
                 name="profile_image_file"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
-                required
+                required={!draft?.hasProfileImage}
                 className="sr-only"
                 onChange={(event) => {
                   const file = event.target.files?.[0]
@@ -200,7 +244,7 @@ export function ArtistSignupForm({
                   id="gender"
                   name="gender"
                   required
-                  defaultValue=""
+                  defaultValue={draft?.gender ?? ''}
                   onChange={(event) => updateTextField("gender", event.target.value)}
                   className={selectClassName}
                 >
@@ -211,7 +255,7 @@ export function ArtistSignupForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <LabeledInput icon={Video} id="youtube" name="youtube" label="YouTube-video" type="url" placeholder="https://youtube.com/watch?v=..." onValue={(value) => updateTextField("youtube", value)} required />
+                <LabeledInput icon={Video} id="youtube" name="youtube" label="YouTube-video" type="url" placeholder="https://youtube.com/watch?v=..." defaultValue={draft?.youtube} onValue={(value) => updateTextField("youtube", value)} required />
                 <Label className="text-xs text-muted-foreground">
                     Vi benytter denne videoen til å vurdere ditt sceneutrykk, og den vil ikke bli publisert utenfor vårt interne system.
                 </Label>
@@ -252,6 +296,7 @@ export function ArtistSignupForm({
                 id="bio"
                 name="bio"
                 rows={4}
+                defaultValue={draft?.bio}
                 className={textareaClassName}
                 placeholder="Fortell kort om sceneerfaring, stil og type show."
               />
@@ -261,10 +306,10 @@ export function ArtistSignupForm({
           <section className="space-y-4 border-t-2 border-zinc-950 pt-6">
             <SectionHeader icon={Globe2} title="SoMe-lenker" aside="valgfritt" />
             <div className="grid gap-4 md:grid-cols-2">
-              <Input id="instagram" name="instagram" type="url" placeholder="Instagram URL" className={fieldClassName} />
-              <Input id="tiktok" name="tiktok" type="url" placeholder="TikTok URL" className={fieldClassName} />
-              <Input id="facebook" name="facebook" type="url" placeholder="Facebook URL" className={fieldClassName} />
-              <Input id="website" name="website" type="url" placeholder="Nettside URL" className={fieldClassName} />
+              <Input id="instagram" name="instagram" type="url" placeholder="Instagram URL" defaultValue={draft?.instagram} className={fieldClassName} />
+              <Input id="tiktok" name="tiktok" type="url" placeholder="TikTok URL" defaultValue={draft?.tiktok} className={fieldClassName} />
+              <Input id="facebook" name="facebook" type="url" placeholder="Facebook URL" defaultValue={draft?.facebook} className={fieldClassName} />
+              <Input id="website" name="website" type="url" placeholder="Nettside URL" defaultValue={draft?.website} className={fieldClassName} />
             </div>
           </section>
 
@@ -278,7 +323,7 @@ export function ArtistSignupForm({
               disabled={missing.length > 0}
             >
               <BadgeCheck className="size-4" />
-              Registrer artistprofil
+              {completionMode ? 'Fullfør artistprofil' : 'Registrer artistprofil'}
             </Button>
           </div>
         </form>
@@ -313,18 +358,28 @@ function LabeledInput({
   icon: Icon,
   label,
   onValue,
+  defaultValue,
+  readOnly,
   ...props
 }: React.ComponentProps<typeof Input> & {
   icon: React.ComponentType<{ className?: string }>
   label: string
   onValue: (value: string) => void
+  defaultValue?: string
+  readOnly?: boolean
 }) {
   return (
     <div className="space-y-2">
       <label htmlFor={props.id} className="text-sm font-medium text-zinc-800">{label}</label>
       <div className="relative">
         <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
-        <Input {...props} className={cn(fieldClassName, 'pl-9', props.className)} onChange={(event) => onValue(event.target.value)} />
+        <Input
+          {...props}
+          defaultValue={defaultValue}
+          readOnly={readOnly}
+          className={cn(fieldClassName, 'pl-9', readOnly && 'bg-zinc-100 text-zinc-600', props.className)}
+          onChange={(event) => onValue(event.target.value)}
+        />
       </div>
     </div>
   )

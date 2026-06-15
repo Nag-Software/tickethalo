@@ -11,7 +11,7 @@ import { validateFrameBackgroundImage } from '@/lib/poster-validation'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
-import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
+import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementBookingMode, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
 export type ManualSpotActionState = {
   status: 'idle' | 'success' | 'error'
@@ -183,6 +183,8 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
   const compensationPercent = compensationType === 'percent'
     ? optionalDecimal(formData.get('compensation_percent'))
     : null
+  const bookingModeRaw = String(formData.get('booking_mode') ?? 'auto')
+  const booking_mode: RequirementBookingMode = bookingModeRaw === 'manual' ? 'manual' : 'auto'
 
   if (compensationPercent != null && (Number.isNaN(compensationPercent) || compensationPercent < 0 || compensationPercent > 100)) {
     throw new Error('Prosent må være mellom 0 og 100.')
@@ -199,6 +201,7 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     min_score: optionalInteger(formData.get('min_score')),
     energy_level: ((formData.get('energy_level') as RequirementEnergy | null) ?? 'any'),
     required_gender: ((formData.get('required_gender') as RequirementGender | null) ?? 'any'),
+    booking_mode,
     compensation_type: compensationType,
     compensation_amount: compensationAmount,
     compensation_percent: compensationPercent,
@@ -362,6 +365,7 @@ export async function cloneShowAction(formData: FormData) {
     min_score: number | null
     energy_level: RequirementEnergy
     required_gender: RequirementGender
+    booking_mode: RequirementBookingMode
     compensation_type: RequirementCompensationType | null
     compensation_amount: number | null
     compensation_percent: number | null
@@ -380,6 +384,7 @@ export async function cloneShowAction(formData: FormData) {
         min_score: optionalInteger(formData.get(`req_${i}_min_score`)),
         energy_level: ((formData.get(`req_${i}_energy_level`) as RequirementEnergy | null) ?? 'any'),
         required_gender: ((formData.get(`req_${i}_required_gender`) as RequirementGender | null) ?? 'any'),
+        booking_mode: (String(formData.get(`req_${i}_booking_mode`) ?? 'auto') === 'manual' ? 'manual' : 'auto'),
         compensation_type: compensationType,
         compensation_amount: compensationType === 'fixed' ? optionalMoneyToMinor(formData.get(`req_${i}_compensation_amount`)) : null,
         compensation_percent: compensationType === 'percent' ? optionalDecimal(formData.get(`req_${i}_compensation_percent`)) : null,
@@ -392,7 +397,7 @@ export async function cloneShowAction(formData: FormData) {
   if (newReqs.length === 0) {
     const { data: templateReqs } = await db
       .from('show_requirements')
-      .select('role_name, quantity, lineup_position, min_score, energy_level, required_gender, compensation_type, compensation_amount, compensation_percent')
+      .select('role_name, quantity, lineup_position, min_score, energy_level, required_gender, booking_mode, compensation_type, compensation_amount, compensation_percent')
       .eq('show_id', templateId)
       .order('lineup_position')
       .order('created_at')
@@ -405,6 +410,7 @@ export async function cloneShowAction(formData: FormData) {
         min_score: r.min_score,
         energy_level: r.energy_level as RequirementEnergy,
         required_gender: ((r as { required_gender?: string }).required_gender as RequirementGender | undefined) ?? 'any',
+        booking_mode: ((r as { booking_mode?: string }).booking_mode === 'manual' ? 'manual' : 'auto'),
         compensation_type: (r.compensation_type as RequirementCompensationType | null) ?? null,
         compensation_amount: r.compensation_amount,
         compensation_percent: r.compensation_percent,
@@ -808,7 +814,7 @@ export async function bookShowAction(formData: FormData) {
   const result = await bookShow(showId)
   if (result.offersCreated === 0) {
     throw new Error(result.candidatesMatched === 0
-      ? 'Fant ingen godkjente artister som matcher score- og energikravene.'
+      ? 'Fant ingen godkjente artister som matcher erfaringsnivå- og energikravene.'
       : 'Ingen nye bookingtilbud ble sendt. Matchende artister har allerede fått tilbud eller er i lineupen.')
   }
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -908,6 +914,11 @@ export async function removeSpotAndReopenAction(formData: FormData) {
 
   if (!spot) throw new Error('Spot ikke funnet.')
 
+  const [{ data: show }, { data: requirement }] = await Promise.all([
+    db.from('shows').select('status').eq('id', showId).single(),
+    db.from('show_requirements').select('booking_mode').eq('id', spot.show_requirement_id).single(),
+  ])
+
   // Cancel active offers for this requirement so the slot re-opens cleanly
   await db
     .from('booking_offers')
@@ -924,12 +935,17 @@ export async function removeSpotAndReopenAction(formData: FormData) {
 
   await excludeArtistFromAutomaticBooking(db, showId, spot.artist_id, 'admin_removed_spot')
 
-  // Send new offers with "Ledig spot" email in background
-  runAfterResponse(`reopen-spot-${spotId}`, async () => {
-    await sendOffersForReopenedRequirement(showId, spot.show_requirement_id)
-    revalidatePath(`/admin-app/shows/${showId}`)
-    revalidatePath('/admin-app/bookings')
-  })
+  if (show?.status === 'fullbooked' || show?.status === 'published') {
+    await db.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['fullbooked', 'published'])
+  }
+
+  if (requirement?.booking_mode !== 'manual') {
+    runAfterResponse(`reopen-spot-${spotId}`, async () => {
+      await sendOffersForReopenedRequirement(showId, spot.show_requirement_id)
+      revalidatePath(`/admin-app/shows/${showId}`)
+      revalidatePath('/admin-app/bookings')
+    })
+  }
 
   revalidatePath(`/admin-app/shows/${showId}`)
 }

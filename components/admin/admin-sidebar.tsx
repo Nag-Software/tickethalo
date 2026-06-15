@@ -11,7 +11,13 @@ import {
   ShoppingCart,
   Settings,
   LogOut,
+  ChevronRight,
 } from 'lucide-react'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Sidebar,
   SidebarContent,
@@ -22,15 +28,39 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from '@/components/ui/sidebar'
 
-const navItems = [
+type NavItem = {
+  label: string
+  href?: string
+  icon: React.ComponentType<{ className?: string }>
+  children?: Array<{ label: string; href: string }>
+}
+
+const navItems: NavItem[] = [
   { label: 'Shows', href: '/shows', icon: CalendarDays },
   { label: 'Komikere', href: '/artists', icon: Users },
   { label: 'Ordre', href: '/orders', icon: ShoppingCart },
-  { label: 'Min klubb', href: '/min-klubb', icon: Building2 },
+  {
+    label: 'Min klubb',
+    icon: Building2,
+    children: [
+      { label: 'Branding', href: '/min-klubb' },
+      { label: 'Bookingalgoritme', href: '/min-klubb/bookingalgoritme' },
+    ],
+  },
   { label: 'Innstillinger', href: '/settings', icon: Settings },
 ]
+
+function isNavChildActive(pathname: string, href: string) {
+  if (href === '/min-klubb') {
+    return pathname === '/min-klubb' || pathname === '/min-klubb/'
+  }
+  return pathname.startsWith(href)
+}
 
 interface AdminSidebarProps {
   user: { email: string; name: string; role: string; clubName?: string | null; clubLogoUrl?: string | null }
@@ -77,10 +107,49 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
           <SidebarGroupLabel>Navigasjon</SidebarGroupLabel>
           <SidebarMenu>
             {navItems.map((item) => {
-              const active = pathname.startsWith(item.href)
+              if (item.children) {
+                const isGroupActive = item.children.some((child) => isNavChildActive(pathname, child.href))
+
+                return (
+                  <Collapsible
+                    key={item.label}
+                    asChild
+                    defaultOpen={isGroupActive}
+                    className="group/collapsible"
+                  >
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton tooltip={item.label} isActive={isGroupActive}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                          <ChevronRight className="ml-auto size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {item.children.map((child) => {
+                            const childActive = isNavChildActive(pathname, child.href)
+                            return (
+                              <SidebarMenuSubItem key={child.href}>
+                                <SidebarMenuSubButton asChild isActive={childActive}>
+                                  <Link href={`${pathPrefix}${child.href}`}>
+                                    <span>{child.label}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )
+                          })}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )
+              }
+
+              const active = pathname.startsWith(item.href!)
               const href = `${pathPrefix}${item.href}`
               return (
-                <SidebarMenuItem key={item.href + item.label}>
+                <SidebarMenuItem key={item.href! + item.label}>
                   <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
                     <Link href={href}>
                       <item.icon />

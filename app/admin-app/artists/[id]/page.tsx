@@ -96,14 +96,14 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 ]}
               />
 
-              {/* Score — per club */}
+              {/* Erfaringsnivå — per club */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-muted-foreground">Score{clubRecord ? ` — ${clubRecord.name}` : ''}</p>
-                  {clubScore?.approved === true && (
+                  <p className="text-xs font-medium text-muted-foreground">Erfaringsnivå{clubRecord ? ` — ${clubRecord.name}` : ''}</p>
+                  {artist.status === 'approved' && (
                     <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">✓ Godkjent</span>
                   )}
-                  {clubScore?.approved === false && (
+                  {artist.status === 'rejected' && (
                     <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">✕ Avvist</span>
                   )}
                 </div>

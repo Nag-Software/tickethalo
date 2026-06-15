@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { registerArtist } from '@/lib/actions/artist'
+import { completeArtistRegistration, registerArtist } from '@/lib/actions/artist'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { ArtistGender } from '@/types/database'
 
 export async function POST(request: Request) {
@@ -10,13 +12,21 @@ export async function POST(request: Request) {
   const signupPath = isArtistAppSignup ? '/artist-app/signup' : '/signup'
   const formData = await request.formData()
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
+  const password = String(formData.get('password') ?? '')
+  const hasExistingProfileImage = formData.get('existing_profile_image') === '1'
 
   try {
-    if (isArtistAppSignup) validateSignupForm(formData)
+    const completionAuthUserId = await resolveCompletionAuthUserId(email)
 
-    await registerArtist({
+    if (isArtistAppSignup) {
+      validateSignupForm(formData, {
+        completionMode: Boolean(completionAuthUserId),
+        hasExistingProfileImage,
+      })
+    }
+
+    const payload = {
       email,
-      password: String(formData.get('password') ?? ''),
       full_name: String(formData.get('full_name') ?? ''),
       stage_name: optionalString(formData.get('stage_name')),
       phone: optionalString(formData.get('phone')),
@@ -26,7 +36,25 @@ export async function POST(request: Request) {
       gender: gender(formData.get('gender')),
       social_links: socialLinks(formData),
       profile_image_file: fileOrUndefined(formData.get('profile_image_file')),
-    })
+    }
+
+    if (completionAuthUserId) {
+      await completeArtistRegistration({
+        ...payload,
+        authUserId: completionAuthUserId,
+        password: password || undefined,
+        keepExistingProfileImage: hasExistingProfileImage,
+      })
+
+      if (isArtistAppSignup) {
+        return NextResponse.redirect(new URL('/artist-app', origin), 303)
+      }
+    } else {
+      await registerArtist({
+        ...payload,
+        password,
+      })
+    }
 
     return NextResponse.redirect(new URL(`${signupPath}?status=submitted`, origin), 303)
   } catch (error) {
@@ -36,9 +64,29 @@ export async function POST(request: Request) {
   }
 }
 
+async function resolveCompletionAuthUserId(email: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  if (user.email?.trim().toLowerCase() !== email) {
+    throw new Error('Email mismatch for logged in account')
+  }
+
+  const admin = createAdminClient()
+  const { data: artist } = await admin
+    .from('artists')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .maybeSingle()
+
+  return artist ? null : user.id
+}
+
 function toSignupErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : ''
   if (message.includes('already') || message.includes('duplicate')) return 'email_exists'
+  if (message.includes('mismatch')) return 'account_mismatch'
   if (message.includes('password')) return 'invalid_password'
   if (message.includes('email')) return 'invalid_email'
   if (message.includes('youtube')) return 'invalid_youtube'
@@ -46,15 +94,30 @@ function toSignupErrorCode(error: unknown) {
   return 'failed'
 }
 
-function validateSignupForm(formData: FormData) {
-  const requiredTextFields = ['full_name', 'stage_name', 'email', 'password', 'phone', 'language', 'gender']
+function validateSignupForm(
+  formData: FormData,
+  opts: { completionMode: boolean; hasExistingProfileImage: boolean },
+) {
+  const requiredTextFields = opts.completionMode
+    ? ['full_name', 'stage_name', 'email', 'phone', 'language', 'gender']
+    : ['full_name', 'stage_name', 'email', 'password', 'phone', 'language', 'gender']
+
   const hasMissingText = requiredTextFields.some((field) => !optionalString(formData.get(field)))
-  const hasImage = Boolean(fileOrUndefined(formData.get('profile_image_file')))
+  const hasImage = opts.hasExistingProfileImage || Boolean(fileOrUndefined(formData.get('profile_image_file')))
   const hasCategory = formData.getAll('category').some((value) => optionalString(value))
   const youtube = optionalString(formData.get('youtube'))
+  const password = String(formData.get('password') ?? '')
 
   if (hasMissingText || !hasImage || !hasCategory || !youtube) {
     throw new Error('Required fields missing')
+  }
+
+  if (!opts.completionMode && password.length < 8) {
+    throw new Error('Password must be at least 8 characters')
+  }
+
+  if (opts.completionMode && password.length > 0 && password.length < 8) {
+    throw new Error('Password must be at least 8 characters')
   }
 
   if (!isYouTubeUrl(youtube)) {

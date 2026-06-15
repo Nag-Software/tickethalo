@@ -32,7 +32,13 @@ export async function saveArtistAdminReview(formData: FormData) {
 
   if (clubId && score) {
     await db.from('artist_club_scores').upsert(
-      { artist_id: artistId, club_id: clubId, score, reviewed_at: new Date().toISOString() },
+      {
+        artist_id: artistId,
+        club_id: clubId,
+        score,
+        approved: statusRaw === 'approved',
+        reviewed_at: new Date().toISOString(),
+      },
       { onConflict: 'artist_id,club_id' }
     )
   }

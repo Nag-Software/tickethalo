@@ -9,7 +9,6 @@ import {
   deleteMarketingDesignAction,
   deleteShowAction,
   generatePosterAction,
-  savePerformanceReviewAction,
   selectMarketingDesignAction,
   updatePosterModeAction,
   updateShowDetailsAction,
@@ -25,7 +24,7 @@ import { PosterUploadButton } from './poster-upload-button'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
 import { resolvePosterContext } from '@/lib/poster-assets'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender, ShowMarketingDesign } from '@/types/database'
+import type { RequirementBookingMode, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowMarketingDesign } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
 
@@ -91,7 +90,7 @@ export default async function ShowDetailPage({
   const lineupArtistIds = [...new Set((lineup ?? []).map(s => s.artist_id))]
   const allArtistIds = [...new Set([...offerArtistIds, ...lineupArtistIds])]
 
-  const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }, { data: performanceReviews }] = await Promise.all([
+  const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }] = await Promise.all([
     shouldLoadRelatedArtists && allArtistIds.length
       ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_score, admin_energy_level').in('id', allArtistIds)
       : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }> }),
@@ -106,22 +105,12 @@ export default async function ShowDetailPage({
     shouldLoadSelectableArtists
       ? db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', id)
       : Promise.resolve({ data: [] as Array<{ artist_id: string }> }),
-    db.from('artist_performance_reviews').select('*').eq('show_id', id),
   ])
   const artistMap = Object.fromEntries((artistRows ?? []).map(a => [a.id, a]))
-  const performanceReviewMap = Object.fromEntries((performanceReviews ?? []).map(r => [r.confirmed_spot_id, r]))
 
   // Compute fill status per requirement
   const activeLineup = (lineup ?? []).filter(s => ['confirmed', 'completed', 'paid'].includes(s.status))
 
-  // Ensure artistMap covers lineup artists (needed for performance reviews on overview tab)
-  if (tab === 'overview' && activeLineup.length > 0) {
-    const missingIds = activeLineup.map(s => s.artist_id).filter(aid => !artistMap[aid])
-    if (missingIds.length > 0) {
-      const { data: extra } = await db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_score, admin_energy_level').in('id', missingIds)
-      for (const a of (extra ?? [])) artistMap[a.id] = a
-    }
-  }
   const reqFillStatus = (requirements ?? []).map(r => {
     const filled = activeLineup.filter(s => s.show_requirement_id === r.id).length
     const pendingOffers = (offers ?? []).filter(o => o.show_requirement_id === r.id && o.status === 'sent').length
@@ -139,6 +128,7 @@ export default async function ShowDetailPage({
     (requirements ?? []).flatMap((requirement) => {
       const status = reqFillStatus.find((row) => row.id === requirement.id)
       if (!status || status.isFull || status.pendingOffers > 0 || requirement.energy_level === 'any') return []
+      if ((requirement as { booking_mode?: string }).booking_mode === 'manual') return []
 
       const minScore = Math.max(requirement.min_score ?? 6, 6)
       const baseMatches = bookingCandidates.filter((artist) => {
@@ -314,7 +304,7 @@ export default async function ShowDetailPage({
                   )}
                   {['draft', 'booking'].includes(show.status) && (requirements ?? []).length > 0 && !allSlotsFilled && (
                     <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                      Tilbud sendes automatisk når krav lagres og når nye artister godkjennes. Plasser fylles først når artister godkjenner tilbudet.
+                      Tilbud sendes ett om gangen til beste kandidat. Hver komiker har 24 timer på å svare. Avslag eller utløp sender automatisk til neste i køen. Se status under Lineup.
                     </div>
                   )}
                   {allSlotsFilled && show.status !== 'published' && (
@@ -400,80 +390,6 @@ export default async function ShowDetailPage({
               </div>
             )}
 
-            {/* ── Etter-show vurderinger ── */}
-            {activeLineup.length > 0 && (
-              <section className="rounded-xl border bg-card p-5 space-y-3">
-                <h2 className="font-semibold text-sm">Etter-show vurderinger</h2>
-                <div className="divide-y">
-                  {activeLineup.map((spot) => {
-                    const artist = artistMap[spot.artist_id]
-                    const existing = performanceReviewMap[spot.id]
-                    const name = artist?.stage_name ?? artist?.full_name ?? spot.artist_id
-                    const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
-                    const role = (requirements ?? []).find(r => r.id === spot.show_requirement_id)?.role_name
-                    return (
-                      <ToastActionForm
-                        key={spot.id}
-                        action={savePerformanceReviewAction}
-                        className="py-4 first:pt-0 last:pb-0 space-y-3"
-                        successMessage="Vurdering lagret."
-                      >
-                        <input type="hidden" name="confirmed_spot_id" value={spot.id} />
-                        <input type="hidden" name="artist_id" value={spot.artist_id} />
-                        <input type="hidden" name="show_id" value={show.id} />
-                        {show.club_id && <input type="hidden" name="club_id" value={show.club_id} />}
-
-                        <div className="flex items-center gap-3">
-                          {artist?.profile_image_url ? (
-                            <Image
-                              src={artist.profile_image_url}
-                              alt={name}
-                              width={36}
-                              height={36}
-                              className="rounded-full object-cover size-9 shrink-0"
-                            />
-                          ) : (
-                            <div className="size-9 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground shrink-0">
-                              {initials}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium leading-tight truncate">{name}</p>
-                            {role && <p className="text-[11px] text-muted-foreground">{role}</p>}
-                          </div>
-                          {existing?.score && (
-                            <span className="text-xs font-bold tabular-nums text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full shrink-0">{existing.score}/10</span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-1.5">
-                          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                            <label key={n} className="cursor-pointer">
-                              <input type="radio" name="score" value={n} defaultChecked={existing?.score === n} className="sr-only peer" />
-                              <span className="flex h-7 w-7 items-center justify-center rounded-md border text-xs font-semibold transition-colors peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:border-primary hover:bg-muted select-none">
-                                {n}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-
-                        <div className="flex gap-2">
-                          <input
-                            name="notes"
-                            defaultValue={existing?.notes ?? ''}
-                            placeholder="Notat..."
-                            className="flex-1 border border-input rounded-md px-2.5 py-1.5 text-xs bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-                          />
-                          <button type="submit" className="shrink-0 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
-                            Lagre
-                          </button>
-                        </div>
-                      </ToastActionForm>
-                    )
-                  })}
-                </div>
-              </section>
-            )}
           </div>
         )}
 
@@ -488,6 +404,7 @@ export default async function ShowDetailPage({
                   r.min_score ?? '',
                   r.energy_level,
                   r.required_gender ?? 'any',
+                  (r as { booking_mode?: string }).booking_mode ?? 'auto',
                   r.compensation_type ?? '',
                   r.compensation_amount ?? '',
                   r.compensation_percent ?? '',
@@ -502,6 +419,7 @@ export default async function ShowDetailPage({
                   min_score: r.min_score ?? null,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
+                  booking_mode: ((r as { booking_mode?: string }).booking_mode === 'manual' ? 'manual' : 'auto') as RequirementBookingMode,
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
                   compensation_percent: r.compensation_percent ?? null,
@@ -519,6 +437,7 @@ export default async function ShowDetailPage({
                   min_score: r.min_score ?? null,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
+                  booking_mode: ((r as { booking_mode?: string }).booking_mode === 'manual' ? 'manual' : 'auto') as RequirementBookingMode,
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
                   compensation_percent: r.compensation_percent ?? null,
@@ -537,6 +456,8 @@ export default async function ShowDetailPage({
                   show_requirement_id: o.show_requirement_id ?? null,
                   status: o.status,
                   sent_at: o.sent_at ?? null,
+                  expires_at: o.expires_at ?? null,
+                  responded_at: o.responded_at ?? null,
                 }))}
                 artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }>}
                 selectableArtists={(selectableArtists ?? []).filter(a => !activeArtistIds.has(a.id) && !excludedArtistIds.has(a.id))}
