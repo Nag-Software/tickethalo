@@ -2,25 +2,27 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { NextResponse } from 'next/server'
 import type { Database } from '@/types/database'
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/env'
 
 type CookieOptions = Parameters<NextResponse['cookies']['set']>[2]
+type ResponseCookie = { name: string; value: string; options: CookieOptions }
 
 function createServerSupabaseClient(
   readCookies: () => ReturnType<Awaited<ReturnType<typeof cookies>>['getAll']>,
-  writeCookies: (name: string, value: string, options: CookieOptions) => void,
+  writeCookies: (cookiesToSet: ResponseCookie[]) => void,
 ) {
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    getSupabaseUrl(),
+    getSupabasePublishableKey(),
     {
       cookies: {
         getAll() {
           return readCookies()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            writeCookies(name, value, options)
-          })
+          writeCookies(
+            cookiesToSet.map(({ name, value, options }) => ({ name, value, options })),
+          )
         },
       },
     },
@@ -32,9 +34,11 @@ export async function createClient() {
 
   return createServerSupabaseClient(
     () => cookieStore.getAll(),
-    (name, value, options) => {
+    (cookiesToSet) => {
       try {
-        cookieStore.set(name, value, options)
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options)
+        })
       } catch {
         // Called from a Server Component — cookies can't be set
       }
@@ -44,22 +48,27 @@ export async function createClient() {
 
 export async function createRouteHandlerClient() {
   const cookieStore = await cookies()
-  const responseCookies: Array<{ name: string; value: string; options: CookieOptions }> = []
+  const responseCookies: ResponseCookie[] = []
 
   const supabase = createServerSupabaseClient(
     () => cookieStore.getAll(),
-    (name, value, options) => {
+    (cookiesToSet) => {
       try {
-        cookieStore.set(name, value, options)
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options)
+        })
       } catch {
         // Route handlers should allow this, but keep parity with createClient().
       }
-      responseCookies.push({ name, value, options })
+      responseCookies.push(...cookiesToSet)
     },
   )
 
   return {
     supabase,
+    hasSessionCookies() {
+      return responseCookies.some(({ name, value }) => value && name.startsWith('sb-'))
+    },
     withSessionCookies(response: NextResponse) {
       responseCookies.forEach(({ name, value, options }) => {
         response.cookies.set(name, value, options)
@@ -67,4 +76,27 @@ export async function createRouteHandlerClient() {
       return response
     },
   }
+}
+
+export async function waitForSignedInCookies(
+  supabase: Awaited<ReturnType<typeof createRouteHandlerClient>>['supabase'],
+) {
+  await new Promise<void>((resolve) => {
+    let settled = false
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      subscription.unsubscribe()
+      resolve()
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        queueMicrotask(finish)
+      }
+    })
+
+    setTimeout(finish, 3_000)
+  })
 }

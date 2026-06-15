@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createRouteHandlerClient } from '@/lib/supabase/server'
+import { createRouteHandlerClient, waitForSignedInCookies } from '@/lib/supabase/server'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
 export async function POST(request: Request) {
@@ -9,7 +9,8 @@ export async function POST(request: Request) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
   const password = String(formData.get('password') ?? '')
   const nextPath = normalizeNext(String(formData.get('next') ?? artistPrefix))
-  const { supabase, withSessionCookies } = await createRouteHandlerClient()
+  const { supabase, withSessionCookies, hasSessionCookies } = await createRouteHandlerClient()
+  const cookieFlush = waitForSignedInCookies(supabase)
 
   if (!email || !password) {
     return withSessionCookies(
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  await cookieFlush
 
   if (error || !data.user) {
     const errorCode = error?.message.toLowerCase().includes('email not confirmed') ? 'unconfirmed' : 'invalid'
@@ -43,6 +45,12 @@ export async function POST(request: Request) {
   }
 
   if (destination.startsWith('/artist-app')) {
+    if (!hasSessionCookies()) {
+      console.error('[artist-app/login/submit] Supabase session cookies were not written after sign-in')
+      return withSessionCookies(
+        NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303),
+      )
+    }
     return withSessionCookies(NextResponse.redirect(new URL(nextPath, origin), 303))
   }
 
