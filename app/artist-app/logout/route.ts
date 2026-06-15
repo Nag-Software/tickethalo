@@ -9,7 +9,8 @@ async function signOutAndRedirect(request: Request) {
 }
 
 export async function GET(request: Request) {
-  return signOutAndRedirect(request)
+  const origin = `${request.headers.get('x-forwarded-proto') ?? 'http'}://${request.headers.get('host') ?? new URL(request.url).host}`
+  return NextResponse.redirect(new URL('/artist-app/login', origin))
 }
 
 export async function POST(request: Request) {

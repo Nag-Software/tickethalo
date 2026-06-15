@@ -64,13 +64,15 @@ export function ArtistTopbar({
 
         <div className="flex items-center gap-2">
           <span className="hidden max-w-[140px] truncate text-sm text-zinc-500 lg:inline">{name}</span>
-          <Link
-            href="/artist-app/logout"
-            className="hidden h-9 items-center gap-1.5 rounded-full border border-black/10 px-3 text-sm text-zinc-600 transition hover:border-black hover:text-black sm:inline-flex"
-          >
-            <LogOut className="size-3.5" />
-            Logg ut
-          </Link>
+          <form action="/artist-app/logout" method="post" className="hidden sm:block">
+            <button
+              type="submit"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-black/10 px-3 text-sm text-zinc-600 transition hover:border-black hover:text-black"
+            >
+              <LogOut className="size-3.5" />
+              Logg ut
+            </button>
+          </form>
           <button
             type="button"
             className="inline-flex size-9 items-center justify-center rounded-full border border-black/10 md:hidden"
@@ -106,14 +108,16 @@ export function ArtistTopbar({
                 </Link>
               )
             })}
-            <Link
-              href="/artist-app/logout"
-              onClick={() => setOpen(false)}
-              className="mt-2 flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-zinc-600 hover:bg-zinc-50"
-            >
-              <LogOut className="size-4" />
-              Logg ut
-            </Link>
+            <form action="/artist-app/logout" method="post" className="mt-2">
+              <button
+                type="submit"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-zinc-600 hover:bg-zinc-50"
+              >
+                <LogOut className="size-4" />
+                Logg ut
+              </button>
+            </form>
           </nav>
         </div>
       )}
