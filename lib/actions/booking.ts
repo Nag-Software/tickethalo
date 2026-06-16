@@ -9,6 +9,7 @@ import {
   sendSpotAvailableEmail,
 } from '@/lib/email/mailer'
 import { generateShowPoster } from '@/lib/actions/ai'
+import { getPublicAppUrl } from '@/lib/app-url'
 import { loadResolvedPosterContext } from '@/lib/poster-assets'
 import { normalizeArtistRole } from '@/lib/artist-roles'
 import {
@@ -102,10 +103,6 @@ function requirementRolePriority(roleName: string | null | undefined) {
   if (role === 'stand-up') return 2
   if (role === 'open mic') return 3
   return 4
-}
-
-function publicAppUrl() {
-  return (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 }
 
 async function enforceCascadeOfferIntegrity(
@@ -392,7 +389,7 @@ export async function bookShow(showId: string) {
   candidatesMatched = assignments.length
   if (!assignments.length) return { offersCreated, candidatesMatched }
 
-  const baseUrl = publicAppUrl();
+  const baseUrl = getPublicAppUrl()
   for (const { artistId, req } of assignments) {
     if (await countActiveSentOffers(admin, req.id) >= config.offers_per_wave) continue
 
@@ -815,7 +812,7 @@ export async function createManualBookingOffer(formData: FormData) {
     fee_amount: feeAmountOere,
     currency: 'NOK',
     token: offer.token,
-    response_url: `${publicAppUrl()}/booking-offer/${offer.token}`,
+    response_url: `${getPublicAppUrl()}/booking-offer/${offer.token}`,
   })
 
   revalidatePath('/admin-app/bookings')
@@ -989,7 +986,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
     )
   }
 
-  const baseUrl = publicAppUrl();
+  const baseUrl = getPublicAppUrl()
   for (const artist of candidates) {
     if (await countActiveSentOffers(admin, requirementId) >= config.offers_per_wave) break
 

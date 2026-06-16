@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getPublicAppUrl } from '@/lib/app-url'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
 
 type FinalizeCheckoutResult = {
@@ -14,10 +15,7 @@ function resolveAppOrigin(session: Stripe.Checkout.Session) {
   const metadataOrigin = session.metadata?.app_origin
   if (metadataOrigin) return metadataOrigin
 
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3000'
+  return getPublicAppUrl()
 }
 
 function buildTicketVerificationUrl(origin: string, ticketCode: string) {
