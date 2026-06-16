@@ -91,9 +91,9 @@ export default async function BookingOffersPage({
 
 function StatusMessage({ status }: { status: string }) {
   const text = status === 'accepted'
-    ? 'Du er bekreftet på showet. Se detaljene under Bookinger.'
+    ? 'Du er nå booket! Se detaljene under Bookinger.'
     : status === 'filled_by_other'
-      ? 'Plassen ble fylt av en annen komiker før du rakk å bekrefte.'
+      ? 'En annen komiker fikk spotten. Line-upen er full, men nye muligheter kommer snart.'
       : status === 'already_booked'
         ? 'Du er allerede booket på dette showet.'
         : status === 'declined'

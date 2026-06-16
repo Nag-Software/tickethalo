@@ -1,4 +1,9 @@
 import { resend, FROM_EMAIL } from '@/lib/resend'
+import {
+  formatBookingDate,
+  formatBookingHonorar,
+  formatBookingSpotLabel,
+} from '@/lib/booking-offer-format'
 import QRCode from 'qrcode'
 
 type EmailResult = { success: boolean; resendId?: string; error?: string }
@@ -80,24 +85,32 @@ export async function sendBookingOfferEmail(opts: {
   show_date: string
   show_start_time?: string | null
   club_name?: string | null
-  venue?: string | null
+  spot_type?: string | null
+  venue_name?: string | null
+  venue_address?: string | null
   fee_amount?: number | null   // stored in øre/cents
   currency?: string | null
   token: string
   response_url: string
 }): Promise<EmailResult> {
-  const subject = `Bookingtilbud: ${opts.show_title}`
+  const clubLabel = opts.club_name?.trim() || opts.show_title
+  const spotLabel = formatBookingSpotLabel(opts.spot_type)
+  const subject = `${clubLabel} vil booke deg`
 
   const feeFormatted = opts.fee_amount
     ? `${Math.round(opts.fee_amount / 100).toLocaleString('nb-NO')} ${opts.currency ?? 'NOK'}`
-    : null
+    : 'Ikke oppgitt'
+
+  const detailRow = (label: string, value: string) =>
+    `<tr><td style="color:#71717a;padding:6px 0;width:120px;vertical-align:top">${escapeHtml(label)}</td><td style="padding:6px 0;font-weight:500">${escapeHtml(value)}</td></tr>`
 
   const detailRows = [
-    opts.club_name  ? `<tr><td style="color:#71717a;padding:6px 0;width:110px">Klubb</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.club_name)}</td></tr>` : '',
-    opts.venue      ? `<tr><td style="color:#71717a;padding:6px 0">Sted</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.venue)}</td></tr>` : '',
-    opts.show_date  ? `<tr><td style="color:#71717a;padding:6px 0">Dato</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.show_date)}</td></tr>` : '',
-    opts.show_start_time ? `<tr><td style="color:#71717a;padding:6px 0">Showstart</td><td style="padding:6px 0;font-weight:500">${escapeHtml(opts.show_start_time.slice(0, 5))}</td></tr>` : '',
-    feeFormatted    ? `<tr><td style="color:#71717a;padding:6px 0">Honorar</td><td style="padding:6px 0;font-weight:500">${escapeHtml(feeFormatted)}</td></tr>` : '',
+    detailRow('Spot', spotLabel),
+    detailRow('Honorar', feeFormatted),
+    detailRow('Venue/Scene', opts.venue_name?.trim() || 'Ikke oppgitt'),
+    detailRow('Adresse', opts.venue_address?.trim() || 'Ikke oppgitt'),
+    detailRow('Dato', formatBookingDate(opts.show_date)),
+    detailRow('Tidspunkt', opts.show_start_time ? opts.show_start_time.slice(0, 5) : 'Ikke oppgitt'),
   ].join('')
 
   try {
@@ -108,21 +121,19 @@ export async function sendBookingOfferEmail(opts: {
       html: `
         <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55;max-width:540px">
           <h2 style="margin-bottom:4px">Hei ${escapeHtml(opts.full_name)}!</h2>
-          <p>Du har mottatt et bookingtilbud for <strong>${escapeHtml(opts.show_title)}</strong>.</p>
+          <p>${escapeHtml(clubLabel)} vil gjerne booke deg til en ${escapeHtml(spotLabel)} spot.</p>
 
           <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px">
             ${detailRows}
           </table>
 
           <p style="margin:22px 0">
-            <a href="${opts.response_url}?response=accept" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px">Ja, jeg kan</a>
-            <a href="${opts.response_url}?response=decline" style="display:inline-block;border:1px solid #d4d4d8;color:#18181b;text-decoration:none;padding:9px 14px;border-radius:8px">Nei, denne passer ikke</a>
+            <a href="${opts.response_url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Svar her</a>
           </p>
-          <div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:14px;margin:18px 0;color:#78350f">
-            <p style="margin:0 0 8px"><strong>Viktig:</strong> Godkjenn kun datoer som passer. Du vil fortsatt få tilbud i fremtiden selv om disse ikke passer.</p>
-            <p style="margin:0">Hvis du derimot velger ja på en line-up og etterpå dropper, blir profilen din flagget og systemet vil nedprioritere å gi deg tilbud om nye spots når de blir ledige.</p>
-          </div>
-          <p>Tilbudet er gyldig i 7 dager. Første artist som godkjenner mens plassen er ledig får spotten.</p>
+
+          <p>Det er helt fint å takke nei til spots, du blir ikke nedprioritert av den grunn.</p>
+          <p>På den annen side skaper det merarbeid for bookere om du sier ja til en spot, og i etterkant dropper. Sjekk at du kan stille før du takker ja.</p>
+          <p style="margin-top:18px;color:#52525b">P.S. Passer ikke denne datoen, vil det være nye muligheter snart:)</p>
         </div>
       `,
     })
@@ -140,19 +151,49 @@ export async function sendBookingOfferEmail(opts: {
 export async function sendBookingConfirmedEmail(opts: {
   email: string
   full_name: string
-  show_title: string
+  club_name: string
+  venue_name?: string | null
+  venue_address?: string | null
   show_date: string
+  spot_type?: string | null
+  fee_amount?: number | null
+  currency?: string | null
+  compensation_type?: string | null
+  compensation_amount?: number | null
+  compensation_percent?: number | null
 }): Promise<EmailResult> {
-  const subject = `Booking bekreftet: ${opts.show_title}`
+  const clubLabel = opts.club_name.trim()
+  const spotLabel = formatBookingSpotLabel(opts.spot_type)
+  const honorar = formatBookingHonorar(opts)
+  const subject = `Du er booket hos ${clubLabel}`
+
+  const detailRow = (label: string, value: string) =>
+    `<tr><td style="color:#71717a;padding:6px 0;width:120px;vertical-align:top">${escapeHtml(label)}</td><td style="padding:6px 0;font-weight:500">${escapeHtml(value)}</td></tr>`
+
+  const detailRows = [
+    detailRow('Scene', opts.venue_name?.trim() || 'Ikke oppgitt'),
+    detailRow('Adresse', opts.venue_address?.trim() || 'Ikke oppgitt'),
+    detailRow('Dato', formatBookingDate(opts.show_date)),
+    detailRow('Type spot', spotLabel),
+    detailRow('Honorar', honorar),
+  ].join('')
+
   try {
     const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
       to: opts.email,
       subject,
       html: `
-        <h2>Din booking er bekreftet!</h2>
-        <p>Hei ${opts.full_name}, du er booket til <strong>${opts.show_title}</strong> den ${opts.show_date}.</p>
-        <p>Logg inn på artistportalen for detaljer.</p>
+        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55;max-width:540px">
+          <h2 style="margin-bottom:4px">Hei ${escapeHtml(opts.full_name)}!</h2>
+          <p>Du er nå booket hos ${escapeHtml(clubLabel)}.</p>
+
+          <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px">
+            ${detailRows}
+          </table>
+
+          <p>Vi gleder oss til å se deg på scenen! Møt opp 30 minutter før showstart.</p>
+        </div>
       `,
     })
     if (error) throw new Error(error.message)
@@ -206,16 +247,22 @@ export async function sendSpotAvailableEmail(opts: {
 export async function sendSpotFilledEmail(opts: {
   email: string
   full_name: string
+  club_name: string
+  show_date: string
 }): Promise<EmailResult> {
-  const subject = 'Beklager — plassen er allerede fylt'
+  const clubLabel = opts.club_name.trim()
+  const dateLabel = formatBookingDate(opts.show_date)
+  const subject = `Spotten er fylt hos ${clubLabel}`
   try {
     const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
       to: opts.email,
       subject,
       html: `
-        <p>Hei ${opts.full_name},</p>
-        <p>Dessverre ble plassen fylt av en annen artist før du svarte. Vi holder deg oppdatert om nye muligheter.</p>
+        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55;max-width:540px">
+          <p>Hei ${escapeHtml(opts.full_name)},</p>
+          <p>Beklager, en annen komiker har akseptert spotten hos ${escapeHtml(clubLabel)} den ${escapeHtml(dateLabel)}. Line-upen er dessverre full nå, men det vil forhåpentligvis være en ny mulighet om ikke så lenge.</p>
+        </div>
       `,
     })
     if (error) throw new Error(error.message)

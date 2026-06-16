@@ -33,6 +33,33 @@ export const OFFER_BUDGET_STATUSES = [
   'accepted',
 ] as const
 
+/** Artist cannot receive a new offer on this show while any offer has one of these statuses. */
+export const OFFER_REOFFER_BLOCK_STATUSES = [
+  'sent',
+  'declined',
+  'expired',
+  'accepted',
+] as const
+
+export function buildShowBookingInvolvedSet(input: {
+  offers: Array<{ artist_id: string; status: string }>
+  confirmedSpotArtistIds: string[]
+  excludedArtistIds?: string[]
+}): Set<string> {
+  const involved = new Set<string>([
+    ...input.confirmedSpotArtistIds,
+    ...(input.excludedArtistIds ?? []),
+  ])
+
+  for (const offer of input.offers) {
+    if (OFFER_REOFFER_BLOCK_STATUSES.includes(offer.status as (typeof OFFER_REOFFER_BLOCK_STATUSES)[number])) {
+      involved.add(offer.artist_id)
+    }
+  }
+
+  return involved
+}
+
 export function autoBookingOfferExpiresAt(from = Date.now()): string {
   return new Date(from + AUTO_BOOKING_OFFER_EXPIRY_MS).toISOString()
 }

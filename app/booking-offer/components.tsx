@@ -1,0 +1,260 @@
+import Link from 'next/link'
+import { PublicHeader } from '@/components/public/public-header'
+import { publicAcceptOfferAction, publicDeclineOfferAction } from './[token]/actions'
+import { formatBookingDate } from '@/lib/booking-offer-format'
+
+export type BookingOfferDetails = {
+  clubName: string
+  showTitle: string
+  showDate: string | null
+  startTime: string | null
+  venueName: string | null
+  venueAddress: string | null
+  spotLabel: string
+  honorarLabel: string
+}
+
+export const MOCK_BOOKING_OFFER: BookingOfferDetails = {
+  clubName: 'Oslo Comedy Club',
+  showTitle: 'Humor i Parken',
+  showDate: '2026-07-15',
+  startTime: '19:30:00',
+  venueName: 'Parkteatret',
+  venueAddress: 'Olaf Ryes plass 11, Oslo',
+  spotLabel: 'Klubbkveld',
+  honorarLabel: '1 500 kr',
+}
+
+export function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</div>
+      <div className="text-sm font-bold">{value}</div>
+    </div>
+  )
+}
+
+export function ResultPage({
+  icon,
+  title,
+  message,
+  variant,
+  details,
+  devBanner,
+}: {
+  icon: string
+  title: string
+  message: string
+  variant: 'success' | 'neutral' | 'error'
+  details?: Array<{ label: string; value: string }>
+  devBanner?: React.ReactNode
+}) {
+  const colors = {
+    success: 'text-[#1f6f43]',
+    neutral: 'text-zinc-950',
+    error: 'text-[#b83224]',
+  }
+  return (
+    <>
+      {devBanner}
+      <main className="flex min-h-screen items-center justify-center bg-[#f3ead9] p-4 text-zinc-950">
+        <div className="w-full max-w-sm border-2 border-zinc-950 bg-[#fbf7ec] p-8 text-center shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
+          <div className={`text-5xl font-black ${colors[variant]}`}>{icon}</div>
+          <h1 className="mt-3 text-2xl font-black uppercase tracking-tight">{title}</h1>
+          {details && details.length > 0 && (
+            <dl className="mt-5 space-y-3 border-t-2 border-zinc-950 pt-5 text-left">
+              {details.map(({ label, value }) => (
+                <div key={label}>
+                  <dt className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</dt>
+                  <dd className="mt-0.5 text-sm font-bold capitalize">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <p className="mt-5 text-sm font-medium text-zinc-700">{message}</p>
+        </div>
+      </main>
+    </>
+  )
+}
+
+export function AcceptedResultPage({
+  details,
+  devBanner,
+}: {
+  details: BookingOfferDetails
+  devBanner?: React.ReactNode
+}) {
+  const formatDate = formatBookingDate
+  return (
+    <ResultPage
+      icon="✓"
+      title={`Du er nå booket hos ${details.clubName}`}
+      details={[
+        { label: 'Scene', value: details.venueName ?? 'Ikke oppgitt' },
+        { label: 'Adresse', value: details.venueAddress ?? 'Ikke oppgitt' },
+        { label: 'Dato', value: details.showDate ? formatDate(details.showDate) : 'Ikke oppgitt' },
+        { label: 'Type spot', value: details.spotLabel },
+        { label: 'Honorar', value: details.honorarLabel },
+      ]}
+      message="Vi gleder oss til å se deg på scenen! Møt opp 30 minutter før showstart."
+      variant="success"
+      devBanner={devBanner}
+    />
+  )
+}
+
+export function FilledResultPage({
+  details,
+  devBanner,
+}: {
+  details: BookingOfferDetails
+  devBanner?: React.ReactNode
+}) {
+  const formatDate = formatBookingDate
+  const dateLabel = details.showDate ? formatDate(details.showDate) : 'den datoen'
+  return (
+    <ResultPage
+      icon="!"
+      title="Spotten er fylt"
+      message={`Beklager, en annen komiker har akseptert spotten hos ${details.clubName} den ${dateLabel}. Spotten er fylt, men det vil forhåpentligvis være en ny mulighet om ikke så lenge.`}
+      variant="neutral"
+      devBanner={devBanner}
+    />
+  )
+}
+
+export function BookingOfferPage({
+  details,
+  token,
+  canRespond,
+  statusMessage,
+  isMock = false,
+  devBanner,
+}: {
+  details: BookingOfferDetails
+  token: string
+  canRespond: boolean
+  statusMessage?: string
+  isMock?: boolean
+  devBanner?: React.ReactNode
+}) {
+  const formatDate = formatBookingDate
+
+  return (
+    <>
+      {devBanner}
+      <main className="min-h-screen w-full bg-[#f3ead9] text-zinc-950">
+        <PublicHeader transparent tone="light" />
+        <section className="mx-auto mt-15 sm:mt-5 w-full grid max-w-xl gap-8 px-4 py-12 md:px-6 lg:px-8">
+          <div className="md:pt-8 mx-auto">
+            <h1 className="text-4xl sm:text-center font-black uppercase leading-[0.82] tracking-[-0.04em]">Bookingtilbud</h1>
+            <p className="mt-5 max-w-md text-base font-medium text-zinc-700">Du har mottatt et tilbud om å opptre. Svar på tilbudet under.</p>
+          </div>
+
+          <div className="w-full mx-auto space-y-5">
+            <div className="border-2 border-zinc-950 bg-[#fbf7ec] shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
+              <div className="border-b-2 border-zinc-950 px-6 py-4">
+                <h2 className="text-2xl font-black tracking-tight">{details.showTitle}</h2>
+                {details.showDate && (
+                  <p className="text-sm font-medium capitalize text-zinc-600">{formatDate(details.showDate)}</p>
+                )}
+              </div>
+              <div className="p-6 grid grid-cols-2 gap-4">
+                <InfoCell label="Type spot" value={details.spotLabel} />
+                <InfoCell label="Honorar" value={details.honorarLabel} />
+                <InfoCell label="Tidspunkt" value={details.startTime?.slice(0, 5) ?? 'Kommer'} />
+                <InfoCell label="Scene" value={details.venueName ?? 'Ikke oppgitt'} />
+              </div>
+            </div>
+
+            {canRespond &&
+              (isMock ? (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full border-2 border-zinc-950 bg-[#b83224] px-4 py-3 font-bold text-white shadow-[4px_4px_0_#18181b] opacity-90"
+                  >
+                    Ja, jeg tar spotten
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full border-2 border-zinc-950 bg-transparent px-4 py-3 text-sm font-bold opacity-90"
+                  >
+                    Nei, det passer ikke
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <form action={publicAcceptOfferAction}>
+                    <input type="hidden" name="token" value={token} />
+                    <button
+                      type="submit"
+                      className="w-full border-2 border-zinc-950 bg-[#b83224] px-4 py-3 font-bold text-white shadow-[4px_4px_0_#18181b] transition hover:bg-[#9f2d21]"
+                    >
+                      Ja, jeg tar spotten
+                    </button>
+                  </form>
+                  <form action={publicDeclineOfferAction}>
+                    <input type="hidden" name="token" value={token} />
+                    <button
+                      type="submit"
+                      className="w-full border-2 border-zinc-950 bg-transparent px-4 py-3 text-sm font-bold transition hover:bg-zinc-950 hover:text-white"
+                    >
+                      Nei, det passer ikke
+                    </button>
+                  </form>
+                </div>
+              ))}
+
+            {!canRespond && statusMessage && (
+              <div className="border-2 border-zinc-950 bg-[#fbf7ec] p-4 text-center text-sm font-medium text-zinc-600">
+                {statusMessage}
+              </div>
+            )}
+
+            <p className="text-center text-xs font-medium text-zinc-600">
+              Spørsmål? Kontakt oss på{' '}
+              <a href="mailto:hei@humor.events" className="underline underline-offset-2">
+                hei@humor.events
+              </a>
+            </p>
+          </div>
+        </section>
+      </main>
+    </>
+  )
+}
+
+export const BOOKING_OFFER_MOCK_SCENARIOS = [
+  { id: 'available', label: 'Tilgjengelig' },
+  { id: 'accepted', label: 'Akseptert' },
+  { id: 'filled', label: 'Spot fylt' },
+  { id: 'declined', label: 'Avslått' },
+  { id: 'canceled', label: 'Kansellert' },
+  { id: 'expired', label: 'Utløpt (resultat)' },
+  { id: 'expired-offer', label: 'Utløpt (tilbud)' },
+  { id: 'error', label: 'Feil' },
+] as const
+
+export type BookingOfferMockScenario = (typeof BOOKING_OFFER_MOCK_SCENARIOS)[number]['id']
+
+export function DevMockBanner({ current }: { current?: BookingOfferMockScenario }) {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-zinc-950 bg-[#fff3bf] px-3 py-2 text-xs font-medium text-zinc-950">
+      <span className="font-black uppercase tracking-wide">Dev mock</span>
+      <span className="mx-2 text-zinc-500">·</span>
+      {BOOKING_OFFER_MOCK_SCENARIOS.map(({ id, label }) => (
+        <Link
+          key={id}
+          href={`/booking-offer?mock=${id}`}
+          className={`mr-3 underline underline-offset-2 ${current === id ? 'font-black text-[#b83224]' : 'hover:text-[#b83224]'}`}
+        >
+          {label}
+        </Link>
+      ))}
+    </div>
+  )
+}

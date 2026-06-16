@@ -24,6 +24,7 @@ import {
   strictFilter,
   autoBookingOfferExpiresAt,
   OFFER_BUDGET_STATUSES,
+  buildShowBookingInvolvedSet,
   selectExcessSentOfferIdsToCancel,
   type ClubBookingSettings,
   type ClubFairnessContext,
@@ -233,11 +234,11 @@ export async function bookShow(showId: string) {
     offer => !invalidPendingOfferIds.includes(offer.id)
   )
 
-  const alreadyInvolved = new Set([
-    ...activeExistingOffers.map(o => o.artist_id),
-    ...(existingSpots ?? []).map(s => s.artist_id),
-    ...excludedArtistIds,
-  ])
+  const alreadyInvolved = buildShowBookingInvolvedSet({
+    offers: activeExistingOffers,
+    confirmedSpotArtistIds: (existingSpots ?? []).map(s => s.artist_id),
+    excludedArtistIds: [...excludedArtistIds],
+  })
 
   const pendingOffersByRequirement = new Map<string, number>()
   const offersUsedByRequirement = new Map<string, number>()
@@ -427,7 +428,9 @@ export async function bookShow(showId: string) {
       show_date: show.date,
       show_start_time: show.start_time,
       club_name: clubName,
-      venue: show.venue_name ?? show.venue_address,
+      spot_type: req.role_name,
+      venue_name: show.venue_name,
+      venue_address: show.venue_address,
       fee_amount: feeAmountOere,
       currency,
       token: offer.token,
@@ -608,27 +611,58 @@ export async function acceptBookingOffer(token: string) {
   if (error || !accepted) throw new Error(error?.message ?? 'Offer not found or already responded')
 
   if (accepted.should_notify && accepted.result === 'filled_by_other') {
-    const { data: artist } = await admin
-      .from('artists')
-      .select('email, full_name')
-      .eq('id', accepted.artist_id)
-      .single()
+    const [{ data: artist }, { data: show }] = await Promise.all([
+      admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
+      admin.from('shows').select('date, title, club_id').eq('id', accepted.show_id).single(),
+    ])
 
-    if (artist) await sendSpotFilledEmail({ email: artist.email, full_name: artist.full_name })
+    const clubName = show?.club_id
+      ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? show.title
+      : show?.title ?? 'klubben'
+
+    if (artist && show?.date) {
+      await sendSpotFilledEmail({
+        email: artist.email,
+        full_name: artist.full_name,
+        club_name: clubName ?? 'klubben',
+        show_date: show.date,
+      })
+    }
   }
 
   if (accepted.should_notify && accepted.result === 'accepted') {
-    const [{ data: artist }, { data: show }] = await Promise.all([
+    const [{ data: artist }, { data: show }, { data: offer }] = await Promise.all([
       admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
-      admin.from('shows').select('title, date').eq('id', accepted.show_id).single(),
+      admin.from('shows').select('title, date, venue_name, venue_address, club_id').eq('id', accepted.show_id).single(),
+      admin.from('booking_offers').select('fee_amount, currency, show_requirement_id').eq('id', accepted.offer_id).single(),
     ])
 
-    if (artist) {
+    const clubName = show?.club_id
+      ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? show.title
+      : show?.title ?? 'klubben'
+
+    const { data: requirement } = offer?.show_requirement_id
+      ? await admin
+        .from('show_requirements')
+        .select('role_name, compensation_type, compensation_amount, compensation_percent')
+        .eq('id', offer.show_requirement_id)
+        .single()
+      : { data: null }
+
+    if (artist && show?.date) {
       await sendBookingConfirmedEmail({
         email: artist.email,
         full_name: artist.full_name,
-        show_title: show?.title ?? '',
-        show_date: show?.date ?? '',
+        club_name: clubName ?? 'klubben',
+        venue_name: show.venue_name,
+        venue_address: show.venue_address,
+        show_date: show.date,
+        spot_type: requirement?.role_name,
+        fee_amount: offer?.fee_amount,
+        currency: offer?.currency,
+        compensation_type: requirement?.compensation_type,
+        compensation_amount: requirement?.compensation_amount,
+        compensation_percent: requirement?.compensation_percent,
       })
     }
   }
@@ -735,7 +769,7 @@ export async function acceptBookingOfferById(offerId: string) {
   if (requirement && (nowFilled ?? 0) >= requirement.quantity) {
     await admin
       .from('booking_offers')
-      .update({ status: 'filled_by_other' })
+      .update({ status: 'cancelled', responded_at: new Date().toISOString() })
       .eq('show_requirement_id', offer.show_requirement_id)
       .eq('status', 'sent')
       .neq('id', offer.id)
@@ -772,9 +806,10 @@ export async function createManualBookingOffer(formData: FormData) {
 
   const admin = createAdminClient()
 
-  const [{ data: show }, { data: artist }] = await Promise.all([
+  const [{ data: show }, { data: artist }, { data: requirement }] = await Promise.all([
     admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, club_id').eq('id', showId).single(),
     admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
+    admin.from('show_requirements').select('role_name').eq('id', requirementId).single(),
   ])
 
   if (!show || !artist) throw new Error('Show eller artist ikke funnet')
@@ -808,7 +843,9 @@ export async function createManualBookingOffer(formData: FormData) {
     show_date: show.date,
     show_start_time: show.start_time,
     club_name: clubName,
-    venue: show.venue_name ?? show.venue_address,
+    spot_type: requirement?.role_name,
+    venue_name: show.venue_name,
+    venue_address: show.venue_address,
     fee_amount: feeAmountOere,
     currency: 'NOK',
     token: offer.token,
@@ -921,11 +958,11 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const offerBudget = slotsNeeded * config.offers_per_slot
   if (offersUsed >= offerBudget) return
 
-  const alreadyInvolved = new Set([
-    ...(existingOffers ?? []).map(o => o.artist_id),
-    ...(existingSpots ?? []).map(s => s.artist_id),
-    ...(excludedArtists ?? []).map(row => row.artist_id),
-  ])
+  const alreadyInvolved = buildShowBookingInvolvedSet({
+    offers: existingOffers ?? [],
+    confirmedSpotArtistIds: (existingSpots ?? []).map(s => s.artist_id),
+    excludedArtistIds: (excludedArtists ?? []).map(row => row.artist_id),
+  })
 
   const rosterSize = (allArtists as ArtistRow[]).length
   const dedicatedPoolSize = (allArtists as ArtistRow[]).filter(a =>

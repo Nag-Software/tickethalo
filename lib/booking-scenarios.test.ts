@@ -3,6 +3,7 @@ import {
   computeBaseScore,
   computeFinalScore,
   DEFAULT_CLUB_BOOKING_SETTINGS,
+  buildShowBookingInvolvedSet,
   detectFairnessPreset,
   FAIRNESS_PRESETS,
   getEffectiveMinScore,
@@ -505,6 +506,34 @@ describe('simulateBooking — kaskade', () => {
 
     const ids = steps.flatMap(s => s.assignments.map(a => a.artistId))
     expect(ids).toEqual(['a1', 'a2', 'a3'])
+  })
+
+  it('komiker med kansellert tilbud på én spot kan tilbys en annen spot', () => {
+    const artists = [
+      makeArtist('a1', { score: 10, roles: ['stand-up', 'open mic'] }),
+      makeArtist('a2', { score: 9, roles: ['stand-up'] }),
+      makeArtist('a3', { score: 8, roles: ['open mic'] }),
+    ]
+
+    const requirements = [
+      makeRequirement('su', 'stand-up', { quantity: 1 }),
+      makeRequirement('om', 'open mic', { quantity: 1, lineupPosition: 1 }),
+    ]
+
+    const involved = buildShowBookingInvolvedSet({
+      offers: [{ artist_id: 'a1', status: 'cancelled' }],
+      confirmedSpotArtistIds: [],
+    })
+
+    const { assignments } = simulateBooking({
+      artists,
+      requirements: [requirements[1]],
+      config: { ...config, offers_per_slot: 2, offers_per_wave: 1 },
+      alreadyInvolved: [...involved],
+    })
+
+    expect(assignments).toHaveLength(1)
+    expect(assignments[0].artistId).toBe('a1')
   })
 
   it('respekterer offers_per_slot som totalt budsjett over kaskade', () => {

@@ -72,6 +72,7 @@ export type Artist = {
   email: string
   phone: string | null
   profile_image_url: string | null
+  profile_image_urls: string[]
   bio: string | null
   category: ArtistType[] | null
   language: string | null
@@ -343,6 +344,7 @@ export type Database = {
           email: string
           phone?: string | null
           profile_image_url?: string | null
+          profile_image_urls?: string[]
           bio?: string | null
           category?: ArtistType[] | null
           language?: string | null

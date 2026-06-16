@@ -65,7 +65,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           selectedClubId={clubAccess.selectedClubId}
           showClubSwitcher={profile.role === 'superadmin'}
         />
-        <SidebarInset>{children}</SidebarInset>
+        <SidebarInset className="max-w-[2000px]">{children}</SidebarInset>
       </SidebarProvider>
     </div>
   )

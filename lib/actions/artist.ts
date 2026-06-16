@@ -5,6 +5,11 @@ import { sendArtistRegisteredEmail } from '@/lib/email/mailer'
 import { runAutomaticBookingForOpenShows } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import {
+  resolveExistingProfileImages,
+  resolveProfileImageInput,
+  uploadArtistProfileImages,
+} from '@/lib/artist-profile-images'
 import type { ArtistGender } from '@/types/database'
 
 export interface RegisterArtistInput {
@@ -18,7 +23,8 @@ export interface RegisterArtistInput {
   language?: string
   gender?: ArtistGender
   social_links?: Record<string, string>
-  profile_image_file?: File
+  profile_image_files?: File[]
+  primary_profile_image_index?: number
 }
 
 export interface CompleteArtistRegistrationInput extends Omit<RegisterArtistInput, 'password'> {
@@ -62,22 +68,14 @@ export async function registerArtist(input: RegisterArtistInput) {
     })
     if (profileError) throw new Error(profileError.message)
 
-    // 3. Upload required profile image
-    if (!input.profile_image_file) {
-      throw new Error('Required fields missing')
-    }
-
-    const ext = input.profile_image_file.name.split('.').pop()
-    const path = `${authUserId}/profile.${ext}`
-    const { error: uploadError } = await admin.storage
-      .from('artist-images')
-      .upload(path, input.profile_image_file, { upsert: true })
-    if (uploadError) {
-      throw new Error('Profile image upload failed')
-    }
-
-    const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
-    const profile_image_url = urlData.publicUrl
+    // 3. Upload required profile images
+    const profileImages = resolveProfileImageInput(input)
+    const { profile_image_url, profile_image_urls } = await uploadArtistProfileImages(
+      admin,
+      authUserId,
+      profileImages.files,
+      profileImages.primaryIndex,
+    )
 
     // 4. Create artist with status = pending_review
     const { data: artist, error: artistError } = await admin.from('artists').insert({
@@ -87,6 +85,7 @@ export async function registerArtist(input: RegisterArtistInput) {
       email: normalizedEmail,
       phone: input.phone ?? null,
       profile_image_url: profile_image_url ?? null,
+      profile_image_urls,
       bio: input.bio ?? null,
       category: normalizeCategoryValues(input.category),
       language: input.language ?? null,
@@ -168,28 +167,23 @@ export async function completeArtistRegistration(input: CompleteArtistRegistrati
   }
 
   let profile_image_url: string | undefined
-  if (input.profile_image_file) {
-    const ext = input.profile_image_file.name.split('.').pop()
-    const path = `${input.authUserId}/profile.${ext}`
-    const { error: uploadError } = await admin.storage
-      .from('artist-images')
-      .upload(path, input.profile_image_file, { upsert: true })
-    if (uploadError) {
-      throw new Error('Profile image upload failed')
-    }
+  let profile_image_urls: string[] = []
 
-    const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
-    profile_image_url = urlData.publicUrl
+  const profileImages = resolveProfileImageInput(input)
+  if (profileImages.files.length > 0) {
+    const uploaded = await uploadArtistProfileImages(
+      admin,
+      input.authUserId,
+      profileImages.files,
+      profileImages.primaryIndex,
+    )
+    profile_image_url = uploaded.profile_image_url
+    profile_image_urls = uploaded.profile_image_urls
   } else if (input.keepExistingProfileImage) {
-    const { data: storedImage } = await admin.storage.from('artist-images').list(`${input.authUserId}`, {
-      limit: 1,
-      search: 'profile.',
-    })
-    if (storedImage?.[0]) {
-      const { data: urlData } = admin.storage
-        .from('artist-images')
-        .getPublicUrl(`${input.authUserId}/${storedImage[0].name}`)
-      profile_image_url = urlData.publicUrl
+    const existing = await resolveExistingProfileImages(admin, input.authUserId)
+    if (existing) {
+      profile_image_url = existing.profile_image_url
+      profile_image_urls = existing.profile_image_urls
     }
   }
 
@@ -204,6 +198,7 @@ export async function completeArtistRegistration(input: CompleteArtistRegistrati
     email: normalizedEmail,
     phone: input.phone ?? null,
     profile_image_url: profile_image_url ?? null,
+    profile_image_urls,
     bio: input.bio ?? null,
     category: normalizeCategoryValues(input.category),
     language: input.language ?? null,

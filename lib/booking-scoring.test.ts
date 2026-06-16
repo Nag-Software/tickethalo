@@ -17,6 +17,7 @@ import {
   getUnderbookedBoost,
   matchesRoleForDemand,
   selectExcessSentOfferIdsToCancel,
+  buildShowBookingInvolvedSet,
   strictFilter,
 } from './booking-scoring'
 import { createFairnessContext, makeArtist } from './booking-test-helpers'
@@ -239,5 +240,22 @@ describe('selectExcessSentOfferIdsToCancel', () => {
     ], 1)
 
     expect(ids.sort()).toEqual(['b', 'c'])
+  })
+})
+
+describe('buildShowBookingInvolvedSet', () => {
+  it('blokkerer kun artister med aktive eller endelige svar, ikke kansellerte konkurrenter', () => {
+    const involved = buildShowBookingInvolvedSet({
+      offers: [
+        { artist_id: 'sent', status: 'sent' },
+        { artist_id: 'declined', status: 'declined' },
+        { artist_id: 'cancelled', status: 'cancelled' },
+        { artist_id: 'filled', status: 'filled_by_other' },
+      ],
+      confirmedSpotArtistIds: ['booked'],
+      excludedArtistIds: ['excluded'],
+    })
+
+    expect([...involved].sort()).toEqual(['booked', 'declined', 'excluded', 'sent'])
   })
 })
