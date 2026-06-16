@@ -392,7 +392,7 @@ export async function bookShow(showId: string) {
   candidatesMatched = assignments.length
   if (!assignments.length) return { offersCreated, candidatesMatched }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+  const baseUrl = publicAppUrl();
   for (const { artistId, req } of assignments) {
     if (await countActiveSentOffers(admin, req.id) >= config.offers_per_wave) continue
 
@@ -989,7 +989,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
     )
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const baseUrl = publicAppUrl();
   for (const artist of candidates) {
     if (await countActiveSentOffers(admin, requirementId) >= config.offers_per_wave) break
 
