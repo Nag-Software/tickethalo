@@ -44,7 +44,6 @@ export async function updateClubBookingSettingsAction(formData: FormData) {
     consecutive_event_multiplier: parseMultiplier(formData, 'consecutive_event_multiplier', 'To events på rad'),
     offers_per_wave: parsePositiveInt(formData, 'offers_per_wave', 'Tilbud per utsendelse', 1, 10),
     offers_per_slot: parsePositiveInt(formData, 'offers_per_slot', 'Maks tilbud i kø per spot', 1, 100),
-    min_bookable_score: parsePositiveInt(formData, 'min_bookable_score', 'Min. erfaringsnivå', 1, 10),
     updated_at: new Date().toISOString(),
   }
 

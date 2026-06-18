@@ -814,7 +814,7 @@ export async function bookShowAction(formData: FormData) {
   const result = await bookShow(showId)
   if (result.offersCreated === 0) {
     throw new Error(result.candidatesMatched === 0
-      ? 'Fant ingen godkjente artister som matcher erfaringsnivå- og energikravene.'
+      ? 'Fant ingen godkjente artister som matcher rolle-, energi- og kjønnskravene.'
       : 'Ingen nye bookingtilbud ble sendt. Matchende artister har allerede fått tilbud eller er i lineupen.')
   }
   revalidatePath(`/admin-app/shows/${showId}`)

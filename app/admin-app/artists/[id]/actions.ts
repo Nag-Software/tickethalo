@@ -15,14 +15,12 @@ export async function saveArtistAdminReview(formData: FormData) {
   const energyRaw = ((formData.get('admin_energy_level') as string) || null) as EnergyLevel | null
   const statusRaw = (formData.get('status') as string) as ArtistStatus
   const genderRaw = ((formData.get('gender') as string) || null) as ArtistGender | null
+  // The "Nivå" chips are the club's own segmentation — stored per club, not on the
+  // global artist record (which keeps the artist's self-declared category).
   const categoryValues = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
-  const scoreRaw = formData.get('admin_score')
-  const score = scoreRaw ? Number(scoreRaw) : null
 
   await db.from('artists').update({
-    admin_score: score,
     admin_energy_level: energyRaw,
-    category: categoryValues.length ? categoryValues : null,
     gender: genderRaw,
     admin_notes: (formData.get('admin_notes') as string) || null,
     status: statusRaw,
@@ -30,12 +28,12 @@ export async function saveArtistAdminReview(formData: FormData) {
     flag_reason: (formData.get('flag_reason') as string) || null,
   }).eq('id', artistId)
 
-  if (clubId && score) {
+  if (clubId) {
     await db.from('artist_club_scores').upsert(
       {
         artist_id: artistId,
         club_id: clubId,
-        score,
+        categories: categoryValues.length ? categoryValues : null,
         approved: statusRaw === 'approved',
         reviewed_at: new Date().toISOString(),
       },
@@ -49,13 +47,12 @@ export async function saveArtistAdminReview(formData: FormData) {
 export async function approveArtistAction(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   const clubId = (formData.get('club_id') as string) || null
-  const score = Number(formData.get('admin_score') ?? 0)
   const energy = (((formData.get('admin_energy_level') as string) || 'uncertain') as EnergyLevel)
-  await approveArtist(artistId, { admin_score: score, admin_energy_level: energy })
+  await approveArtist(artistId, { admin_energy_level: energy })
   if (clubId) {
     const db = createAdminClient()
     await db.from('artist_club_scores').upsert(
-      { artist_id: artistId, club_id: clubId, approved: true, score: score || null, reviewed_at: new Date().toISOString() },
+      { artist_id: artistId, club_id: clubId, approved: true, reviewed_at: new Date().toISOString() },
       { onConflict: 'artist_id,club_id' }
     )
   }

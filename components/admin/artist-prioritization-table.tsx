@@ -67,7 +67,6 @@ export function ArtistPrioritizationTable({ priorities }: ArtistPrioritizationTa
             <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
               <th className="px-4 py-2.5 text-left font-medium w-10">#</th>
               <th className="px-4 py-2.5 text-left font-medium">Komiker</th>
-              <th className="px-4 py-2.5 text-center font-medium">Erf.</th>
               <th className="px-4 py-2.5 text-center font-medium">Show</th>
               <th className="px-4 py-2.5 text-center font-medium">Rolle</th>
               <th className="px-4 py-2.5 text-center font-medium">Prioritert</th>
@@ -78,7 +77,7 @@ export function ArtistPrioritizationTable({ priorities }: ArtistPrioritizationTa
           <tbody>
             {priorities.rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   Ingen godkjente komikere funnet.
                 </td>
               </tr>
@@ -103,9 +102,6 @@ export function ArtistPrioritizationTable({ priorities }: ArtistPrioritizationTa
                         Ikke bookbar for denne rollen
                       </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-center tabular-nums font-medium">
-                    {row.adminScore ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">
                     {row.globalBookings}
@@ -147,7 +143,7 @@ export function ArtistPrioritizationTable({ priorities }: ArtistPrioritizationTa
 
       <p className="text-xs text-muted-foreground">
         Pool: {priorities.eligiblePoolSize} bookbare komikere for {roleLabel}. Score = base × rettferdighet ×
-        dominans + boost. Komikere uten rolle eller under min. erfaringsnivå vises med lavere score og markeres som
+        dominans + boost. Komikere uten denne rollen (nivå) for klubben vises med lavere score og markeres som
         ikke bookbare.
       </p>
     </section>

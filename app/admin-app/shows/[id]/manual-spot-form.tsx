@@ -9,7 +9,6 @@ type ManualSpotArtist = {
   id: string
   full_name: string
   stage_name: string | null
-  admin_score: number | null
   admin_energy_level: string | null
 }
 
@@ -67,7 +66,7 @@ export function ManualSpotForm({
           <option value="">Velg artist</option>
           {artists.map(artist => (
             <option key={artist.id} value={artist.id}>
-              {artist.stage_name ?? artist.full_name} · erfaringsnivå {artist.admin_score ?? '—'} · {artist.admin_energy_level ?? 'energi ukjent'}
+              {artist.stage_name ?? artist.full_name} · {artist.admin_energy_level ?? 'energi ukjent'}
             </option>
           ))}
         </select>

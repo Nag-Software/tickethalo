@@ -39,7 +39,7 @@ export default async function ArtistLayout({ children }: { children: React.React
   const db = createAdminClient()
   const { data: artist } = await db
     .from('artists')
-    .select('id, full_name, stage_name, email, status, admin_score')
+    .select('id, full_name, stage_name, email, status')
     .eq('auth_user_id', user.id)
     .single()
 

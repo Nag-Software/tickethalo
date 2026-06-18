@@ -4,8 +4,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestPathname } from '@/lib/request-pathname'
 import type { Artist } from '@/types/database'
 
-export const MIN_BOOKABLE_SCORE = 6
-
 export function normalizeArtistStatus(status: string | null | undefined) {
   return String(status ?? '').trim().toLowerCase()
 }
@@ -15,18 +13,16 @@ export function isArtistGloballyApproved(artist: Pick<Artist, 'status' | 'is_fla
   return normalizeArtistStatus(artist.status) === 'approved'
 }
 
-export function isArtistBookable(artist: Pick<Artist, 'status' | 'is_flagged' | 'admin_score'>) {
+export function isArtistBookable(artist: Pick<Artist, 'status' | 'is_flagged'>) {
   if (artist.is_flagged) return false
 
   const status = normalizeArtistStatus(artist.status)
   if (status === 'rejected' || status === 'inactive') return false
-  if (status === 'approved') return true
-
-  return (artist.admin_score ?? 0) >= MIN_BOOKABLE_SCORE
+  return status === 'approved'
 }
 
 export async function canArtistManageAvailability(
-  artist: Pick<Artist, 'id' | 'status' | 'is_flagged' | 'admin_score'>,
+  artist: Pick<Artist, 'id' | 'status' | 'is_flagged'>,
   db: ReturnType<typeof createAdminClient>,
 ) {
   if (isArtistBookable(artist)) return true

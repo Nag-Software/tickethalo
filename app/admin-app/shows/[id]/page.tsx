@@ -92,16 +92,16 @@ export default async function ShowDetailPage({
 
   const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }] = await Promise.all([
     shouldLoadRelatedArtists && allArtistIds.length
-      ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_score, admin_energy_level').in('id', allArtistIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }> }),
+      ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_energy_level').in('id', allArtistIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_energy_level: string | null }> }),
     shouldLoadSelectableArtists
       ? db.from('artists')
-        .select('id, full_name, stage_name, email, admin_score, admin_energy_level, gender, category')
+        .select('id, full_name, stage_name, email, admin_energy_level, gender, category')
         .eq('status', 'approved')
         .eq('is_flagged', false)
         .order('full_name')
         .limit(250)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; admin_energy_level: string | null; gender: string | null; category: string[] | null }> }),
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_energy_level: string | null; gender: string | null; category: string[] | null }> }),
     shouldLoadSelectableArtists
       ? db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', id)
       : Promise.resolve({ data: [] as Array<{ artist_id: string }> }),
@@ -130,10 +130,8 @@ export default async function ShowDetailPage({
       if (!status || status.isFull || status.pendingOffers > 0 || requirement.energy_level === 'any') return []
       if ((requirement as { booking_mode?: string }).booking_mode === 'manual') return []
 
-      const minScore = Math.max(requirement.min_score ?? 6, 6)
       const baseMatches = bookingCandidates.filter((artist) => {
         if (!artistMatchesRole(requirement.role_name, artist)) return false
-        if ((artist.admin_score ?? 0) < minScore) return false
         if (requirement.required_gender && requirement.required_gender !== 'any' && artist.gender !== requirement.required_gender) return false
         return true
       })
@@ -459,7 +457,7 @@ export default async function ShowDetailPage({
                   expires_at: o.expires_at ?? null,
                   responded_at: o.responded_at ?? null,
                 }))}
-                artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }>}
+                artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_energy_level: string | null }>}
                 selectableArtists={(selectableArtists ?? []).filter(a => !activeArtistIds.has(a.id) && !excludedArtistIds.has(a.id))}
                 energyRelaxationSuggestions={energyRelaxationSuggestions}
                 allSlotsFilled={allSlotsFilled}

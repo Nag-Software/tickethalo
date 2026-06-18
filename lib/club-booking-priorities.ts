@@ -3,6 +3,7 @@ import {
   computeFinalScore,
   getRoleBookingCount,
   strictFilter,
+  BOOKING_NEUTRAL_SCORE,
   type ClubBookingSettings,
   type ScoringRequirement,
 } from '@/lib/booking-scoring'
@@ -16,7 +17,6 @@ export type ArtistPriorityRow = {
   artistId: string
   fullName: string
   stageName: string | null
-  adminScore: number | null
   globalBookings: number
   roleBookings: number
   /** Marked available on the reference show date, if any. */
@@ -82,7 +82,7 @@ export async function loadClubArtistPriorities(
     created_at: referenceDate ?? today,
   }, settings)
 
-  const [{ data: artists }, { data: allFutureAvailability }] = await Promise.all([
+  const [{ data: artistRows }, { data: allFutureAvailability }, { data: clubSegmentRows }] = await Promise.all([
     admin
       .from('artists')
       .select('id, full_name, stage_name, admin_score, admin_energy_level, gender, category')
@@ -93,7 +93,24 @@ export async function loadClubArtistPriorities(
       .from('artist_availability')
       .select('artist_id, available_date')
       .gte('available_date', today),
+    admin
+      .from('artist_club_scores')
+      .select('artist_id, categories')
+      .eq('club_id', clubId),
   ])
+
+  // Per-club nivå overrides the artist's self-declared category; feed the engine
+  // a neutral score so ranking is driven by nivå + availability + fairness only.
+  const perClubCategories = new Map(
+    (clubSegmentRows ?? [])
+      .filter((row): row is { artist_id: string; categories: string[] } => Array.isArray(row.categories) && row.categories.length > 0)
+      .map(row => [row.artist_id, row.categories]),
+  )
+  const artists = (artistRows ?? []).map(artist => ({
+    ...artist,
+    admin_score: BOOKING_NEUTRAL_SCORE,
+    category: perClubCategories.get(artist.id) ?? artist.category,
+  }))
 
   const availabilityByArtist = new Map<string, Set<string>>()
   for (const row of allFutureAvailability ?? []) {
@@ -135,7 +152,6 @@ export async function loadClubArtistPriorities(
       artistId: artist.id,
       fullName: artist.full_name,
       stageName: artist.stage_name,
-      adminScore: artist.admin_score,
       globalBookings,
       roleBookings,
       prioritizedForReferenceShow: referenceDate
@@ -150,7 +166,7 @@ export async function loadClubArtistPriorities(
 
   rows.sort((a, b) => {
     if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore
-    return (b.adminScore ?? 0) - (a.adminScore ?? 0)
+    return a.fullName.localeCompare(b.fullName)
   })
 
   return {

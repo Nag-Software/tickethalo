@@ -31,7 +31,6 @@ type Artist = {
   stage_name: string | null
   email: string
   profile_image_url: string | null
-  admin_score: number | null
   admin_energy_level: string | null
 }
 
@@ -40,7 +39,6 @@ type SelectableArtist = {
   full_name: string
   stage_name: string | null
   email: string
-  admin_score: number | null
   admin_energy_level: string | null
 }
 
@@ -149,7 +147,6 @@ function requirementSummary(requirement: Requirement, currency: string) {
       : 'Ikke satt'
 
   return [
-    `Erfaringsnivå ${requirement.min_score ?? 'any'}`,
     `Energi ${ENERGY_LABELS[requirement.energy_level] ?? requirement.energy_level}`,
     `Kjønn ${GENDER_LABELS[requirement.required_gender] ?? requirement.required_gender}`,
     `Booking ${BOOKING_MODE_LABELS[requirement.booking_mode ?? 'auto']}`,
@@ -626,9 +623,6 @@ export function LineupTab({
                         >
                           {artist?.full_name ?? '—'}
                         </Link>
-                        {artist?.admin_score != null && (
-                          <span className="text-xs text-muted-foreground shrink-0">⭐ {artist.admin_score}</span>
-                        )}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">{artist?.email}</div>
                     </div>
@@ -691,7 +685,7 @@ export function LineupTab({
                           .filter(a => a.id !== spot.artist_id)
                           .map(a => (
                             <option key={a.id} value={a.id}>
-                              {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
+                              {a.stage_name ?? a.full_name}
                             </option>
                           ))}
                       </select>
@@ -750,9 +744,6 @@ export function LineupTab({
                           >
                             {artist?.full_name ?? '—'}
                           </Link>
-                          {artist?.admin_score != null && (
-                            <span className="text-xs text-muted-foreground/60 shrink-0">⭐ {artist.admin_score}</span>
-                          )}
                         </div>
                         <div className="text-xs text-muted-foreground/60 truncate">{artist?.email}</div>
                       </div>
@@ -835,9 +826,6 @@ export function LineupTab({
                               >
                                 {artist?.full_name ?? '—'}
                               </Link>
-                              {artist?.admin_score != null && (
-                                <span className="text-xs text-muted-foreground/60 shrink-0">⭐ {artist.admin_score}</span>
-                              )}
                             </div>
                           </div>
                           <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
@@ -865,7 +853,7 @@ export function LineupTab({
                       </p>
                       <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
                         {energySuggestion.candidates > 0
-                          ? `${energySuggestion.candidates} kandidat${energySuggestion.candidates === 1 ? '' : 'er'} matcher rolle, kjønn og erfaringsnivå hvis energi settes til Alle.`
+                          ? `${energySuggestion.candidates} kandidat${energySuggestion.candidates === 1 ? '' : 'er'} matcher rolle og kjønn hvis energi settes til Alle.`
                           : 'Åpner energikravet for denne spotten og starter ny tilbudsrunde.'}
                       </p>
                     </div>
@@ -941,7 +929,7 @@ export function LineupTab({
                   <option value="">Velg komiker...</option>
                   {selectableArtists.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
+                      {a.stage_name ?? a.full_name}
                     </option>
                   ))}
                 </select>

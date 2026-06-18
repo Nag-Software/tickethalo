@@ -59,7 +59,7 @@ type ReqState = {
   compensation_percent: string
 }
 
-type WizardStep = 0 | 1 | 2 | 3 | 4 | 5 | 6
+type WizardStep = 0 | 1 | 2 | 3 | 4 | 5
 
 type WizardState = ReqState & { step: WizardStep }
 
@@ -92,7 +92,6 @@ const WIZARD_INITIAL: WizardState = {
   compensation_percent: '',
 }
 
-const SCORE_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
 
 const ENERGY_OPTIONS: { value: RequirementEnergy; label: string; icon: string }[] = [
   { value: 'any', label: 'Alle', icon: '∞' },
@@ -787,27 +786,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                 </div>
 
                 {/* ── Field table ── */}
-                <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 md:grid-cols-6 md:divide-y-0">
-                  <FieldCell label="Erfaringsnivå">
-                    <Select
-                      value={state.min_score || '__none'}
-                      onValueChange={(value) => updateField(req.id, 'min_score', value === '__none' ? '' : value)}
-                    >
-                      <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Velg min. erfaringsnivå</SelectLabel>
-                        <SelectItem value="__none">Ingen krav</SelectItem>
-                        {SCORE_OPTIONS.map((score) => (
-                          <SelectItem key={score} value={score}>≥ {score}</SelectItem>
-                        ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FieldCell>
-
+                <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 md:grid-cols-5 md:divide-y-0">
                   <FieldCell label="Energi">
                     <Select
                       value={state.energy_level}
@@ -1032,7 +1011,7 @@ function AddWizard({
   existingPercentTotal: number
 }) {
   const roleInputRef = React.useRef<HTMLInputElement>(null)
-  const TOTAL_STEPS = 6
+  const TOTAL_STEPS = 5
 
   React.useEffect(() => {
     if (wizard.step === 1) {
@@ -1046,7 +1025,7 @@ function AddWizard({
   function back() {
     setWizard((prev) => ({
       ...prev,
-      step: prev.step === 6 && prev.compensation_type === '' ? 4 : (Math.max(prev.step - 1, 1) as WizardStep),
+      step: prev.step === 5 && prev.compensation_type === '' ? 3 : (Math.max(prev.step - 1, 1) as WizardStep),
     }))
   }
 
@@ -1056,7 +1035,7 @@ function AddWizard({
       compensation_type: value,
       compensation_amount: value === 'fixed' ? prev.compensation_amount : '',
       compensation_percent: value === 'percent' ? prev.compensation_percent : '',
-      step: value === '' ? 6 : 5,
+      step: value === '' ? 5 : 4,
     }))
   }
 
@@ -1073,9 +1052,8 @@ function AddWizard({
   // Breadcrumb trail of already-answered steps
   const trail = [
     wizard.step > 1 && wizard.role_name,
-    wizard.step > 2 && (wizard.min_score ? `erfaringsnivå ≥ ${wizard.min_score}` : 'alle erfaringsnivåer'),
-    wizard.step > 3 && ENERGY_LABELS[wizard.energy_level],
-    wizard.step > 4 && (wizard.compensation_type === 'fixed'
+    wizard.step > 2 && ENERGY_LABELS[wizard.energy_level],
+    wizard.step > 3 && (wizard.compensation_type === 'fixed'
       ? 'fast beløp'
       : wizard.compensation_type === 'percent'
         ? 'prosent'
@@ -1154,40 +1132,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 2: Erfaringsnivå ───────────────────────────────────────── */}
+        {/* ── Step 2: Energy ──────────────────────────────────────────────── */}
         {wizard.step === 2 && (
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-base font-semibold mb-1">Minimum erfaringsnivå?</h3>
-              <p className="text-sm text-muted-foreground">Erfaringsnivå for artist (1–10)</p>
-            </div>
-            <Select
-              value={wizard.min_score || '__none'}
-              onValueChange={(v) => {
-                setWizard((prev) => ({ ...prev, min_score: v === '__none' ? '' : v }))
-                next()
-              }}
-            >
-              <SelectTrigger className="w-full h-10">
-                <SelectValue placeholder="Velg min. erfaringsnivå" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">Ingen krav</SelectItem>
-                {SCORE_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>≥ {s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex justify-between pt-1">
-              <Button variant="ghost" size="sm" onClick={back}>
-                ← Tilbake
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 3: Energy ──────────────────────────────────────────────── */}
-        {wizard.step === 3 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">Energinivå?</h3>
@@ -1221,8 +1167,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 4: Compensation type ───────────────────────────────────── */}
-        {wizard.step === 4 && (
+        {/* ── Step 3: Compensation type ───────────────────────────────────── */}
+        {wizard.step === 3 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">Hvordan skal komikeren betales?</h3>
@@ -1257,8 +1203,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 5: Compensation value ─────────────────────────────────── */}
-        {wizard.step === 5 && (
+        {/* ── Step 4: Compensation value ─────────────────────────────────── */}
+        {wizard.step === 4 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">
@@ -1316,8 +1262,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 6: Gender + confirm ───────────────────────────────────── */}
-        {wizard.step === 6 && (
+        {/* ── Step 5: Gender + confirm ───────────────────────────────────── */}
+        {wizard.step === 5 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">Kjønnskrav?</h3>
@@ -1346,7 +1292,6 @@ function AddWizard({
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="text-muted-foreground">Rolle: <strong className="text-foreground">{wizard.role_name}</strong></span>
-                <span className="text-muted-foreground">Erfaringsnivå: <strong className="text-foreground">{wizard.min_score ? `≥ ${wizard.min_score}` : '—'}</strong></span>
                 <span className="text-muted-foreground">Energi: <strong className="text-foreground">{ENERGY_LABELS[wizard.energy_level]}</strong></span>
                 <span className="text-muted-foreground">Honorar: <strong className="text-foreground">{compensationSummary(wizard, showCurrency)}</strong></span>
                 <span className="text-muted-foreground">Kjønn: <strong className="text-foreground">{GENDER_LABELS[wizard.required_gender]}</strong></span>

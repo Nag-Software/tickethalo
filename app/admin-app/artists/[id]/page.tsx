@@ -29,8 +29,9 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
     db.from('artist_club_scores').select('*').eq('artist_id', id).eq('club_id', clubId).maybeSingle(),
   ])
 
-  const scoreOptions = Array.from({ length: 10 }, (_, i) => i + 1)
-  const normalizedCategories = normalizeArtistRoleList(artist.category ?? [])
+  // Per-club nivå overrides the artist's self-declared category. Fall back to the
+  // self-declared roles when this club hasn't set its own.
+  const normalizedCategories = normalizeArtistRoleList(clubScore?.categories ?? artist.category ?? [])
 
   return (
     <div>
@@ -96,10 +97,10 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 ]}
               />
 
-              {/* Erfaringsnivå — per club */}
+              {/* Nivå — per club (Headliner, Konferansier, Klubbspot, Stand-up, Open Mic) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-muted-foreground">Erfaringsnivå{clubRecord ? ` — ${clubRecord.name}` : ''}</p>
+                  <p className="text-xs font-medium text-muted-foreground">Nivå{clubRecord ? ` — ${clubRecord.name}` : ''}</p>
                   {artist.status === 'approved' && (
                     <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">✓ Godkjent</span>
                   )}
@@ -107,27 +108,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                     <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">✕ Avvist</span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {scoreOptions.map((n) => (
-                    <label key={n} className="cursor-pointer">
-                      <input
-                        type="radio"
-                        name="admin_score"
-                        value={n}
-                        defaultChecked={(clubScore?.score ?? artist.admin_score) === n}
-                        className="sr-only peer"
-                      />
-                      <span className="flex h-8 w-8 items-center justify-center rounded-md border text-xs font-semibold transition-colors peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:border-primary hover:bg-muted select-none">
-                        {n}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Kategorier — multi-select */}
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Kategorier</p>
                 <div className="flex flex-wrap gap-1.5">
                   {ARTIST_ROLE_OPTIONS.map((chip) => (
                     <label key={chip.value} className="cursor-pointer">
@@ -205,7 +185,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                   <ToastActionForm action={approveArtistAction} className="flex-1">
                     <input type="hidden" name="artist_id" value={artist.id} />
                     <input type="hidden" name="club_id" value={clubId} />
-                    <input type="hidden" name="admin_score" value={artist.admin_score ?? 7} />
                     <button type="submit"
                       className="w-full text-xs px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
                       ✓ Godkjenn

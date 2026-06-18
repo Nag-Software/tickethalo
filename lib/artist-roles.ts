@@ -1,8 +1,9 @@
-export type CanonicalArtistRole = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
+export type CanonicalArtistRole = 'headliner' | 'konferansier' | 'klubbspot' | 'stand-up' | 'open mic'
 
 export const ARTIST_ROLE_OPTIONS: Array<{ value: CanonicalArtistRole; label: string }> = [
   { value: 'headliner', label: 'Headliner' },
   { value: 'konferansier', label: 'Konferansier' },
+  { value: 'klubbspot', label: 'Klubbspot' },
   { value: 'stand-up', label: 'Stand-up' },
   { value: 'open mic', label: 'Open Mic' },
 ]
@@ -10,6 +11,7 @@ export const ARTIST_ROLE_OPTIONS: Array<{ value: CanonicalArtistRole; label: str
 const ARTIST_ROLE_LABELS: Record<CanonicalArtistRole, string> = {
   headliner: 'Headliner',
   konferansier: 'Konferansier',
+  klubbspot: 'Klubbspot',
   'stand-up': 'Stand-up',
   'open mic': 'Open Mic',
 }
@@ -29,6 +31,8 @@ const ROLE_ALIASES: Record<string, CanonicalArtistRole> = {
   host: 'konferansier',
   standup: 'stand-up',
   'stand-up': 'stand-up',
+  klubbspot: 'klubbspot',
+  'klubb spot': 'klubbspot',
   klubbkomiker: 'stand-up',
   klubb: 'stand-up',
   support: 'stand-up',

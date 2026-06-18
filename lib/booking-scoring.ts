@@ -3,6 +3,16 @@ import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
 export const FAIRNESS_EVENT_STATUSES = ['booking', 'fullbooked', 'published', 'completed'] as const
 export const CONFIRMED_SPOT_STATUSES = ['confirmed', 'completed', 'paid'] as const
 
+/**
+ * Comedians are no longer graded on a 1–10 quality scale. Booking is driven by
+ * per-club nivå (role tags), availability, fairness/history and flagging.
+ * The scoring engine still expects an `admin_score`, so the booking data paths
+ * feed every candidate this neutral value: it clears any min-score gate and is
+ * identical for everyone, so it never differentiates candidates. The dormant
+ * quality machinery can be removed entirely in a later cleanup.
+ */
+export const BOOKING_NEUTRAL_SCORE = 10
+
 export type ClubBookingSettings = {
   club_id?: string
   fairness_window_months: number

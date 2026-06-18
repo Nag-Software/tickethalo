@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
 import { updateArtistProfileAction } from '../actions'
-import { getCurrentArtist, isArtistBookable, isArtistGloballyApproved, MIN_BOOKABLE_SCORE } from '@/lib/artist-portal'
+import { getCurrentArtist, isArtistBookable, isArtistGloballyApproved } from '@/lib/artist-portal'
 import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 
@@ -129,7 +129,7 @@ export default async function ArtistProfilePage() {
               <div className="flex items-center justify-between">
                 <span className="text-zinc-500">Kan bookes</span>
                 <span className="font-medium">
-                  {isApproved && (artist.admin_score ?? 0) >= MIN_BOOKABLE_SCORE ? 'Ja' : 'Ikke ennå'}
+                  {isArtistBookable(artist) ? 'Ja' : 'Ikke ennå'}
                 </span>
               </div>
             </div>

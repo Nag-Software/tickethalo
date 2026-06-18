@@ -26,7 +26,6 @@ type FormState = {
   consecutive_event_multiplier: number
   offers_per_wave: number
   offers_per_slot: number
-  min_bookable_score: number
 }
 
 function toFormState(settings: ClubBookingSettings): FormState {
@@ -39,7 +38,6 @@ function toFormState(settings: ClubBookingSettings): FormState {
     consecutive_event_multiplier: settings.consecutive_event_multiplier,
     offers_per_wave: settings.offers_per_wave,
     offers_per_slot: settings.offers_per_slot,
-    min_bookable_score: settings.min_bookable_score,
   }
 }
 
@@ -178,20 +176,6 @@ export function ClubBookingSettingsForm({ settings, totalClubEvents }: ClubBooki
             <p className="mt-1.5 text-xs text-muted-foreground">
               Hvor mange komikere som kan få tilbud totalt (avslått og utløpt teller) før spotten stopper.
             </p>
-          </FieldContent>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="min_bookable_score">Min. erfaringsnivå</FieldLabel>
-          <FieldContent>
-            <Input
-              id="min_bookable_score"
-              type="number"
-              min={1}
-              max={10}
-              value={form.min_bookable_score}
-              onChange={e => updateField('min_bookable_score', Number(e.target.value))}
-              required
-            />
           </FieldContent>
         </Field>
       </div>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DeleteButton } from '@/components/admin/delete-button'
 import { deleteArtistAction } from './[id]/actions'
+import { formatArtistRoleSummary } from '@/lib/artist-roles'
 import type { ArtistStatus, EnergyLevel } from '@/types/database'
 
 const statusColors: Record<ArtistStatus, string> = {
@@ -34,7 +35,7 @@ export default async function ArtistsPage({
 
   let query = db
     .from('artists')
-    .select('id, full_name, stage_name, email, status, admin_score, admin_energy_level, is_flagged, created_at')
+    .select('id, full_name, stage_name, email, status, category, admin_energy_level, is_flagged, created_at')
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -125,7 +126,7 @@ export default async function ArtistsPage({
                 <th className="text-left px-4 py-2.5 font-medium">Komiker</th>
                 <th className="text-left px-4 py-2.5 font-medium">E-post</th>
                 <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                <th className="text-center px-4 py-2.5 font-medium">Erfaringsnivå</th>
+                <th className="text-left px-4 py-2.5 font-medium">Nivå</th>
                 <th className="text-left px-4 py-2.5 font-medium">Energi</th>
                 <th className="text-left px-4 py-2.5 font-medium">Dato</th>
                 <th className="px-4 py-2.5" />
@@ -154,8 +155,8 @@ export default async function ArtistsPage({
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold">{a.admin_score ?? '—'}</span>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {formatArtistRoleSummary(a.category, '—')}
                     </td>
                     <td className="px-4 py-3">
                       {a.admin_energy_level ? (

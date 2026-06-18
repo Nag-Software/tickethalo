@@ -26,6 +26,7 @@ import {
   OFFER_BUDGET_STATUSES,
   buildShowBookingInvolvedSet,
   selectExcessSentOfferIdsToCancel,
+  BOOKING_NEUTRAL_SCORE,
   type ClubBookingSettings,
   type ClubFairnessContext,
   type ScoringArtist,
@@ -39,6 +40,36 @@ const REOPEN_BOOKING_STATUSES = ['booking', 'fullbooked', 'published'] as const
 type ArtistRow = ScoringArtist & {
   email: string
   full_name: string
+}
+
+/** Per-club nivå/segments keyed by artist id. Empty arrays are ignored (fall back to global category). */
+async function loadPerClubArtistSegments(
+  admin: ReturnType<typeof createAdminClient>,
+  clubId: string | null | undefined,
+): Promise<Map<string, string[]>> {
+  if (!clubId) return new Map()
+  const { data } = await admin
+    .from('artist_club_scores')
+    .select('artist_id, categories')
+    .eq('club_id', clubId)
+  return new Map(
+    (data ?? [])
+      .filter((row): row is { artist_id: string; categories: string[] } => Array.isArray(row.categories) && row.categories.length > 0)
+      .map(row => [row.artist_id, row.categories]),
+  )
+}
+
+/**
+ * Prepares fetched artist rows for the scoring engine: applies each club's
+ * per-club nivå (falling back to the artist's self-declared category) and feeds
+ * a neutral constant score so quality no longer differentiates candidates.
+ */
+function applyClubSegments<T extends ArtistRow>(rows: T[], segments: Map<string, string[]>): T[] {
+  return rows.map(row => ({
+    ...row,
+    admin_score: BOOKING_NEUTRAL_SCORE,
+    category: segments.get(row.id) ?? row.category,
+  }))
 }
 
 type RequirementRow = ScoringRequirement & {
@@ -101,6 +132,7 @@ function requirementRolePriority(roleName: string | null | undefined) {
   const role = normalizeArtistRole(roleName)
   if (role === 'konferansier') return 0
   if (role === 'headliner') return 1
+  if (role === 'klubbspot') return 2
   if (role === 'stand-up') return 2
   if (role === 'open mic') return 3
   return 4
@@ -185,18 +217,20 @@ export async function bookShow(showId: string) {
   if (reqError) throw new Error(reqError.message)
   if (!requirements?.length) return { offersCreated, candidatesMatched }
 
-  const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
+  const [config, { data: availableRows }, { data: allArtistRows }, clubSegments] = await Promise.all([
     loadClubBookingSettings(admin, show.club_id),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
       .eq('is_flagged', false),
+    loadPerClubArtistSegments(admin, show.club_id),
   ])
 
   await enforceCascadeOfferIntegrity(admin, showId, config.offers_per_wave)
 
-  if (!allArtists?.length) return { offersCreated, candidatesMatched }
+  if (!allArtistRows?.length) return { offersCreated, candidatesMatched }
+  const allArtists = applyClubSegments(allArtistRows as ArtistRow[], clubSegments)
 
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
   const fairnessContext = await buildClubFairnessContext(admin, show.club_id, {
@@ -917,18 +951,20 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
 
   if ((filled ?? 0) >= requirement.quantity) return
 
-  const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
+  const [config, { data: availableRows }, { data: allArtistRows }, clubSegments] = await Promise.all([
     loadClubBookingSettings(admin, show.club_id),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
       .eq('is_flagged', false),
+    loadPerClubArtistSegments(admin, show.club_id),
   ])
 
   await enforceCascadeOfferIntegrity(admin, showId, config.offers_per_wave)
 
-  if (!allArtists?.length) return
+  if (!allArtistRows?.length) return
+  const allArtists = applyClubSegments(allArtistRows as ArtistRow[], clubSegments)
 
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
   const fairnessContext = await buildClubFairnessContext(admin, show.club_id, {

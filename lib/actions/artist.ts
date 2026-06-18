@@ -220,7 +220,6 @@ export async function completeArtistRegistration(input: CompleteArtistRegistrati
 export async function approveArtist(
   artistId: string,
   opts: {
-    admin_score: number
     admin_energy_level: 'high' | 'medium' | 'low' | 'uncertain'
     admin_notes?: string
   }
@@ -232,17 +231,16 @@ export async function approveArtist(
     .from('artists')
     .update({
       status: 'approved',
-      admin_score: opts.admin_score,
       admin_energy_level: opts.admin_energy_level,
       admin_notes: opts.admin_notes ?? null,
     })
     .eq('id', artistId)
-    .select('email, full_name, admin_score')
+    .select('email, full_name')
     .single()
 
   if (error || !artist) throw new Error(error?.message ?? 'Artist not found')
 
-  if ((artist.admin_score ?? 0) > 6) {
+  {
     const artistAppUrl = process.env.ARTIST_APP_URL ?? `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/artist-app`
     runAfterResponse(`approve-artist-${artistId}`, async () => {
       await sendArtistApprovedEmail({

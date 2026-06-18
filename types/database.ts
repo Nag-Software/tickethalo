@@ -5,7 +5,7 @@ export type ArtistStatus = 'pending_review' | 'approved' | 'rejected' | 'inactiv
 export type ArtistGender = 'male' | 'female' | 'other'
 export type RequirementGender = 'male' | 'female' | 'any'
 export type EnergyLevel = 'high' | 'medium' | 'low' | 'uncertain'
-export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
+export type ArtistType = 'headliner' | 'konferansier' | 'klubbspot' | 'stand-up' | 'open mic'
 export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'completed' | 'cancelled'
 export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
 export type RequirementCompensationType = 'fixed' | 'percent'
@@ -295,6 +295,8 @@ export type ArtistClubScore = {
   club_id: string
   approved: boolean
   score: number | null
+  /** Per-club nivå/segments (Headliner, Konferansier, Klubbspot, Stand-up, Open Mic). Overrides the artist's self-declared category for this club's booking. */
+  categories: string[] | null
   notes: string | null
   reviewed_at: string | null
   created_at: string
@@ -659,6 +661,7 @@ export type Database = {
           club_id: string
           approved?: boolean
           score?: number | null
+          categories?: string[] | null
           notes?: string | null
           reviewed_at?: string | null
           created_at?: string

@@ -53,6 +53,7 @@ function requirementRolePriority(roleName: string | null | undefined) {
   const role = normalizeArtistRole(roleName)
   if (role === 'konferansier') return 0
   if (role === 'headliner') return 1
+  if (role === 'klubbspot') return 2
   if (role === 'stand-up') return 2
   if (role === 'open mic') return 3
   return 4

@@ -9,7 +9,6 @@ export type PublicArtist = Pick<Artist,
   | 'bio'
   | 'category'
   | 'language'
-  | 'admin_score'
   | 'admin_energy_level'
   | 'social_links'
 >
@@ -30,7 +29,7 @@ export type PublicArtistShow = Pick<Show,
   role_name: string | null
 }
 
-const PUBLIC_ARTIST_FIELDS = 'id, full_name, stage_name, profile_image_url, bio, category, language, admin_score, admin_energy_level, social_links'
+const PUBLIC_ARTIST_FIELDS = 'id, full_name, stage_name, profile_image_url, bio, category, language, admin_energy_level, social_links'
 
 export async function getPublicArtists(): Promise<PublicArtist[]> {
   const db = createAdminClient()
