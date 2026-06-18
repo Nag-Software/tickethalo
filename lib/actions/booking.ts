@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   sendBookingOfferEmail,
@@ -644,66 +645,72 @@ export async function acceptBookingOffer(token: string) {
 
   if (error || !accepted) throw new Error(error?.message ?? 'Offer not found or already responded')
 
-  if (accepted.should_notify && accepted.result === 'filled_by_other') {
-    const [{ data: artist }, { data: show }] = await Promise.all([
-      admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
-      admin.from('shows').select('date, title, club_id').eq('id', accepted.show_id).single(),
-    ])
+  // The artist's result is already decided by the RPC above. Notification
+  // emails and re-running the matching for the next artist are side effects
+  // the artist does not need to wait for, so defer them past the response to
+  // keep the «Ja, jeg tar spotten» redirect near-instant.
+  after(async () => {
+    if (accepted.should_notify && accepted.result === 'filled_by_other') {
+      const [{ data: artist }, { data: show }] = await Promise.all([
+        admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
+        admin.from('shows').select('date, title, club_id').eq('id', accepted.show_id).single(),
+      ])
 
-    const clubName = show?.club_id
-      ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? show.title
-      : show?.title ?? 'klubben'
+      const clubName = show?.club_id
+        ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? show.title
+        : show?.title ?? 'klubben'
 
-    if (artist && show?.date) {
-      await sendSpotFilledEmail({
-        email: artist.email,
-        full_name: artist.full_name,
-        club_name: clubName ?? 'klubben',
-        show_date: show.date,
-      })
+      if (artist && show?.date) {
+        await sendSpotFilledEmail({
+          email: artist.email,
+          full_name: artist.full_name,
+          club_name: clubName ?? 'klubben',
+          show_date: show.date,
+        })
+      }
     }
-  }
 
-  if (accepted.should_notify && accepted.result === 'accepted') {
-    const [{ data: artist }, { data: show }, { data: offer }] = await Promise.all([
-      admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
-      admin.from('shows').select('title, date, venue_name, venue_address, club_id').eq('id', accepted.show_id).single(),
-      admin.from('booking_offers').select('fee_amount, currency, show_requirement_id').eq('id', accepted.offer_id).single(),
-    ])
+    if (accepted.should_notify && accepted.result === 'accepted') {
+      const [{ data: artist }, { data: show }, { data: offer }] = await Promise.all([
+        admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
+        admin.from('shows').select('title, date, venue_name, venue_address, club_id').eq('id', accepted.show_id).single(),
+        admin.from('booking_offers').select('fee_amount, currency, show_requirement_id').eq('id', accepted.offer_id).single(),
+      ])
 
-    const clubName = show?.club_id
-      ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? show.title
-      : show?.title ?? 'klubben'
+      const clubName = show?.club_id
+        ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? show.title
+        : show?.title ?? 'klubben'
 
-    const { data: requirement } = offer?.show_requirement_id
-      ? await admin
-        .from('show_requirements')
-        .select('role_name, compensation_type, compensation_amount, compensation_percent')
-        .eq('id', offer.show_requirement_id)
-        .single()
-      : { data: null }
+      const { data: requirement } = offer?.show_requirement_id
+        ? await admin
+          .from('show_requirements')
+          .select('role_name, compensation_type, compensation_amount, compensation_percent')
+          .eq('id', offer.show_requirement_id)
+          .single()
+        : { data: null }
 
-    if (artist && show?.date) {
-      await sendBookingConfirmedEmail({
-        email: artist.email,
-        full_name: artist.full_name,
-        club_name: clubName ?? 'klubben',
-        venue_name: show.venue_name,
-        venue_address: show.venue_address,
-        show_date: show.date,
-        spot_type: requirement?.role_name,
-        fee_amount: offer?.fee_amount,
-        currency: offer?.currency,
-        compensation_type: requirement?.compensation_type,
-        compensation_amount: requirement?.compensation_amount,
-        compensation_percent: requirement?.compensation_percent,
-      })
+      if (artist && show?.date) {
+        await sendBookingConfirmedEmail({
+          email: artist.email,
+          full_name: artist.full_name,
+          club_name: clubName ?? 'klubben',
+          venue_name: show.venue_name,
+          venue_address: show.venue_address,
+          show_date: show.date,
+          spot_type: requirement?.role_name,
+          fee_amount: offer?.fee_amount,
+          currency: offer?.currency,
+          compensation_type: requirement?.compensation_type,
+          compensation_amount: requirement?.compensation_amount,
+          compensation_percent: requirement?.compensation_percent,
+        })
+      }
     }
-  }
 
-  if (['accepted', 'already_booked', 'filled_by_other'].includes(accepted.result)) {
-    await runAutomaticBookingForShow(accepted.show_id)
-  }
+    if (['accepted', 'already_booked', 'filled_by_other'].includes(accepted.result)) {
+      await runAutomaticBookingForShow(accepted.show_id)
+    }
+  })
 
   return { result: accepted.result as 'accepted' | 'filled_by_other' | 'already_booked' | 'declined' | 'expired' | 'cancelled' }
 }

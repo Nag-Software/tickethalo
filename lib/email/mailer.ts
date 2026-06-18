@@ -95,7 +95,10 @@ export async function sendBookingOfferEmail(opts: {
 }): Promise<EmailResult> {
   const clubLabel = opts.club_name?.trim() || opts.show_title
   const spotLabel = formatBookingSpotLabel(opts.spot_type)
-  const subject = `${clubLabel} vil booke deg`
+  const dateLabel = formatBookingDate(opts.show_date)
+  // Date keeps each offer's subject unique so Gmail does not thread them
+  // together and collapse the «Svar her» button behind the trimmed quote.
+  const subject = `${clubLabel} vil booke deg — ${dateLabel}`
 
   const feeFormatted = opts.fee_amount
     ? `${Math.round(opts.fee_amount / 100).toLocaleString('nb-NO')} ${opts.currency ?? 'NOK'}`
@@ -109,7 +112,7 @@ export async function sendBookingOfferEmail(opts: {
     detailRow('Honorar', feeFormatted),
     detailRow('Venue/Scene', opts.venue_name?.trim() || 'Ikke oppgitt'),
     detailRow('Adresse', opts.venue_address?.trim() || 'Ikke oppgitt'),
-    detailRow('Dato', formatBookingDate(opts.show_date)),
+    detailRow('Dato', dateLabel),
     detailRow('Tidspunkt', opts.show_start_time ? opts.show_start_time.slice(0, 5) : 'Ikke oppgitt'),
   ].join('')
 
@@ -123,13 +126,13 @@ export async function sendBookingOfferEmail(opts: {
           <h2 style="margin-bottom:4px">Hei ${escapeHtml(opts.full_name)}!</h2>
           <p>${escapeHtml(clubLabel)} vil gjerne booke deg til en ${escapeHtml(spotLabel)} spot.</p>
 
+          <p style="margin:18px 0">
+            <a href="${opts.response_url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">Svar på tilbudet</a>
+          </p>
+
           <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:14px">
             ${detailRows}
           </table>
-
-          <p style="margin:22px 0">
-            <a href="${opts.response_url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Svar her</a>
-          </p>
 
           <p>Det er helt fint å takke nei til spots, du blir ikke nedprioritert av den grunn.</p>
           <p>På den annen side skaper det merarbeid for bookere om du sier ja til en spot, og i etterkant dropper. Sjekk at du kan stille før du takker ja.</p>

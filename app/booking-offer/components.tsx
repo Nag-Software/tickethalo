@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { PublicHeader } from '@/components/public/public-header'
-import { publicAcceptOfferAction, publicDeclineOfferAction } from './[token]/actions'
+import { OfferResponseButtons } from './offer-response-buttons'
 import { formatBookingDate } from '@/lib/booking-offer-format'
 
 export type BookingOfferDetails = {
@@ -187,26 +187,7 @@ export function BookingOfferPage({
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <form action={publicAcceptOfferAction}>
-                    <input type="hidden" name="token" value={token} />
-                    <button
-                      type="submit"
-                      className="w-full border-2 border-zinc-950 bg-[#b83224] px-4 py-3 font-bold text-white shadow-[4px_4px_0_#18181b] transition hover:bg-[#9f2d21]"
-                    >
-                      Ja, jeg tar spotten
-                    </button>
-                  </form>
-                  <form action={publicDeclineOfferAction}>
-                    <input type="hidden" name="token" value={token} />
-                    <button
-                      type="submit"
-                      className="w-full border-2 border-zinc-950 bg-transparent px-4 py-3 text-sm font-bold transition hover:bg-zinc-950 hover:text-white"
-                    >
-                      Nei, det passer ikke
-                    </button>
-                  </form>
-                </div>
+                <OfferResponseButtons token={token} />
               ))}
 
             {!canRespond && statusMessage && (
