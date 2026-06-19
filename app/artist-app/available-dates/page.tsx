@@ -63,9 +63,9 @@ export default async function AvailableDatesPage() {
       )}
 
       {canManage && slotsLeft > 0 && (
-        <section className="mb-8 border border-black/10 p-4">
+        <section className="mb-8 rounded-2xl border border-border p-4">
           <h2 className="text-sm font-medium">Legg til dato</h2>
-          <p className="mt-1 text-sm text-zinc-500">Velg en fremtidig dato du er tilgjengelig, også uten planlagt show.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Velg en fremtidig dato du er tilgjengelig, også uten planlagt show.</p>
           <ToastActionForm
             action={toggleAvailabilityAction}
             successMessage="Dato lagt til."
@@ -78,7 +78,7 @@ export default async function AvailableDatesPage() {
                 name="available_date"
                 min={today}
                 required
-                className="h-10 border border-black/15 bg-white px-3 text-sm outline-none focus:border-black"
+                className="h-10 rounded-lg border border-input bg-white px-3 text-sm outline-none focus:border-ring"
               />
             </label>
             <button type="submit" className={artistPrimaryButtonClass}>
@@ -90,8 +90,8 @@ export default async function AvailableDatesPage() {
 
       {selectedCount > 0 && (
         <section className="mb-8">
-          <h2 className="text-sm font-medium text-zinc-500">Dine valgte datoer</h2>
-          <ul className="mt-3 divide-y divide-black/10 border-y border-black/10">
+          <h2 className="text-sm font-medium text-muted-foreground">Dine valgte datoer</h2>
+          <ul className="mt-3 divide-y divide-border border-y border-border">
             {selectedRows.map((row) => {
               const show = (shows ?? []).find((entry) => entry.date === row.available_date)
               return (
@@ -104,7 +104,7 @@ export default async function AvailableDatesPage() {
                     <input type="hidden" name="available_date" value={row.available_date} />
                     <div>
                       <p className="font-medium">{formatArtistDate(row.available_date, 'weekday')}</p>
-                      <p className="mt-0.5 text-sm text-zinc-500">
+                      <p className="mt-0.5 text-sm text-muted-foreground">
                         {show
                           ? `${show.title}${show.venue_name ? ` · ${show.venue_name}` : ''}`
                           : showDates.has(row.available_date)
@@ -129,7 +129,7 @@ export default async function AvailableDatesPage() {
       <section>
         <div className="mb-4">
           <h2 className="text-xl font-medium">Show med åpen booking</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">
+          <p className="mt-0.5 text-sm text-muted-foreground">
             {slotsLeft > 0
               ? `Du kan velge ${slotsLeft} dato${slotsLeft === 1 ? '' : 'er'} til.`
               : canManage
@@ -141,13 +141,13 @@ export default async function AvailableDatesPage() {
         {(shows ?? []).length === 0 ? (
           <ArtistEmpty text="Ingen kommende show er åpne for booking akkurat nå. Bruk «Legg til dato» over for å markere når du er ledig." />
         ) : (
-          <ul className="divide-y divide-black/10 border-y border-black/10">
+          <ul className="divide-y divide-border border-y border-border">
             {(shows ?? []).map((show) => {
               const checked = selected.has(show.date)
               const disabled = !canManage || (!checked && selectedCount >= MAX_ARTIST_AVAILABILITY_DATES)
 
               return (
-                <li key={show.id} className={checked ? 'bg-[#ff6bff]/5' : undefined}>
+                <li key={show.id} className={checked ? 'bg-vipps-orange-0' : undefined}>
                   <ToastActionForm
                     action={toggleAvailabilityAction}
                     successMessage={checked ? 'Dato fjernet.' : 'Dato lagt til.'}
@@ -156,7 +156,7 @@ export default async function AvailableDatesPage() {
                     <input type="hidden" name="available_date" value={show.date} />
                     <div>
                       <p className="font-medium">{formatArtistDate(show.date, 'weekday')}</p>
-                      <p className="mt-0.5 text-sm text-zinc-500">
+                      <p className="mt-0.5 text-sm text-muted-foreground">
                         {show.title}{show.venue_name ? ` · ${show.venue_name}` : ''}
                       </p>
                     </div>
@@ -175,10 +175,10 @@ export default async function AvailableDatesPage() {
         )}
       </section>
 
-      <p className="mt-6 text-sm text-zinc-500">
+      <p className="mt-6 text-sm text-muted-foreground">
         Du kan fortsatt få tilbud på andre datoer, men markerte datoer prioriteres i matchingen.
         {' '}
-        <Link href="/artist-app/booking-offers" className="underline underline-offset-4 hover:text-[#ff6bff]">
+        <Link href="/artist-app/booking-offers" className="underline underline-offset-4 hover:text-primary">
           Se tilbud
         </Link>
       </p>

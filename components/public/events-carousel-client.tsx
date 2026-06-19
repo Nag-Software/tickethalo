@@ -52,11 +52,11 @@ export function EventsCarouselClient({ shows }: Props) {
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
 
               <div className="absolute top-4 left-4 flex flex-col gap-0">
-                <div className="bg-white border border-black px-3 h-[23px] flex items-center">
-                  <div className="text-[11px] font-medium uppercase leading-none">{formatCarouselDate(show)}</div>
+                <div className="bg-white border border-border px-3 h-[23px] flex items-center">
+                  <div className="text-xs font-medium uppercase leading-none">{formatCarouselDate(show)}</div>
                 </div>
-                <div className="bg-white border border-t-0 border-black px-3 h-[23px] flex items-center">
-                  <div className="text-[11px] font-medium uppercase leading-none">{formatCarouselTime(show)}</div>
+                <div className="bg-white border border-t-0 border-border px-3 h-[23px] flex items-center">
+                  <div className="text-xs font-medium uppercase leading-none">{formatCarouselTime(show)}</div>
                 </div>
               </div>
 

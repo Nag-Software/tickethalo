@@ -26,7 +26,7 @@ export default async function ArtistProfilePage() {
         title="Profil"
         description="Informasjonen bookingteamet bruker når de matcher deg mot show."
         action={
-          <Link href="/artist-app/available-dates" className="text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]">
+          <Link href="/artist-app/available-dates" className="text-sm font-medium underline underline-offset-4 hover:text-primary">
             Tilgjengelighet
           </Link>
         }
@@ -37,7 +37,7 @@ export default async function ArtistProfilePage() {
           <ToastActionForm
             action={updateArtistProfileAction}
             encType="multipart/form-data"
-            className="grid gap-6 border border-black/10 p-5 md:p-6"
+            className="grid gap-6 rounded-2xl border border-border p-5 md:p-6"
             successMessage="Profilen er lagret."
           >
             <div className="grid gap-4 sm:grid-cols-2">
@@ -64,7 +64,7 @@ export default async function ArtistProfilePage() {
                         defaultChecked={selectedCategories.has(role.value)}
                         className="peer sr-only"
                       />
-                      <span className="inline-flex items-center border border-black/15 px-3 py-1.5 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white hover:bg-zinc-50">
+                      <span className="inline-flex items-center rounded-lg border border-input px-3 py-1.5 text-sm transition peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground hover:bg-zinc-50">
                         {role.label}
                       </span>
                     </label>
@@ -85,7 +85,7 @@ export default async function ArtistProfilePage() {
                 name="bio"
                 defaultValue={artist.bio ?? ''}
                 rows={5}
-                className="min-h-28 w-full border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-black"
+                className="min-h-28 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm outline-none focus:border-ring"
                 placeholder="Kort om deg og scenestil."
               />
             </Field>
@@ -107,7 +107,7 @@ export default async function ArtistProfilePage() {
 
         <aside className="space-y-4">
           {artist.profile_image_url && (
-            <div className="relative aspect-square overflow-hidden border border-black/10">
+            <div className="relative aspect-square overflow-hidden rounded-2xl border border-border">
               <Image
                 src={artist.profile_image_url}
                 alt={artist.stage_name ?? artist.full_name}
@@ -117,17 +117,17 @@ export default async function ArtistProfilePage() {
               />
             </div>
           )}
-          <div className="border border-black/10 p-4 text-sm">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">Bookingstatus</p>
+          <div className="rounded-2xl border border-border p-4 text-sm">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Bookingstatus</p>
             <div className="mt-3 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-500">Status</span>
+                <span className="text-muted-foreground">Status</span>
                 <ArtistBadge variant={isArtistGloballyApproved(artist) || isApproved ? 'accent' : 'muted'}>
                   {isApproved ? 'Godkjent' : 'Vurderes'}
                 </ArtistBadge>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-500">Kan bookes</span>
+                <span className="text-muted-foreground">Kan bookes</span>
                 <span className="font-medium">
                   {isArtistBookable(artist) ? 'Ja' : 'Ikke ennå'}
                 </span>
@@ -149,7 +149,7 @@ function Select({ name, defaultValue, options }: { name: string; defaultValue: s
     <select
       name={name}
       defaultValue={defaultValue}
-      className="h-10 w-full border border-black/15 bg-white px-3 text-sm outline-none focus:border-black"
+      className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm outline-none focus:border-ring"
     >
       {options.map((option) => <option key={option}>{option}</option>)}
     </select>

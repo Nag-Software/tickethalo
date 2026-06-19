@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Capture every payload handed to Resend so we can assert on subject + HTML.
-const sendMock = vi.fn(async () => ({ data: { id: 'test-id' }, error: null }))
+const sendMock = vi.fn(async (_payload: unknown) => ({ data: { id: 'test-id' }, error: null }))
 
 vi.mock('@/lib/resend', () => ({
   resend: { emails: { send: (payload: unknown) => sendMock(payload) } },

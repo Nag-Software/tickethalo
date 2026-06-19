@@ -82,9 +82,8 @@ export default async function ClubPage({ params }: Props) {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500 animate-fade-in" style={{ animationDelay: '0.55s', animationFillMode: 'both' }}>
-            {club.location_name ? <span className="inline-flex items-center gap-2 border border-black px-3 py-1.5 text-black"><MapPin className="size-3.5" /> {club.location_name}</span> : null}
-            {club.city ? <span className="border border-black px-3 py-1.5 text-black">{club.city}</span> : null}
-            <span className="border border-black px-3 py-1.5 text-black">{shows.length} kommende show</span>
+            {club.location_name ? <span className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-1.5 text-black"><MapPin className="size-3.5" /> {club.location_name}</span> : null}
+            {club.city ? <span className="rounded-xl border border-border px-3 py-1.5 text-black">{club.city}</span> : null}
           </div>
         </div>
       }

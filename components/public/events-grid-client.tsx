@@ -55,7 +55,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
           <h2 className="text-base md:text-lg lg:text-xl font-normal w-full sm:w-auto mb-2 sm:mb-0">
             Norges morsomste
           </h2>
-          <span className="text-base md:text-lg lg:text-xl font-normal border border-black px-2 py-1 sm:ml-2">
+          <span className="text-base md:text-lg lg:text-xl font-normal border border-border px-2 py-1 sm:ml-2">
             {userCountry}
           </span>
 
@@ -65,7 +65,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
               <PopoverTrigger asChild>
                 <button
                   className={cn(
-                    'text-base md:text-lg lg:text-xl font-normal border border-l-0 border-black px-2 py-1 flex items-center bg-white hover:bg-gray-50 transition-colors',
+                    'text-base md:text-lg lg:text-xl font-normal border border-l-0 border-border px-2 py-1 flex items-center bg-white hover:bg-gray-50 transition-colors',
                     !date && 'text-muted-foreground'
                   )}
                 >
@@ -94,14 +94,14 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
                   type="button"
                   onClick={() => setCity(option)}
                   className={cn(
-                    'inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] transition-colors',
+                    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] transition-colors',
                     active
-                      ? 'border-black bg-black text-white'
-                      : 'border-black bg-white text-black hover:bg-[#ff6bff]'
+                      ? 'border-border bg-black text-white'
+                      : 'border-border bg-white text-black hover:bg-vipps-orange hover:text-white hover:border-vipps-orange'
                   )}
                 >
                   <span>{option}</span>
-                  <span className={cn('text-[10px]', active ? 'text-white/75' : 'text-zinc-500')}>{count}</span>
+                  <span className={cn('text-xs', active ? 'text-white/75' : 'text-zinc-500')}>{count}</span>
                 </button>
               )
             })}
@@ -154,10 +154,10 @@ function EventCard({ show }: { show: PublicShow }) {
   const statusLabel = soldOut ? 'Utsolgt' : lowStock ? 'Få igjen' : null
 
   return (
-    <article className="group flex h-full flex-col overflow-hidden border border-black bg-white transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_rgba(0,0,0,0.12)]">
+    <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <Link href={eventHref} className="block">
-        <div className="relative overflow-hidden border-b border-black bg-zinc-950">
-          <div className="hidden absolute left-3 top-3 z-10 grid size-12 place-items-center border border-black bg-white text-center text-black sm:left-4 sm:top-4 sm:size-14">
+        <div className="relative overflow-hidden border-b border-border bg-zinc-950">
+          <div className="hidden absolute left-3 top-3 z-10 grid size-12 place-items-center rounded-xl border border-border bg-white text-center text-black sm:left-4 sm:top-4 sm:size-14">
             <div>
               <div className="text-2xl font-medium leading-none">{Number(day)}</div>
               <div className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-zinc-500 sm:text-[10px]">{month.replace('.', '')}</div>
@@ -175,7 +175,7 @@ function EventCard({ show }: { show: PublicShow }) {
               />
             ) : (
               <div className="flex h-full flex-col justify-between bg-black p-4 text-white">
-                <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
                 <strong className="text-2xl font-medium leading-none">{show.title}</strong>
               </div>
             )}
@@ -189,8 +189,8 @@ function EventCard({ show }: { show: PublicShow }) {
             <span className="text-sm font-medium uppercase tracking-[0.22em] text-zinc-500">{formatShowTime(show)}</span>
             {statusLabel && (
               <span className={cn(
-                'shrink-0 rounded-full border border-black px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em]',
-                soldOut ? 'bg-black text-white' : 'bg-[#ff6bff] text-black'
+                'shrink-0 rounded-full border border-border px-3 py-1 text-xs font-bold uppercase tracking-[0.2em]',
+                soldOut ? 'bg-black text-white' : 'bg-vipps-orange text-white'
               )}>
                 {statusLabel}
               </span>
@@ -203,14 +203,14 @@ function EventCard({ show }: { show: PublicShow }) {
         </div>
 
         <div className="mt-auto grid grid-cols-2 gap-2">
-          <Button asChild variant="outline" className="h-11 rounded-none border border-black bg-transparent text-sm font-medium text-black hover:bg-black hover:text-white">
+          <Button asChild variant="outline" className="h-11 rounded-xl border border-border bg-transparent text-sm font-medium text-black hover:bg-black hover:text-white">
             <Link href={eventHref}>Les mer <ArrowUpRight className="size-5" /></Link>
           </Button>
           <ToastActionForm action={startCheckoutAction} className="w-full">
             <input type="hidden" name="show_id" value={show.id} />
             <input type="hidden" name="slug" value={show.slug ?? show.id} />
             <input type="hidden" name="club_slug" value={show.clubSlug ?? ''} />
-            <Button type="submit" className="h-11 w-full rounded-none border border-black bg-black text-sm font-medium text-white hover:border-[#ff6bff] hover:bg-[#ff6bff] hover:text-black disabled:opacity-45" disabled={soldOut}>
+            <Button type="submit" className="h-11 w-full border border-transparent bg-vipps-orange text-sm font-medium text-white hover:bg-vipps-orange-60 disabled:opacity-45" disabled={soldOut}>
               <Ticket className="size-5" /> {soldOut ? 'Utsolgt' : 'Kjøp'}
             </Button>
           </ToastActionForm>

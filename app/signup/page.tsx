@@ -11,15 +11,15 @@ export default async function SignupPage({
   const { status, error } = await searchParams
 
   return (
-    <main className="min-h-svh bg-[#f3ead9] text-zinc-950">
+    <main className="public-shell min-h-svh bg-vipps-offwhite text-foreground">
       <PublicHeader transparent tone="light" />
-      <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 md:grid-cols-[0.8fr_1fr] md:px-6 lg:px-8">
+      <section className="mx-auto grid max-w-6xl items-center gap-8 px-4 py-10 md:grid-cols-[0.8fr_1fr] md:px-6 lg:px-8">
         <div className="md:pt-10">
-          <div className="mb-5 inline-flex border border-zinc-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em]">Artistprofil</div>
-          <h1 className="text-[clamp(3rem,7vw,6rem)] font-black uppercase leading-[0.82] tracking-[-0.04em]">Bli en del av lineupen</h1>
-          <p className="mt-5 max-w-md text-base font-medium text-zinc-700">Send inn profil, sceneerfaring og lenker. Booking-teamet vurderer nye profiler fortløpende.</p>
+          <div className="mb-5 inline-flex rounded-full bg-vipps-orange-0 px-3.5 py-1.5 text-xs font-semibold text-vipps-orange-80">Artistprofil</div>
+          <h1 className="text-[clamp(2.5rem,6vw,4.5rem)] font-semibold leading-[0.95] tracking-tight">Bli en del av lineupen</h1>
+          <p className="mt-5 max-w-md text-base text-muted-foreground">Send inn profil, sceneerfaring og lenker. Booking-teamet vurderer nye profiler fortløpende.</p>
         </div>
-        <div className="border-2 border-zinc-950 bg-[#fbf7ec] p-5 shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
+        <div className="rounded-2xl bg-card p-6 shadow-lg ring-1 ring-vipps-orange/10 md:p-8">
           <SignupForm
             successMessage={status === 'submitted' ? 'Profilen er sendt til vurdering.' : undefined}
             errorMessage={

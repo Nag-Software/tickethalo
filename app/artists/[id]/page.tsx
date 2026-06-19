@@ -42,8 +42,8 @@ export default async function ArtistDetailPage({ params }: Props) {
   const socials = Object.entries(artist.social_links ?? {}).filter((entry): entry is [string, string] => Boolean(entry[1]))
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <section className="border-b border-black/10">
+    <main className="public-shell min-h-screen bg-background text-foreground">
+      <section className="border-b border-border">
         <PublicHeader transparent tone="light" />
         <div className="mx-auto grid max-w-6xl gap-8 px-4 pb-10 pt-28 md:grid-cols-[320px_1fr] md:items-end md:px-6 md:pb-14 lg:px-8">
           <div className="relative aspect-[4/5] overflow-hidden bg-zinc-100">
@@ -64,12 +64,12 @@ export default async function ArtistDetailPage({ params }: Props) {
             )}
           </div>
           <div className="py-4">
-            <Link href="/artists" className="mb-6 inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-[#ff6bff]">
+            <Link href="/artists" className="mb-6 inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-vipps-orange-80">
               <ArrowLeft className="size-4" /> Alle komikere
             </Link>
             <h1 className="text-5xl font-medium sm:text-6xl md:text-7xl">{name}</h1>
             {artist.stage_name && <p className="mt-3 text-lg text-zinc-600">{artist.full_name}</p>}
-            <div className="mt-7 grid border-y border-black/10 sm:grid-cols-2">
+            <div className="mt-7 grid border-y border-border sm:grid-cols-2">
               <Info icon={<Mic2 className="size-5" />} label="Kategori" text={formatArtistRoleSummary(artist.category, 'Komiker')} />
               <Info icon={<Languages className="size-5" />} label="Språk" text={artist.language ?? 'Ukjent'} />
             </div>
@@ -81,13 +81,13 @@ export default async function ArtistDetailPage({ params }: Props) {
         <div className="space-y-10">
           {artist.bio && (
             <div>
-              <h2 className="border-b border-black/10 pb-3 text-2xl font-medium">Om komikeren</h2>
+              <h2 className="border-b border-border pb-3 text-2xl font-medium">Om komikeren</h2>
               <p className="mt-4 whitespace-pre-wrap text-zinc-600">{artist.bio}</p>
             </div>
           )}
 
           <div>
-            <h2 className="border-b border-black/10 pb-3 text-2xl font-medium">Kommende events</h2>
+            <h2 className="border-b border-border pb-3 text-2xl font-medium">Kommende events</h2>
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
               {shows.map((show) => (
                 <Link key={show.id} href={getPublicShowHref(show)} className="group relative cursor-pointer block">
@@ -109,7 +109,7 @@ export default async function ArtistDetailPage({ params }: Props) {
                   </div>
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-medium leading-tight">{show.title}</h3>
-                    <ArrowUpRight className="size-4 shrink-0 text-zinc-400 transition group-hover:text-[#ff6bff]" />
+                    <ArrowUpRight className="size-4 shrink-0 text-zinc-400 transition group-hover:text-vipps-orange" />
                   </div>
                   <div className="mt-2 grid gap-1 text-sm text-zinc-500">
                     <span className="flex items-center gap-2"><CalendarDays className="size-4" />{formatShortDate(show.date)} · {formatShowTime(show)}</span>
@@ -118,13 +118,13 @@ export default async function ArtistDetailPage({ params }: Props) {
                 </Link>
               ))}
               {shows.length === 0 && (
-                <div className="border border-dashed border-black/20 p-6 text-sm text-zinc-500">Ingen publiserte kommende events.</div>
+                <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-zinc-500">Ingen publiserte kommende events.</div>
               )}
             </div>
           </div>
         </div>
 
-        <aside className="h-fit border border-black/10 p-5 md:sticky md:top-6">
+        <aside className="h-fit rounded-2xl border border-border p-5 md:sticky md:top-6">
           <h2 className="font-medium uppercase tracking-tight">Profil</h2>
           {socials.length > 0 && (
             <div className="mt-4 space-y-2">
@@ -134,7 +134,7 @@ export default async function ArtistDetailPage({ params }: Props) {
                   href={href}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center justify-between border border-black px-3 py-2 text-sm font-medium transition hover:bg-black hover:text-white"
+                  className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm font-medium transition hover:bg-black hover:text-white"
                 >
                   <span className="capitalize">{label}</span>
                   <ArrowUpRight className="size-4" />
@@ -151,10 +151,10 @@ export default async function ArtistDetailPage({ params }: Props) {
 
 function Info({ icon, text, label }: { icon: React.ReactNode; text: string; label: string }) {
   return (
-    <div className="flex items-center gap-3 border-black/10 p-3 text-sm last:border-b-0 sm:border-r sm:even:border-r-0">
+    <div className="flex items-center gap-3 border-border p-3 text-sm last:border-b-0 sm:border-r sm:even:border-r-0">
       <span className="text-zinc-400">{icon}</span>
       <span>
-        <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</span>
+        <span className="block text-xs font-bold uppercase tracking-widest text-zinc-500">{label}</span>
         <span className="font-medium">{text}</span>
       </span>
     </div>

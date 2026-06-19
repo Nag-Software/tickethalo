@@ -20,19 +20,22 @@ export default async function Page() {
   const clubs = await getPublicClubs()
 
   return (
-    <main className="min-h-screen bg-white text-black">
+    <main className="public-shell min-h-screen bg-background text-foreground">
       <PublicHeader transparent tone="light" />
 
       <RotatingBadge
         text="LØYE"
         showIcon
+        backgroundFill="#ff5b24"
+        backgroundStroke="#ff5b24"
+        textColor="white"
         icon={
           <Image
             src="/arrow-down.png"
             alt="Arrow down"
             width={48}
             height={48}
-            className="w-6 h-6 md:w-7 md:h-7 lg:w-12 lg:h-12"
+            className="w-6 h-6 md:w-7 md:h-7 lg:w-12 lg:h-12 brightness-0 invert"
           />
         }
       />
@@ -42,13 +45,13 @@ export default async function Page() {
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium mb-2 inline-flex flex-col items-center">
             <div className="flex items-center">
-              <span className="border border-black px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>Finn</span>
-              <span className="border border-l-0 border-1.5 rounded-[40px] bg-[#ff6bff] border-black px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.4s', animationFillMode: 'both' }}>stand-up</span>
+              <span className="border border-border px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>Finn</span>
+              <span className="border border-l-0 border-1.5 rounded-2xl bg-vipps-orange text-white border-vipps-orange px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.4s', animationFillMode: 'both' }}>stand-up</span>
             </div>
             <div className="flex items-center -mt-px">
-              <span className="border border-black px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.5s', animationFillMode: 'both' }}>i</span>
+              <span className="border border-border px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.5s', animationFillMode: 'both' }}>i</span>
               {/* City ticker — overflow:hidden clips the drop-in/out animation */}
-              <span className="relative border border-l-0 border-black overflow-hidden px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.6s', animationFillMode: 'both' }}>
+              <span className="relative border border-l-0 border-border overflow-hidden px-3 md:px-6 py-2 md:py-4 animate-fade-in" style={{ animationDelay: '0.6s', animationFillMode: 'both' }}>
                 {/* Invisible widest city to fix box size */}
                 <span aria-hidden className="invisible">Stavanger</span>
                 <CityTicker />
@@ -61,7 +64,7 @@ export default async function Page() {
       <section className="px-4 pb-16 md:px-8 md:pb-24">
         <div className="mx-auto max-w-7xl">
           {clubs.length === 0 ? (
-            <div className="border border-black bg-white px-6 py-16 text-center">
+            <div className="rounded-2xl border border-border bg-white px-6 py-16 text-center">
               <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">Ingen klubber tilgjengelig ennå.</p>
             </div>
           ) : (
@@ -73,10 +76,10 @@ export default async function Page() {
                   <Link
                     key={club.id}
                     href={`/${club.slug}`}
-                    className="group animate-fade-in overflow-hidden border border-black bg-white transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_rgba(0,0,0,0.12)]"
+                    className="group animate-fade-in overflow-hidden rounded-2xl border border-border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     style={{ animationDelay: `${0.8 + index * 0.08}s`, animationFillMode: 'both' }}
                   >
-                    <div className="relative aspect-[16/10] overflow-hidden border-b border-black bg-zinc-950">
+                    <div className="relative aspect-[16/10] overflow-hidden border-b border-border bg-zinc-950">
                       {club.header_image_url ? (
                         <Image
                           src={club.header_image_url}
@@ -88,18 +91,18 @@ export default async function Page() {
                         />
                       ) : (
                         <div className="flex h-full flex-col justify-between bg-black p-5 text-white">
-                          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
+                          <span className="text-xs font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
                           <strong className="text-3xl font-medium leading-none">{club.name}</strong>
                         </div>
                       )}
 
-                      <div className="absolute left-4 top-4 flex items-center gap-2 border border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-black">
+                      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-black">
                         <span>{club.upcomingShowCount} show</span>
                         {nextShowLabel ? <span className="text-zinc-500">Neste {nextShowLabel}</span> : null}
                       </div>
 
                       {club.logo_url ? (
-                        <div className="absolute bottom-4 right-4 overflow-hidden rounded-full border border-black bg-white">
+                        <div className="absolute bottom-4 right-4 overflow-hidden rounded-full border border-border bg-white">
                           <Image
                             src={club.logo_url}
                             alt={club.name}
@@ -116,12 +119,12 @@ export default async function Page() {
                       <div className="space-y-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="mb-2 inline-flex border border-black px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-700">
+                            <div className="mb-2 inline-flex rounded-xl border border-border px-2 py-1 text-xs font-bold uppercase tracking-[0.18em] text-zinc-700">
                               {club.slug}
                             </div>
                             <h2 className="text-2xl font-medium leading-tight">{club.name}</h2>
                           </div>
-                          <ArrowUpRight className="size-5 shrink-0 text-zinc-500 transition group-hover:text-[#ff6bff]" />
+                          <ArrowUpRight className="size-5 shrink-0 text-zinc-500 transition group-hover:text-vipps-orange" />
                         </div>
 
                         <p className="text-sm leading-relaxed text-zinc-600">
@@ -129,10 +132,10 @@ export default async function Page() {
                         </p>
                       </div>
 
-                      <div className="mt-auto flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
-                        {club.city ? <span className="inline-flex items-center gap-1.5 border border-black px-3 py-1.5 text-black"><MapPin className="size-3.5" /> {club.city}</span> : null}
-                        {club.location_name ? <span className="border border-black px-3 py-1.5 text-black">{club.location_name}</span> : null}
-                        {!club.location_name && club.address_line ? <span className="border border-black px-3 py-1.5 text-black">{club.address_line}</span> : null}
+                      <div className="mt-auto flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
+                        {club.city ? <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-black"><MapPin className="size-3.5" /> {club.city}</span> : null}
+                        {club.location_name ? <span className="rounded-full border border-border px-3 py-1.5 text-black">{club.location_name}</span> : null}
+                        {!club.location_name && club.address_line ? <span className="rounded-full border border-border px-3 py-1.5 text-black">{club.address_line}</span> : null}
                       </div>
                     </div>
                   </Link>

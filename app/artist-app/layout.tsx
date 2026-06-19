@@ -58,7 +58,7 @@ export default async function ArtistLayout({ children }: { children: React.React
   )
 
   return (
-    <div className="flex min-h-svh flex-col bg-white text-black">
+    <div className="public-shell flex min-h-svh flex-col bg-background text-foreground">
       <ArtistTopbar name={artist.stage_name ?? artist.full_name} navItems={items} />
       <main className="flex flex-1 flex-col">{children}</main>
     </div>

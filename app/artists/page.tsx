@@ -18,11 +18,11 @@ export default async function ArtistsPage() {
   const artists = await getPublicArtists()
 
   return (
-    <main className="min-h-screen bg-white text-black">
+    <main className="public-shell min-h-screen bg-background text-foreground">
       <section className="">
         <PublicHeader transparent tone="light" />
         <div className="mx-auto max-w-6xl px-4 pb-10 pt-28 md:px-6 md:pb-14 lg:px-8">
-          <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-[#ff6bff]">
+          <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-vipps-orange-80">
             <ArrowLeft className="size-4" /> Forsiden
           </Link>
           <div className="mt-4 grid gap-8 md:grid-cols-[1fr_auto] md:items-end">
@@ -36,7 +36,7 @@ export default async function ArtistsPage() {
       <section className="mx-auto max-w-6xl px-4 py-10 md:px-6 lg:px-8">
         <div className="mb-5 flex items-end justify-between gap-4">
           <h2 className="text-2xl font-medium">Alle artister</h2>
-          <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-[#ff6bff]">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-vipps-orange-80">
             Events <ArrowRight className="size-4" />
           </Link>
         </div>
@@ -61,20 +61,20 @@ export default async function ArtistsPage() {
               </div>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-0.5">
+                  <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-0.5">
                     {formatArtistRoleSummary(artist.category, 'Komiker')}
                   </p>
                   <h2 className="text-lg font-medium leading-tight">{artistDisplayName(artist)}</h2>
                   {artist.stage_name && <p className="text-sm text-zinc-500">{artist.full_name}</p>}
                 </div>
-                <ArrowUpRight className="size-4 shrink-0 mt-1 text-zinc-400 transition group-hover:text-[#ff6bff]" />
+                <ArrowUpRight className="size-4 shrink-0 mt-1 text-zinc-400 transition group-hover:text-vipps-orange" />
               </div>
               {artist.bio && <p className="mt-1 line-clamp-2 text-sm text-zinc-500">{artist.bio}</p>}
             </Link>
           ))}
         </div>
         {artists.length === 0 && (
-          <div className="border border-dashed border-black/20 p-10 text-center text-sm text-zinc-500">
+          <div className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-zinc-500">
             Ingen godkjente artister ennå.
           </div>
         )}

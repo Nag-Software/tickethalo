@@ -28,14 +28,14 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
         title={show?.title ?? 'Bookingtilbud'}
         description={show?.date ? formatArtistDate(show.date, 'long') : 'Dato kommer'}
         action={
-          <Link href="/artist-app/booking-offers" className="text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]">
+          <Link href="/artist-app/booking-offers" className="text-sm font-medium underline underline-offset-4 hover:text-primary">
             Tilbake til tilbud
           </Link>
         }
       />
 
-      <div className="max-w-2xl border border-black/10">
-        <div className="grid gap-px bg-black/10 sm:grid-cols-2">
+      <div className="max-w-2xl overflow-hidden rounded-2xl border border-border">
+        <div className="grid gap-px bg-border sm:grid-cols-2">
           <Info label="Honorar" value={formatMoney(offer.fee_amount, offer.currency)} />
           <Info label="Status" value={offerStatusLabel(offer.status)} />
           <Info label="Sted" value={show?.venue_name ?? 'Ikke satt'} />
@@ -43,20 +43,20 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
         </div>
 
         {offer.status === 'sent' && (
-          <div className="flex flex-wrap gap-2 border-t border-black/10 p-4">
+          <div className="flex flex-wrap gap-2 border-t border-border p-4">
             <OfferButtons token={offer.token} />
           </div>
         )}
 
         {offer.status !== 'sent' && (
-          <div className="border-t border-black/10 p-4">
+          <div className="border-t border-border p-4">
             <ArtistBadge variant="muted">{offerStatusLabel(offer.status)}</ArtistBadge>
           </div>
         )}
       </div>
 
       {offer.status === 'sent' && (
-        <p className="mt-4 max-w-2xl text-sm text-zinc-500">
+        <p className="mt-4 max-w-2xl text-sm text-muted-foreground">
           Når du aksepterer og plassen fortsatt er ledig, flyttes bookingen til Bookinger.
         </p>
       )}
@@ -67,7 +67,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-white p-4">
-      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 font-medium">{value}</p>
     </div>
   )

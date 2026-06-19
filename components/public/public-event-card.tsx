@@ -15,9 +15,9 @@ export function PublicEventCard({ show, priority = false, compact = false }: { s
   const eventHref = getPublicShowHref(show)
 
   return (
-    <article className="group border border-black bg-white transition hover:-translate-y-0.5 hover:shadow-[2px_2px_0_black/10]">
+    <article className="group rounded-2xl border border-border bg-white transition hover:-translate-y-0.5 shadow-sm hover:shadow-md">
       <Link href={eventHref} className="block">
-        <div className="relative aspect-[3/3.7] border-b border-black bg-zinc-950 overflow-hidden">
+        <div className="relative aspect-[3/3.7] border-b border-border bg-zinc-950 overflow-hidden">
           {show.poster_url ? (
             <Image src={show.poster_url} alt={show.title} fill priority={priority} sizes={compact ? '(max-width: 768px) 92vw, 31vw' : '(max-width: 768px) 92vw, (max-width: 1024px) 45vw, 31vw'} className="object-contain transition aspect-[3/3.7] duration-500 group-hover:scale-[1.02]" />
           ) : (
@@ -26,17 +26,17 @@ export function PublicEventCard({ show, priority = false, compact = false }: { s
               <strong className={`font-medium leading-none ${compact ? 'text-2xl' : 'text-3xl'}`}>{show.title}</strong>
             </div>
           )}
-          <div className={`absolute left-3 top-3 border border-black bg-white px-3 py-2 text-center text-black ${compact ? 'py-1.5' : ''}`}>
+          <div className={`absolute left-3 top-3 rounded-xl border border-border bg-white px-3 py-2 text-center text-black ${compact ? 'py-1.5' : ''}`}>
             <div className={`font-medium leading-none tracking-normal ${compact ? 'text-xl' : 'text-2xl'}`}>{day}</div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{month}</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-zinc-500">{month}</div>
           </div>
         </div>
       </Link>
       <div className={`grid ${compact ? 'gap-3 p-3' : 'gap-4 p-4'}`}>
         <div>
-          <div className="mb-3 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">
             <span>{formatShowTime(show)}</span>
-            <ArrowUpRight className="size-4 transition group-hover:text-[#ff6bff]" />
+            <ArrowUpRight className="size-4 transition group-hover:text-vipps-orange" />
           </div>
           <h3 className={`font-medium leading-tight tracking-normal ${compact ? 'min-h-0 text-base' : 'min-h-0 text-lg sm:min-h-12 sm:text-xl'}`}>{show.title}</h3>
           <p className={`text-zinc-500 ${compact ? 'text-xs' : 'text-sm'}`}>
@@ -44,19 +44,19 @@ export function PublicEventCard({ show, priority = false, compact = false }: { s
           </p>
         </div>
         {soldOut ? (
-          <div className="py-1 text-center text-base font-bold uppercase tracking-widest text-[#ff6bff]">UTSOLGT</div>
+          <div className="py-1 text-center text-base font-bold uppercase tracking-widest text-vipps-orange-80">UTSOLGT</div>
         ) : fillPercent >= 80 ? (
-          <div className="text-xs font-bold text-[#ff6bff]">Få plasser igjen</div>
+          <div className="text-xs font-bold text-vipps-orange-80">Få plasser igjen</div>
         ) : fillPercent >= 50 ? (
           <div className="text-xs font-bold text-zinc-500">Over halvparten solgt</div>
         ) : null}
         <div className="grid gap-2 min-[360px]:grid-cols-2">
-          <Button asChild variant="outline" size={compact ? 'sm' : 'default'} className="rounded-none border border-black bg-transparent font-medium hover:bg-black hover:text-white"><Link href={eventHref}>Les mer <ArrowUpRight className="size-4" /></Link></Button>
+          <Button asChild variant="outline" size={compact ? 'sm' : 'default'} className="rounded-full border border-border bg-transparent font-medium hover:bg-black hover:text-white"><Link href={eventHref}>Les mer <ArrowUpRight className="size-4" /></Link></Button>
           <form action={startCheckoutAction} className="w-full">
             <input type="hidden" name="show_id" value={show.id} />
             <input type="hidden" name="slug" value={show.slug} />
             <input type="hidden" name="club_slug" value={show.clubSlug ?? ''} />
-            <Button type="submit" size={compact ? 'sm' : 'default'} className="w-full rounded-none border border-black bg-black font-medium text-white hover:bg-[#ff6bff] hover:text-black hover:border-[#ff6bff]" disabled={soldOut}>
+            <Button type="submit" size={compact ? 'sm' : 'default'} className="w-full border border-transparent bg-vipps-orange font-medium text-white hover:bg-vipps-orange-60" disabled={soldOut}>
               <Ticket className="size-4" /> {soldOut ? 'Utsolgt' : 'Kjøp'}
             </Button>
           </form>

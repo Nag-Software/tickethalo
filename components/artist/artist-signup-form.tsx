@@ -38,9 +38,9 @@ type ProfileImageEntry = {
   preview: string
 }
 
-const fieldClassName = 'h-11 rounded-none border-2 border-zinc-950 bg-white/70 shadow-none'
-const selectClassName = 'h-11 w-full rounded-none border-2 border-zinc-950 bg-white/70 px-3 text-sm outline-none transition-colors focus-visible:border-zinc-950 focus-visible:ring-0'
-const textareaClassName = 'min-h-28 w-full rounded-none border-2 border-zinc-950 bg-white/70 px-3 py-2 text-sm outline-none transition-colors placeholder:text-zinc-500 focus-visible:border-zinc-950 focus-visible:ring-0'
+const fieldClassName = 'h-11'
+const selectClassName = 'h-11 w-full rounded-2xl border border-input bg-input/30 px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+const textareaClassName = 'min-h-28 w-full rounded-2xl border border-input bg-input/30 px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 export function ArtistSignupForm({
   className,
@@ -163,32 +163,32 @@ export function ArtistSignupForm({
   }
 
   return (
-    <div className={cn('mx-auto max-w-6xl border-2 border-zinc-950 bg-[#fbf7ec] shadow-[8px_8px_0_rgba(24,24,27,0.14)]', className)} {...props}>
+    <div className={cn('mx-auto max-w-6xl overflow-hidden rounded-2xl bg-card ring-1 ring-vipps-orange/10 shadow-lg', className)} {...props}>
       <div className="grid lg:grid-cols-[260px_1fr]">
-        <aside className="border-b-2 border-zinc-950 bg-[#f3ead9] p-6 lg:border-b-0 lg:border-r-2">
+        <aside className="bg-vipps-ink p-6 text-white lg:border-r lg:border-white/10">
           <div className="lg:sticky lg:top-6">
-            <Link href="/" className="inline-flex border border-zinc-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-950">humor.events</Link>
-            <h1 className="mt-6 text-3xl font-black uppercase leading-none tracking-tight">
+            <Link href="/" className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-vipps-orange-80">humor.events</Link>
+            <h1 className="mt-6 text-3xl font-semibold leading-tight tracking-tight text-white">
               {completionMode ? 'Fullfør profil' : 'Søknad'}
             </h1>
-            <p className="mt-3 text-sm font-medium leading-6 text-zinc-600">
+            <p className="mt-3 text-sm leading-6 text-white/90">
               {completionMode
                 ? 'Kontoen din finnes allerede. Fyll ut resten av profilen for å bli vurdert til bookinger.'
                 : 'Søknaden sendes til booking-teamet for vurdering.'}
             </p>
 
-            <div className="mt-6 border-2 border-zinc-950 bg-white/60 p-4">
+            <div className="mt-6 rounded-xl border border-white/15 bg-white/10 p-4">
               <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                <span className="font-bold uppercase tracking-[0.16em] text-zinc-500">Registrering</span>
-                <span className="font-black text-zinc-950">{completed}/{requiredTotal}</span>
+                <span className="font-semibold uppercase tracking-wide text-white/80">Registrering</span>
+                <span className="font-bold text-white">{completed}/{requiredTotal}</span>
               </div>
-              <div className="h-2 overflow-hidden border border-zinc-950 bg-[#f3ead9]">
+              <div className="h-2 overflow-hidden rounded-full bg-white/20">
                 <div
-                  className="h-full bg-[#b83224] transition-all duration-300"
+                  className="h-full rounded-full bg-vipps-orange transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <p className="mt-3 text-xs font-medium leading-5 text-zinc-600">
+              <p className="mt-3 text-xs leading-5 text-white/90">
                 {missing.length === 0
                   ? 'Alt obligatorisk er fylt ut.'
                   : `Mangler: ${missing.map((field) => field.label).join(', ')}`}
@@ -229,17 +229,17 @@ export function ArtistSignupForm({
             <input type="hidden" name="existing_profile_image" value="1" />
           )}
           {completionMode && (
-            <div className="border-2 border-zinc-950 bg-[#f3ead9] px-4 py-3 text-sm font-medium text-zinc-700">
+            <div className="rounded-2xl border border-border bg-vipps-orange-0 px-4 py-3 text-sm text-foreground/80">
               Du er innlogget som {draft?.email}. Eksisterende info er fylt inn — fullfør feltene som mangler.
             </div>
           )}
           {successMessage && (
-            <div className="border-2 border-zinc-950 bg-white px-3 py-2 text-sm font-medium text-zinc-950">
+            <div className="rounded-2xl border border-border bg-white px-3 py-2 text-sm text-foreground">
               {successMessage}
             </div>
           )}
           {errorMessage && (
-            <div className="border-2 border-[#b83224] bg-white px-3 py-2 text-sm font-medium text-[#b83224]">
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {errorMessage}
             </div>
           )}
@@ -292,7 +292,7 @@ export function ArtistSignupForm({
             <div className="space-y-3">
               {profileImages.length > 0 ? (
                 <>
-                  <p className="text-sm font-medium text-zinc-700">
+                  <p className="text-sm font-medium text-foreground/80">
                     {profileImages.length} bilde{profileImages.length === 1 ? '' : 'r'} valgt
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -302,14 +302,14 @@ export function ArtistSignupForm({
                         <div
                           key={image.id}
                           className={cn(
-                            'relative overflow-hidden border-2 bg-[#f3ead9]',
-                            isPrimary ? 'border-[#b83224] shadow-[4px_4px_0_#b83224]' : 'border-zinc-950',
+                            'relative overflow-hidden rounded-2xl bg-[#f5f3ff]',
+                            isPrimary ? 'ring-2 ring-vipps-orange' : 'ring-1 ring-black/10',
                           )}
                         >
                           <img src={image.preview} alt="" className="aspect-[4/5] w-full object-cover" />
                           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
                             {isPrimary ? (
-                              <span className="inline-flex items-center gap-1 border border-[#b83224] bg-[#b83224] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-vipps-orange px-2.5 py-0.5 text-[11px] font-semibold text-white">
                                 <Star className="size-3 fill-current" />
                                 Hovedbilde
                               </span>
@@ -317,7 +317,7 @@ export function ArtistSignupForm({
                               <button
                                 type="button"
                                 onClick={() => setPrimaryImageIndex(index)}
-                                className="inline-flex items-center gap-1 border border-zinc-950 bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-950 transition hover:bg-white"
+                                className="inline-flex items-center gap-1 rounded-full border border-border bg-white/90 px-2.5 py-0.5 text-[11px] font-semibold text-foreground transition hover:bg-white"
                               >
                                 Sett som hovedbilde
                               </button>
@@ -325,7 +325,7 @@ export function ArtistSignupForm({
                             <button
                               type="button"
                               onClick={() => removeProfileImage(index)}
-                              className="inline-flex size-8 items-center justify-center border border-zinc-950 bg-white/90 text-zinc-950 transition hover:bg-white"
+                              className="inline-flex size-8 items-center justify-center rounded-full border border-border bg-white/90 text-foreground transition hover:bg-white"
                               aria-label="Fjern bilde"
                             >
                               <Trash2 className="size-4" />
@@ -337,7 +337,7 @@ export function ArtistSignupForm({
                   </div>
                 </>
               ) : (
-                <p className="text-sm font-medium text-zinc-700">
+                <p className="text-sm font-medium text-foreground/80">
                   {draft?.hasProfileImage ? 'Eksisterende profilbilder lagret' : 'Last opp minst ett bilde'}
                 </p>
               )}
@@ -345,22 +345,22 @@ export function ArtistSignupForm({
               {profileImages.length < MAX_ARTIST_PROFILE_IMAGES && (
                 <label
                   className={cn(
-                    'cursor-pointer transition-colors hover:bg-white/60',
+                    'cursor-pointer transition-colors',
                     profileImages.length === 0
-                      ? 'flex items-center gap-4 border-2 border-dashed border-zinc-950 bg-[#f3ead9] p-4'
-                      : 'inline-flex items-center gap-2 border-2 border-zinc-950 bg-white px-3 py-1.5 text-sm font-bold hover:bg-[#f3ead9]',
+                      ? 'flex items-center gap-4 rounded-2xl border-2 border-dashed border-border bg-vipps-orange-0 p-4 hover:bg-vipps-orange-10/60'
+                      : 'inline-flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-muted',
                   )}
                 >
                   {profileImages.length === 0 ? (
                     <>
-                      <div className="flex size-12 items-center justify-center border-2 border-zinc-950 bg-white/70 text-zinc-500">
+                      <div className="flex size-12 items-center justify-center rounded-xl border border-border bg-white text-vipps-orange">
                         <ImagePlus className="size-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">Profilbilder</p>
-                        <p className="text-sm font-medium text-zinc-700">PNG, JPG eller WebP · maks {MAX_ARTIST_PROFILE_IMAGES} bilder</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Profilbilder</p>
+                        <p className="text-sm font-medium text-foreground/80">PNG, JPG eller WebP · maks {MAX_ARTIST_PROFILE_IMAGES} bilder</p>
                       </div>
-                      <span className="border-2 border-zinc-950 bg-white px-3 py-1.5 text-sm font-bold">Velg bilder</span>
+                      <span className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Velg bilder</span>
                     </>
                   ) : (
                     <>
@@ -419,8 +419,8 @@ export function ArtistSignupForm({
                     <label
                       key={category}
                       className={cn(
-                        'cursor-pointer border-2 px-3 py-1.5 text-sm font-bold transition-colors',
-                        checked ? 'border-zinc-950 bg-zinc-950 text-white' : 'border-zinc-950 bg-white/70 text-zinc-950 hover:bg-[#f3ead9]'
+                        'cursor-pointer rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors',
+                        checked ? 'border-transparent bg-primary text-primary-foreground' : 'border-border bg-white text-foreground hover:bg-muted'
                       )}
                     >
                       <input
@@ -451,7 +451,7 @@ export function ArtistSignupForm({
             </div>
           </section>
 
-          <section className="space-y-4 border-t-2 border-zinc-950 pt-6">
+          <section className="space-y-4 border-t border-border pt-6">
             <SectionHeader icon={Globe2} title="SoMe-lenker" aside="valgfritt" />
             <div className="grid gap-4 md:grid-cols-2">
               <Input id="instagram" name="instagram" type="url" placeholder="Instagram URL" defaultValue={draft?.instagram} className={fieldClassName} />
@@ -461,12 +461,12 @@ export function ArtistSignupForm({
             </div>
           </section>
 
-          <div className="flex flex-col gap-3 border-t-2 border-zinc-950 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm font-normal text-zinc-600 max-w-md gap-3 flex flex-col">
+          <div className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-normal text-muted-foreground max-w-md gap-3 flex flex-col">
               <p>
               Jo mer utfyllende info, dess lettere er det for nye bookere som ikke kjenner deg godt å gjøre en vurdering. 
               </p>
-              <p className="text-sm font-medium text-zinc-600">
+              <p className="text-sm font-medium text-muted-foreground">
                 {missing.length === 0
                   ? 'Alt klart.'
                   : `${missing.length} obligatorisk${missing.length === 1 ? '' : 'e'} felt mangler: ${missing.map((field) => field.label.toLowerCase()).join(', ')}.`}
@@ -474,7 +474,8 @@ export function ArtistSignupForm({
             </div>
             <Button
               type="submit"
-              className="h-11 rounded-none border-2 border-zinc-950 bg-[#b83224] px-5 font-bold text-white shadow-[4px_4px_0_#18181b] transition hover:translate-x-0.5 hover:translate-y-0.5 hover:bg-[#9f2d21] hover:shadow-[2px_2px_0_#18181b] disabled:translate-x-0 disabled:translate-y-0 disabled:opacity-45 disabled:shadow-none sm:min-w-48"
+              size="lg"
+              className="h-11 px-6 sm:min-w-48"
               disabled={missing.length > 0}
             >
               <BadgeCheck className="size-4" />
@@ -497,14 +498,14 @@ function SectionHeader({
   aside?: string
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-zinc-950/15 pb-3">
+    <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
       <div className="flex items-center gap-2">
-        <div className="flex size-8 items-center justify-center border border-zinc-950 bg-white/70 text-zinc-500">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-vipps-orange text-white">
           <Icon className="size-4" />
         </div>
-        <h2 className="text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500">{title}</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-vipps-orange-80">{title}</h2>
       </div>
-      {aside && <span className="text-xs font-medium text-zinc-500">{aside}</span>}
+      {aside && <span className="text-xs font-medium text-muted-foreground">{aside}</span>}
     </div>
   )
 }
@@ -525,14 +526,14 @@ function LabeledInput({
 }) {
   return (
     <div className="space-y-2">
-      <label htmlFor={props.id} className="text-sm font-medium text-zinc-800">{label}</label>
+      <label htmlFor={props.id} className="text-sm font-medium text-foreground">{label}</label>
       <div className="relative">
-        <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+        <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           {...props}
           defaultValue={defaultValue}
           readOnly={readOnly}
-          className={cn(fieldClassName, 'pl-9', readOnly && 'bg-zinc-100 text-zinc-600', props.className)}
+          className={cn(fieldClassName, 'pl-9', readOnly && 'bg-muted text-muted-foreground', props.className)}
           onChange={(event) => onValue(event.target.value)}
         />
       </div>

@@ -24,25 +24,25 @@ export default async function ArtistLoginPage({
   }
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <section className="border-b border-black/10 min-h-[calc(100vh-100px)]">
+    <main className="public-shell min-h-screen bg-vipps-offwhite text-foreground">
+      <section className="border-b border-border min-h-[calc(100vh-100px)]">
         <PublicHeader transparent tone="light" />
 
         <div className="mx-auto grid w-full max-w-6xl items-center justify-center mt-5vh md:mt-[15vh] gap-8 px-4 pb-10 pt-8 md:grid-cols-[minmax(0,0.95fr)_320px] md:items-start md:gap-14 md:px-6 md:pb-14 md:pt-10 lg:px-8">
           <div>
-            <div className="mb-5 inline-flex border border-black px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em]">
+            <div className="mb-5 inline-flex rounded-full bg-vipps-orange-0 px-3.5 py-1.5 text-xs font-semibold text-vipps-orange-80">
               Tilbud og bookinger
             </div>
-            <h1 className="max-w-[760px] text-[clamp(2.75rem,6.6vw,5.4rem)] font-medium leading-[0.9] tracking-tight">
+            <h1 className="max-w-[760px] text-[clamp(2.75rem,6.6vw,5.4rem)] font-semibold leading-[0.9] tracking-tight">
               Komikerportal
             </h1>
-            <p className="mt-4 max-w-xl text-sm text-zinc-600 md:text-base">
+            <p className="mt-4 max-w-xl text-sm text-muted-foreground md:text-base">
               Logg inn for å se bookinger, svare på tilbud og holde profilen din oppdatert.
             </p>
 
-            <div className="mt-8 border-y border-black/10 py-5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-500">Hva du finner her</p>
-              <ul className="mt-3 space-y-2 text-sm text-zinc-600">
+            <div className="mt-8 border-y border-border py-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hva du finner her</p>
+              <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
                 <li>Kommende show og honorar</li>
                 <li>Aktive tilbud som venter på svar</li>
                 <li>Profilen bookingteamet ser</li>
@@ -51,7 +51,7 @@ export default async function ArtistLoginPage({
 
             <Link
               href="/artist-app/signup"
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary/80"
             >
               Registrer ny profil <ArrowRight className="size-4" />
             </Link>
@@ -71,9 +71,9 @@ export default async function ArtistLoginPage({
           </div>
         </div>
 
-        <div className="overflow-hidden border-t border-black/10 bg-[#ff6bff]">
+        <div className="overflow-hidden border-t border-border bg-vipps-ink">
           <div
-            className="flex items-center py-3 text-[10px] font-black uppercase tracking-[0.34em] text-black will-change-transform"
+            className="flex items-center py-3 text-xs font-semibold uppercase tracking-[0.28em] text-white will-change-transform"
             style={{ animation: 'marquee 42s linear infinite' }}
           >
             {[0, 1].map((i) => (

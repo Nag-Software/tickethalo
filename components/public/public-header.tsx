@@ -28,7 +28,7 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
   const navLinks = [
     //{ href: eventsHref, label: 'EVENTER' },
     //{ href: '/artists', label: 'KOMIKERE' },
-    { href: '/artist-app/login', label: 'KOMIKERPORTAL' },
+    { href: '/artist-app', label: 'KOMIKERPORTAL' },
   ]
 
   useEffect(() => {
@@ -61,10 +61,10 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
         <Link
           key={link.href}
           href={link.href}
-          className="relative overflow-hidden bg-white text-black h-[34px] px-3 hidden md:flex items-center text-[11px] font-medium uppercase border-l-0 border border-black leading-none group"
+          className="relative overflow-hidden bg-white text-black h-[34px] px-3 hidden md:flex items-center text-xs font-medium uppercase border-l-0 border border-border leading-none group"
         >
           <span className="relative z-10">{link.label}</span>
-          <span className="absolute inset-0 bg-[#FA76FF] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+          <span className="absolute inset-0 bg-vipps-orange translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
         </Link>
       ))}
 
@@ -72,14 +72,14 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
       <button
         onClick={() => setOpen(true)}
         aria-label="Åpne meny"
-        className="relative overflow-hidden bg-white text-black h-[34px] w-[34px] flex md:hidden items-center justify-center border-l-0 border border-black group"
+        className="relative overflow-hidden bg-white text-black h-[34px] w-[34px] flex md:hidden items-center justify-center border-l-0 border border-border group"
       >
         <span className="relative z-10 flex flex-col gap-[5px] items-center justify-center">
           <span className="block w-[14px] h-[1.5px] bg-black" />
           <span className="block w-[14px] h-[1.5px] bg-black" />
           <span className="block w-[14px] h-[1.5px] bg-black" />
         </span>
-        <span className="absolute inset-0 bg-[#FA76FF] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+        <span className="absolute inset-0 bg-vipps-orange translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
       </button>
     </nav>
   )
@@ -114,7 +114,7 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
               <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </span>
-          <span className="absolute inset-0 bg-[#FA76FF] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+          <span className="absolute inset-0 bg-vipps-orange translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
         </button>
       </div>
 
@@ -136,7 +136,7 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
                 <path d="M4 10H16M16 10L10 4M16 10L10 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <span className="absolute inset-0 bg-[#FA76FF] translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
+            <span className="absolute inset-0 bg-vipps-orange translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
           </Link>
         ))}
       </div>
@@ -146,7 +146,7 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
         className={`px-4 pb-8 transition-all duration-500 ${open ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
         style={{ transitionDelay: open ? '400ms' : '0ms' }}
       >
-        <p className="text-[11px] uppercase tracking-[0.15em] text-white/20">humor.events — Norges morsomste kvelder</p>
+        <p className="text-xs uppercase tracking-[0.15em] text-white/20">humor.events — Norges morsomste kvelder</p>
       </div>
     </div>
   )

@@ -27,17 +27,8 @@ export default async function ArtistSignupPage({
   const draft = user ? await getArtistSignupDraft(user.id) : null
 
   return (
-    <main className="min-h-svh bg-[#f3ead9]/10 text-zinc-950">
-      <section className="relative isolate overflow-hidden border-b-2 border-zinc-950 bg-[#f3ead9] text-zinc-950">
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-[0.18]"
-          style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.45'/></svg>\")",
-          }}
-        />
-
+    <main className="public-shell min-h-svh bg-vipps-offwhite text-foreground">
+      <section className="relative isolate overflow-hidden border-b border-border bg-vipps-orange-0 text-foreground">
         <PublicHeader transparent tone="light" />
       </section>
 

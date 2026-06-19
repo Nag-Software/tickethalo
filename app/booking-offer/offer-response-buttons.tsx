@@ -47,7 +47,7 @@ export function OfferResponseButtons({ token }: { token: string }) {
       <form action={publicAcceptOfferAction}>
         <input type="hidden" name="token" value={token} />
         <SubmitButton
-          className="w-full border-2 border-zinc-950 bg-[#b83224] px-4 py-3 font-bold text-white shadow-[4px_4px_0_#18181b] transition hover:bg-[#9f2d21]"
+          className="w-full rounded-full bg-[#b83224] px-4 py-3 font-semibold text-white transition hover:bg-[#9f2d21]"
           label="Ja, jeg tar spotten"
           pendingLabel="Sender svar…"
         />
@@ -55,7 +55,7 @@ export function OfferResponseButtons({ token }: { token: string }) {
       <form action={publicDeclineOfferAction}>
         <input type="hidden" name="token" value={token} />
         <SubmitButton
-          className="w-full border-2 border-zinc-950 bg-transparent px-4 py-3 text-sm font-bold transition hover:bg-zinc-950 hover:text-white"
+          className="w-full rounded-full border border-border bg-transparent px-4 py-3 text-sm font-semibold transition hover:bg-zinc-950 hover:text-white"
           label="Nei, det passer ikke"
           pendingLabel="Sender svar…"
         />

@@ -61,33 +61,33 @@ export default async function ArtistDashboardPage() {
 
   return (
     <div>
-      <section className="border-b border-black/10">
+      <section className="border-b border-border">
         <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 pb-10 pt-8 md:grid-cols-[minmax(0,1fr)_280px] md:items-start md:gap-10 md:px-6 md:pb-12 md:pt-10 lg:px-8">
           <div>
-            <p className="text-sm text-zinc-500">Hei, {artist.stage_name ?? artist.full_name}</p>
-            <h1 className="mt-1 max-w-2xl text-[clamp(2rem,5vw,3.25rem)] font-medium leading-tight tracking-tight">
+            <p className="text-sm text-muted-foreground">Hei, {artist.stage_name ?? artist.full_name}</p>
+            <h1 className="mt-1 max-w-2xl text-[clamp(2rem,5vw,3.25rem)] font-semibold leading-tight tracking-tight">
               {featuredShow ? 'Neste show' : 'Komikerportal'}
             </h1>
 
             {featuredShow ? (
-              <div className="mt-6 grid border border-black/10 md:grid-cols-[96px_1fr]">
-                <div className="grid content-center border-b border-black/10 px-4 py-4 text-center md:border-b-0 md:border-r md:border-r-black/10">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+              <div className="mt-6 grid overflow-hidden rounded-2xl ring-1 ring-black/[0.06] shadow-sm md:grid-cols-[96px_1fr]">
+                <div className="grid content-center bg-vipps-orange-0 px-4 py-4 text-center md:border-r md:border-border">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-vipps-orange-80">
                     {formatArtistMonth(featuredShow.date ?? today)}
                   </span>
-                  <span className="text-5xl font-medium leading-none tracking-tight">
+                  <span className="text-5xl font-semibold leading-none tracking-tight text-vipps-orange-80">
                     {formatArtistDay(featuredShow.date ?? today)}
                   </span>
                 </div>
                 <div className="grid gap-3 px-4 py-4 sm:px-5">
                   <Link
                     href="/artist-app/bookings"
-                    className="group inline-flex w-fit items-start gap-2 text-2xl font-medium leading-tight tracking-tight transition hover:text-[#ff6bff] md:text-3xl"
+                    className="group inline-flex w-fit items-start gap-2 text-2xl font-semibold leading-tight tracking-tight transition hover:text-primary md:text-3xl"
                   >
                     {featuredShow.title ?? 'Neste booking'}
                     <ArrowUpRight className="mt-1 size-5 opacity-50 transition group-hover:translate-x-0.5" />
                   </Link>
-                  <p className="text-sm text-zinc-600">
+                  <p className="text-sm text-muted-foreground">
                     {featuredShow.date ? formatArtistDate(featuredShow.date, 'long') : 'Dato kommer'}
                     {featuredShow.venue_name ? ` · ${featuredShow.venue_name}` : ''}
                     {nextSpot ? ` · ${formatMoney(nextSpot.fee_amount, nextSpot.currency)}` : ''}
@@ -105,40 +105,40 @@ export default async function ArtistDashboardPage() {
                 </div>
               </div>
             ) : (
-              <div className="mt-6 max-w-lg text-sm leading-relaxed text-zinc-600">
+              <div className="mt-6 max-w-lg text-sm leading-relaxed text-muted-foreground">
                 Ingen kommende show akkurat nå. Nye tilbud og bookinger vises her med en gang.
               </div>
             )}
           </div>
 
           <aside className="grid gap-3">
-            <div className="border border-black/10 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">Status</p>
-              <p className="mt-2 text-xl font-medium">{artist.stage_name ?? artist.full_name}</p>
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
+              <p className="mt-2 text-xl font-semibold">{artist.stage_name ?? artist.full_name}</p>
               <div className="mt-3 grid gap-2 text-sm">
-                <div className="flex items-center justify-between border-t border-black/10 pt-2">
-                  <span className="text-zinc-500">Profil</span>
+                <div className="flex items-center justify-between border-t border-border pt-2">
+                  <span className="text-muted-foreground">Profil</span>
                   <ArtistBadge variant={isArtistGloballyApproved(artist) || isApproved ? 'accent' : 'muted'}>
                     {isApproved ? 'Godkjent' : 'Vurderes'}
                   </ArtistBadge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Tilbud</span>
-                  <span className="font-medium">{offers.length}</span>
+                  <span className="text-muted-foreground">Tilbud</span>
+                  <span className="font-semibold">{offers.length}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Kommende show</span>
-                  <span className="font-medium">{upcomingCount}</span>
+                  <span className="text-muted-foreground">Kommende show</span>
+                  <span className="font-semibold">{upcomingCount}</span>
                 </div>
               </div>
-              <Link href="/artist-app/profile" className="mt-4 inline-flex items-center gap-1 text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]">
+              <Link href="/artist-app/profile" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary/80">
                 Rediger profil <ArrowRight className="size-3.5" />
               </Link>
             </div>
 
-            <Link href="/artist-app/available-dates" className="block border border-black/10 p-4 transition hover:border-black/30">
-              <p className="text-sm font-medium">Tilgjengelighet</p>
-              <p className="mt-1 text-xs text-zinc-500">
+            <Link href="/artist-app/available-dates" className="block rounded-2xl border border-border p-4 transition hover:border-primary/40 hover:bg-muted/40">
+              <p className="text-sm font-semibold">Tilgjengelighet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
                 {isApproved
                   ? `${availabilityCount} av ${MAX_ARTIST_AVAILABILITY_DATES} datoer valgt · gir bonus i booking`
                   : 'Tilgjengelig når profilen er godkjent'}
@@ -151,11 +151,11 @@ export default async function ArtistDashboardPage() {
       <section className="mx-auto max-w-6xl px-4 py-8 md:px-6 lg:px-8">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-medium">Tilbud som venter</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">Svar så raskt du kan — plassene fylles fortløpende.</p>
+            <h2 className="text-xl font-semibold">Tilbud som venter</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">Svar så raskt du kan — plassene fylles fortløpende.</p>
           </div>
           {offers.length > 0 && (
-            <Link href="/artist-app/booking-offers" className="text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]">
+            <Link href="/artist-app/booking-offers" className="text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary/80">
               Se alle
             </Link>
           )}
@@ -189,14 +189,14 @@ export default async function ArtistDashboardPage() {
       </section>
 
       {previousSpots.length > 0 && (
-        <section className="border-t border-black/10 bg-zinc-50/50">
+        <section className="border-t border-border bg-muted/40">
           <div className="mx-auto max-w-6xl px-4 py-8 md:px-6 lg:px-8">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div>
-                <h2 className="text-xl font-medium">Tidligere show</h2>
-                <p className="mt-0.5 text-sm text-zinc-500">Dine siste opptredener.</p>
+                <h2 className="text-xl font-semibold">Tidligere show</h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">Dine siste opptredener.</p>
               </div>
-              <Link href="/artist-app/bookings?view=previous" className="text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]">
+              <Link href="/artist-app/bookings?view=previous" className="text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary/80">
                 Se alle
               </Link>
             </div>
@@ -224,21 +224,21 @@ export default async function ArtistDashboardPage() {
 
 function ArtistAuthLanding() {
   return (
-    <main className="min-h-screen bg-white text-black">
-      <section className="min-h-[calc(100vh-100px)] border-b border-black/10">
+    <main className="public-shell min-h-screen bg-background text-foreground">
+      <section className="min-h-[calc(100vh-100px)] border-b border-border">
         <PublicHeader transparent tone="light" />
         <div className="mx-auto flex max-w-6xl flex-col justify-center px-4 py-20 md:px-6 md:py-[28vh] lg:px-8">
-          <h1 className="max-w-xl text-[clamp(2.5rem,6vw,4.5rem)] font-medium leading-tight tracking-tight">
+          <h1 className="max-w-xl text-[clamp(2.5rem,6vw,4.5rem)] font-semibold leading-tight tracking-tight">
             Komikerportal
           </h1>
-          <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-600 md:text-base">
+          <p className="mt-4 max-w-md text-sm leading-relaxed text-muted-foreground md:text-base">
             Logg inn for å se tilbud, bookinger og profilen din hos humor.events.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link href="/artist-app/login" className={artistPrimaryButtonClass}>
               Logg inn
             </Link>
-            <Link href="/artist-app/signup" className="inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4 hover:text-[#ff6bff]">
+            <Link href="/artist-app/signup" className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary/80">
               Registrer profil <ArrowRight className="size-4" />
             </Link>
           </div>

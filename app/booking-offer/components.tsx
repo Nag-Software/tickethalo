@@ -28,7 +28,7 @@ export const MOCK_BOOKING_OFFER: BookingOfferDetails = {
 export function InfoCell({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</div>
+      <div className="mb-0.5 text-xs font-bold uppercase tracking-widest text-zinc-500">{label}</div>
       <div className="text-sm font-bold">{value}</div>
     </div>
   )
@@ -57,15 +57,15 @@ export function ResultPage({
   return (
     <>
       {devBanner}
-      <main className="flex min-h-screen items-center justify-center bg-[#f3ead9] p-4 text-zinc-950">
-        <div className="w-full max-w-sm border-2 border-zinc-950 bg-[#fbf7ec] p-8 text-center shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
-          <div className={`text-5xl font-black ${colors[variant]}`}>{icon}</div>
-          <h1 className="mt-3 text-2xl font-black uppercase tracking-tight">{title}</h1>
+      <main className="public-shell flex min-h-screen items-center justify-center bg-[#f3ead9] p-4 text-zinc-950">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-[#fbf7ec] p-8 text-center shadow-lg">
+          <div className={`text-5xl font-semibold ${colors[variant]}`}>{icon}</div>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight">{title}</h1>
           {details && details.length > 0 && (
-            <dl className="mt-5 space-y-3 border-t-2 border-zinc-950 pt-5 text-left">
+            <dl className="mt-5 space-y-3 border-t border-border pt-5 text-left">
               {details.map(({ label, value }) => (
                 <div key={label}>
-                  <dt className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</dt>
+                  <dt className="text-xs font-bold uppercase tracking-widest text-zinc-500">{label}</dt>
                   <dd className="mt-0.5 text-sm font-bold capitalize">{value}</dd>
                 </div>
               ))}
@@ -144,18 +144,18 @@ export function BookingOfferPage({
   return (
     <>
       {devBanner}
-      <main className="min-h-screen w-full bg-[#f3ead9] text-zinc-950">
+      <main className="public-shell min-h-screen w-full bg-[#f3ead9] text-zinc-950">
         <PublicHeader transparent tone="light" />
         <section className="mx-auto mt-15 sm:mt-5 w-full grid max-w-xl gap-8 px-4 py-12 md:px-6 lg:px-8">
           <div className="md:pt-8 mx-auto">
-            <h1 className="text-4xl sm:text-center font-black uppercase leading-[0.82] tracking-[-0.04em]">Bookingtilbud</h1>
+            <h1 className="text-4xl sm:text-center font-semibold leading-[0.82] tracking-[-0.04em]">Bookingtilbud</h1>
             <p className="mt-5 max-w-md text-base font-medium text-zinc-700">Du har mottatt et tilbud om å opptre. Svar på tilbudet under.</p>
           </div>
 
           <div className="w-full mx-auto space-y-5">
-            <div className="border-2 border-zinc-950 bg-[#fbf7ec] shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
-              <div className="border-b-2 border-zinc-950 px-6 py-4">
-                <h2 className="text-2xl font-black tracking-tight">{details.showTitle}</h2>
+            <div className="rounded-2xl border border-border bg-[#fbf7ec] shadow-lg">
+              <div className="border-b border-border px-6 py-4">
+                <h2 className="text-2xl font-semibold tracking-tight">{details.showTitle}</h2>
                 {details.showDate && (
                   <p className="text-sm font-medium capitalize text-zinc-600">{formatDate(details.showDate)}</p>
                 )}
@@ -174,14 +174,14 @@ export function BookingOfferPage({
                   <button
                     type="button"
                     disabled
-                    className="w-full border-2 border-zinc-950 bg-[#b83224] px-4 py-3 font-bold text-white shadow-[4px_4px_0_#18181b] opacity-90"
+                    className="w-full rounded-full bg-[#b83224] px-4 py-3 font-semibold text-white opacity-90"
                   >
                     Ja, jeg tar spotten
                   </button>
                   <button
                     type="button"
                     disabled
-                    className="w-full border-2 border-zinc-950 bg-transparent px-4 py-3 text-sm font-bold opacity-90"
+                    className="w-full rounded-full border border-border bg-transparent px-4 py-3 text-sm font-semibold opacity-90"
                   >
                     Nei, det passer ikke
                   </button>
@@ -191,7 +191,7 @@ export function BookingOfferPage({
               ))}
 
             {!canRespond && statusMessage && (
-              <div className="border-2 border-zinc-950 bg-[#fbf7ec] p-4 text-center text-sm font-medium text-zinc-600">
+              <div className="rounded-xl border border-border bg-[#fbf7ec] p-4 text-center text-sm font-medium text-zinc-600">
                 {statusMessage}
               </div>
             )}
@@ -224,7 +224,7 @@ export type BookingOfferMockScenario = (typeof BOOKING_OFFER_MOCK_SCENARIOS)[num
 
 export function DevMockBanner({ current }: { current?: BookingOfferMockScenario }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-zinc-950 bg-[#fff3bf] px-3 py-2 text-xs font-medium text-zinc-950">
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-[#fff3bf] px-3 py-2 text-xs font-medium text-zinc-950">
       <span className="font-black uppercase tracking-wide">Dev mock</span>
       <span className="mx-2 text-zinc-500">·</span>
       {BOOKING_OFFER_MOCK_SCENARIOS.map(({ id, label }) => (

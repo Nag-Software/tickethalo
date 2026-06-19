@@ -93,9 +93,9 @@ export default async function ConfirmedBookingsPage({
       )}
 
       {view === 'upcoming' && upcoming.length === 0 && (
-        <p className="mt-6 text-center text-sm text-zinc-500">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           Nye bookinger dukker opp her når du aksepterer et tilbud.{' '}
-          <Link href="/artist-app/booking-offers" className="underline underline-offset-4 hover:text-[#ff6bff]">
+          <Link href="/artist-app/booking-offers" className="underline underline-offset-4 hover:text-primary">
             Se tilbud
           </Link>
         </p>

@@ -128,7 +128,7 @@ export function SignupForm({
               id="bio"
               name="bio"
               rows={4}
-              className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring min-h-24 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-24 w-full rounded-2xl border border-input bg-input/30 px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
               placeholder="Fortell kort om sceneerfaring, stil og type show."
             />
           </Field>
@@ -156,7 +156,7 @@ export function SignupForm({
             </div>
           </Field>
           <Field>
-            <Button type="submit">Registrer artistprofil</Button>
+            <Button type="submit" size="lg" className="w-full">Registrer artistprofil</Button>
           </Field>
         </FieldGroup>
       </form>

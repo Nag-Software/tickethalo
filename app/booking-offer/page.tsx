@@ -22,9 +22,9 @@ export default async function BookingOfferMockPage({
 
   if (!mock) {
     return (
-      <main className="min-h-screen bg-[#f3ead9] p-8 text-zinc-950">
-        <div className="mx-auto max-w-lg border-2 border-zinc-950 bg-[#fbf7ec] p-8 shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
-          <h1 className="text-2xl font-black uppercase tracking-tight">Bookingtilbud mock</h1>
+      <main className="public-shell min-h-screen bg-[#f3ead9] p-8 text-zinc-950">
+        <div className="mx-auto max-w-lg rounded-2xl border border-border bg-[#fbf7ec] p-8 shadow-lg">
+          <h1 className="text-2xl font-semibold tracking-tight">Bookingtilbud mock</h1>
           <p className="mt-3 text-sm font-medium text-zinc-700">
             Velg en tilstand for å forhåndsvise responsen. Kun tilgjengelig i development.
           </p>

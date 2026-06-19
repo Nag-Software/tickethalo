@@ -4,6 +4,35 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Vipps brand palette — orange primary (#FF5B24), purple secondary, warm neutrals.
+   Exposed as Tailwind colors: bg-vipps-orange, text-vipps-orange-80, ring-vipps-orange/40,
+   bg-vipps-cream, … Orange is a FILL color (white text on it); for small text/links use
+   the dark vipps-orange-60/80 or vipps-purple to keep WCAG AA contrast on light surfaces. */
+@theme {
+  --color-vipps-orange: #ff5b24;     /* primary fill — white text only */
+  --color-vipps-orange-0: #fff4ec;   /* lightest cream tint */
+  --color-vipps-orange-5: #ffe7d7;
+  --color-vipps-orange-10: #ffd3bb;
+  --color-vipps-orange-20: #ffb992;
+  --color-vipps-orange-30: #ff985f;
+  --color-vipps-orange-60: #db460f;  /* dark orange — borders, large accents */
+  --color-vipps-orange-80: #9b3716;  /* darkest — accessible accent text on light */
+
+  --color-vipps-purple: #722ac9;     /* secondary — accessible as text/link on white */
+  --color-vipps-purple-5: #f1ebff;
+  --color-vipps-purple-10: #e1dafe;
+  --color-vipps-purple-50: #8851f6;
+  --color-vipps-purple-80: #551488;
+  --color-vipps-purple-100: #39134c;
+
+  --color-vipps-green: #128a4f;      /* success / confirmation */
+
+  --color-vipps-cream: #fff0e5;      /* warm surface */
+  --color-vipps-offwhite: #fff8f3;   /* warm page background */
+  --color-vipps-ink: #161225;
+  --color-vipps-gray-5: #f6f6f9;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -126,6 +155,56 @@
   --sidebar-primary: oklch(0 0 0);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-ring: oklch(0 0 0);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Vipps public theme — SCOPED to `.public-shell` only.
+   Added to public-surface roots (registration, artist-app, marketing).
+   admin-app and superadmin never get this class, so they are unchanged.
+   ───────────────────────────────────────────────────────────── */
+.public-shell {
+  /* Vipps body/heading fonts (declared in app/layout.tsx) */
+  --font-sans: var(--font-dm-sans);
+
+  /* Semantic shadcn tokens → Vipps */
+  --background: #fff8f3;         /* warm cream page */
+  --foreground: #161225;
+  --card: #ffffff;              /* white cards pop on cream */
+  --card-foreground: #161225;
+  --popover: #ffffff;
+  --popover-foreground: #161225;
+  --primary: #ff5b24;            /* Vipps orange = primary fill, white text */
+  --primary-foreground: #ffffff;
+  --secondary: #fff0e5;          /* warm cream surface */
+  --secondary-foreground: #161225;
+  --muted: #f7f1ec;              /* warm muted surface */
+  --muted-foreground: #5b5365;   /* ≥4.5:1 on white/cream */
+  --accent: #fff0e5;             /* cream accent surface */
+  --accent-foreground: #9b3716;  /* dark orange text on cream (accessible) */
+  --destructive: #cc2b1d;        /* red — distinct from brand orange */
+  --border: rgba(22, 18, 37, 0.10);
+  --input: rgba(22, 18, 37, 0.14);
+  --ring: #ff5b24;               /* Vipps orange focus ring */
+  --radius: 0.875rem;            /* friendly Vipps rounding; the --radius-* scale derives from this */
+
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.public-shell :is(h1, h2, h3, h4, h5, h6, .font-heading) {
+  font-family: var(--font-heading), ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* Consistent, restrained radius on public form fields (avoids full-pill inputs) */
+.public-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  border-radius: 0.75rem;
+}
+
+/* Vipps buttons use a fixed, friendly radius (not a pill). Scoped to public surfaces;
+   icon-only buttons keep their circular shape. Overrides inline rounded-full on CTAs. */
+.public-shell [data-slot="button"]:not([data-size^="icon"]) {
+  border-radius: 0.875rem;
 }
 
 @keyframes marquee {

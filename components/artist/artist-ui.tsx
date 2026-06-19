@@ -2,11 +2,11 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
 export const artistPageClass = 'mx-auto w-full max-w-6xl px-4 py-8 md:px-6 lg:px-8'
-export const artistCardClass = 'border border-black/10 bg-white'
+export const artistCardClass = 'rounded-2xl bg-card ring-1 ring-black/[0.06] shadow-sm'
 export const artistPrimaryButtonClass =
-  'inline-flex h-10 items-center justify-center gap-2 border border-black bg-black px-4 text-sm font-medium text-white transition hover:border-[#ff6bff] hover:bg-[#ff6bff] hover:text-black'
+  'inline-flex h-10 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2'
 export const artistSecondaryButtonClass =
-  'inline-flex h-10 items-center justify-center gap-2 border border-black bg-transparent px-4 text-sm font-medium transition hover:bg-black hover:text-white'
+  'inline-flex h-10 items-center justify-center gap-2 rounded-full border border-border bg-white px-5 text-sm font-semibold text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2'
 
 export function ArtistPage({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn(artistPageClass, className)}>{children}</div>
@@ -22,10 +22,10 @@ export function ArtistPageHeader({
   action?: React.ReactNode
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-black/10 pb-4">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
       <div>
-        <h1 className="text-2xl font-medium tracking-tight md:text-3xl">{title}</h1>
-        {description && <p className="mt-1 text-sm text-zinc-500">{description}</p>}
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
       {action}
     </div>
@@ -44,15 +44,15 @@ export function ArtistTabs({
           key={item.href}
           href={item.href}
           className={cn(
-            'inline-flex h-9 items-center gap-2 border px-3 text-sm font-medium transition',
+            'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition',
             item.active
-              ? 'border-black bg-black text-white'
-              : 'border-black/15 bg-white text-zinc-700 hover:border-black hover:text-black',
+              ? 'border-transparent bg-primary text-primary-foreground'
+              : 'border-border bg-white text-muted-foreground hover:border-primary/40 hover:text-foreground',
           )}
         >
           {item.label}
           {item.count != null && item.count > 0 && (
-            <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-bold', item.active ? 'bg-white/20' : 'bg-zinc-100')}>
+            <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-bold', item.active ? 'bg-white/25' : 'bg-vipps-orange-0 text-vipps-orange-80')}>
               {item.count}
             </span>
           )}
@@ -63,7 +63,7 @@ export function ArtistTabs({
 }
 
 export function ArtistList({ children }: { children: React.ReactNode }) {
-  return <ul className="divide-y divide-black/10 border-y border-black/10">{children}</ul>
+  return <ul className="divide-y divide-border overflow-hidden rounded-2xl ring-1 ring-black/[0.06]">{children}</ul>
 }
 
 export function ArtistListRow({
@@ -95,7 +95,7 @@ export function ArtistListRow({
   if (!href) return <li>{content}</li>
 
   return (
-    <li className="transition hover:bg-zinc-50/80">
+    <li className="transition hover:bg-muted/60">
       <Link href={href} className="block">
         {content}
       </Link>
@@ -105,7 +105,7 @@ export function ArtistListRow({
 
 export function ArtistEmpty({ text }: { text: string }) {
   return (
-    <div className="grid min-h-32 place-items-center border border-dashed border-black/20 p-8 text-center text-sm text-zinc-500">
+    <div className="grid min-h-32 place-items-center rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
       {text}
     </div>
   )
@@ -115,10 +115,10 @@ export function ArtistNotice({ children, tone = 'neutral' }: { children: React.R
   return (
     <div
       className={cn(
-        'mb-6 border px-4 py-3 text-sm',
-        tone === 'success' && 'border-black/10 bg-[#ff6bff]/15 text-zinc-800',
+        'mb-6 rounded-2xl border px-4 py-3 text-sm',
+        tone === 'success' && 'border-vipps-orange/20 bg-vipps-orange-0 text-vipps-orange-80',
         tone === 'warning' && 'border-amber-300 bg-amber-50 text-amber-950',
-        tone === 'neutral' && 'border-black/10 bg-zinc-50 text-zinc-700',
+        tone === 'neutral' && 'border-border bg-muted text-foreground/80',
       )}
     >
       {children}
@@ -130,10 +130,10 @@ export function ArtistBadge({ children, variant = 'default' }: { children: React
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        variant === 'accent' && 'bg-[#ff6bff]/25 text-black',
-        variant === 'muted' && 'bg-zinc-100 text-zinc-600',
-        variant === 'default' && 'border border-black/10 text-zinc-700',
+        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+        variant === 'accent' && 'bg-vipps-orange-0 text-vipps-orange-80',
+        variant === 'muted' && 'bg-muted text-muted-foreground',
+        variant === 'default' && 'border border-border text-muted-foreground',
       )}
     >
       {children}
