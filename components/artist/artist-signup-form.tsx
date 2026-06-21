@@ -7,7 +7,6 @@ import {
   AtSign,
   BadgeCheck,
   Camera,
-  Clapperboard,
   Globe2,
   ImagePlus,
   Lock,
@@ -64,6 +63,8 @@ export function ArtistSignupForm({
   )
   const [profileImages, setProfileImages] = useState<ProfileImageEntry[]>([])
   const [primaryImageIndex, setPrimaryImageIndex] = useState(0)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const profileFilesInputRef = useRef<HTMLInputElement>(null)
   const profileImagesRef = useRef(profileImages)
   profileImagesRef.current = profileImages
@@ -87,6 +88,7 @@ export function ArtistSignupForm({
 
   const signupProgress = useMemo(() => getSignupProgress(values, completionMode), [values, completionMode])
   const { completed, total: requiredTotal, progress, missing } = signupProgress
+  const passwordsMismatch = !completionMode && confirmPassword.length > 0 && password !== confirmPassword
 
   function updateTextField(field: SignupFieldId, value: string) {
     setValues((prev) => ({
@@ -167,17 +169,16 @@ export function ArtistSignupForm({
       <div className="grid lg:grid-cols-[260px_1fr]">
         <aside className="bg-vipps-ink p-6 text-white lg:border-r lg:border-white/10">
           <div className="lg:sticky lg:top-6">
-            <Link href="/" className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-vipps-orange-80">humor.events</Link>
             <h1 className="mt-6 text-3xl font-semibold leading-tight tracking-tight text-white">
-              {completionMode ? 'Fullfør profil' : 'Søknad'}
+              {completionMode ? 'Fullfør profil' : 'Opprett profil'}
             </h1>
             <p className="mt-3 text-sm leading-6 text-white/90">
               {completionMode
                 ? 'Kontoen din finnes allerede. Fyll ut resten av profilen for å bli vurdert til bookinger.'
-                : 'Søknaden sendes til booking-teamet for vurdering.'}
+                : 'Profilen sendes til booking-teamet for vurdering.'}
             </p>
 
-            <div className="mt-6 rounded-xl border border-white/15 bg-white/10 p-4">
+            <div className="mt-6 hidden rounded-xl border border-white/15 bg-white/10 p-4 lg:block">
               <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                 <span className="font-semibold uppercase tracking-wide text-white/80">Registrering</span>
                 <span className="font-bold text-white">{completed}/{requiredTotal}</span>
@@ -206,6 +207,11 @@ export function ArtistSignupForm({
             if (!hasProfileImages) {
               event.preventDefault()
               toast.error('Last opp minst ett profilbilde for å registrere profilen.')
+              return
+            }
+            if (!completionMode && password !== confirmPassword) {
+              event.preventDefault()
+              toast.error('Passordene må være like.')
               return
             }
             syncProfileFilesInput()
@@ -248,7 +254,6 @@ export function ArtistSignupForm({
             <SectionHeader icon={User} title="Identitet" />
             <div className="grid gap-4 md:grid-cols-2">
               <LabeledInput icon={User} id="full_name" name="full_name" label="Fullt navn" autoComplete="name" defaultValue={draft?.full_name} onValue={(value) => updateTextField("full_name", value)} required />
-              <LabeledInput icon={Clapperboard} id="stage_name" name="stage_name" label="Scenenavn" autoComplete="organization-title" defaultValue={draft?.stage_name} onValue={(value) => updateTextField("stage_name", value)} required />
               <LabeledInput icon={AtSign} id="email" name="email" label="E-post" type="email" placeholder="navn@eksempel.no" autoComplete="email" defaultValue={draft?.email} readOnly={completionMode} onValue={(value) => updateTextField("email", value)} required />
               <LabeledInput
                 icon={Lock}
@@ -263,10 +268,29 @@ export function ArtistSignupForm({
                     setValues((prev) => ({ ...prev, password: true }))
                     return
                   }
+                  setPassword(value)
                   updateTextField('password', value)
                 }}
                 required={!completionMode}
               />
+              {!completionMode && (
+                <div className="space-y-2">
+                  <LabeledInput
+                    icon={Lock}
+                    id="confirm_password"
+                    label="Bekreft passord"
+                    type="password"
+                    minLength={8}
+                    autoComplete="new-password"
+                    aria-invalid={passwordsMismatch}
+                    onValue={(value) => setConfirmPassword(value)}
+                    required
+                  />
+                  {passwordsMismatch && (
+                    <p className="text-xs font-medium text-destructive">Passordene må være like.</p>
+                  )}
+                </div>
+              )}
               <LabeledInput icon={Phone} id="phone" name="phone" label="Telefon" type="tel" autoComplete="tel" defaultValue={draft?.phone} onValue={(value) => updateTextField("phone", value)} required />
               <div className="space-y-2">
                 <label htmlFor="language" className="text-sm font-medium">Språk</label>
@@ -358,7 +382,7 @@ export function ArtistSignupForm({
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Profilbilder</p>
-                        <p className="text-sm font-medium text-foreground/80">PNG, JPG eller WebP · maks {MAX_ARTIST_PROFILE_IMAGES} bilder</p>
+                        <p className="text-sm font-medium text-foreground/80">maks {MAX_ARTIST_PROFILE_IMAGES} bilder</p>
                       </div>
                       <span className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Velg bilder</span>
                     </>
@@ -476,7 +500,7 @@ export function ArtistSignupForm({
               type="submit"
               size="lg"
               className="h-11 px-6 sm:min-w-48"
-              disabled={missing.length > 0}
+              disabled={missing.length > 0 || (!completionMode && password !== confirmPassword)}
             >
               <BadgeCheck className="size-4" />
               {completionMode ? 'Fullfør artistprofil' : 'Registrer artistprofil'}

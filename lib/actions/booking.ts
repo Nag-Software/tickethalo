@@ -197,7 +197,7 @@ export async function bookShow(showId: string) {
 
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, status, start_time, venue_name, venue_address, club_id, currency, created_at')
+    .select('id, title, date, status, start_time, end_time, venue_name, venue_address, club_id, currency, created_at')
     .eq('id', showId)
     .single()
   if (showError || !show) throw new Error('Show not found')
@@ -462,6 +462,7 @@ export async function bookShow(showId: string) {
       show_title: show.title,
       show_date: show.date,
       show_start_time: show.start_time,
+      show_end_time: show.end_time,
       club_name: clubName,
       spot_type: req.role_name,
       venue_name: show.venue_name,
@@ -848,7 +849,7 @@ export async function createManualBookingOffer(formData: FormData) {
   const admin = createAdminClient()
 
   const [{ data: show }, { data: artist }, { data: requirement }] = await Promise.all([
-    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, club_id').eq('id', showId).single(),
+    admin.from('shows').select('id, title, date, start_time, end_time, venue_name, venue_address, club_id').eq('id', showId).single(),
     admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
     admin.from('show_requirements').select('role_name').eq('id', requirementId).single(),
   ])
@@ -883,6 +884,7 @@ export async function createManualBookingOffer(formData: FormData) {
     show_title: show.title,
     show_date: show.date,
     show_start_time: show.start_time,
+    show_end_time: show.end_time,
     club_name: clubName,
     spot_type: requirement?.role_name,
     venue_name: show.venue_name,

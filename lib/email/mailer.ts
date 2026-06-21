@@ -84,6 +84,7 @@ export async function sendBookingOfferEmail(opts: {
   show_title: string
   show_date: string
   show_start_time?: string | null
+  show_end_time?: string | null
   club_name?: string | null
   spot_type?: string | null
   venue_name?: string | null
@@ -107,13 +108,19 @@ export async function sendBookingOfferEmail(opts: {
   const detailRow = (label: string, value: string) =>
     `<tr><td style="color:#71717a;padding:6px 0;width:120px;vertical-align:top">${escapeHtml(label)}</td><td style="padding:6px 0;font-weight:500">${escapeHtml(value)}</td></tr>`
 
+  const startLabel = opts.show_start_time ? opts.show_start_time.slice(0, 5) : null
+  const endLabel = opts.show_end_time ? opts.show_end_time.slice(0, 5) : null
+  const timeLabel = startLabel && endLabel
+    ? `${startLabel}–${endLabel}`
+    : startLabel ?? 'Ikke oppgitt'
+
   const detailRows = [
     detailRow('Spot', spotLabel),
     detailRow('Honorar', feeFormatted),
     detailRow('Venue/Scene', opts.venue_name?.trim() || 'Ikke oppgitt'),
     detailRow('Adresse', opts.venue_address?.trim() || 'Ikke oppgitt'),
     detailRow('Dato', dateLabel),
-    detailRow('Tidspunkt', opts.show_start_time ? opts.show_start_time.slice(0, 5) : 'Ikke oppgitt'),
+    detailRow('Start / slutt', timeLabel),
   ].join('')
 
   try {

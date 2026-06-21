@@ -15,7 +15,6 @@ describe('artist signup required fields', () => {
   it('requires password on new signup but not when completing profile', () => {
     expect(getSignupRequiredFields(false).map((field) => field.id)).toEqual([
       'full_name',
-      'stage_name',
       'email',
       'password',
       'profile_images',
@@ -25,7 +24,6 @@ describe('artist signup required fields', () => {
     ])
     expect(getSignupRequiredFields(true).map((field) => field.id)).toEqual([
       'full_name',
-      'stage_name',
       'email',
       'profile_images',
       'phone',
@@ -38,12 +36,11 @@ describe('artist signup required fields', () => {
     const emptyValues = buildSignupFieldCompletion(undefined, false)
     const progress = getSignupProgress(emptyValues, false)
 
-    expect(progress.total).toBe(8)
+    expect(progress.total).toBe(7)
     expect(progress.completed).toBe(0)
     expect(progress.isComplete).toBe(false)
     expect(progress.missing.map((field) => field.id)).toEqual([
       'full_name',
-      'stage_name',
       'email',
       'password',
       'profile_images',
@@ -58,7 +55,7 @@ describe('artist signup required fields', () => {
     const progress = getSignupProgress(values, true)
 
     expect(progress.missing.map((field) => field.id)).not.toContain('password')
-    expect(progress.total).toBe(7)
+    expect(progress.total).toBe(6)
   })
 })
 
@@ -173,7 +170,6 @@ describe('signup progress stays aligned with validation', () => {
 
     const values: Record<string, boolean> = {
       full_name: true,
-      stage_name: true,
       email: true,
       password: true,
       profile_images: true,

@@ -7,7 +7,6 @@ import type { ArtistGender } from '@/types/database'
 
 export type SignupFieldId =
   | 'full_name'
-  | 'stage_name'
   | 'email'
   | 'password'
   | 'profile_images'
@@ -17,7 +16,6 @@ export type SignupFieldId =
 
 export type SignupDraftLike = {
   full_name?: string
-  stage_name?: string
   email?: string
   phone?: string
   language?: string
@@ -28,7 +26,6 @@ export type SignupDraftLike = {
 export function getSignupRequiredFields(completionMode: boolean) {
   return [
     { id: 'full_name' as const, label: 'Navn' },
-    { id: 'stage_name' as const, label: 'Scenenavn' },
     { id: 'email' as const, label: 'E-post' },
     ...(completionMode ? [] : [{ id: 'password' as const, label: 'Passord' }]),
     { id: 'profile_images' as const, label: 'Profilbilder' },
@@ -44,7 +41,6 @@ export function buildSignupFieldCompletion(
 ): Record<SignupFieldId, boolean> {
   return {
     full_name: Boolean(draft?.full_name?.trim()),
-    stage_name: Boolean(draft?.stage_name?.trim()),
     email: Boolean(draft?.email?.trim()),
     password: completionMode,
     profile_images: Boolean(draft?.hasProfileImage),
@@ -77,8 +73,8 @@ export function validateArtistSignupForm(
   opts: { completionMode: boolean; hasExistingProfileImage: boolean },
 ) {
   const requiredTextFields = opts.completionMode
-    ? ['full_name', 'stage_name', 'email', 'phone', 'language', 'gender']
-    : ['full_name', 'stage_name', 'email', 'password', 'phone', 'language', 'gender']
+    ? ['full_name', 'email', 'phone', 'language', 'gender']
+    : ['full_name', 'email', 'password', 'phone', 'language', 'gender']
 
   const hasMissingText = requiredTextFields.some((field) => !optionalString(formData.get(field)))
   const hasImage = opts.hasExistingProfileImage || getProfileImageFiles(formData).length > 0
