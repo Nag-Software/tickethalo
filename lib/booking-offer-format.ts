@@ -38,7 +38,8 @@ export function formatBookingHonorar(opts: {
       style: 'currency',
       currency: opts.currency || 'NOK',
       maximumFractionDigits: 0,
-    }).format(Number(opts.compensation_amount))
+      // compensation_amount is stored in øre, like fee_amount above.
+    }).format(Number(opts.compensation_amount) / 100)
   }
   return 'Ikke oppgitt'
 }

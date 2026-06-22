@@ -424,6 +424,7 @@ export function ArtistSignupForm({
                   <option value="" disabled>Velg kjønn</option>
                   <option value="male">Mann</option>
                   <option value="female">Kvinne</option>
+                  <option value="other">Annet</option>
                 </select>
               </div>
               <div className="space-y-2">

@@ -4,6 +4,7 @@ import {
   parseArtistSignupFormData,
   toSignupErrorCode,
   validateArtistSignupForm,
+  validatePublicSignupForm,
 } from '@/lib/artist-signup'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -22,6 +23,10 @@ export async function POST(request: Request) {
     if (isArtistAppSignup) {
       validateArtistSignupForm(formData, {
         completionMode: Boolean(completionAuthUserId),
+        hasExistingProfileImage: parsed.hasExistingProfileImage,
+      })
+    } else {
+      validatePublicSignupForm(formData, {
         hasExistingProfileImage: parsed.hasExistingProfileImage,
       })
     }

@@ -63,7 +63,13 @@ function marketingDesignFileType(file: File): MarketingDesignFileType | null {
   const extension = fileExtension(file.name)
   const mimeType = file.type.toLowerCase()
 
-  if (MARKETING_DESIGN_IMAGE_EXTENSIONS.has(extension) || MARKETING_DESIGN_IMAGE_MIME_TYPES.has(mimeType)) {
+  // A real image carries an image/* MIME type. Only fall back to the extension
+  // allow-list when the browser sent no/opaque MIME (some clients do this for
+  // HEIC etc.) — never on a renamed extension alone, or a spoofed MIME plus an
+  // image extension would smuggle arbitrary content into a public bucket.
+  const mimeAllowed = MARKETING_DESIGN_IMAGE_MIME_TYPES.has(mimeType)
+  const mimeOpaque = mimeType === '' || mimeType === 'application/octet-stream'
+  if (mimeAllowed || (mimeOpaque && MARKETING_DESIGN_IMAGE_EXTENSIONS.has(extension))) {
     return 'image'
   }
 

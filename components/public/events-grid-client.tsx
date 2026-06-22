@@ -40,7 +40,9 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
   const filtered = shows.filter((show) => {
     if (city !== 'Alle' && show.clubCity !== city) return false
     if (!date) return true
-    const showDate = new Date(show.date)
+    // Anchor the date-only string at local noon so timezone offsets can't shift
+    // it to the previous/next calendar day when compared with the picker value.
+    const showDate = new Date(`${show.date}T12:00:00`)
     return (
       showDate.getFullYear() === date.getFullYear() &&
       showDate.getMonth() === date.getMonth() &&

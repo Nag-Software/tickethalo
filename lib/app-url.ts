@@ -1,4 +1,4 @@
-const PRODUCTION_APP_URL = 'https://humorevents.vercel.app'
+const PRODUCTION_APP_URL = 'https://humor.events'
 
 /** Base URL for public-facing links in emails, checkout, etc. (no trailing slash). */
 export function getPublicAppUrl() {

@@ -3,13 +3,33 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getClubAccess } from '@/lib/club-auth'
 import { approveArtist } from '@/lib/actions/artist'
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import type { Artist, EnergyLevel, ArtistGender, ArtistStatus } from '@/types/database'
 
+/**
+ * These Server Actions use the service-role admin client, which bypasses RLS, so
+ * every one of them MUST authenticate the caller and scope club-specific writes
+ * to a club the caller belongs to. There is no middleware doing this — proxy.ts
+ * only refreshes the Supabase session. Without this gate the action endpoints are
+ * an open mutation surface (delete/approve/reject any artist, or write scores for
+ * any club).
+ */
+async function assertArtistAdminAccess(clubId: string | null) {
+  const access = await getClubAccess()
+  if (!access.isSuperadmin && access.clubIds.length === 0) {
+    throw new Error('Du har ikke tilgang.')
+  }
+  if (clubId && !access.isSuperadmin && !access.clubIds.includes(clubId)) {
+    throw new Error('Du har ikke tilgang til denne klubben.')
+  }
+}
+
 export async function saveArtistAdminReview(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   const clubId = (formData.get('club_id') as string) || null
+  await assertArtistAdminAccess(clubId)
   const db = createAdminClient()
 
   const energyRaw = ((formData.get('admin_energy_level') as string) || null) as EnergyLevel | null
@@ -47,6 +67,7 @@ export async function saveArtistAdminReview(formData: FormData) {
 export async function approveArtistAction(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   const clubId = (formData.get('club_id') as string) || null
+  await assertArtistAdminAccess(clubId)
   const energy = (((formData.get('admin_energy_level') as string) || 'uncertain') as EnergyLevel)
   await approveArtist(artistId, { admin_energy_level: energy })
   if (clubId) {
@@ -62,6 +83,7 @@ export async function approveArtistAction(formData: FormData) {
 export async function rejectArtistAction(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   const clubId = (formData.get('club_id') as string) || null
+  await assertArtistAdminAccess(clubId)
   const db = createAdminClient()
   await db.from('artists').update({ status: 'rejected' }).eq('id', artistId)
   if (clubId) {
@@ -76,6 +98,7 @@ export async function rejectArtistAction(formData: FormData) {
 export async function updateArtistProfile(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   if (!artistId) throw new Error('Mangler artist_id')
+  await assertArtistAdminAccess(null)
   const db = createAdminClient()
 
   const socialLinksRaw = formData.get('social_links') as string | null
@@ -102,6 +125,7 @@ export async function updateArtistProfile(formData: FormData) {
 
 export async function deleteArtistAction(formData: FormData) {
   const artistId = formData.get('artist_id') as string
+  await assertArtistAdminAccess(null)
   const db = createAdminClient()
   await db.from('artists').delete().eq('id', artistId)
   revalidatePath('/admin-app/artists')
@@ -112,6 +136,7 @@ export async function saveClubScoreAction(formData: FormData) {
   const artistId = formData.get('artist_id') as string
   const clubId = formData.get('club_id') as string
   if (!artistId || !clubId) throw new Error('Mangler artist_id eller club_id')
+  await assertArtistAdminAccess(clubId)
 
   const approved = formData.get('approved') === 'true'
   const scoreRaw = formData.get('score') as string | null

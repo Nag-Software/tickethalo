@@ -98,6 +98,34 @@ export function validateArtistSignupForm(
   }
 }
 
+/**
+ * Server-side validation for the lighter public /signup form, which only
+ * collects name, email, password and an image (gender/phone/language are
+ * optional there). We still enforce those invariants so a direct POST cannot
+ * bypass them — but we do NOT require the artist-app-only fields.
+ */
+export function validatePublicSignupForm(
+  formData: FormData,
+  opts: { hasExistingProfileImage: boolean },
+) {
+  const hasMissingText = ['full_name', 'email', 'password'].some(
+    (field) => !optionalString(formData.get(field)),
+  )
+  const hasImage = opts.hasExistingProfileImage || getProfileImageFiles(formData).length > 0
+  if (hasMissingText || !hasImage) {
+    throw new Error('Required fields missing')
+  }
+
+  if (String(formData.get('password') ?? '').length < 8) {
+    throw new Error('Password must be at least 8 characters')
+  }
+
+  const youtube = optionalString(formData.get('youtube'))
+  if (youtube && !isYouTubeUrl(youtube)) {
+    throw new Error('Invalid YouTube URL')
+  }
+}
+
 export function parseArtistSignupFormData(formData: FormData) {
   const profileImageFiles = getProfileImageFiles(formData)
   const primaryProfileImageIndex = getPrimaryProfileImageIndex(formData, profileImageFiles.length)

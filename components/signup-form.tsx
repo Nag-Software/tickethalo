@@ -85,8 +85,8 @@ export function SignupForm({
             <Input id="password" name="password" type="password" minLength={8} autoComplete="new-password" required />
           </Field>
           <Field>
-            <FieldLabel htmlFor="profile_image_file">Profilbilde</FieldLabel>
-            <Input id="profile_image_file" name="profile_image_file" type="file" accept="image/png,image/jpeg,image/webp" />
+            <FieldLabel htmlFor="profile_image_files">Profilbilde</FieldLabel>
+            <Input id="profile_image_files" name="profile_image_files" type="file" accept="image/png,image/jpeg,image/webp" required />
           </Field>
           <Field className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-3">

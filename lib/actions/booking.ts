@@ -430,8 +430,11 @@ export async function bookShow(showId: string) {
     if (await countActiveSentOffers(admin, req.id) >= config.offers_per_wave) continue
 
     const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
+    // compensation_amount is already stored in øre (see optionalMoneyToMinor on
+    // the admin write side) — do NOT multiply by 100 again, or the honorar shows
+    // up 100× too high in the offer/confirmation emails and on the accept page.
     const feeAmountOere = req.compensation_type === 'fixed' && req.compensation_amount
-      ? Math.round(Number(req.compensation_amount) * 100)
+      ? Math.round(Number(req.compensation_amount))
       : null
     const currency = show.currency ?? 'NOK'
     const { data: offer, error: offerError } = await admin
@@ -759,74 +762,13 @@ export async function acceptBookingOfferById(offerId: string) {
     throw new Error('Denne artisten er allerede i lineupen for dette showet.')
   }
 
-  const [{ data: requirement }, { count: filled }] = await Promise.all([
-    admin
-      .from('show_requirements')
-      .select('quantity, role_name')
-      .eq('id', offer.show_requirement_id)
-      .single(),
-    admin
-      .from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', offer.show_requirement_id)
-      .in('status', ['confirmed', 'completed', 'paid']),
-  ])
-
-  if (requirement && (filled ?? 0) >= requirement.quantity) {
-    await admin
-      .from('booking_offers')
-      .update({ status: 'filled_by_other', responded_at: new Date().toISOString() })
-      .eq('id', offer.id)
-    throw new Error(`Rollen "${requirement.role_name}" er allerede fylt.`)
-  }
-
-  const { data: spot, error: spotError } = await admin
-    .from('confirmed_spots')
-    .insert({
-      show_id: offer.show_id,
-      artist_id: offer.artist_id,
-      show_requirement_id: offer.show_requirement_id,
-      booking_offer_id: offer.id,
-      fee_amount: offer.fee_amount,
-      currency: offer.currency,
-      status: 'confirmed',
-      confirmed_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-
-  if (spotError || !spot) throw new Error(spotError?.message ?? 'Kunne ikke opprette lineup-spot.')
-
-  await admin
-    .from('booking_offers')
-    .update({ status: 'accepted', responded_at: new Date().toISOString() })
-    .eq('id', offer.id)
-
-  const { count: nowFilled } = await admin
-    .from('confirmed_spots')
-    .select('*', { count: 'exact', head: true })
-    .eq('show_requirement_id', offer.show_requirement_id)
-    .in('status', ['confirmed', 'completed', 'paid'])
-
-  if (requirement && (nowFilled ?? 0) >= requirement.quantity) {
-    await admin
-      .from('booking_offers')
-      .update({ status: 'cancelled', responded_at: new Date().toISOString() })
-      .eq('show_requirement_id', offer.show_requirement_id)
-      .eq('status', 'sent')
-      .neq('id', offer.id)
-  }
-
-  await admin
-    .from('booking_offers')
-    .update({ status: 'cancelled' })
-    .eq('show_id', offer.show_id)
-    .eq('artist_id', offer.artist_id)
-    .eq('status', 'sent')
-    .neq('id', offer.id)
-
-  await runAutomaticBookingForShow(offer.show_id)
-  return { result: 'accepted' as const, confirmedSpotId: spot.id, repaired: true }
+  // Delegate the actual acceptance to the accept_booking_offer RPC. It serializes
+  // concurrent accepts on the same requirement (row-level FOR UPDATE + advisory
+  // lock), so two different artists can't over-fill a quantity-1 spot, and it
+  // records the artist_payouts row for fee-bearing offers — both of which this
+  // path used to skip when it re-implemented the accept in application code.
+  if (!offer.token) throw new Error('Bookingtilbudet mangler token.')
+  return acceptBookingOffer(offer.token)
 }
 
 export async function cancelConfirmedSpotForOffer(offerId: string) {
