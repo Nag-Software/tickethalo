@@ -47,7 +47,16 @@ export function designRowToTemplate(
 }
 
 function templateFromClubUrl(url: string, label: string): PosterDesignTemplate {
-  const fileName = decodeURIComponent(url.split('/').pop()?.split('?')[0] ?? 'club-default.png')
+  const rawName = url.split('/').pop()?.split('?')[0] ?? 'club-default.png'
+  // A stored URL whose last segment contains a stray percent (e.g. "cover.pn%g") makes
+  // decodeURIComponent throw a URIError. That must not abort poster generation — fall
+  // back to the undecoded segment.
+  let fileName = rawName
+  try {
+    fileName = decodeURIComponent(rawName)
+  } catch {
+    fileName = rawName
+  }
 
   return {
     label,

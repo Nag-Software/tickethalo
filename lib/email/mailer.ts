@@ -31,7 +31,7 @@ export async function sendArtistRegisteredEmail(opts: {
       to: opts.email,
       subject,
       html: `
-        <h2>Hei ${opts.full_name}!</h2>
+        <h2>Hei ${escapeHtml(opts.full_name)}!</h2>
         <p>Vi har mottatt din registrering og går gjennom den snart.</p>
         <p>Du vil motta en e-post når du er godkjent.</p>
       `,
@@ -60,7 +60,7 @@ export async function sendArtistApprovedEmail(opts: {
       subject,
       html: `
         <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55">
-          <h2>Gratulerer, ${opts.full_name}!</h2>
+          <h2>Gratulerer, ${escapeHtml(opts.full_name)}!</h2>
           <p>Du er nå godkjent som artist. Logg inn på artistportalen og velg opptil tre datoer du faktisk er tilgjengelig for.</p>
           <p>Booking-teamet bruker datoene sammen med score og energinivå når show matcher automatisk.</p>
           <p><a href="${opts.portal_url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px">Velg ledige datoer</a></p>
@@ -91,6 +91,9 @@ export async function sendBookingOfferEmail(opts: {
   venue_address?: string | null
   fee_amount?: number | null   // stored in øre/cents
   currency?: string | null
+  compensation_type?: string | null
+  compensation_amount?: number | null
+  compensation_percent?: number | null
   token: string
   response_url: string
 }): Promise<EmailResult> {
@@ -101,9 +104,10 @@ export async function sendBookingOfferEmail(opts: {
   // together and collapse the «Svar her» button behind the trimmed quote.
   const subject = `${clubLabel} vil booke deg — ${dateLabel}`
 
-  const feeFormatted = opts.fee_amount
-    ? `${Math.round(opts.fee_amount / 100).toLocaleString('nb-NO')} ${opts.currency ?? 'NOK'}`
-    : 'Ikke oppgitt'
+  // Use the shared honorar formatter so percent revenue-share offers show the real
+  // terms ("50% av billettinntekter") instead of "Ikke oppgitt" — matching what the
+  // confirmation email and the public accept page already display.
+  const feeFormatted = formatBookingHonorar(opts)
 
   const detailRow = (label: string, value: string) =>
     `<tr><td style="color:#71717a;padding:6px 0;width:120px;vertical-align:top">${escapeHtml(label)}</td><td style="padding:6px 0;font-weight:500">${escapeHtml(value)}</td></tr>`
@@ -233,11 +237,10 @@ export async function sendSpotAvailableEmail(opts: {
       subject,
       html: `
         <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55">
-          <h2>Hei ${opts.full_name}!</h2>
-          <p>Vi har fått en ledig spot på <strong>${opts.show_title}</strong> den ${opts.show_date}.</p>
+          <h2>Hei ${escapeHtml(opts.full_name)}!</h2>
+          <p>Vi har fått en ledig spot på <strong>${escapeHtml(opts.show_title)}</strong> den ${escapeHtml(opts.show_date)}.</p>
           <p style="margin:22px 0">
-            <a href="${opts.response_url}?response=accept" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px">Ja, jeg er interessert</a>
-            <a href="${opts.response_url}?response=decline" style="display:inline-block;border:1px solid #d4d4d8;color:#18181b;text-decoration:none;padding:9px 14px;border-radius:8px">Nei, denne passer ikke</a>
+            <a href="${opts.response_url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">Svar på tilbudet</a>
           </p>
           <p>Tilbudet er gyldig i 7 dager. Første artist som godkjenner mens plassen er ledig får spotten.</p>
         </div>

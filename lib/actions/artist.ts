@@ -132,18 +132,26 @@ export async function completeArtistRegistration(input: CompleteArtistRegistrati
     throw new Error('Artist profile already exists')
   }
 
+  const { data: existingProfile } = await admin
+    .from('profiles')
+    .select('id, role')
+    .eq('auth_user_id', input.authUserId)
+    .maybeSingle()
+
+  // Never silently demote a privileged account to 'artist'. /signup is public and does
+  // not bounce logged-in non-artist users, so without this guard an owner/admin/staff/
+  // superadmin who submits the form with their own email would lose admin access (and
+  // have their password reset below). Checked before any mutation.
+  if (existingProfile?.role && existingProfile.role !== 'artist') {
+    throw new Error('Denne kontoen har allerede en rolle i systemet og kan ikke registreres som artist.')
+  }
+
   if (input.password && input.password.length >= 8) {
     const { error: passwordError } = await admin.auth.admin.updateUserById(input.authUserId, {
       password: input.password,
     })
     if (passwordError) throw new Error(passwordError.message)
   }
-
-  const { data: existingProfile } = await admin
-    .from('profiles')
-    .select('id, role')
-    .eq('auth_user_id', input.authUserId)
-    .maybeSingle()
 
   if (existingProfile) {
     const { error: profileError } = await admin

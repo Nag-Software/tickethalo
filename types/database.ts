@@ -719,6 +719,21 @@ export type Database = {
           duplicate: boolean
         }[]
       }
+      insert_sent_offer_if_capacity: {
+        Args: {
+          p_show_id: string
+          p_artist_id: string
+          p_requirement_id: string
+          p_offers_per_wave: number
+          p_expires_at: string
+          p_fee_amount?: number | null
+          p_currency?: string | null
+        }
+        Returns: {
+          token: string | null
+          inserted: boolean
+        }[]
+      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>

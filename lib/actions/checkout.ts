@@ -11,7 +11,7 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
 
   const { data: show, error } = await admin
     .from('shows')
-    .select('id, title, slug, date, ticket_price, currency, stripe_price_id, capacity, status, club_id')
+    .select('id, title, slug, date, ticket_price, currency, capacity, status, club_id')
     .eq('id', showId)
     .single()
 
@@ -38,69 +38,23 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
     }
   }
 
-  // Use existing Stripe price or create a one-time price.
-  // Free shows always use an inline price (not cached) so a later price change works correctly.
-  let priceId = isFree ? null : show.stripe_price_id
-  if (!priceId) {
-    if (isFree) {
-      // Free show: use inline price_data — no product needed, not cached
-      const origin = new URL(requestUrl).origin
-
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        line_items: [{
-          price_data: {
-            currency: (show.currency ?? 'NOK').toLowerCase(),
-            unit_amount: 0,
-            product_data: { name: show.title },
-          },
-          quantity: 1,
-        }],
-        success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/checkout/cancel?event=${show.slug}${clubSlug ? `&club=${clubSlug}` : ''}`,
-        metadata: {
-          show_id: showId,
-          show_title: show.title,
-          show_date: show.date,
-          event_slug: show.slug,
-          club_slug: clubSlug ?? '',
-          app_origin: origin,
-        },
-        payment_intent_data: {
-          metadata: {
-            show_id: showId,
-            event_slug: show.slug,
-            club_slug: clubSlug ?? '',
-          },
-        },
-        allow_promotion_codes: false,
-      })
-
-      if (!session.url) throw new Error('Failed to create checkout URL')
-      return { url: session.url, sessionId: session.id }
-    }
-
-    const product = await stripe.products.create({
-      name: show.title,
-      metadata: { show_id: showId, event_slug: show.slug },
-    })
-
-    const price = await stripe.prices.create({
-      unit_amount: show.ticket_price!,
-      currency: show.currency.toLowerCase(),
-      product: product?.id,
-    })
-    priceId = price.id
-
-    // Persist for reuse
-    await admin.from('shows').update({ stripe_price_id: priceId }).eq('id', showId)
-  }
-
   const origin = new URL(requestUrl).origin
 
+  // Always price from the show's CURRENT ticket_price using an inline price_data
+  // line item. Stripe Price objects are immutable, so caching a price id (the old
+  // behaviour) kept charging the original amount after an admin edited the price.
+  // payment_intent_data is only valid for paid sessions — a 0-amount (free) session
+  // creates no PaymentIntent, so we omit it there.
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{
+      price_data: {
+        currency: (show.currency ?? 'NOK').toLowerCase(),
+        unit_amount: isFree ? 0 : show.ticket_price!,
+        product_data: { name: show.title },
+      },
+      quantity: 1,
+    }],
     success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/checkout/cancel?event=${show.slug}${clubSlug ? `&club=${clubSlug}` : ''}`,
     metadata: {
@@ -111,14 +65,16 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
       club_slug: clubSlug ?? '',
       app_origin: origin,
     },
-    payment_intent_data: {
-      metadata: {
-        show_id: showId,
-        event_slug: show.slug,
-        club_slug: clubSlug ?? '',
+    allow_promotion_codes: !isFree,
+    ...(isFree ? {} : {
+      payment_intent_data: {
+        metadata: {
+          show_id: showId,
+          event_slug: show.slug,
+          club_slug: clubSlug ?? '',
+        },
       },
-    },
-    allow_promotion_codes: true,
+    }),
   })
 
   if (!session.url) throw new Error('Failed to create checkout URL')

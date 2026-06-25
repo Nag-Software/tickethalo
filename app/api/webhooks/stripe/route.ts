@@ -25,9 +25,17 @@ export async function POST(req: NextRequest) {
   }
 
   switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session)
+    case 'checkout.session.completed': {
+      const result = await finalizeCheckoutSession(event.data.object as Stripe.Checkout.Session)
+      // 'failed' means a transient backend error (e.g. DB unavailable) — return 5xx so
+      // Stripe retries with backoff and the paid order is not silently lost. The RPC is
+      // keyed on the session id and returns 'duplicate' on replay, so retries are safe.
+      // All terminal outcomes (created/duplicate/sold_out/invalid_show/...) return 200.
+      if (result.result === 'failed') {
+        return NextResponse.json({ error: result.emailError ?? 'finalize failed' }, { status: 500 })
+      }
       break
+    }
     case 'payment_intent.payment_failed':
       await handlePaymentFailed(event.data.object as Stripe.PaymentIntent)
       break
@@ -46,10 +54,6 @@ export async function POST(req: NextRequest) {
 // Handlers
 // ─────────────────────────────────────────────────────────────
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  await finalizeCheckoutSession(session)
-}
-
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   const admin = createAdminClient()
   await admin
@@ -64,6 +68,12 @@ async function handleRefund(charge: Stripe.Charge) {
     ? charge.payment_intent
     : null
   if (!paymentIntentId) return
+
+  // Stripe emits charge.refunded for PARTIAL refunds too. Only void the order and its
+  // tickets on a FULL refund — a partial/goodwill refund must leave the tickets valid
+  // so the customer can still enter the show.
+  const fullyRefunded = charge.refunded === true || charge.amount_refunded >= charge.amount
+  if (!fullyRefunded) return
 
   // Update order
   const { data: order } = await admin

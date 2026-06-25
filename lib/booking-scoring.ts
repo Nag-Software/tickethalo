@@ -210,7 +210,14 @@ const UNDERBOOKED_BOOST: Record<FairnessPresetId, number> = {
 
 export function fairnessCutoffDate(showDate: string, windowMonths: number): string {
   const date = new Date(`${showDate}T12:00:00`)
+  const day = date.getDate()
+  // Move to the 1st before shifting months so setMonth can never overflow into the
+  // following month (e.g. 2026-03-31 minus 1 month must land in February, not "Mar 3").
+  // Then clamp the original day to the number of days in the target month.
+  date.setDate(1)
   date.setMonth(date.getMonth() - windowMonths)
+  const daysInTargetMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  date.setDate(Math.min(day, daysInTargetMonth))
   return date.toISOString().slice(0, 10)
 }
 

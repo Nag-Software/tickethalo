@@ -61,10 +61,13 @@ function getGalleryImages(formData: FormData) {
 }
 
 function getFileExtension(file: File) {
-  const fromName = file.name.split('.').pop()?.trim().toLowerCase()
+  // Strip anything that isn't a-z0-9 so a crafted filename (e.g. "cover.pn%g") cannot
+  // inject stray characters into the storage key / public URL — those later break
+  // decodeURIComponent during poster generation.
+  const fromName = file.name.split('.').pop()?.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
   if (fromName) return fromName
 
-  const fromMime = file.type.split('/').pop()?.trim().toLowerCase()
+  const fromMime = file.type.split('/').pop()?.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
   return fromMime || 'jpg'
 }
 

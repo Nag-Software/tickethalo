@@ -1,8 +1,27 @@
 import type { createAdminClient } from '@/lib/supabase/admin'
 
 export const MAX_ARTIST_PROFILE_IMAGES = 6
+export const MAX_ARTIST_PROFILE_IMAGE_BYTES = 20 * 1024 * 1024
+const PROFILE_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 type AdminClient = ReturnType<typeof createAdminClient>
+
+// Derive the stored extension from the validated MIME type, never from the
+// user-supplied file name. The filename is fully attacker-controlled on the public
+// signup endpoint; interpolating it raw (e.g. "a.png/evil") would corrupt the
+// deterministic profile.<ext> storage-key scheme.
+function extensionForMimeType(mimeType: string) {
+  return mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+}
+
+function assertValidProfileImage(file: File) {
+  if (!PROFILE_IMAGE_MIME_TYPES.has(file.type)) {
+    throw new Error('Profilbilder må være PNG, JPG eller WEBP.')
+  }
+  if (file.size > MAX_ARTIST_PROFILE_IMAGE_BYTES) {
+    throw new Error('Profilbilder kan ikke være større enn 20 MB.')
+  }
+}
 
 function profileStoragePath(authUserId: string, index: number, ext: string) {
   return index === 0 ? `${authUserId}/profile.${ext}` : `${authUserId}/profile-${index + 1}.${ext}`
@@ -58,6 +77,10 @@ export async function uploadArtistProfileImages(
     throw new Error(`You can upload at most ${MAX_ARTIST_PROFILE_IMAGES} profile images`)
   }
 
+  // Validate every file before uploading any, so an invalid file never leaves a
+  // partially-uploaded set behind.
+  files.forEach(assertValidProfileImage)
+
   const primary = Math.min(Math.max(0, primaryIndex), files.length - 1)
   const orderedFiles = [
     files[primary],
@@ -67,7 +90,7 @@ export async function uploadArtistProfileImages(
   const urls: string[] = []
 
   for (const [index, file] of orderedFiles.entries()) {
-    const ext = file.name.split('.').pop() ?? 'jpg'
+    const ext = extensionForMimeType(file.type)
     const path = profileStoragePath(authUserId, index, ext)
     const { error } = await admin.storage.from('artist-images').upload(path, file, { upsert: true })
     if (error) {

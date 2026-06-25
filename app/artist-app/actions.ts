@@ -75,7 +75,15 @@ export async function toggleAvailabilityAction(formData: FormData) {
       artist_id: artist.id,
       available_date: date,
     })
-    if (error) throw new Error(error.message)
+    if (error) {
+      // The DB trigger is the authoritative, race-safe guard (the check above is a
+      // best-effort pre-check that two concurrent inserts can both pass). Surface its
+      // limit error as the same friendly message instead of a raw DB exception.
+      if (error.message.includes('at most 3 active availability')) {
+        throw new Error(`Du kan maksimalt velge ${MAX_ARTIST_AVAILABILITY_DATES} datoer om gangen. Fjern en dato før du legger til en ny.`)
+      }
+      throw new Error(error.message)
+    }
   }
 
   revalidatePath('/artist-app/available-dates')

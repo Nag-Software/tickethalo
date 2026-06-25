@@ -79,6 +79,7 @@ type RequirementRow = ScoringRequirement & {
   booking_mode?: string
   compensation_type?: string | null
   compensation_amount?: number | null
+  compensation_percent?: number | null
 }
 
 function applyFairCapFilter<T extends ScoringArtist>(
@@ -164,20 +165,6 @@ async function enforceCascadeOfferIntegrity(
   if (updateError) throw new Error(updateError.message)
 }
 
-async function countActiveSentOffers(
-  admin: ReturnType<typeof createAdminClient>,
-  requirementId: string,
-) {
-  const { count, error } = await admin
-    .from('booking_offers')
-    .select('*', { count: 'exact', head: true })
-    .eq('show_requirement_id', requirementId)
-    .eq('status', 'sent')
-
-  if (error) throw new Error(error.message)
-  return count ?? 0
-}
-
 /**
  * Book show: selects and sends offers for all unfilled requirements.
  *
@@ -224,7 +211,12 @@ export async function bookShow(showId: string) {
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
-      .eq('is_flagged', false),
+      .eq('is_flagged', false)
+      // Deterministic tiebreak: when candidates score equally (e.g. a fresh club with
+      // neutral scores) the stable sort otherwise preserves arbitrary DB row order,
+      // making which artist gets the single offer nondeterministic across runs.
+      .order('full_name')
+      .order('id'),
     loadPerClubArtistSegments(admin, show.club_id),
   ])
 
@@ -427,8 +419,6 @@ export async function bookShow(showId: string) {
 
   const baseUrl = getPublicAppUrl()
   for (const { artistId, req } of assignments) {
-    if (await countActiveSentOffers(admin, req.id) >= config.offers_per_wave) continue
-
     const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
     // compensation_amount is already stored in øre (see optionalMoneyToMinor on
     // the admin write side) — do NOT multiply by 100 again, or the honorar shows
@@ -437,26 +427,24 @@ export async function bookShow(showId: string) {
       ? Math.round(Number(req.compensation_amount))
       : null
     const currency = show.currency ?? 'NOK'
-    const { data: offer, error: offerError } = await admin
-      .from('booking_offers')
-      .insert({
-        show_id: showId,
-        artist_id: artist.id,
-        show_requirement_id: req.id,
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-        expires_at: autoBookingOfferExpiresAt(),
-        ...(feeAmountOere ? { fee_amount: feeAmountOere, currency } : {}),
+
+    // Atomically enforce the per-wave cap. The RPC takes a per-requirement advisory
+    // lock, re-counts active sent offers, and only inserts when still below
+    // offers_per_wave — closing the count-then-insert race between concurrent
+    // auto-booking runs (decline + cron + admin bookShow) for the same requirement.
+    const { data: claim, error: offerError } = await admin
+      .rpc('insert_sent_offer_if_capacity', {
+        p_show_id: showId,
+        p_artist_id: artist.id,
+        p_requirement_id: req.id,
+        p_offers_per_wave: config.offers_per_wave,
+        p_expires_at: autoBookingOfferExpiresAt(),
+        p_fee_amount: feeAmountOere,
+        p_currency: currency,
       })
-      .select('token')
       .single()
 
-    if (offerError) {
-      // Unique index: one sent offer per requirement (concurrent bookShow race).
-      if (offerError.code === '23505') continue
-      continue
-    }
-    if (!offer) continue
+    if (offerError || !claim?.inserted || !claim.token) continue
     offersCreated++
 
     await sendBookingOfferEmail({
@@ -472,8 +460,11 @@ export async function bookShow(showId: string) {
       venue_address: show.venue_address,
       fee_amount: feeAmountOere,
       currency,
-      token: offer.token,
-      response_url: `${baseUrl}/booking-offer/${offer.token}`,
+      compensation_type: req.compensation_type,
+      compensation_amount: req.compensation_amount,
+      compensation_percent: req.compensation_percent,
+      token: claim.token,
+      response_url: `${baseUrl}/booking-offer/${claim.token}`,
     })
   }
 
@@ -506,11 +497,25 @@ export async function expireStaleBookingOffers() {
   if (updateError) throw new Error(updateError.message)
 
   const showIds = [...new Set(staleOffers.map(offer => offer.show_id))]
-  for (const showId of showIds) {
+
+  // Only re-run auto-booking for shows that are still bookable and not in the past.
+  // A stale 'sent' offer left on a published/cancelled/past show would otherwise
+  // re-trigger automateFullbookedShow — including paid AI poster generation — on a
+  // show that is already finalized or over.
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: bookableShows } = await admin
+    .from('shows')
+    .select('id')
+    .in('id', showIds)
+    .in('status', ['booking', 'fullbooked'])
+    .gte('date', today)
+
+  const bookableShowIds = bookableShows?.map(s => s.id) ?? []
+  for (const showId of bookableShowIds) {
     await runAutomaticBookingForShow(showId)
   }
 
-  return { expired: offerIds.length, showsProcessed: showIds.length }
+  return { expired: offerIds.length, showsProcessed: bookableShowIds.length }
 }
 
 
@@ -764,9 +769,9 @@ export async function acceptBookingOfferById(offerId: string) {
 
   // Delegate the actual acceptance to the accept_booking_offer RPC. It serializes
   // concurrent accepts on the same requirement (row-level FOR UPDATE + advisory
-  // lock), so two different artists can't over-fill a quantity-1 spot, and it
-  // records the artist_payouts row for fee-bearing offers — both of which this
-  // path used to skip when it re-implemented the accept in application code.
+  // lock), so two different artists can't over-fill a quantity-1 spot — which this
+  // path used to skip when it re-implemented the accept in application code. (The fee
+  // lives on confirmed_spots.fee_amount; artist_payouts was dropped in migration 013.)
   if (!offer.token) throw new Error('Bookingtilbudet mangler token.')
   return acceptBookingOffer(offer.token)
 }
@@ -793,7 +798,7 @@ export async function createManualBookingOffer(formData: FormData) {
   const [{ data: show }, { data: artist }, { data: requirement }] = await Promise.all([
     admin.from('shows').select('id, title, date, start_time, end_time, venue_name, venue_address, club_id').eq('id', showId).single(),
     admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
-    admin.from('show_requirements').select('role_name').eq('id', requirementId).single(),
+    admin.from('show_requirements').select('role_name, compensation_type, compensation_amount, compensation_percent').eq('id', requirementId).single(),
   ])
 
   if (!show || !artist) throw new Error('Show eller artist ikke funnet')
@@ -833,6 +838,9 @@ export async function createManualBookingOffer(formData: FormData) {
     venue_address: show.venue_address,
     fee_amount: feeAmountOere,
     currency: 'NOK',
+    compensation_type: requirement?.compensation_type,
+    compensation_amount: requirement?.compensation_amount,
+    compensation_percent: requirement?.compensation_percent,
     token: offer.token,
     response_url: `${getPublicAppUrl()}/booking-offer/${offer.token}`,
   })
@@ -908,7 +916,12 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
-      .eq('is_flagged', false),
+      .eq('is_flagged', false)
+      // Deterministic tiebreak: when candidates score equally (e.g. a fresh club with
+      // neutral scores) the stable sort otherwise preserves arbitrary DB row order,
+      // making which artist gets the single offer nondeterministic across runs.
+      .order('full_name')
+      .order('id'),
     loadPerClubArtistSegments(admin, show.club_id),
   ])
 
@@ -1012,34 +1025,29 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
 
   const baseUrl = getPublicAppUrl()
   for (const artist of candidates) {
-    if (await countActiveSentOffers(admin, requirementId) >= config.offers_per_wave) break
-
-    const { data: offer, error } = await admin
-      .from('booking_offers')
-      .insert({
-        show_id: showId,
-        artist_id: artist.id,
-        show_requirement_id: requirementId,
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-        expires_at: autoBookingOfferExpiresAt(),
+    // Atomic per-wave cap (see insert_sent_offer_if_capacity): the RPC re-counts under
+    // an advisory lock and returns inserted=false once the wave is full, so we stop.
+    const { data: claim, error } = await admin
+      .rpc('insert_sent_offer_if_capacity', {
+        p_show_id: showId,
+        p_artist_id: artist.id,
+        p_requirement_id: requirementId,
+        p_offers_per_wave: config.offers_per_wave,
+        p_expires_at: autoBookingOfferExpiresAt(),
       })
-      .select('token')
       .single()
 
-    if (error) {
-      if (error.code === '23505') break
-      continue
-    }
-    if (!offer) continue
+    if (error) continue
+    if (!claim?.inserted) break
+    if (!claim.token) continue
 
     await sendSpotAvailableEmail({
       email: artist.email,
       full_name: artist.full_name,
       show_title: show.title,
       show_date: show.date,
-      token: offer.token,
-      response_url: `${baseUrl}/booking-offer/${offer.token}`,
+      token: claim.token,
+      response_url: `${baseUrl}/booking-offer/${claim.token}`,
     })
   }
 }

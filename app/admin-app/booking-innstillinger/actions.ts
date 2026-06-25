@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { DEFAULT_CLUB_BOOKING_SETTINGS, parseClubBookingSettingsRow } from '@/lib/booking-scoring'
 
 function parseMultiplier(formData: FormData, key: string, label: string) {
@@ -58,6 +58,14 @@ export async function updateClubBookingSettingsAction(formData: FormData) {
 }
 
 export async function getClubBookingSettingsForAdmin(clubId: string) {
+  // This is a 'use server' export, so it is a callable endpoint regardless of its UI
+  // caller. Without this gate any authenticated user could pass an arbitrary clubId
+  // and read another club's private booking configuration (service-role bypasses RLS).
+  const access = await getClubAccess()
+  if (!access.isSuperadmin && !access.clubs.some((club) => club.id === clubId)) {
+    throw new Error('Du har ikke tilgang til denne klubben.')
+  }
+
   const admin = createAdminClient()
   const { data } = await admin
     .from('club_booking_settings')

@@ -73,6 +73,10 @@ export async function getPublicArtistShows(artistId: string): Promise<PublicArti
           .select('id, title, slug, club_id, date, start_time, end_time, venue_name, venue_address, poster_url')
           .in('id', showIds)
           .eq('status', 'published')
+          // Only genuinely upcoming shows — these render under "Kommende events", so a
+          // finished show must not appear (and ascending order must not surface the
+          // oldest past show first).
+          .gte('date', new Date().toISOString().slice(0, 10))
           .order('date', { ascending: true })
       : Promise.resolve({ data: [] as Array<Pick<Show, 'id' | 'title' | 'slug' | 'club_id' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'poster_url'>> }),
     requirementIds.length

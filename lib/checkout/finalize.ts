@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPublicAppUrl } from '@/lib/app-url'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
@@ -20,6 +21,24 @@ function resolveAppOrigin(session: Stripe.Checkout.Session) {
 
 function buildTicketVerificationUrl(origin: string, ticketCode: string) {
   return `${origin.replace(/\/$/, '')}/admin-app/tickets/verify?code=${encodeURIComponent(ticketCode)}`
+}
+
+/**
+ * Refund a session whose payment succeeded but that we cannot fulfil. Only acts on
+ * actually-paid sessions with a PaymentIntent (free/0-amount sessions have nothing to
+ * refund). Failures are logged, not thrown, so the webhook still returns a terminal
+ * status — a stuck refund should be reconciled manually rather than retried forever.
+ */
+async function refundPaidSession(session: Stripe.Checkout.Session) {
+  if (session.payment_status !== 'paid') return
+  const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : null
+  if (!paymentIntentId) return
+
+  try {
+    await stripe.refunds.create({ payment_intent: paymentIntentId })
+  } catch (error) {
+    console.error('[Checkout] Automatic refund failed for', session.id, error)
+  }
 }
 
 export async function finalizeCheckoutSession(session: Stripe.Checkout.Session): Promise<FinalizeCheckoutResult> {
@@ -52,8 +71,13 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
   }
 
   if (completion.result !== 'created') {
-    if (completion.result === 'sold_out') {
-      console.error('[Checkout] Checkout completed after sellout:', session.id)
+    // The customer has already paid but we cannot deliver a ticket (the show sold
+    // out in the race after they paid, or the show is no longer valid). Refund the
+    // payment automatically so they are never charged for nothing. 'duplicate' is a
+    // legitimate idempotent replay (ticket already issued) and must NOT be refunded.
+    if (completion.result === 'sold_out' || completion.result === 'invalid_show') {
+      console.error(`[Checkout] Unfulfillable checkout (${completion.result}), refunding:`, session.id)
+      await refundPaidSession(session)
     }
     return {
       result: completion.result,

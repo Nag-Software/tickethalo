@@ -69,7 +69,14 @@ export async function getClubAccess(): Promise<ClubAccess> {
     .map((membership) => Array.isArray(membership.clubs) ? membership.clubs[0] : membership.clubs)
     .filter((club): club is ClubOption => Boolean(club?.id && club?.name))
 
-  const selectedClubId = clubs[0]?.id ?? null
+  // Honour the club switcher for multi-club admins. Without this the selected club is
+  // hard-pinned to clubs[0], so an admin who belongs to several clubs can never view
+  // or manage any club but their first, and /admin-app/select-club is a no-op.
+  const cookieStore = await cookies()
+  const cookieValue = cookieStore.get(ADMIN_APP_CLUB_COOKIE)?.value ?? null
+  const selectedClubId = clubs.some((club) => club.id === cookieValue)
+    ? cookieValue
+    : clubs[0]?.id ?? null
 
   return {
     isSuperadmin: false,
