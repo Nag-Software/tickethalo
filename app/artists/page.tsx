@@ -64,7 +64,7 @@ export default async function ArtistsPage() {
                   <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-0.5">
                     {formatArtistRoleSummary(artist.category, 'Komiker')}
                   </p>
-                  <h2 className="text-lg font-medium leading-tight">{artistDisplayName(artist)}</h2>
+                  <h3 className="text-lg font-medium leading-tight">{artistDisplayName(artist)}</h3>
                   {artist.stage_name && <p className="text-sm text-zinc-500">{artist.full_name}</p>}
                 </div>
                 <ArrowUpRight className="size-4 shrink-0 mt-1 text-zinc-400 transition group-hover:text-vipps-orange" />

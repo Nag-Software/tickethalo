@@ -17,7 +17,9 @@ export const metadata = {
 export const dynamic = 'force-dynamic'
 
 export default async function Page() {
-  const clubs = await getPublicClubs()
+  // Only surface clubs that have something to show — a "0 show" card linking to an
+  // empty program is just clutter on the discovery page.
+  const clubs = (await getPublicClubs()).filter((club) => club.upcomingShowCount > 0)
 
   return (
     <main className="public-shell min-h-screen bg-background text-foreground">
@@ -32,7 +34,7 @@ export default async function Page() {
         icon={
           <Image
             src="/arrow-down.png"
-            alt="Arrow down"
+            alt=""
             width={48}
             height={48}
             className="w-6 h-6 md:w-7 md:h-7 lg:w-12 lg:h-12 brightness-0 invert"

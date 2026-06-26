@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Artist, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
 
@@ -9,7 +10,7 @@ export type PublicShow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'd
 }
 
 export type PublicLineupItem = {
-  spot: ConfirmedSpot
+  spot: Pick<ConfirmedSpot, 'id' | 'artist_id' | 'show_requirement_id' | 'confirmed_at'>
   artist: Pick<Artist, 'id' | 'full_name' | 'stage_name' | 'profile_image_url' | 'bio'> | null
   role: Pick<ShowRequirement, 'id' | 'role_name'> | null
 }
@@ -47,7 +48,9 @@ export async function getUpcomingPublishedShowsForClub(clubId: string, limit?: n
   return withTicketCounts(shows ?? [])
 }
 
-export async function getPublishedShowBySlug(slug: string): Promise<PublicShow | null> {
+// Wrapped in React cache() so the duplicate call from generateMetadata + the page
+// body in the same request hits the DB only once.
+export const getPublishedShowBySlug = cache(async (slug: string): Promise<PublicShow | null> => {
   const db = createAdminClient()
   const { data: show } = await db
     .from('shows')
@@ -59,13 +62,13 @@ export async function getPublishedShowBySlug(slug: string): Promise<PublicShow |
   if (!show) return null
   const [withCounts] = await withTicketCounts([show])
   return withCounts ?? null
-}
+})
 
 export async function getPublicLineup(showId: string): Promise<PublicLineupItem[]> {
   const db = createAdminClient()
   const { data: spots } = await db
     .from('confirmed_spots')
-    .select('*')
+    .select('id, artist_id, show_requirement_id, confirmed_at')
     .eq('show_id', showId)
     .eq('status', 'confirmed')
     .order('confirmed_at', { ascending: true })
@@ -74,7 +77,7 @@ export async function getPublicLineup(showId: string): Promise<PublicLineupItem[
   const requirementIds = [...new Set((spots ?? []).map((spot) => spot.show_requirement_id))]
   const [{ data: artists }, { data: roles }] = await Promise.all([
     artistIds.length
-      ? db.from('artists').select('id, full_name, stage_name, profile_image_url, bio').in('id', artistIds)
+      ? db.from('artists').select('id, full_name, stage_name, profile_image_url, bio').in('id', artistIds).eq('status', 'approved')
       : Promise.resolve({ data: [] as Array<Pick<Artist, 'id' | 'full_name' | 'stage_name' | 'profile_image_url' | 'bio'>> }),
     requirementIds.length
       ? db.from('show_requirements').select('id, role_name').in('id', requirementIds)
@@ -131,13 +134,18 @@ async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' 
     : { data: [] as Array<{ id: string; name: string; city: string | null; slug: string | null }> }
   const clubMap = new Map((clubs ?? []).map((club) => [club.id, club]))
 
-  return Promise.all(shows.map(async (show) => {
-    const { count } = await db
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('show_id', show.id)
-      .in('status', ['valid', 'used'])
+  // Sold-ticket counts for ALL shows in a single query, tallied in JS — previously this
+  // issued one COUNT query per show (an N+1 that scaled with the size of every listing).
+  const showIds = shows.map((show) => show.id)
+  const { data: ticketRows } = showIds.length > 0
+    ? await db.from('tickets').select('show_id').in('show_id', showIds).in('status', ['valid', 'used'])
+    : { data: [] as Array<{ show_id: string }> }
+  const soldByShow = new Map<string, number>()
+  for (const row of ticketRows ?? []) {
+    soldByShow.set(row.show_id, (soldByShow.get(row.show_id) ?? 0) + 1)
+  }
 
+  return shows.map((show) => {
     const club = show.club_id ? clubMap.get(show.club_id) : null
 
     return {
@@ -145,7 +153,7 @@ async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' 
       clubName: club?.name ?? null,
       clubCity: club?.city ?? null,
       clubSlug: club?.slug ?? null,
-      soldTickets: count ?? 0,
+      soldTickets: soldByShow.get(show.id) ?? 0,
     }
-  }))
+  })
 }

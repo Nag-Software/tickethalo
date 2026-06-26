@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowUpRight, CalendarDays, Languages, MapPin, Mic2 } from '
 import { formatArtistRoleSummary } from '@/lib/artist-roles'
 import { artistDisplayName, artistInitials, getPublicArtistById, getPublicArtistShows } from '@/lib/public-artists'
 import { getPublicShowHref } from '@/lib/public-events'
+import { getPublicAppUrl } from '@/lib/app-url'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { PublicHeader } from '@/components/public/public-header'
 import { formatShortDate, formatShowTime } from '@/lib/public-events'
@@ -34,15 +35,28 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ArtistDetailPage({ params }: Props) {
   const { id } = await params
-  const artist = await getPublicArtistById(id)
+  // Both fetches key off the route id and are independent — run them concurrently
+  // instead of serializing artist → shows.
+  const [artist, shows] = await Promise.all([getPublicArtistById(id), getPublicArtistShows(id)])
   if (!artist) notFound()
 
-  const shows = await getPublicArtistShows(artist.id)
   const name = artistDisplayName(artist)
   const socials = Object.entries(artist.social_links ?? {}).filter((entry): entry is [string, string] => Boolean(entry[1]))
 
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name,
+    jobTitle: 'Komiker',
+    url: `${getPublicAppUrl()}/artists/${artist.id}`,
+    ...(artist.bio ? { description: artist.bio } : {}),
+    ...(artist.profile_image_url ? { image: artist.profile_image_url } : {}),
+    ...(socials.length ? { sameAs: socials.map(([, href]) => href) } : {}),
+  }
+
   return (
     <main className="public-shell min-h-screen bg-background text-foreground">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <section className="border-b border-border">
         <PublicHeader transparent tone="light" />
         <div className="mx-auto grid max-w-6xl gap-8 px-4 pb-10 pt-28 md:grid-cols-[320px_1fr] md:items-end md:px-6 md:pb-14 lg:px-8">
@@ -52,7 +66,7 @@ export default async function ArtistDetailPage({ params }: Props) {
                 src={artist.profile_image_url}
                 alt={name}
                 fill
-                priority
+                preload
                 sizes="(max-width: 768px) 92vw, 320px"
                 unoptimized={shouldBypassImageOptimization(artist.profile_image_url)}
                 className="object-cover"
@@ -133,11 +147,12 @@ export default async function ArtistDetailPage({ params }: Props) {
                   key={label}
                   href={href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
+                  aria-label={`${label} (åpnes i ny fane)`}
                   className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm font-medium transition hover:bg-black hover:text-white"
                 >
                   <span className="capitalize">{label}</span>
-                  <ArrowUpRight className="size-4" />
+                  <ArrowUpRight className="size-4" aria-hidden />
                 </a>
               ))}
             </div>

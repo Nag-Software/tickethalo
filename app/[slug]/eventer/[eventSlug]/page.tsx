@@ -10,6 +10,7 @@ import { NaturalPosterImage } from '@/components/public/natural-poster-image'
 import { startCheckoutAction } from '@/app/events/actions'
 import { formatShowDate, formatShowTime, formatTicketPrice, getPublicLineup, getPublishedShowBySlug, remainingTickets, ticketFillPercent } from '@/lib/public-events'
 import { shouldBypassImageOptimization } from '@/lib/utils'
+import { getPublicAppUrl } from '@/lib/app-url'
 
 type Props = {
   params: Promise<{ slug: string; eventSlug: string }>
@@ -67,13 +68,47 @@ export default async function ClubEventDetailPage({ params, searchParams }: Prop
       ? 'Få igjen'
       : null
 
+  const eventUrl = `${getPublicAppUrl()}/${clubSlug}/eventer/${show.slug}`
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: show.title,
+    startDate: show.start_time ? `${show.date}T${show.start_time}` : show.date,
+    eventStatus: 'https://schema.org/EventScheduled',
+    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    url: eventUrl,
+    ...(show.description ? { description: show.description } : {}),
+    ...(show.poster_url ? { image: [show.poster_url] } : {}),
+    location: {
+      '@type': 'Place',
+      name: show.venue_name ?? showClub ?? 'humor.events',
+      ...(show.venue_address ? { address: show.venue_address } : {}),
+    },
+    ...(showClub ? { organizer: { '@type': 'Organization', name: showClub } } : {}),
+    offers: {
+      '@type': 'Offer',
+      url: eventUrl,
+      price: show.ticket_price != null ? (show.ticket_price / 100).toFixed(2) : '0',
+      priceCurrency: show.currency,
+      availability: soldOut ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock',
+    },
+    ...(lineup.some((item) => item.artist)
+      ? {
+          performer: lineup
+            .filter((item) => item.artist)
+            .map((item) => ({ '@type': 'Person', name: item.artist!.stage_name ?? item.artist!.full_name })),
+        }
+      : {}),
+  }
+
   return (
     <main className="public-shell min-h-screen bg-background text-foreground">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <PublicHeader transparent tone="light" eventsHref={clubHref} />
 
       <section className="mx-auto max-w-5xl px-4 pb-16 pt-20 md:px-8 md:pt-24">
         <Link href={clubHref} className="mb-4 inline-flex w-fit items-center gap-2 text-sm font-medium text-zinc-500 transition-colors hover:text-vipps-orange-80">
-          <ArrowLeft className="size-4" /> {show.clubName ?? 'Til klubbens program'}
+          <ArrowLeft className="size-4" /> Tilbake til {show.clubName ?? 'klubbens program'}
         </Link>
 
         <article className="overflow-hidden rounded-2xl border border-border bg-white">
@@ -83,12 +118,12 @@ export default async function ClubEventDetailPage({ params, searchParams }: Prop
                 <NaturalPosterImage
                   src={show.poster_url}
                   alt={show.title}
-                  priority
-                  sizes="(max-width: 768px) 100vw, 50vw"
+                  preload
+                  sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 512px"
                   className="relative w-full"
                 />
               ) : (
-                <div className="flex aspect-[3/4] flex-col justify-between bg-black p-8 text-white">
+                <div className="flex aspect-[2/3] flex-col justify-between bg-black p-8 text-white">
                   <span className="text-xs font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
                   <strong className="text-4xl font-medium leading-none">{show.title}</strong>
                 </div>
@@ -127,7 +162,7 @@ export default async function ClubEventDetailPage({ params, searchParams }: Prop
                 </div>
 
                 {error === 'sold-out' && <p className="mb-3 text-sm font-medium text-black">Dette showet er utsolgt.</p>}
-                {error === 'checkout' && <p className="mb-3 text-sm font-medium text-zinc-500">Checkout kunne ikke åpnes akkurat nå.</p>}
+                {error === 'checkout' && <p className="mb-3 text-sm font-medium text-zinc-500">Betalingen kunne ikke åpnes akkurat nå.</p>}
                 <ToastActionForm action={startCheckoutAction}>
                   <input type="hidden" name="show_id" value={show.id} />
                   <input type="hidden" name="slug" value={show.slug} />
@@ -153,34 +188,51 @@ export default async function ClubEventDetailPage({ params, searchParams }: Prop
               <span className="text-sm font-medium text-zinc-400">{lineup.length} artist{lineup.length === 1 ? '' : 'er'}</span>
             </div>
             <div className="grid gap-3 sm:grid-cols-1">
-              {lineup.map((item) => (
-                <Link
-                  key={item.spot.id}
-                  href={item.artist ? `/artists/${item.artist.id}` : '#'}
-                  className="group grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 rounded-xl border border-border bg-white p-2 transition hover:-translate-y-0.5 hover:shadow-md"
-                >
-                  <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border bg-zinc-100">
-                    {item.artist?.profile_image_url ? (
-                      <Image
-                        src={item.artist.profile_image_url}
-                        alt={item.artist.stage_name ?? item.artist.full_name}
-                        fill
-                        sizes="64px"
-                        unoptimized={shouldBypassImageOptimization(item.artist.profile_image_url)}
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center bg-black text-lg font-medium text-white">
-                        {(item.artist?.stage_name ?? item.artist?.full_name ?? '?')[0]}
-                      </div>
-                    )}
+              {lineup.map((item) => {
+                // Only artists with a public (approved) profile get a link — others
+                // would 404. A null artist renders as a plain, non-interactive card.
+                const displayName = item.artist?.stage_name ?? item.artist?.full_name ?? 'Artist'
+                const initial = (item.artist?.stage_name ?? item.artist?.full_name ?? '?')[0]
+                const baseClass = 'grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 rounded-xl border border-border bg-white p-2'
+                const inner = (
+                  <>
+                    <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border bg-zinc-100">
+                      {item.artist?.profile_image_url ? (
+                        <Image
+                          src={item.artist.profile_image_url}
+                          alt={displayName}
+                          fill
+                          sizes="64px"
+                          unoptimized={shouldBypassImageOptimization(item.artist.profile_image_url)}
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center bg-black text-lg font-medium text-white">
+                          {initial}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold uppercase tracking-widest text-zinc-500">{item.role?.role_name ?? 'Artist'}</div>
+                      <h3 className="truncate text-base font-medium transition-colors group-hover:text-vipps-orange-80">{displayName}</h3>
+                    </div>
+                  </>
+                )
+
+                return item.artist ? (
+                  <Link
+                    key={item.spot.id}
+                    href={`/artists/${item.artist.id}`}
+                    className={`group ${baseClass} transition hover:-translate-y-0.5 hover:shadow-md`}
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div key={item.spot.id} className={baseClass}>
+                    {inner}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold uppercase tracking-widest text-zinc-500">{item.role?.role_name ?? 'Artist'}</div>
-                    <h3 className="truncate text-base font-medium transition-colors group-hover:text-vipps-orange-80">{item.artist?.stage_name ?? item.artist?.full_name ?? 'Artist'}</h3>
-                  </div>
-                </Link>
-              ))}
+                )
+              })}
               {lineup.length === 0 && (
                 <p className="pt-2 text-sm font-medium text-zinc-400">Lineup annonseres snart.</p>
               )}

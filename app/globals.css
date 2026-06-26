@@ -241,6 +241,21 @@
   animation: city-drop 2.2s linear forwards;
 }
 
+/* Respect users who ask for less motion (WCAG 2.3.3 / 2.2.2). Neutralises the
+   infinite badge spin, the auto-scrolling city marquee, the city-drop ticker
+   and all fade-in entrances on public surfaces. Scoped to .public-shell so it
+   doesn't flatten admin/superadmin interactions. */
+@media (prefers-reduced-motion: reduce) {
+  .public-shell *,
+  .public-shell *::before,
+  .public-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

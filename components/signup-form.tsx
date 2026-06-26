@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,8 @@ export function SignupForm({
   errorMessage?: string
   successMessage?: string
 }) {
+  const [submitting, setSubmitting] = useState(false)
+
   useEffect(() => {
     if (errorMessage) toast.error(errorMessage)
     if (successMessage) toast.success(successMessage)
@@ -34,10 +37,10 @@ export function SignupForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <form action={action} method="post" encType="multipart/form-data">
+      <form action={action} method="post" encType="multipart/form-data" onSubmit={() => setSubmitting(true)}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
-            <a
+            <Link
               href="/signup"
               className="flex flex-col items-center gap-2 font-medium"
             >
@@ -45,7 +48,7 @@ export function SignupForm({
                 <HugeiconsIcon icon={LayoutBottomIcon} strokeWidth={2} className="size-6" />
               </div>
               <span className="sr-only">humor.events</span>
-            </a>
+            </Link>
             <h1 className="text-xl font-bold">Registrer artistprofil</h1>
             <FieldDescription>
               Søknaden sendes til booking-teamet for vurdering.
@@ -156,12 +159,14 @@ export function SignupForm({
             </div>
           </Field>
           <Field>
-            <Button type="submit" size="lg" className="w-full">Registrer artistprofil</Button>
+            <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+              {submitting ? "Sender…" : "Registrer artistprofil"}
+            </Button>
           </Field>
         </FieldGroup>
       </form>
       <FieldDescription className="px-6 text-center">
-        Allerede registrert? <a href="/artist-app/login">Logg inn</a>.
+        Allerede registrert? <Link href="/artist-app/login">Logg inn</Link>.
       </FieldDescription>
     </div>
   )

@@ -10,6 +10,7 @@ import {
   deleteShowAction,
   generatePosterAction,
   selectMarketingDesignAction,
+  selectShowPosterTemplateAction,
   updatePosterModeAction,
   updateShowDetailsAction,
   uploadMarketingDesignAction,
@@ -80,10 +81,18 @@ export default async function ShowDetailPage({
   const { data: clubPosterDefaults } = tab === 'marketing' && show.club_id
     ? await db
       .from('clubs')
-      .select('default_ai_poster_reference_url, default_frame_background_url')
+      .select('default_ai_poster_reference_url, default_frame_background_url, default_poster_template_id')
       .eq('id', show.club_id)
       .maybeSingle()
-    : { data: null as { default_ai_poster_reference_url: string | null; default_frame_background_url: string | null } | null }
+    : { data: null as { default_ai_poster_reference_url: string | null; default_frame_background_url: string | null; default_poster_template_id: string | null } | null }
+
+  const { data: clubPosterTemplates } = tab === 'marketing' && show.club_id
+    ? await db
+      .from('poster_templates')
+      .select('*')
+      .eq('club_id', show.club_id)
+      .order('created_at', { ascending: false })
+    : { data: [] as import('@/types/database').PosterTemplate[] }
 
   // Fetch related artist/requirement data (split queries — no Relationships in DB types)
   const offerArtistIds = [...new Set((offers ?? []).map(o => o.artist_id))]
@@ -189,13 +198,23 @@ export default async function ShowDetailPage({
 
   const showLocation = show.venue_address ?? show.venue_name
   const posterMode = show.poster_mode ?? 'ai_generated'
+  const posterTemplates = clubPosterTemplates ?? []
+  const selectedShowTemplate = posterTemplates.find((t) => t.id === show.selected_poster_template_id) ?? null
+  const clubDefaultTemplate = posterTemplates.find((t) => t.id === clubPosterDefaults?.default_poster_template_id) ?? null
   const posterContext = tab === 'marketing'
-    ? resolvePosterContext({ show, club: clubPosterDefaults, designs: marketingDesigns ?? [] })
+    ? resolvePosterContext({
+      show,
+      club: clubPosterDefaults,
+      designs: marketingDesigns ?? [],
+      posterTemplate: selectedShowTemplate,
+      clubPosterTemplate: clubDefaultTemplate,
+    })
     : null
   const aiReferenceDesigns = (marketingDesigns ?? []).filter((design) => design.design_kind === 'ai_reference')
   const frameBackgroundDesigns = (marketingDesigns ?? []).filter((design) => design.design_kind === 'frame_background')
   const selectedAiReference = aiReferenceDesigns.find((design) => design.id === show.selected_ai_reference_id) ?? aiReferenceDesigns[0] ?? null
   const selectedFrameBackground = frameBackgroundDesigns.find((design) => design.id === show.selected_frame_background_id) ?? frameBackgroundDesigns[0] ?? null
+  const activePosterTemplate = posterContext?.posterTemplate ?? null
 
   return (
     <div>
@@ -474,10 +493,18 @@ export default async function ShowDetailPage({
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-semibold text-sm">Lineup-plakat</h2>
                       <span className="rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        {posterMode === 'ai_generated' ? 'AI-plakat' : 'Ramme'}
+                        {posterMode === 'ai_generated' ? 'AI-plakat' : posterMode === 'template' ? 'Mal' : 'Ramme'}
                       </span>
                     </div>
-                    {posterMode === 'ai_generated' ? (
+                    {posterMode === 'template' ? (
+                      activePosterTemplate ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Bruker mal{posterContext?.posterTemplateSource === 'club' ? ' (klubb-standard)' : ''}: {activePosterTemplate.name} — tekst og logoer blir alltid skarpe.
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-xs text-destructive">Velg en plakatmal til høyre, eller lag en under Branding.</p>
+                      )
+                    ) : posterMode === 'ai_generated' ? (
                       posterContext?.aiReference ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           Bruker referanse{posterContext.aiReferenceSource === 'club' ? ' (klubb-standard)' : ''}: {posterContext.aiReference.label || posterContext.aiReference.fileName}
@@ -524,6 +551,7 @@ export default async function ShowDetailPage({
 
                 <div className="rounded-lg border bg-muted/30 p-1 flex gap-1">
                   {([
+                    { value: 'template', label: 'Mal', desc: 'Anbefalt. Bruker en mal laget fra en tidligere plakat. Tekst og logoer bygges med ekte fonter — alltid skarpt og likt hver gang.' },
                     { value: 'ai_generated', label: 'AI-plakat', desc: 'AI lager hele plakaten. Med referanse beholder du klubbens identitet — kun bilder, navn, tittel og dato endres.' },
                     { value: 'framed', label: 'Ramme', desc: 'Legger komiker-bilder og navn oppå et rent bakgrunnsbilde uten personer eller tekst.' },
                   ] as const).map(({ value, label, desc }) => {
@@ -611,7 +639,7 @@ export default async function ShowDetailPage({
 
                     <MarketingTemplateUploadButton showId={show.id} designKind="ai_reference" action={uploadMarketingDesignAction} label="Last opp referanseplakat" />
                   </div>
-                ) : (
+                ) : posterMode === 'framed' ? (
                   <div className="space-y-3 border-t pt-4">
                     <div className="space-y-1">
                       <h3 className="text-sm font-semibold">Bakgrunn</h3>
@@ -668,6 +696,59 @@ export default async function ShowDetailPage({
                     </div>
 
                     <MarketingTemplateUploadButton showId={show.id} designKind="frame_background" action={uploadMarketingDesignAction} label="Last opp bakgrunn" />
+                  </div>
+                ) : (
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold">Plakatmal</h3>
+                      <p className="text-xs text-muted-foreground">Velg en mal. Plakaten bygges deterministisk — tekst og logoer blir alltid skarpe.</p>
+                    </div>
+
+                    <div className="flex-1 space-y-3">
+                      {posterTemplates.length > 0 ? (
+                        posterTemplates.map((t) => {
+                          const isSelected = t.id === activePosterTemplate?.id
+                          const thumb = t.plate_url ?? t.source_poster_url
+                          return (
+                            <div key={t.id} className={`rounded-lg border p-2 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/30'}`}>
+                              <ToastActionForm action={selectShowPosterTemplateAction} successMessage="Mal valgt.">
+                                <input type="hidden" name="show_id" value={show.id} />
+                                <input type="hidden" name="template_id" value={t.id} />
+                                <button type="submit" className="block w-full text-left">
+                                  <div className="flex items-center justify-between gap-2 pb-2">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-xs font-semibold">{t.name}</p>
+                                      <p className="text-[11px] text-muted-foreground">{t.status === 'confirmed' ? 'Bekreftet' : 'Utkast'}{clubDefaultTemplate?.id === t.id ? ' · klubb-standard' : ''}</p>
+                                    </div>
+                                    {isSelected && (
+                                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Valgt</span>
+                                    )}
+                                  </div>
+                                  {thumb && (
+                                    <div className="relative aspect-[3/4] overflow-hidden rounded-md border bg-muted/20">
+                                      <Image src={thumb} alt={t.name} fill sizes="260px" className="object-contain" />
+                                    </div>
+                                  )}
+                                </button>
+                              </ToastActionForm>
+                              <div className="mt-2">
+                                <Link href={`/admin-app/min-klubb/maler/${t.id}`} className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">
+                                  Rediger mal
+                                </Link>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 text-center text-sm text-muted-foreground">
+                          Ingen maler ennå. Lag en under Branding ved å laste opp en tidligere plakat.
+                        </div>
+                      )}
+                    </div>
+
+                    <Link href="/admin-app/min-klubb" className="block w-full rounded-md border px-3 py-2 text-center text-xs font-semibold transition-colors hover:bg-muted/60">
+                      Administrer maler (Branding)
+                    </Link>
                   </div>
                 )}
               </div>

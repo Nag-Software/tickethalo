@@ -61,7 +61,7 @@ export default async function ClubPage({ params }: Props) {
             src={club.logo_url}
             alt={club.name}
             fill
-            priority
+            preload
             unoptimized={shouldBypassImageOptimization(club.logo_url)}
             sizes="(max-width: 768px) 52px, 120px"
             className="object-contain"

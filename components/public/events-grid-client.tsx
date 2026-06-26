@@ -37,8 +37,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
     ),
   ]
 
-  const filtered = shows.filter((show) => {
-    if (city !== 'Alle' && show.clubCity !== city) return false
+  const matchesSelectedDate = (show: PublicShow) => {
     if (!date) return true
     // Anchor the date-only string at local noon so timezone offsets can't shift
     // it to the previous/next calendar day when compared with the picker value.
@@ -48,7 +47,12 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
       showDate.getMonth() === date.getMonth() &&
       showDate.getDate() === date.getDate()
     )
-  })
+  }
+
+  // Apply the date filter first so the city-pill counts below reflect the chosen day
+  // (the city filter itself is applied after, so each pill still shows its own total).
+  const dateFiltered = shows.filter(matchesSelectedDate)
+  const filtered = dateFiltered.filter((show) => city === 'Alle' || show.clubCity === city)
 
   return (
     <section id="events-section" className="px-4 md:px-8 pb-16 pt-6 md:pt-20">
@@ -67,7 +71,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
               <PopoverTrigger asChild>
                 <button
                   className={cn(
-                    'text-base md:text-lg lg:text-xl font-normal border border-l-0 border-border px-2 py-1 flex items-center bg-white hover:bg-gray-50 transition-colors',
+                    'text-base md:text-lg lg:text-xl font-normal border border-l-0 border-border px-2 py-1 flex items-center bg-white hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vipps-orange',
                     !date && 'text-muted-foreground'
                   )}
                 >
@@ -76,27 +80,28 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" onSelect={setDate} locale={nb} />
+                <Calendar mode="single" selected={date} onSelect={setDate} locale={nb} />
               </PopoverContent>
             </Popover>
           </div>
         </div>
 
         {cityOptions.length > 1 && (
-          <div className="mb-6 hidden sm:flex flex-wrap gap-2 animate-fade-in" style={{ animationDelay: '0.85s', animationFillMode: 'both' }}>
+          <div className="mb-6 flex flex-wrap gap-2 animate-fade-in" style={{ animationDelay: '0.85s', animationFillMode: 'both' }}>
             {cityOptions.map((option) => {
               const active = option === city
               const count = option === 'Alle'
-                ? shows.length
-                : shows.filter((show) => show.clubCity === option).length
+                ? dateFiltered.length
+                : dateFiltered.filter((show) => show.clubCity === option).length
 
               return (
                 <button
                   key={option}
                   type="button"
                   onClick={() => setCity(option)}
+                  aria-pressed={active}
                   className={cn(
-                    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] transition-colors',
+                    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vipps-orange focus-visible:ring-offset-2',
                     active
                       ? 'border-border bg-black text-white'
                       : 'border-border bg-white text-black hover:bg-vipps-orange hover:text-white hover:border-vipps-orange'
@@ -128,15 +133,22 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
                   : 'Ingen eventer funnet.'}
               </div>
             ) : (
-              filtered.map((show, index) => (
-                <div
-                  key={show.id}
-                  className="animate-fade-in"
-                  style={{ animationDelay: `${1.0 + index * 0.1}s`, animationFillMode: 'both' }}
-                >
-                  <EventCard show={show} />
-                </div>
-              ))
+              filtered.map((show, index) => {
+                // The first row is above the fold and holds the LCP poster — don't
+                // gate it behind an opacity:0 entrance animation (backwards fill
+                // would keep it invisible for the whole delay window). Below-fold
+                // cards keep a gentle, capped stagger.
+                const aboveFold = index < 3
+                return (
+                  <div
+                    key={show.id}
+                    className={aboveFold ? undefined : 'animate-fade-in'}
+                    style={aboveFold ? undefined : { animationDelay: `${Math.min(index * 0.06, 0.6)}s`, animationFillMode: 'both' }}
+                  >
+                    <EventCard show={show} index={index} />
+                  </div>
+                )
+              })
             )}
           </div>
         </div>
@@ -145,7 +157,7 @@ export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
   )
 }
 
-function EventCard({ show }: { show: PublicShow }) {
+function EventCard({ show, index }: { show: PublicShow; index: number }) {
   const remaining = remainingTickets(show)
   const soldOut = remaining === 0
   const fillPercent = ticketFillPercent(show)
@@ -172,6 +184,7 @@ function EventCard({ show }: { show: PublicShow }) {
                 src={show.poster_url}
                 alt={show.title}
                 fill
+                preload={index < 3}
                 className="object-contain"
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 34vw, 16vw"
               />

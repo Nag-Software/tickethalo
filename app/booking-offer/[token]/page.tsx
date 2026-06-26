@@ -64,6 +64,27 @@ export default async function PublicBookingOfferPage({
   if (result === 'filled_by_other') {
     return <FilledResultPage details={details} />
   }
+  if (result === 'already_booked') {
+    // The artist was already confirmed on this show — a successful state, not an error.
+    return (
+      <ResultPage
+        icon="✓"
+        title={`Du er allerede booket hos ${details.clubName}`}
+        message="Du har allerede takket ja til denne spotten. Vi gleder oss til å se deg på scenen!"
+        variant="success"
+      />
+    )
+  }
+  if (result === 'cancelled') {
+    return (
+      <ResultPage
+        icon="!"
+        title="Tilbudet er ikke lenger aktivt"
+        message="Dette bookingtilbudet har blitt kansellert av klubben. Ta kontakt hvis du har spørsmål."
+        variant="neutral"
+      />
+    )
+  }
   if (result === 'declined') {
     return (
       <ResultPage

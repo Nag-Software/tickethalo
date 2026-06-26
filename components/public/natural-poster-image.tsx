@@ -1,34 +1,28 @@
-'use client'
-
-import { useState } from 'react'
 import Image from 'next/image'
 
 type NaturalPosterImageProps = {
   src: string
   alt: string
-  priority?: boolean
+  preload?: boolean
   sizes: string
   className?: string
 }
 
-export function NaturalPosterImage({ src, alt, priority = false, sizes, className }: NaturalPosterImageProps) {
-  const [ratio, setRatio] = useState<number | null>(null)
-
+// Posters render in a fixed 2:3 box with object-contain letterboxing. Using a
+// fixed aspect ratio — instead of measuring the image onLoad and snapping the
+// container — removes a guaranteed layout shift on the LCP poster: template
+// posters are deterministically 1024×1536 (2:3), and arbitrary uploads simply
+// letterbox without cropping. No client state, so this stays a server component.
+export function NaturalPosterImage({ src, alt, preload = false, sizes, className }: NaturalPosterImageProps) {
   return (
-    <div className={className} style={{ aspectRatio: ratio ?? 3 / 4 }}>
+    <div className={className} style={{ aspectRatio: 2 / 3 }}>
       <Image
         src={src}
         alt={alt}
         fill
-        priority={priority}
+        preload={preload}
         sizes={sizes}
         className="object-contain"
-        onLoad={(event) => {
-          const image = event.currentTarget
-          if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-            setRatio(image.naturalWidth / image.naturalHeight)
-          }
-        }}
       />
     </div>
   )

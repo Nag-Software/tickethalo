@@ -18,6 +18,7 @@ export async function createShow(input: {
   ticket_price?: number
   currency?: string
   club_id?: string | null
+  poster_mode?: 'framed' | 'ai_generated' | 'template'
 }) {
   const admin = createAdminClient()
 
@@ -37,6 +38,7 @@ export async function createShow(input: {
       currency: input.currency ?? 'NOK',
       club_id: input.club_id ?? null,
       status: 'draft',
+      ...(input.poster_mode ? { poster_mode: input.poster_mode } : {}),
     })
     .select('id')
     .single()

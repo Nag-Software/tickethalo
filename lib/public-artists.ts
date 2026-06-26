@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Artist, Show } from '@/types/database'
 
@@ -9,7 +10,6 @@ export type PublicArtist = Pick<Artist,
   | 'bio'
   | 'category'
   | 'language'
-  | 'admin_energy_level'
   | 'social_links'
 >
 
@@ -29,7 +29,8 @@ export type PublicArtistShow = Pick<Show,
   role_name: string | null
 }
 
-const PUBLIC_ARTIST_FIELDS = 'id, full_name, stage_name, profile_image_url, bio, category, language, admin_energy_level, social_links'
+// admin_energy_level is an internal rating — deliberately NOT exposed in the public projection.
+const PUBLIC_ARTIST_FIELDS = 'id, full_name, stage_name, profile_image_url, bio, category, language, social_links'
 
 export async function getPublicArtists(): Promise<PublicArtist[]> {
   const db = createAdminClient()
@@ -39,11 +40,14 @@ export async function getPublicArtists(): Promise<PublicArtist[]> {
     .eq('status', 'approved')
     .order('stage_name', { ascending: true, nullsFirst: false })
     .order('full_name', { ascending: true })
+    .limit(500)
 
   return data ?? []
 }
 
-export async function getPublicArtistById(artistId: string): Promise<PublicArtist | null> {
+// Wrapped in React cache() so the duplicate call from generateMetadata + the page body
+// in the same request only hits the DB once.
+export const getPublicArtistById = cache(async (artistId: string): Promise<PublicArtist | null> => {
   const db = createAdminClient()
   const { data } = await db
     .from('artists')
@@ -53,7 +57,7 @@ export async function getPublicArtistById(artistId: string): Promise<PublicArtis
     .single()
 
   return data ?? null
-}
+})
 
 export async function getPublicArtistShows(artistId: string): Promise<PublicArtistShow[]> {
   const db = createAdminClient()

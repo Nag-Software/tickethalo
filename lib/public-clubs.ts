@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Club, Show } from '@/types/database'
 
@@ -14,11 +15,14 @@ export async function getPublicClubs(): Promise<PublicClub[]> {
     .from('clubs')
     .select('id, name, slug, description, logo_url, header_image_url, location_name, address_line, city')
     .order('name', { ascending: true })
+    .limit(200)
 
   return withUpcomingShowStats(clubs ?? [], today)
 }
 
-export async function getPublicClubBySlug(slug: string): Promise<PublicClub | null> {
+// Wrapped in React cache() so the duplicate call from generateMetadata + the page body
+// in the same request only hits the DB once.
+export const getPublicClubBySlug = cache(async (slug: string): Promise<PublicClub | null> => {
   const db = createAdminClient()
   const today = new Date().toISOString().slice(0, 10)
 
@@ -32,7 +36,7 @@ export async function getPublicClubBySlug(slug: string): Promise<PublicClub | nu
 
   const [withStats] = await withUpcomingShowStats([club], today)
   return withStats ?? null
-}
+})
 
 async function withUpcomingShowStats(
   clubs: Array<Pick<Club, 'id' | 'name' | 'slug' | 'description' | 'logo_url' | 'header_image_url' | 'location_name' | 'address_line' | 'city'>>,

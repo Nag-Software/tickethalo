@@ -1,7 +1,7 @@
-import type { MarketingDesignKind, ShowMarketingDesign } from '@/types/database'
+import type { MarketingDesignKind, PosterTemplate, ShowMarketingDesign } from '@/types/database'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export type PosterMode = 'ai_generated' | 'framed'
+export type PosterMode = 'ai_generated' | 'framed' | 'template'
 
 export type PosterDesignTemplate = {
   label: string | null
@@ -17,12 +17,14 @@ export type PosterContextInput = {
   selected_ai_reference_id?: string | null
   selected_frame_background_id?: string | null
   selected_marketing_design_id?: string | null
+  selected_poster_template_id?: string | null
   club_id?: string | null
 }
 
 export type ClubPosterDefaults = {
   default_ai_poster_reference_url?: string | null
   default_frame_background_url?: string | null
+  default_poster_template_id?: string | null
 }
 
 export type ResolvedPosterContext = {
@@ -31,6 +33,8 @@ export type ResolvedPosterContext = {
   frameBackground: PosterDesignTemplate | null
   aiReferenceSource: 'show' | 'club' | null
   frameBackgroundSource: 'show' | 'club' | null
+  posterTemplate: PosterTemplate | null
+  posterTemplateSource: 'show' | 'club' | null
 }
 
 export function designRowToTemplate(
@@ -88,10 +92,23 @@ export function resolvePosterContext(input: {
   show: PosterContextInput
   club?: ClubPosterDefaults | null
   designs?: ShowMarketingDesign[]
+  posterTemplate?: PosterTemplate | null
+  clubPosterTemplate?: PosterTemplate | null
 }): ResolvedPosterContext {
   const mode: PosterMode = input.show.poster_mode ?? 'ai_generated'
   const designs = input.designs ?? []
   const club = input.club ?? null
+
+  const showTemplate = input.posterTemplate
+    && input.posterTemplate.id === input.show.selected_poster_template_id
+    ? input.posterTemplate
+    : null
+  const posterTemplate = showTemplate ?? input.clubPosterTemplate ?? null
+  const posterTemplateSource: 'show' | 'club' | null = showTemplate
+    ? 'show'
+    : input.clubPosterTemplate
+      ? 'club'
+      : null
 
   const showAiDesign =
     findDesignById(designs, input.show.selected_ai_reference_id)
@@ -121,6 +138,8 @@ export function resolvePosterContext(input: {
     frameBackground,
     aiReferenceSource: showAiDesign ? 'show' : aiReference ? 'club' : null,
     frameBackgroundSource: showFrameDesign ? 'show' : frameBackground ? 'club' : null,
+    posterTemplate,
+    posterTemplateSource,
   }
 }
 
@@ -129,7 +148,7 @@ export async function loadResolvedPosterContext(showId: string) {
 
   const { data: show, error: showError } = await db
     .from('shows')
-    .select('poster_mode, club_id, selected_ai_reference_id, selected_frame_background_id, selected_marketing_design_id')
+    .select('poster_mode, club_id, selected_ai_reference_id, selected_frame_background_id, selected_marketing_design_id, selected_poster_template_id')
     .eq('id', showId)
     .single()
 
@@ -142,15 +161,27 @@ export async function loadResolvedPosterContext(showId: string) {
     show.club_id
       ? db
         .from('clubs')
-        .select('default_ai_poster_reference_url, default_frame_background_url')
+        .select('default_ai_poster_reference_url, default_frame_background_url, default_poster_template_id')
         .eq('id', show.club_id)
         .single()
       : Promise.resolve({ data: null }),
   ])
 
+  // Resolve the active template: a show-level pick wins over the club default.
+  const showTemplateId = show.selected_poster_template_id ?? null
+  const clubTemplateId = club?.default_poster_template_id ?? null
+  const templateIds = [...new Set([showTemplateId, clubTemplateId].filter((id): id is string => Boolean(id)))]
+  const templateRows = templateIds.length > 0
+    ? (await db.from('poster_templates').select('*').in('id', templateIds)).data ?? []
+    : []
+  const posterTemplate = showTemplateId ? templateRows.find(t => t.id === showTemplateId) ?? null : null
+  const clubPosterTemplate = clubTemplateId ? templateRows.find(t => t.id === clubTemplateId) ?? null : null
+
   return resolvePosterContext({
     show,
     club,
     designs: designs ?? [],
+    posterTemplate,
+    clubPosterTemplate,
   })
 }

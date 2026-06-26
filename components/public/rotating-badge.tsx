@@ -73,7 +73,7 @@ export function RotatingBadge({
             <path d={scallopedPath} fill={backgroundFill} stroke={backgroundStroke} strokeWidth="2" />
           </svg>
         ) : (
-          <Image src="/badge.png" alt="Badge" fill className="object-contain" />
+          <Image src="/badge.png" alt="" fill className="object-contain" />
         )}
         {!hideText && text ? (
           <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full">

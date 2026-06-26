@@ -39,8 +39,13 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
     if (!open) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
     return () => {
       document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
 
@@ -89,7 +94,10 @@ export function PublicHeader({ transparent, tone = 'dark', eventsHref = '/' }: {
       className={`fixed inset-0 z-[9999] flex flex-col bg-black transition-all duration-500 ease-in-out ${
         open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
-      aria-hidden={!open}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Meny"
+      inert={!open}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 pt-8">

@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Host_Grotesk, Poppins, DM_Sans } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
@@ -28,8 +29,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Humorevents",
-  description: "Humorevents - Your source for the best comedy events",
+  // Lets relative canonical / Open Graph URLs in child routes resolve to the
+  // production origin instead of localhost. Required by Next 16 for any
+  // relative URL-based metadata field.
+  metadataBase: new URL(getPublicAppUrl()),
+  title: "humor.events",
+  description: "Finn stand-up og komikk i Norge — velg komiklubb og se neste forestilling.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ff5b24",
 };
 
 export default function RootLayout({
@@ -39,7 +48,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="nb"
       className={cn(
         "h-full",
         "antialiased",

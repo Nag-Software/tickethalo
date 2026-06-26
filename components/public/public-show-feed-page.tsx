@@ -63,7 +63,7 @@ export function PublicShowFeedPage({
         icon={badgeIcon ?? (
           <Image
             src="/arrow-down.png"
-            alt="Arrow down"
+            alt=""
             width={48}
             height={48}
             className="w-6 h-6 md:w-7 md:h-7 lg:w-12 lg:h-12"

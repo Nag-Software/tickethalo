@@ -25,6 +25,8 @@ export type MarketingTaskKey =
   | 'schedule_email'
 export type MarketingDesignKind = 'ai_reference' | 'frame_background'
 export type MarketingDesignFileType = 'image'
+export type PosterMode = 'framed' | 'ai_generated' | 'template'
+export type PosterTemplateStatus = 'draft' | 'confirmed'
 
 // ─────────────────────────────────────────────────────────────
 // Row types
@@ -43,6 +45,7 @@ export type Club = {
   city: string | null
   default_ai_poster_reference_url: string | null
   default_frame_background_url: string | null
+  default_poster_template_id: string | null
   created_at: string
   updated_at: string
 }
@@ -114,7 +117,8 @@ export type Show = {
   selected_marketing_design_id: string | null
   selected_ai_reference_id: string | null
   selected_frame_background_id: string | null
-  poster_mode: 'framed' | 'ai_generated'
+  selected_poster_template_id: string | null
+  poster_mode: PosterMode
   status: ShowStatus
   stripe_product_id: string | null
   stripe_price_id: string | null
@@ -138,6 +142,27 @@ export type ShowMarketingDesign = {
   design_kind: MarketingDesignKind
   created_at: string
   updated_at: string
+}
+
+export type PosterTemplate = {
+  id: string
+  club_id: string
+  name: string
+  status: PosterTemplateStatus
+  source_poster_path: string | null
+  source_poster_url: string | null
+  plate_path: string | null
+  plate_url: string | null
+  canvas_width: number
+  canvas_height: number
+  palette: unknown
+  text_slots: unknown
+  photo_frames: unknown
+  logos: unknown
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  confirmed_at: string | null
 }
 
 export type ShowRequirement = {
@@ -396,7 +421,8 @@ export type Database = {
           selected_marketing_design_id?: string | null
           selected_ai_reference_id?: string | null
           selected_frame_background_id?: string | null
-          poster_mode?: 'framed' | 'ai_generated'
+          selected_poster_template_id?: string | null
+          poster_mode?: PosterMode
           status?: ShowStatus
           stripe_product_id?: string | null
           stripe_price_id?: string | null
@@ -636,10 +662,36 @@ export type Database = {
           city?: string | null
           default_ai_poster_reference_url?: string | null
           default_frame_background_url?: string | null
+          default_poster_template_id?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: Partial<Club>
+        Relationships: []
+      }
+      poster_templates: {
+        Row: PosterTemplate
+        Insert: {
+          id?: string
+          club_id: string
+          name?: string
+          status?: PosterTemplateStatus
+          source_poster_path?: string | null
+          source_poster_url?: string | null
+          plate_path?: string | null
+          plate_url?: string | null
+          canvas_width?: number
+          canvas_height?: number
+          palette?: unknown
+          text_slots?: unknown
+          photo_frames?: unknown
+          logos?: unknown
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+          confirmed_at?: string | null
+        }
+        Update: Partial<PosterTemplate>
         Relationships: []
       }
       club_memberships: {

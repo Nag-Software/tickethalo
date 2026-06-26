@@ -6,6 +6,12 @@ const supabaseHostname = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
+  // Poster rendering reads these from process.cwd()/public at runtime (bundled
+  // fonts for sharp/librsvg text + the frame overlay). Trace them into the
+  // serverless function or text renders as tofu / the overlay silently drops.
+  outputFileTracingIncludes: {
+    "/**": ["./public/fonts/**", "./public/frame.png"],
+  },
   turbopack: {},
   images: {
     remotePatterns: [
@@ -29,6 +35,9 @@ const nextConfig: NextConfig = {
     },
     webpackMemoryOptimizations: true,
     preloadEntriesOnStart: false,
+    // @hugeicons/core-free-icons is a large barrel (~46MB) that isn't optimized by
+    // Next's defaults — transform imports so only referenced icons are pulled in.
+    optimizePackageImports: ["@hugeicons/core-free-icons"],
   },
   webpack(config, { dev }) {
     if (dev) {
