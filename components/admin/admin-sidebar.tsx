@@ -1,8 +1,9 @@
 'use client'
 
-import Link from 'next/link'
+import Link, { useLinkStatus } from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 import { ClubSwitcher } from '@/components/admin/club-switcher'
 import {
   Building2,
@@ -54,6 +55,25 @@ const navItems: NavItem[] = [
   },
   { label: 'Innstillinger', href: '/settings', icon: Settings },
 ]
+
+/**
+ * Viser en subtil pulserende prikk på lenkeraden mens navigasjonen pågår.
+ * Rendres alltid (fast størrelse, opacity 0) for å unngå layout shift, og
+ * animasjonen starter først etter 100ms slik at raske navigasjoner ikke blinker.
+ * Må rendres inne i en <Link> (useLinkStatus-krav).
+ */
+function NavLinkPendingIndicator() {
+  const { pending } = useLinkStatus()
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'ml-auto size-1.5 shrink-0 rounded-full bg-current opacity-0',
+        pending && 'animate-pulse [animation-delay:100ms]'
+      )}
+    />
+  )
+}
 
 function isNavChildActive(pathname: string, href: string) {
   if (href === '/min-klubb') {
@@ -134,6 +154,7 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
                                 <SidebarMenuSubButton asChild isActive={childActive}>
                                   <Link href={`${pathPrefix}${child.href}`}>
                                     <span>{child.label}</span>
+                                    <NavLinkPendingIndicator />
                                   </Link>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
@@ -154,6 +175,7 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
                     <Link href={href}>
                       <item.icon />
                       <span>{item.label}</span>
+                      <NavLinkPendingIndicator />
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

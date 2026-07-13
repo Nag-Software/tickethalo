@@ -1,16 +1,31 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export async function getPortalDestinationForAuthUser(authUserId: string): Promise<string | null> {
+/**
+ * Resolves which portal an authenticated user belongs to.
+ * Pass `knownRole` (the profile role, or null when the user has no profile)
+ * when the caller already has the profile loaded — the admin-role happy path
+ * then costs zero extra queries. Leave it undefined to look the role up here.
+ */
+export async function getPortalDestinationForAuthUser(
+  authUserId: string,
+  knownRole?: string | null,
+): Promise<string | null> {
   const db = createAdminClient()
 
-  const { data: profile } = await db
-    .from('profiles')
-    .select('role')
-    .eq('auth_user_id', authUserId)
-    .maybeSingle()
+  let role: string | null
+  if (knownRole !== undefined) {
+    role = knownRole
+  } else {
+    const { data: profile } = await db
+      .from('profiles')
+      .select('role')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle()
+    role = profile?.role ?? null
+  }
 
-  if (profile?.role === 'superadmin') return '/superadmin'
-  if (profile?.role === 'owner' || profile?.role === 'admin' || profile?.role === 'staff') return '/admin-app'
+  if (role === 'superadmin') return '/superadmin'
+  if (role === 'owner' || role === 'admin' || role === 'staff') return '/admin-app'
 
   const { data: artist } = await db
     .from('artists')
@@ -19,7 +34,7 @@ export async function getPortalDestinationForAuthUser(authUserId: string): Promi
     .maybeSingle()
 
   if (artist) return '/artist-app'
-  if (profile?.role === 'artist') return '/artist-app/signup?error=missing'
+  if (role === 'artist') return '/artist-app/signup?error=missing'
 
   return null
 }

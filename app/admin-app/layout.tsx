@@ -1,11 +1,9 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
-import { getClubAccess } from '@/lib/club-auth'
+import { getAuthUser, getAdminProfile, getClubAccess } from '@/lib/club-auth'
 
 export const metadata = { title: 'Booking-center — humor.events' }
 
@@ -17,24 +15,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return children
   }
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Cached helpers (React cache()) — layout and page share the same auth user,
+  // profile and club queries within one request render.
+  const user = await getAuthUser()
 
   if (!user) {
     redirect(`${adminPrefix}/login`)
   }
 
-  const destination = await getPortalDestinationForAuthUser(user.id)
+  const profile = await getAdminProfile()
+
+  // Query-free for admin roles since the profile role is already known.
+  const destination = await getPortalDestinationForAuthUser(user.id, profile?.role ?? null)
   if (destination && destination !== adminPrefix && destination !== '/superadmin') {
     redirect(destination)
   }
-
-  const db = createAdminClient()
-  const { data: profile } = await db
-    .from('profiles')
-    .select('id, role, full_name, email')
-    .eq('auth_user_id', user.id)
-    .single()
 
   const allowed: string[] = ['superadmin', 'owner', 'admin', 'staff']
   if (!profile || !allowed.includes(profile.role)) {

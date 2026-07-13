@@ -1,6 +1,14 @@
-'use server'
+// NOT a 'use server' module — deliberately. Every function here drives
+// service-role writes (offers, confirmed spots, show publishing, paid poster
+// generation) from caller-supplied ids, so none of them may be a directly
+// invokable server-action endpoint. All entry points carry their own auth:
+//  - app/admin-app/shows/actions.ts — assert*Access() before delegating
+//  - app/booking-offer/[token]/actions.ts & app/artist-app/actions.ts —
+//    unguessable offer token is the capability (+ ownership check in artist-app)
+//  - app/api/cron/expire-offers & publish-fullbooked — CRON_SECRET
+//  - lib/actions/artist.ts approveArtist — reached via the access-checked
+//    approveArtistAction wrapper
 
-import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
@@ -580,7 +588,7 @@ export async function automateFullbookedShow(showId: string) {
 
   const { data: show } = await admin
     .from('shows')
-    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, poster_mode')
+    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at')
     .eq('id', showId)
     .single()
 
@@ -604,7 +612,6 @@ export async function automateFullbookedShow(showId: string) {
   const posterContext = await loadResolvedPosterContext(showId)
 
   posterUrl = await generateShowPoster(showId, {
-    mode: posterContext.mode,
     title: show.title,
     date: show.date,
     startTime: show.start_time,
@@ -618,8 +625,8 @@ export async function automateFullbookedShow(showId: string) {
         role_name: requirementById.get(spot.show_requirement_id) ?? null,
       }]
     }),
+    useReference: posterContext.useReference,
     aiReference: posterContext.aiReference,
-    frameBackground: posterContext.frameBackground,
     aiReferenceSource: posterContext.aiReferenceSource,
   }) ?? show.poster_url ?? null
 
@@ -783,83 +790,6 @@ export async function cancelConfirmedSpotForOffer(offerId: string) {
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
     .eq('booking_offer_id', offerId)
     .in('status', ['confirmed', 'completed', 'paid'])
-}
-
-export async function createManualBookingOffer(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const artistId = formData.get('artist_id') as string
-  const requirementId = formData.get('requirement_id') as string
-  const feeRaw = formData.get('fee_amount') as string
-
-  if (!showId || !artistId || !requirementId) throw new Error('Manglende felt')
-
-  const admin = createAdminClient()
-
-  const [{ data: show }, { data: artist }, { data: requirement }] = await Promise.all([
-    admin.from('shows').select('id, title, date, start_time, end_time, venue_name, venue_address, club_id').eq('id', showId).single(),
-    admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
-    admin.from('show_requirements').select('role_name, compensation_type, compensation_amount, compensation_percent').eq('id', requirementId).single(),
-  ])
-
-  if (!show || !artist) throw new Error('Show eller artist ikke funnet')
-
-  const clubName = show.club_id
-    ? (await admin.from('clubs').select('name').eq('id', show.club_id).single()).data?.name ?? null
-    : null
-
-  const feeAmountOere = feeRaw ? Math.round(parseFloat(feeRaw) * 100) : null
-
-  const { data: offer, error } = await admin
-    .from('booking_offers')
-    .insert({
-      show_id: showId,
-      artist_id: artistId,
-      show_requirement_id: requirementId,
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      ...(feeRaw ? { fee_amount: feeAmountOere, currency: 'NOK' } : {}),
-    })
-    .select('token')
-    .single()
-
-  if (error || !offer) throw new Error(error?.message ?? 'Kunne ikke opprette tilbud')
-
-  await sendBookingOfferEmail({
-    email: artist.email,
-    full_name: artist.full_name,
-    show_title: show.title,
-    show_date: show.date,
-    show_start_time: show.start_time,
-    show_end_time: show.end_time,
-    club_name: clubName,
-    spot_type: requirement?.role_name,
-    venue_name: show.venue_name,
-    venue_address: show.venue_address,
-    fee_amount: feeAmountOere,
-    currency: 'NOK',
-    compensation_type: requirement?.compensation_type,
-    compensation_amount: requirement?.compensation_amount,
-    compensation_percent: requirement?.compensation_percent,
-    token: offer.token,
-    response_url: `${getPublicAppUrl()}/booking-offer/${offer.token}`,
-  })
-
-  revalidatePath('/admin-app/bookings')
-}
-
-export async function cancelBookingOffer(formData: FormData) {
-  const offerId = formData.get('offer_id') as string
-  if (!offerId) throw new Error('Mangler offer_id')
-
-  const admin = createAdminClient()
-  await admin
-    .from('booking_offers')
-    .update({ status: 'cancelled', responded_at: new Date().toISOString() })
-    .eq('id', offerId)
-    .eq('status', 'sent')
-
-  revalidatePath('/admin-app/bookings')
 }
 
 /**

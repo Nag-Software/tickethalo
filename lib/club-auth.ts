@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -19,24 +20,47 @@ export type ClubAccess = {
 }
 
 /**
+ * Authenticated Supabase user for the current request. Wrapped in React cache()
+ * so layout, page and nested server components share ONE auth roundtrip per render.
+ */
+export const getAuthUser = cache(async () => {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user
+})
+
+/**
+ * Profile row for the authenticated user. Cached per request render so the
+ * layout role-gate and getClubAccess() share a single profiles query.
+ */
+export const getAdminProfile = cache(async () => {
+  const user = await getAuthUser()
+  if (!user) return null
+
+  const db = createAdminClient()
+  const { data } = await db
+    .from('profiles')
+    .select('id, role, full_name, email')
+    .eq('auth_user_id', user.id)
+    .maybeSingle()
+
+  return data
+})
+
+/**
  * Returns club access for the currently authenticated user.
  * - Superadmin: { isSuperadmin: true, clubIds: null } (all-access)
  * - Club admin: { isSuperadmin: false, clubIds: [...] }
  * - No access: { isSuperadmin: false, clubIds: [] }
+ *
+ * Cached per request render — repeated calls (layout + page + actions in the
+ * same render) reuse the same auth user, profile and club queries.
  */
-export async function getClubAccess(): Promise<ClubAccess> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { isSuperadmin: false, clubIds: [], selectedClubId: null, clubs: [] }
+export const getClubAccess = cache(async (): Promise<ClubAccess> => {
+  const profile = await getAdminProfile()
+  if (!profile) return { isSuperadmin: false, clubIds: [], selectedClubId: null, clubs: [] }
 
   const db = createAdminClient()
-  const { data: profile } = await db
-    .from('profiles')
-    .select('id, role')
-    .eq('auth_user_id', user.id)
-    .single()
-
-  if (!profile) return { isSuperadmin: false, clubIds: [], selectedClubId: null, clubs: [] }
 
   if (profile.role === 'superadmin') {
     const { data: clubs } = await db
@@ -84,7 +108,7 @@ export async function getClubAccess(): Promise<ClubAccess> {
     selectedClubId,
     clubs,
   }
-}
+})
 
 export async function getDefaultClubIdForAdmin() {
   const access = await getClubAccess()

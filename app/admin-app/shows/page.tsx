@@ -13,6 +13,12 @@ type ShowRow = Pick<Show, 'id' | 'title' | 'date' | 'venue_name' | 'venue_addres
 type RequirementRow = Pick<ShowRequirement, 'id' | 'show_id' | 'role_name' | 'quantity' | 'lineup_position'>
 type SpotRow = Pick<ConfirmedSpot, 'show_id' | 'artist_id' | 'show_requirement_id' | 'status'>
 type ArtistRow = Pick<Artist, 'id' | 'full_name' | 'stage_name'>
+// De genererte databasetypene mangler Relationships, så embedded selects må kastes manuelt.
+type ShowQueryRow = ShowRow & {
+  tickets: Array<{ count: number }>
+  show_requirements: RequirementRow[]
+  confirmed_spots: Array<SpotRow & { artists: ArtistRow | null }>
+}
 type EnrichedShowRow = ShowRow & {
   soldTickets: number
   remainingTickets: number | null
@@ -61,8 +67,12 @@ export default async function ShowsPage({
 
   let showsQuery = db
     .from('shows')
-    .select('id, title, date, venue_name, venue_address, status, capacity, ticket_price, currency, published_at, slug, poster_url')
+    .select('id, title, date, venue_name, venue_address, status, capacity, ticket_price, currency, published_at, slug, poster_url, tickets(count), show_requirements(id, show_id, role_name, quantity, lineup_position), confirmed_spots(show_id, artist_id, show_requirement_id, status, artists(id, full_name, stage_name))')
+    .in('tickets.status', ['valid', 'used'])
+    .in('confirmed_spots.status', ['confirmed', 'completed', 'paid'])
     .order('date', { ascending: true })
+    .order('lineup_position', { referencedTable: 'show_requirements' })
+    .order('created_at', { referencedTable: 'show_requirements' })
     .limit(200)
 
   if (clubAccess.clubIds.length > 0) {
@@ -71,57 +81,19 @@ export default async function ShowsPage({
     showsQuery = showsQuery.eq('id', '00000000-0000-0000-0000-000000000000') // no results
   }
 
-  const { data: allShows } = await showsQuery
+  const { data } = await showsQuery
+  const allShows = (data ?? []) as unknown as ShowQueryRow[]
 
-  const showIds = (allShows ?? []).map((show) => show.id)
-  const [{ data: requirementRows }, { data: spotRows }, { data: ticketRows }] = await Promise.all([
-    showIds.length > 0
-      ? db.from('show_requirements').select('id, show_id, role_name, quantity, lineup_position').in('show_id', showIds).order('lineup_position').order('created_at')
-      : Promise.resolve({ data: [] as RequirementRow[] }),
-    showIds.length > 0
-      ? db.from('confirmed_spots').select('show_id, artist_id, show_requirement_id, status').in('show_id', showIds).in('status', ['confirmed', 'completed', 'paid'])
-      : Promise.resolve({ data: [] as SpotRow[] }),
-    showIds.length > 0
-      ? db.from('tickets').select('show_id').in('show_id', showIds).in('status', ['valid', 'used'])
-      : Promise.resolve({ data: [] as Array<{ show_id: string }> }),
-  ])
-
-  const artistIds = [...new Set((spotRows ?? []).map((spot) => spot.artist_id))]
-  const { data: artistRows } = artistIds.length > 0
-    ? await db.from('artists').select('id, full_name, stage_name').in('id', artistIds)
-    : { data: [] as ArtistRow[] }
-
-  const requirementsByShow = new Map<string, RequirementRow[]>()
-  for (const requirement of requirementRows ?? []) {
-    const current = requirementsByShow.get(requirement.show_id) ?? []
-    current.push(requirement)
-    requirementsByShow.set(requirement.show_id, current)
-  }
-
-  const spotsByShow = new Map<string, SpotRow[]>()
-  for (const spot of spotRows ?? []) {
-    const current = spotsByShow.get(spot.show_id) ?? []
-    current.push(spot)
-    spotsByShow.set(spot.show_id, current)
-  }
-
-  const soldTicketsByShow = new Map<string, number>()
-  for (const ticket of ticketRows ?? []) {
-    soldTicketsByShow.set(ticket.show_id, (soldTicketsByShow.get(ticket.show_id) ?? 0) + 1)
-  }
-
-  const artistMap = new Map((artistRows ?? []).map((artist) => [artist.id, artist]))
-
-  const enrichedShows: EnrichedShowRow[] = (allShows ?? []).map((show) => {
-    const showRequirements = requirementsByShow.get(show.id) ?? []
-    const showSpots = spotsByShow.get(show.id) ?? []
-    const soldTickets = soldTicketsByShow.get(show.id) ?? 0
+  const enrichedShows: EnrichedShowRow[] = allShows.map(({ tickets, show_requirements, confirmed_spots, ...show }) => {
+    const showRequirements = show_requirements ?? []
+    const showSpots = confirmed_spots ?? []
+    const soldTickets = tickets?.[0]?.count ?? 0
     const remainingTickets = show.capacity == null ? null : Math.max(show.capacity - soldTickets, 0)
     const fillPercent = !show.capacity ? 0 : Math.min(Math.round((soldTickets / show.capacity) * 100), 100)
     const slotSummary = showRequirements.map((requirement) => {
       const matchingSpots = showSpots.filter((spot) => spot.show_requirement_id === requirement.id)
       const artistNames = matchingSpots
-        .map((spot) => artistMap.get(spot.artist_id))
+        .map((spot) => spot.artists)
         .filter((artist): artist is ArtistRow => Boolean(artist))
         .map((artist) => artist.stage_name ?? artist.full_name)
 

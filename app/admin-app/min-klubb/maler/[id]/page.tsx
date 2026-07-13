@@ -5,7 +5,6 @@ import { PosterTemplateEditor } from '@/components/admin/poster-template-editor'
 import { getClubAccess } from '@/lib/club-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { templateRowToSchema } from '@/lib/poster-template'
-import { renderPosterFromTemplate } from '@/lib/poster-render'
 import {
   confirmPosterTemplateAction,
   renderTemplatePreviewAction,
@@ -22,41 +21,19 @@ export default async function PosterTemplateEditorPage({
   if (access.clubIds.length === 0) notFound()
 
   const db = createAdminClient()
-  const { data: row } = await db
-    .from('poster_templates')
-    .select('*')
-    .eq('id', id)
-    .in('club_id', access.clubIds)
-    .maybeSingle()
+  const [{ data: row }, { data: defaultClubs }] = await Promise.all([
+    db
+      .from('poster_templates')
+      .select('*')
+      .eq('id', id)
+      .in('club_id', access.clubIds)
+      .maybeSingle(),
+    db.from('clubs').select('id').eq('default_poster_template_id', id),
+  ])
   if (!row) notFound()
 
   const schema = templateRowToSchema(row)
-
-  const { data: club } = await db
-    .from('clubs')
-    .select('default_poster_template_id')
-    .eq('id', row.club_id)
-    .single()
-  const isClubDefault = club?.default_poster_template_id === id
-
-  let initialPreview: string | null = null
-  try {
-    const buffer = await renderPosterFromTemplate({
-      schema,
-      title: 'Lørdagskveld på Latter',
-      dateText: 'lørdag 27. juni',
-      timeText: 'kl. 20:00',
-      venue: 'Latter, Aker Brygge — Oslo',
-      headliners: [{ name: 'Åsleik Engmark', profileImageUrl: null, roleName: 'Headliner' }],
-      supporting: [
-        { name: 'Øystein Bråthen', profileImageUrl: null, roleName: null },
-        { name: 'Mette Sørås', profileImageUrl: null, roleName: null },
-      ],
-    })
-    initialPreview = `data:image/png;base64,${buffer.toString('base64')}`
-  } catch {
-    initialPreview = null
-  }
+  const isClubDefault = (defaultClubs ?? []).some((club) => club.id === row.club_id)
 
   return (
     <div>
@@ -75,7 +52,7 @@ export default async function PosterTemplateEditorPage({
           plateUrl={row.plate_url ?? row.source_poster_url}
           status={row.status}
           isClubDefault={isClubDefault}
-          initialPreviewDataUrl={initialPreview}
+          initialPreviewDataUrl={null}
           saveAction={savePosterTemplateAction}
           confirmAction={confirmPosterTemplateAction}
           previewAction={renderTemplatePreviewAction}

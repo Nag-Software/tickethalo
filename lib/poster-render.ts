@@ -9,6 +9,7 @@ import {
 import type {
   NormBox,
   PosterTemplateSchema,
+  PosterTextAlign,
   PosterTextRole,
   PosterTextSlot,
 } from '@/lib/poster-template'
@@ -84,28 +85,11 @@ export async function renderPosterFromTemplate(input: RenderTemplateInput): Prom
   }
 
   // 2) Logos — real transparent PNG assets, never regenerated.
-  for (const logo of schema.logos) {
-    try {
-      const buf = await fetchImageBuffer(logo.assetUrl)
-      if (!buf) continue
-      const px = toPixelBox(logo.box, canvasW, canvasH)
-      const resized = await sharp(buf)
-        .resize({
-          width: px.width,
-          height: px.height,
-          fit: logo.fit === 'cover' ? 'cover' : 'inside',
-          withoutEnlargement: false,
-        })
-        .png()
-        .toBuffer()
-      const meta = await sharp(resized).metadata()
-      const w = meta.width ?? px.width
-      const offsetX = logo.align === 'left' ? 0 : logo.align === 'right' ? px.width - w : Math.round((px.width - w) / 2)
-      composites.push({ input: resized, left: px.left + Math.max(0, offsetX), top: px.top })
-    } catch (error) {
-      console.warn('[Poster] Skipped logo composite:', error)
-    }
-  }
+  composites.push(...await buildLogoComposites(
+    schema.logos.map((logo) => ({ box: logo.box, url: logo.assetUrl, fit: logo.fit, align: logo.align })),
+    canvasW,
+    canvasH,
+  ))
 
   // 3) Text slots — one canvas-sized SVG overlay rendered with real fonts.
   const textSvg = buildTextOverlaySvg({
@@ -128,6 +112,37 @@ export async function renderPosterFromTemplate(input: RenderTemplateInput): Prom
   }
 
   return base.composite(composites).png().toBuffer()
+}
+
+async function buildLogoComposites(
+  logos: Array<{ box: NormBox; url: string; fit: 'contain' | 'cover'; align: PosterTextAlign }>,
+  canvasW: number,
+  canvasH: number,
+): Promise<sharp.OverlayOptions[]> {
+  const composites: sharp.OverlayOptions[] = []
+  for (const logo of logos) {
+    try {
+      const buf = await fetchImageBuffer(logo.url)
+      if (!buf) continue
+      const px = toPixelBox(logo.box, canvasW, canvasH)
+      const resized = await sharp(buf)
+        .resize({
+          width: px.width,
+          height: px.height,
+          fit: logo.fit === 'cover' ? 'cover' : 'inside',
+          withoutEnlargement: false,
+        })
+        .png()
+        .toBuffer()
+      const meta = await sharp(resized).metadata()
+      const w = meta.width ?? px.width
+      const offsetX = logo.align === 'left' ? 0 : logo.align === 'right' ? px.width - w : Math.round((px.width - w) / 2)
+      composites.push({ input: resized, left: px.left + Math.max(0, offsetX), top: px.top })
+    } catch (error) {
+      console.warn('[Poster] Skipped logo composite:', error)
+    }
+  }
+  return composites
 }
 
 async function buildBasePlate(schema: PosterTemplateSchema, canvasW: number, canvasH: number) {
@@ -220,7 +235,9 @@ function resolveSlotContent(role: PosterTextRole, slot: PosterTextSlot, ctx: Slo
     case 'venue':
       return ctx.venue
     case 'footer':
-      return slot.text || ctx.footerText || 'BILLETTER · HUMOR.EVENTS'
+      // No default: a footer renders only when the template/kit carries real
+      // content. Brand text ("billetter på …", slogans) belongs to the plate.
+      return slot.text || ctx.footerText || ''
     case 'custom':
       return slot.text ?? ''
     case 'headliner': {
@@ -239,13 +256,13 @@ function resolveSlotContent(role: PosterTextRole, slot: PosterTextSlot, ctx: Slo
 
 type FittedText = { lines: string[]; fontSize: number; lineHeight: number }
 
-function fitText(text: string, boxW: number, boxH: number, maxLines: number, weight: number): FittedText | null {
+function fitText(text: string, boxW: number, boxH: number, maxLines: number, weight: number, maxFontSize?: number): FittedText | null {
   const compact = text.replace(/\s+/g, ' ').trim()
   if (!compact) return null
 
   // Heavier weights are a touch wider; tune the average glyph width factor.
   const widthFactor = weight >= 700 ? 0.6 : weight >= 600 ? 0.58 : 0.56
-  const maxSize = Math.max(12, Math.floor(boxH))
+  const maxSize = Math.max(12, Math.min(Math.floor(boxH), maxFontSize ?? Number.POSITIVE_INFINITY))
   const words = compact.split(' ')
 
   for (let size = maxSize; size >= 10; size -= 1) {
@@ -301,7 +318,10 @@ function buildTextOverlaySvg(input: {
     const px = toPixelBox(slot.box, canvasW, canvasH)
     const pad = Math.round(px.width * HORIZONTAL_PAD_RATIO)
     const innerW = Math.max(1, px.width - pad * 2)
-    const fitted = fitText(content, innerW, px.height, slot.maxLines, slot.fontWeight)
+    // A multi-line slot rendering fewer lines must not balloon to fill the
+    // whole box height — cap the font at the size a full slot would use.
+    const maxFontSize = Math.max(12, Math.floor(px.height / Math.max(1, slot.maxLines) / 1.14))
+    const fitted = fitText(content, innerW, px.height, slot.maxLines, slot.fontWeight, maxFontSize)
     if (!fitted) continue
 
     const blockHeight = fitted.lineHeight * fitted.lines.length

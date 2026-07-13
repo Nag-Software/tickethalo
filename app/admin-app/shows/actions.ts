@@ -325,15 +325,6 @@ async function cloneMarketingDesigns(
 export async function createShowAction(formData: FormData) {
   const clubId = await getDefaultClubIdForAdmin()
 
-  // New shows default to the deterministic template pipeline when the club has a
-  // default mal — that gives consistent, pixel-exact posters out of the box.
-  const db = createAdminClient()
-  const { data: club } = await db
-    .from('clubs')
-    .select('default_poster_template_id')
-    .eq('id', clubId)
-    .maybeSingle()
-
   const input = {
     title: formData.get('title') as string,
     slug: formData.get('slug') as string,
@@ -346,7 +337,8 @@ export async function createShowAction(formData: FormData) {
     ticket_price: formData.get('ticket_price') ? Math.round(Number(formData.get('ticket_price')) * 100) : undefined,
     currency: (formData.get('currency') as string) || 'NOK',
     club_id: clubId,
-    poster_mode: club?.default_poster_template_id ? ('template' as const) : undefined,
+    // Poster generation is AI-only (two-stage: AI artwork + deterministic brand layer).
+    poster_mode: 'ai_generated' as const,
   }
 
   const show = await createShow(input)
@@ -717,40 +709,13 @@ export async function sendFallbackOffersAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
-export async function updatePosterModeAction(formData: FormData) {
+export async function togglePosterUseReferenceAction(formData: FormData) {
   const showId = formData.get('show_id') as string
-  const mode = formData.get('poster_mode') as string
-  if (!showId || !['framed', 'ai_generated', 'template'].includes(mode)) throw new Error('Ugyldig poster-modus.')
+  const useReference = formData.get('use_reference') === 'true'
+  if (!showId) throw new Error('Mangler show-id.')
   await assertShowAccess(showId)
   const db = createAdminClient()
-  const { error } = await db.from('shows').update({ poster_mode: mode as 'framed' | 'ai_generated' | 'template' }).eq('id', showId)
-  if (error) throw new Error(error.message)
-  revalidatePath(`/admin-app/shows/${showId}?tab=marketing`)
-}
-
-export async function selectShowPosterTemplateAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const templateId = optionalText(formData.get('template_id'))
-  if (!showId) throw new Error('Mangler show-id.')
-  const show = await assertShowAccess(showId)
-  const db = createAdminClient()
-
-  if (templateId) {
-    // The template must belong to the same club as the show.
-    const { data: template } = await db
-      .from('poster_templates')
-      .select('id, club_id')
-      .eq('id', templateId)
-      .maybeSingle()
-    if (!template || template.club_id !== show.club_id) {
-      throw new Error('Malen tilhører ikke denne klubben.')
-    }
-  }
-
-  const { error } = await db
-    .from('shows')
-    .update({ selected_poster_template_id: templateId, poster_mode: 'template' })
-    .eq('id', showId)
+  const { error } = await db.from('shows').update({ poster_use_reference: useReference }).eq('id', showId)
   if (error) throw new Error(error.message)
   revalidatePath(`/admin-app/shows/${showId}?tab=marketing`)
 }
@@ -1323,7 +1288,7 @@ async function generatePosterForShow(
   const db = createAdminClient()
 
   const [{ data: show }, { data: spots }, posterContext] = await Promise.all([
-    db.from('shows').select('title, date, start_time, venue_name, venue_address, poster_mode').eq('id', showId).single(),
+    db.from('shows').select('title, date, start_time, venue_name, venue_address').eq('id', showId).single(),
     db.from('confirmed_spots').select('artist_id, show_requirement_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     loadResolvedPosterContext(showId),
   ])
@@ -1345,7 +1310,6 @@ async function generatePosterForShow(
   if (!show) throw new Error('Show not found')
 
   const posterUrl = await generateShowPoster(showId, {
-    mode: posterContext.mode,
     title: show.title,
     date: show.date,
     startTime: show.start_time,
@@ -1359,9 +1323,8 @@ async function generatePosterForShow(
         role_name: requirementById.get(spot.show_requirement_id) ?? null,
       }]
     }),
+    useReference: posterContext.useReference,
     aiReference: posterContext.aiReference,
-    frameBackground: posterContext.frameBackground,
-    posterTemplate: posterContext.posterTemplate,
     aiReferenceSource: posterContext.aiReferenceSource,
     changeRequest: options?.isRegeneration ? options.changeRequest : null,
     throwOnError: true,

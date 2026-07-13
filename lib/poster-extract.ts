@@ -92,8 +92,15 @@ async function dominantPalette(buffer: Buffer): Promise<string[]> {
  * DRAFT: clamped here and confirmed by the booker in the editor. Falls back to
  * defaultLayout() on any failure.
  */
-async function extractLayout(previewBuffer: Buffer): Promise<Omit<DraftTemplate, 'plateBuffer' | 'logoCrops'> & { logoZones: NormBox[] }> {
+export async function extractLayout(
+  previewBuffer: Buffer,
+  options?: { fallbackToDefault?: boolean },
+): Promise<Omit<DraftTemplate, 'plateBuffer' | 'logoCrops'> & { logoZones: NormBox[] }> {
   const fallback = { ...defaultLayout(), logoZones: [] as NormBox[] }
+  // Draft templates (min-klubb editor) want a usable fallback the booker can
+  // fix by hand; the brand-kit cache must NOT persist a silently degraded
+  // layout, so it opts out and handles the throw itself.
+  const fallbackToDefault = options?.fallbackToDefault ?? true
 
   try {
     const openai = getOpenAI()
@@ -125,8 +132,10 @@ async function extractLayout(previewBuffer: Buffer): Promise<Omit<DraftTemplate,
                 '}',
                 'Rules:',
                 '- role is one of: title, headliner, lineup, date, venue, footer.',
-                '- Include a textSlot for each distinct text area (title, comedian names, date/time, venue, footer/brand).',
-                '- photoFrames = areas where comedian portraits sit. One per portrait slot. shape is rect, rounded or circle.',
+                '- Include a textSlot ONLY for text that changes per event: show title, comedian names, date/time, venue.',
+                '- Do NOT create textSlots for static brand text (club name, slogans, taglines, website/URL lines, "presenterer" lines) — that text stays in the background and must be left alone.',
+                '- photoFrames = areas where comedian portraits sit. One per portrait slot, ALL of them. shape is rect, rounded or circle.',
+                '- If portraits have name labels under/over them, set the frame box to cover photo + label area.',
                 '- logoZones = club/sponsor logos or brand marks (NOT comedian photos, NOT text).',
                 '- color = approximate hex of the text in that slot.',
                 '- Keep every box fully inside 0..1 and non-overlapping where possible.',
@@ -143,7 +152,10 @@ async function extractLayout(previewBuffer: Buffer): Promise<Omit<DraftTemplate,
     })
 
     const json = extractJsonObject(response.output_text ?? '')
-    if (!json) return fallback
+    if (!json) {
+      if (!fallbackToDefault) throw new Error('Layout extraction returned no JSON')
+      return fallback
+    }
     const parsed = JSON.parse(json) as Record<string, unknown>
 
     const textSlots = Array.isArray(parsed.textSlots) ? parsed.textSlots.map(normalizeTextSlot) : []
@@ -153,7 +165,10 @@ async function extractLayout(previewBuffer: Buffer): Promise<Omit<DraftTemplate,
       ? parsed.palette.filter((c): c is string => typeof c === 'string').slice(0, 6)
       : []
 
-    if (textSlots.length === 0 && photoFrames.length === 0) return fallback
+    if (textSlots.length === 0 && photoFrames.length === 0) {
+      if (!fallbackToDefault) throw new Error('Layout extraction found no slots or frames')
+      return fallback
+    }
 
     return {
       canvasWidth: DEFAULT_CANVAS_WIDTH,
@@ -164,12 +179,51 @@ async function extractLayout(previewBuffer: Buffer): Promise<Omit<DraftTemplate,
       logoZones,
     }
   } catch (error) {
+    if (!fallbackToDefault) throw error
     console.warn('[Poster] Template layout extraction failed, using default layout:', error)
     return fallback
   }
 }
 
-async function cropLogos(originalBuffer: Buffer, logoZones: NormBox[]): Promise<LogoCrop[]> {
+/**
+ * Layout boxes are measured on the reference in its ORIGINAL aspect ratio,
+ * but the plate and every render happen on a cover-cropped canvas (default
+ * 2:3). For a non-2:3 reference the cover crop shifts everything — this
+ * returns a mapper from original-frame normalized boxes to canvas-frame
+ * normalized boxes (null when a box falls entirely outside the crop).
+ */
+export function coverCropBoxMapper(
+  originalW: number,
+  originalH: number,
+  canvasW: number,
+  canvasH: number,
+): (box: NormBox) => NormBox | null {
+  const scale = Math.max(canvasW / originalW, canvasH / originalH)
+  const cropLeft = (originalW * scale - canvasW) / 2
+  const cropTop = (originalH * scale - canvasH) / 2
+
+  return (box: NormBox) => {
+    const left = box.x * originalW * scale - cropLeft
+    const top = box.y * originalH * scale - cropTop
+    const width = box.width * originalW * scale
+    const height = box.height * originalH * scale
+
+    const clampedLeft = Math.max(0, left)
+    const clampedTop = Math.max(0, top)
+    const clampedRight = Math.min(canvasW, left + width)
+    const clampedBottom = Math.min(canvasH, top + height)
+    if (clampedRight - clampedLeft < 4 || clampedBottom - clampedTop < 4) return null
+
+    return {
+      x: clampedLeft / canvasW,
+      y: clampedTop / canvasH,
+      width: (clampedRight - clampedLeft) / canvasW,
+      height: (clampedBottom - clampedTop) / canvasH,
+    }
+  }
+}
+
+export async function cropLogos(originalBuffer: Buffer, logoZones: NormBox[]): Promise<LogoCrop[]> {
   if (logoZones.length === 0) return []
   const crops: LogoCrop[] = []
   try {
@@ -202,7 +256,7 @@ async function cropLogos(originalBuffer: Buffer, logoZones: NormBox[]): Promise<
  * Tries gpt-image-1.5 inpaint; on any failure falls back to a deterministic
  * sharp blur over the photo + text zones so a usable plate ALWAYS exists.
  */
-async function buildPlate(
+export async function buildPlate(
   originalBuffer: Buffer,
   zones: NormBox[],
   canvasW: number,
@@ -224,10 +278,10 @@ async function buildPlate(
       image: file,
       prompt: [
         'Produce a CLEAN BACKGROUND PLATE from this poster.',
-        'Remove ALL people / portrait photos and ALL event text (titles, comedian names, dates, times, venue).',
-        'Reconstruct the background where they were, seamlessly.',
-        'KEEP the overall design, color palette, textures, decorative graphics and any club/sponsor logos exactly as they are.',
-        'The result is an empty backdrop with no faces and no event text, ready for new content to be placed on top.',
+        'Remove ALL people / portrait photos and ALL event-specific text (show title, comedian names, dates, times, venue).',
+        'Reconstruct the background where they were, seamlessly — including any empty photo frames/borders, which must stay exactly where they are.',
+        'KEEP everything that is part of the brand: the overall design, color palette, textures, decorative graphics, club/sponsor logos, AND static brand text (club name, slogans, taglines, website/URL lines) exactly as they are.',
+        'The result is the same poster design with empty photo slots and no event text, ready for a new lineup to be placed on top.',
       ].join(' '),
       n: 1,
       size: canvasW <= canvasH ? '1024x1536' : '1536x1024',
@@ -279,38 +333,61 @@ async function blurZonesFallback(base: Buffer, zones: NormBox[], canvasW: number
  * Full extraction: read the uploaded reference poster and produce a draft
  * template (layout + clean plate + cropped logos) for the booker to confirm.
  */
-export async function buildDraftTemplate(originalBuffer: Buffer): Promise<DraftTemplate> {
+export async function buildDraftTemplate(
+  originalBuffer: Buffer,
+  options?: { strictLayout?: boolean },
+): Promise<DraftTemplate> {
   const previewBuffer = await sharp(originalBuffer, { animated: false })
     .rotate()
     .resize({ width: 768, height: 1152, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 82 })
     .toBuffer()
 
-  const [layout, palette] = await Promise.all([
-    extractLayout(previewBuffer),
+  const [layout, palette, meta] = await Promise.all([
+    extractLayout(previewBuffer, { fallbackToDefault: !options?.strictLayout }),
     dominantPalette(previewBuffer),
+    sharp(originalBuffer).rotate().metadata(),
   ])
 
   const canvasW = layout.canvasWidth
   const canvasH = layout.canvasHeight
 
-  // Zones to clean from the plate = photo frames + text slots.
+  // Boxes were measured on the original aspect ratio; everything downstream
+  // works on the cover-cropped canvas — remap before use.
+  const mapBox = coverCropBoxMapper(meta.width ?? canvasW, meta.height ?? canvasH, canvasW, canvasH)
+  const textSlots = layout.textSlots
+    .flatMap((slot) => {
+      const box = mapBox(slot.box)
+      return box ? [{ ...slot, box }] : []
+    })
+  const photoFrames = layout.photoFrames
+    .flatMap((frame) => {
+      const box = mapBox(frame.box)
+      return box ? [{ ...frame, box }] : []
+    })
+
+  // Zones to clean from the plate = photo frames + text slots (canvas frame).
   const zones: NormBox[] = [
-    ...layout.photoFrames.map(f => f.box),
-    ...layout.textSlots.map(s => s.box),
+    ...photoFrames.map(f => f.box),
+    ...textSlots.map(s => s.box),
   ]
 
-  const [logoCrops, plateBuffer] = await Promise.all([
+  const [rawLogoCrops, plateBuffer] = await Promise.all([
+    // Crop logo pixels in the ORIGINAL frame; store their canvas-frame boxes.
     cropLogos(originalBuffer, layout.logoZones),
     buildPlate(originalBuffer, zones, canvasW, canvasH),
   ])
+  const logoCrops = rawLogoCrops.flatMap((crop) => {
+    const box = mapBox(crop.box)
+    return box ? [{ ...crop, box }] : []
+  })
 
   return {
     canvasWidth: canvasW,
     canvasHeight: canvasH,
     palette: layout.palette.length ? layout.palette : palette,
-    textSlots: layout.textSlots,
-    photoFrames: layout.photoFrames,
+    textSlots,
+    photoFrames,
     logoCrops,
     plateBuffer,
   }

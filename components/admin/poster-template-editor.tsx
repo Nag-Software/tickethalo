@@ -77,6 +77,13 @@ export function PosterTemplateEditor(props: Props) {
     }
   }, [props])
 
+  // Uten en server-rendret forhåndsvisning henter vi den ved mount, slik at
+  // editoren kan vises umiddelbart mens plakaten rendres i bakgrunnen.
+  React.useEffect(() => {
+    if (props.initialPreviewDataUrl === null) void refreshPreview(props.initialSchema)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const commitSchema = React.useCallback((next: PosterTemplateSchema) => {
     setSchema(next)
     if (previewTimer.current) clearTimeout(previewTimer.current)

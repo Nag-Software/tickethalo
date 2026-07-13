@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import sharp from 'sharp'
 import { POSTER_FONT_FAMILY } from '@/lib/poster-fonts'
 
@@ -23,9 +21,6 @@ type PosterLabelLayout = {
   fontSize: number
   lineHeight: number
 }
-
-let cachedPosterFrameOverlay: Buffer | null = null
-let frameOverlayLoadAttempted = false
 
 export function escapeSvgText(value: string) {
   return value
@@ -117,21 +112,15 @@ export async function buildPosterFaceTile(input: {
       .toBuffer()
     : await createPosterFacePlaceholder(photoAreaWidth, photoAreaHeight, safeName)
 
-  const frameOverlay = await loadPosterFrameOverlay()
-
+  // No decorative frame overlay: the template/kit plate carries the
+  // reference's own frame graphics — painting public/frame.png on top made
+  // every face wear a generic ornate frame that isn't part of the club brand.
   const baseSvg = Buffer.from(`
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       ${textShadowSvg}
       ${textLinesSvg}
     </svg>
   `)
-
-  const frameComposite = frameOverlay
-    ? await sharp(frameOverlay)
-      .resize({ width, height: frameAreaHeight, fit: 'fill' })
-      .png()
-      .toBuffer()
-    : null
 
   return sharp({
     create: {
@@ -144,33 +133,9 @@ export async function buildPosterFaceTile(input: {
     .composite([
       { input: baseSvg, left: 0, top: 0 },
       { input: photo, left: photoAreaX, top: photoAreaY },
-      ...(frameComposite ? [{ input: frameComposite, left: 0, top: 0 }] : []),
     ])
     .png()
     .toBuffer()
-}
-
-async function loadPosterFrameOverlay(): Promise<Buffer | null> {
-  if (cachedPosterFrameOverlay) return cachedPosterFrameOverlay
-  if (frameOverlayLoadAttempted) return null
-
-  frameOverlayLoadAttempted = true
-
-  try {
-    const framePath = path.join(process.cwd(), 'public', 'frame.png')
-    const rawBuffer = await readFile(framePath)
-    const normalized = await sharp(rawBuffer, { animated: false })
-      .rotate()
-      .toColorspace('srgb')
-      .png()
-      .toBuffer()
-
-    cachedPosterFrameOverlay = normalized
-    return normalized
-  } catch (error) {
-    console.warn('[Poster] Could not load /public/frame.png, using fallback frame style:', error)
-    return null
-  }
 }
 
 async function createPosterFacePlaceholder(width: number, height: number, name: string): Promise<Buffer> {

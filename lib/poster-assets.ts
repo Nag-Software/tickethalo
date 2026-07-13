@@ -1,6 +1,10 @@
-import type { MarketingDesignKind, PosterTemplate, ShowMarketingDesign } from '@/types/database'
+import type { MarketingDesignKind, ShowMarketingDesign } from '@/types/database'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+/**
+ * @deprecated Poster generation is AI-only; the per-show mode picker is gone.
+ * Kept temporarily so app-level code referencing the old modes still compiles.
+ */
 export type PosterMode = 'ai_generated' | 'framed' | 'template'
 
 export type PosterDesignTemplate = {
@@ -13,28 +17,21 @@ export type PosterDesignTemplate = {
 }
 
 export type PosterContextInput = {
-  poster_mode?: PosterMode | null
+  poster_use_reference?: boolean | null
   selected_ai_reference_id?: string | null
-  selected_frame_background_id?: string | null
   selected_marketing_design_id?: string | null
-  selected_poster_template_id?: string | null
   club_id?: string | null
 }
 
 export type ClubPosterDefaults = {
   default_ai_poster_reference_url?: string | null
-  default_frame_background_url?: string | null
-  default_poster_template_id?: string | null
 }
 
 export type ResolvedPosterContext = {
-  mode: PosterMode
+  /** «Bruk referanseplakat» — the poster is AI-edited on top of the reference when true. */
+  useReference: boolean
   aiReference: PosterDesignTemplate | null
-  frameBackground: PosterDesignTemplate | null
   aiReferenceSource: 'show' | 'club' | null
-  frameBackgroundSource: 'show' | 'club' | null
-  posterTemplate: PosterTemplate | null
-  posterTemplateSource: 'show' | 'club' | null
 }
 
 export function designRowToTemplate(
@@ -92,33 +89,20 @@ export function resolvePosterContext(input: {
   show: PosterContextInput
   club?: ClubPosterDefaults | null
   designs?: ShowMarketingDesign[]
-  posterTemplate?: PosterTemplate | null
-  clubPosterTemplate?: PosterTemplate | null
 }): ResolvedPosterContext {
-  const mode: PosterMode = input.show.poster_mode ?? 'ai_generated'
   const designs = input.designs ?? []
   const club = input.club ?? null
+  const useReference = input.show.poster_use_reference ?? true
 
-  const showTemplate = input.posterTemplate
-    && input.posterTemplate.id === input.show.selected_poster_template_id
-    ? input.posterTemplate
-    : null
-  const posterTemplate = showTemplate ?? input.clubPosterTemplate ?? null
-  const posterTemplateSource: 'show' | 'club' | null = showTemplate
-    ? 'show'
-    : input.clubPosterTemplate
-      ? 'club'
-      : null
-
+  // Every candidate must actually BE an ai_reference — the legacy
+  // selected_marketing_design_id can point at any design kind, and a
+  // frame-background there must not silently become the poster reference.
+  const byAiId = findDesignById(designs, input.show.selected_ai_reference_id)
+  const byLegacyId = findDesignById(designs, input.show.selected_marketing_design_id)
   const showAiDesign =
-    findDesignById(designs, input.show.selected_ai_reference_id)
-    ?? findDesignById(designs, input.show.selected_marketing_design_id && mode === 'ai_generated' ? input.show.selected_marketing_design_id : null)
+    (byAiId?.design_kind === 'ai_reference' ? byAiId : null)
+    ?? (byLegacyId?.design_kind === 'ai_reference' ? byLegacyId : null)
     ?? findSelectedDesign(designs, input.show.selected_ai_reference_id, 'ai_reference')
-
-  const showFrameDesign =
-    findDesignById(designs, input.show.selected_frame_background_id)
-    ?? findDesignById(designs, input.show.selected_marketing_design_id && mode === 'framed' ? input.show.selected_marketing_design_id : null)
-    ?? findSelectedDesign(designs, input.show.selected_frame_background_id, 'frame_background')
 
   const aiReference = showAiDesign
     ? designRowToTemplate(showAiDesign)
@@ -126,29 +110,21 @@ export function resolvePosterContext(input: {
       ? templateFromClubUrl(club.default_ai_poster_reference_url, 'Klubb-referanseplakat')
       : null
 
-  const frameBackground = showFrameDesign
-    ? designRowToTemplate(showFrameDesign)
-    : club?.default_frame_background_url
-      ? templateFromClubUrl(club.default_frame_background_url, 'Klubb-bakgrunn')
-      : null
+  const aiReferenceSource: 'show' | 'club' | null = showAiDesign ? 'show' : aiReference ? 'club' : null
 
   return {
-    mode,
+    useReference,
     aiReference,
-    frameBackground,
-    aiReferenceSource: showAiDesign ? 'show' : aiReference ? 'club' : null,
-    frameBackgroundSource: showFrameDesign ? 'show' : frameBackground ? 'club' : null,
-    posterTemplate,
-    posterTemplateSource,
+    aiReferenceSource,
   }
 }
 
-export async function loadResolvedPosterContext(showId: string) {
+export async function loadResolvedPosterContext(showId: string): Promise<ResolvedPosterContext> {
   const db = createAdminClient()
 
   const { data: show, error: showError } = await db
     .from('shows')
-    .select('poster_mode, club_id, selected_ai_reference_id, selected_frame_background_id, selected_marketing_design_id, selected_poster_template_id')
+    .select('poster_use_reference, club_id, selected_ai_reference_id, selected_marketing_design_id')
     .eq('id', showId)
     .single()
 
@@ -161,27 +137,15 @@ export async function loadResolvedPosterContext(showId: string) {
     show.club_id
       ? db
         .from('clubs')
-        .select('default_ai_poster_reference_url, default_frame_background_url, default_poster_template_id')
+        .select('default_ai_poster_reference_url')
         .eq('id', show.club_id)
         .single()
       : Promise.resolve({ data: null }),
   ])
 
-  // Resolve the active template: a show-level pick wins over the club default.
-  const showTemplateId = show.selected_poster_template_id ?? null
-  const clubTemplateId = club?.default_poster_template_id ?? null
-  const templateIds = [...new Set([showTemplateId, clubTemplateId].filter((id): id is string => Boolean(id)))]
-  const templateRows = templateIds.length > 0
-    ? (await db.from('poster_templates').select('*').in('id', templateIds)).data ?? []
-    : []
-  const posterTemplate = showTemplateId ? templateRows.find(t => t.id === showTemplateId) ?? null : null
-  const clubPosterTemplate = clubTemplateId ? templateRows.find(t => t.id === clubTemplateId) ?? null : null
-
   return resolvePosterContext({
     show,
     club,
     designs: designs ?? [],
-    posterTemplate,
-    clubPosterTemplate,
   })
 }

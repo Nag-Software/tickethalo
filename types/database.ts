@@ -46,6 +46,8 @@ export type Club = {
   default_ai_poster_reference_url: string | null
   default_frame_background_url: string | null
   default_poster_template_id: string | null
+  /** Cached PosterBrandKit jsonb derived from the club's default reference poster (see lib/poster-brand-kit.ts). */
+  default_poster_brand_kit: unknown | null
   created_at: string
   updated_at: string
 }
@@ -119,6 +121,7 @@ export type Show = {
   selected_frame_background_id: string | null
   selected_poster_template_id: string | null
   poster_mode: PosterMode
+  poster_use_reference: boolean
   status: ShowStatus
   stripe_product_id: string | null
   stripe_price_id: string | null
@@ -140,6 +143,8 @@ export type ShowMarketingDesign = {
   file_type: MarketingDesignFileType
   file_size: number | null
   design_kind: MarketingDesignKind
+  /** Cached PosterBrandKit jsonb derived from this reference (see lib/poster-brand-kit.ts). */
+  brand_kit: unknown | null
   created_at: string
   updated_at: string
 }
@@ -423,6 +428,7 @@ export type Database = {
           selected_frame_background_id?: string | null
           selected_poster_template_id?: string | null
           poster_mode?: PosterMode
+          poster_use_reference?: boolean
           status?: ShowStatus
           stripe_product_id?: string | null
           stripe_price_id?: string | null
@@ -448,6 +454,7 @@ export type Database = {
           file_type: MarketingDesignFileType
           file_size?: number | null
           design_kind?: MarketingDesignKind
+          brand_kit?: unknown | null
           created_at?: string
           updated_at?: string
         }
@@ -663,6 +670,7 @@ export type Database = {
           default_ai_poster_reference_url?: string | null
           default_frame_background_url?: string | null
           default_poster_template_id?: string | null
+          default_poster_brand_kit?: unknown | null
           created_at?: string
           updated_at?: string
         }

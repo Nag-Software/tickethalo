@@ -1,4 +1,11 @@
-'use server'
+// NOT a 'use server' module — deliberately. approveArtist performs a
+// service-role write (artists.status='approved' + runAutomaticBookingForOpenShows
+// → offer emails, poster generation) and must never be a directly invokable
+// server-action endpoint. Entry points carry their own auth:
+//  - app/admin-app/artists/[id]/actions.ts approveArtistAction —
+//    assertArtistAdminAccess() before delegating
+//  - registerArtist/completeArtistRegistration are public by design (self-signup),
+//    called from app/signup/submit/route.ts and app/admin-app/artists/new/actions.ts
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendArtistRegisteredEmail } from '@/lib/email/mailer'

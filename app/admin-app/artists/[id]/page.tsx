@@ -19,11 +19,12 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
   const { id } = await params
   const db = createAdminClient()
 
-  const { data: artist } = await db.from('artists').select('*').eq('id', id).single()
+  const [{ data: artist }, clubId] = await Promise.all([
+    db.from('artists').select('*').eq('id', id).single(),
+    getDefaultClubIdForAdmin(),
+  ])
 
   if (!artist) notFound()
-
-  const clubId = await getDefaultClubIdForAdmin()
   const [{ data: clubRecord }, { data: clubScore }] = await Promise.all([
     db.from('clubs').select('id, name').eq('id', clubId).single(),
     db.from('artist_club_scores').select('*').eq('artist_id', id).eq('club_id', clubId).maybeSingle(),

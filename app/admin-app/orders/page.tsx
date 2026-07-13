@@ -1,9 +1,11 @@
+import { Suspense } from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { getClubAccess } from '@/lib/club-auth'
 import { stripe } from '@/lib/stripe'
 import Stripe from 'stripe'
 import { CircleHelp, CreditCard } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 
 type PaymentMethodInfo = {
   key: 'vipps' | 'klarna' | 'card' | 'unknown'
@@ -119,19 +121,18 @@ function PaymentMethodBadge({ method }: { method: PaymentMethodInfo }) {
   )
 }
 
-export default async function OrdersPage() {
+async function loadOrders() {
   const db = createAdminClient()
   const clubAccess = await getClubAccess()
 
-  // Scope to club's shows
-  let showIds: string[] = []
-  if (clubAccess.clubIds.length > 0) {
-    const { data: clubShows } = await db
-      .from('shows')
-      .select('id')
-      .in('club_id', clubAccess.clubIds)
-    showIds = (clubShows ?? []).map((s) => s.id)
-  }
+  // Scope to club's shows (fetch title in same query so we skip a follow-up)
+  const { data: clubShows } = clubAccess.clubIds.length
+    ? await db
+        .from('shows')
+        .select('id, title')
+        .in('club_id', clubAccess.clubIds)
+    : { data: [] as Array<{ id: string; title: string }> }
+  const showIds = (clubShows ?? []).map((s) => s.id)
 
   const { data: orders } = showIds.length
     ? await db
@@ -142,16 +143,12 @@ export default async function OrdersPage() {
         .limit(100)
     : { data: [] }
 
-  const orderShowIds = [...new Set((orders ?? []).filter(o => o.show_id).map(o => o.show_id as string))]
   const orderIds = (orders ?? []).map((order) => order.id)
   const stripeSessionIds = [...new Set((orders ?? []).flatMap((order) => order.stripe_checkout_session_id ? [order.stripe_checkout_session_id] : []))]
-  const { data: showRows } = orderShowIds.length
-    ? await db.from('shows').select('id, title').in('id', orderShowIds)
-    : { data: [] as Array<{ id: string; title: string }> }
   const { data: ticketRows } = orderIds.length
     ? await db.from('tickets').select('order_id, status').in('order_id', orderIds)
     : { data: [] as Array<{ order_id: string; status: string }> }
-  const showMap = Object.fromEntries((showRows ?? []).map(s => [s.id, s]))
+  const showMap = Object.fromEntries((clubShows ?? []).map(s => [s.id, s]))
 
   const ticketSummaryMap = (ticketRows ?? []).reduce<Record<string, { total: number; checkedIn: number }>>((accumulator, ticket) => {
     const current = accumulator[ticket.order_id] ?? { total: 0, checkedIn: 0 }
@@ -161,77 +158,105 @@ export default async function OrdersPage() {
     return accumulator
   }, {})
 
+  return { orders: orders ?? [], showMap, ticketSummaryMap, stripeSessionIds }
+}
+
+type OrdersData = Awaited<ReturnType<typeof loadOrders>>
+
+function OrdersTableSkeleton() {
+  return (
+    <div className="rounded-lg border p-4 space-y-3">
+      <Skeleton className="h-8 w-full rounded-md" />
+      {Array.from({ length: 6 }).map((_, index) => (
+        <Skeleton key={index} className="h-12 w-full rounded-md" />
+      ))}
+    </div>
+  )
+}
+
+async function OrdersTable({ data }: { data: OrdersData }) {
+  const { orders, showMap, ticketSummaryMap, stripeSessionIds } = data
   const paymentMethodMap = await getPaymentMethodMap(stripeSessionIds)
 
   return (
-    <div>
-      <AdminHeader title="Ordere" description={`${orders?.length ?? 0} ordre`} />
-      <div className="p-6">
-        <div className="rounded-lg border overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/30 border-b text-xs text-muted-foreground">
-                <th className="text-left px-4 py-2.5 font-medium">Kjøper</th>
-                <th className="text-left px-4 py-2.5 font-medium">Show</th>
-                <th className="text-left px-4 py-2.5 font-medium">Beløp</th>
-                <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                <th className="text-left px-4 py-2.5 font-medium">Betalingsmåte</th>
-                <th className="text-left px-4 py-2.5 font-medium">Tidspunkt</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(orders ?? []).map((o) => {
-                const show = o.show_id ? showMap[o.show_id] : null
-                const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }
-                const isCheckedIn = ticketSummary.total > 0 && ticketSummary.checkedIn === ticketSummary.total
-                const paymentMethod = o.stripe_checkout_session_id
-                  ? paymentMethodMap[o.stripe_checkout_session_id] ?? unknownPaymentMethod
-                  : unknownPaymentMethod
+    <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/30 border-b text-xs text-muted-foreground">
+            <th className="text-left px-4 py-2.5 font-medium">Kjøper</th>
+            <th className="text-left px-4 py-2.5 font-medium">Show</th>
+            <th className="text-left px-4 py-2.5 font-medium">Beløp</th>
+            <th className="text-left px-4 py-2.5 font-medium">Status</th>
+            <th className="text-left px-4 py-2.5 font-medium">Betalingsmåte</th>
+            <th className="text-left px-4 py-2.5 font-medium">Tidspunkt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => {
+            const show = o.show_id ? showMap[o.show_id] : null
+            const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }
+            const isCheckedIn = ticketSummary.total > 0 && ticketSummary.checkedIn === ticketSummary.total
+            const paymentMethod = o.stripe_checkout_session_id
+              ? paymentMethodMap[o.stripe_checkout_session_id] ?? unknownPaymentMethod
+              : unknownPaymentMethod
 
-                return (
-                  <tr key={o.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{o.buyer_name ?? '—'}</div>
-                      <div className="text-xs text-muted-foreground">{o.buyer_email}</div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{show?.title ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">
-                        {o.amount_total
-                          ? new Intl.NumberFormat('nb-NO', {
-                              style: 'currency',
-                              currency: (o.currency ?? 'NOK').toUpperCase(),
-                              maximumFractionDigits: 0,
-                            }).format(o.amount_total / 100)
-                          : '—'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} stk</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[o.status] ?? 'bg-zinc-100 text-zinc-600'}`}>
-                          {statusLabels[o.status] ?? o.status}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isCheckedIn ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'}`}>
-                          {isCheckedIn ? 'Innsjekket' : 'Ikke sjekket inn'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <PaymentMethodBadge method={paymentMethod} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(o.created_at).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {!orders?.length && (
-            <p className="text-center py-12 text-muted-foreground text-sm">Ingen ordere ennå.</p>
-          )}
-        </div>
+            return (
+              <tr key={o.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                <td className="px-4 py-3">
+                  <div className="font-medium">{o.buyer_name ?? '—'}</div>
+                  <div className="text-xs text-muted-foreground">{o.buyer_email}</div>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{show?.title ?? '—'}</td>
+                <td className="px-4 py-3">
+                  <div className="font-medium">
+                    {o.amount_total
+                      ? new Intl.NumberFormat('nb-NO', {
+                          style: 'currency',
+                          currency: (o.currency ?? 'NOK').toUpperCase(),
+                          maximumFractionDigits: 0,
+                        }).format(o.amount_total / 100)
+                      : '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} stk</div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[o.status] ?? 'bg-zinc-100 text-zinc-600'}`}>
+                      {statusLabels[o.status] ?? o.status}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isCheckedIn ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                      {isCheckedIn ? 'Innsjekket' : 'Ikke sjekket inn'}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <PaymentMethodBadge method={paymentMethod} />
+                </td>
+                <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                  {new Date(o.created_at).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {!orders.length && (
+        <p className="text-center py-12 text-muted-foreground text-sm">Ingen ordere ennå.</p>
+      )}
+    </div>
+  )
+}
+
+export default async function OrdersPage() {
+  const data = await loadOrders()
+
+  return (
+    <div>
+      <AdminHeader title="Ordere" description={`${data.orders.length} ordre`} />
+      <div className="p-6">
+        <Suspense fallback={<OrdersTableSkeleton />}>
+          <OrdersTable data={data} />
+        </Suspense>
       </div>
     </div>
   )

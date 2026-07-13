@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    // Client router cache for dynamic pages (30s) — server actions still clear it immediately.
+    staleTimes: {
+      dynamic: 30,
+    },
     serverActions: {
       bodySizeLimit: "50mb",
     },
