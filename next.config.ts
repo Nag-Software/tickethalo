@@ -27,9 +27,12 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "50mb",
     },
+    // Gjelder kun `npm run dev:webpack`. Turbopack ignorerer dem.
+    // `preloadEntriesOnStart` er fjernet: Turbopack avviser den med ⨯ og
+    // skriver en advarsel ved hver oppstart.
     webpackMemoryOptimizations: true,
-    preloadEntriesOnStart: false,
   },
+  // Brukes bare av dev:webpack-fallbacken.
   webpack(config, { dev }) {
     if (dev) {
       // Limit parallel module compilation to reduce peak memory during rebuilds
