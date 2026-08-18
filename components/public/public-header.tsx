@@ -51,8 +51,8 @@ export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boo
         className={cn(
           'fixed inset-x-0 top-0 z-[1999] h-[66px] backdrop-blur-md transition-opacity duration-300',
           tone === 'light'
-            ? 'border-b border-black/10 bg-white/80'
-            : 'border-b border-white/10 bg-[#08070a]/80',
+            ? 'border-b border-[#2e0c01]/10 bg-[#fff4ec]/85'
+            : 'border-b border-[#fff4ec]/10 bg-[#1b0800]/85',
           stuck ? 'opacity-100' : 'pointer-events-none opacity-0'
         )}
       />
@@ -81,7 +81,7 @@ export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boo
             className="relative overflow-hidden bg-white text-black h-[34px] px-3 hidden md:flex items-center text-[11px] font-medium uppercase border-l-0 border border-black leading-none group"
           >
             <span className="relative z-10">{link.label}</span>
-            <span className="absolute inset-0 bg-[#FA76FF] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+            <span className="absolute inset-0 bg-[#ff5b24] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
           </Link>
         ))}
 
@@ -96,7 +96,7 @@ export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boo
             <span className="block w-[14px] h-[1.5px] bg-black" />
             <span className="block w-[14px] h-[1.5px] bg-black" />
           </span>
-          <span className="absolute inset-0 bg-[#FA76FF] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+          <span className="absolute inset-0 bg-[#ff5b24] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
         </button>
       </nav>
 
@@ -130,7 +130,7 @@ export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boo
                 <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </span>
-            <span className="absolute inset-0 bg-[#FA76FF] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+            <span className="absolute inset-0 bg-[#ff5b24] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
           </button>
         </div>
 
@@ -152,7 +152,7 @@ export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boo
                   <path d="M4 10H16M16 10L10 4M16 10L10 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <span className="absolute inset-0 bg-[#FA76FF] translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
+              <span className="absolute inset-0 bg-[#ff5b24] translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
             </Link>
           ))}
         </div>

@@ -66,41 +66,29 @@ export default async function Page() {
         }
       />
 
-      {/* Hero — kortet ned så første showrad bryter skjermkanten */}
+      {/* Hero — kortet ned så første showrad bryter skjermkanten.
+          Én uthevet flate i stedet for fire sammenskrudde bokser: byen
+          er det eneste som er farget, og det er også det eneste som beveger seg. */}
       <section className="px-4 pb-10 pt-28 md:px-8 md:pb-12 md:pt-32 lg:pt-36">
         <div className="mx-auto max-w-4xl text-center">
-          <h1 className="mb-5 inline-flex flex-col items-center text-3xl font-medium sm:text-4xl md:text-5xl">
-            <div className="flex items-center">
-              <span
-                className="animate-fade-in border border-[var(--ev-text)] px-3 py-2 md:px-6 md:py-4"
-                style={{ animationDelay: '0.05s', animationFillMode: 'both' }}
-              >
-                Utforsk
-              </span>
-              <span
-                className="animate-fade-in rounded-[40px] border border-l-0 border-[var(--ev-text)] bg-[#ff6bff] px-3 py-2 text-[#0b0a0d] md:px-6 md:py-4"
-                style={{ animationDelay: '0.12s', animationFillMode: 'both' }}
-              >
-                stand-up
-              </span>
-            </div>
-            <div className="-mt-px flex items-center">
-              <span
-                className="animate-fade-in border border-[var(--ev-text)] px-3 py-2 md:px-6 md:py-4"
-                style={{ animationDelay: '0.19s', animationFillMode: 'both' }}
-              >
-                i
-              </span>
-              {/* City ticker — overflow:hidden klipper drop-in/out-animasjonen */}
-              <span
-                className="animate-fade-in relative overflow-hidden border border-l-0 border-[var(--ev-text)] px-3 py-2 md:px-6 md:py-4"
-                style={{ animationDelay: '0.26s', animationFillMode: 'both' }}
-              >
-                {/* Usynlig lengste bynavn låser boksbredden */}
-                <span aria-hidden className="invisible">Stavanger</span>
+          <h1 className="mb-5 text-balance text-[2.5rem] font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl md:text-7xl">
+            <span
+              className="animate-fade-in block"
+              style={{ animationDelay: '0.05s', animationFillMode: 'both' }}
+            >
+              Utforsk stand-up
+            </span>
+            <span
+              className="animate-fade-in mt-1 flex items-baseline justify-center gap-[0.22em] leading-[1.3] sm:mt-2"
+              style={{ animationDelay: '0.14s', animationFillMode: 'both' }}
+            >
+              <span>i</span>
+              {/* Ingen overflow-hidden her — CityTicker klipper selv, og et klipp
+                  på dette nivået ville også begrenset breddemålingen inni. */}
+              <span className="rounded-full bg-[var(--ev-accent-fill)] px-[0.3em] pb-[0.1em] pt-[0.04em] text-[var(--ev-accent-ink)]">
                 <CityTicker />
               </span>
-            </div>
+            </span>
           </h1>
 
           {status && (
