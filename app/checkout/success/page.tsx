@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { CheckCircle2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { stripe } from '@/lib/stripe'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
 import { PublicHeader } from '@/components/public/public-header'
+import { Footer } from '@/components/Footer'
 
 export const metadata = { title: 'Takk for kjøpet — humor.events' }
 
@@ -16,37 +16,89 @@ export default async function CheckoutSuccessPage({
   const session = session_id ? await getSession(session_id) : null
   const completion = session ? await finalizeCheckoutSession(session) : null
 
+  const emailFailed = completion?.result === 'created' && !completion.emailSent
+  const status = completion?.result === 'created'
+    ? completion.emailSent
+      ? 'Billetten er sendt på e-post.'
+      : 'Betalingen er godkjent, men billetten kunne ikke sendes automatisk. Ta vare på billettkoden under — den slipper deg inn.'
+    : completion?.result === 'duplicate'
+      ? 'Billetten er allerede opprettet og sendt tidligere.'
+      : 'Billetten din sendes på e-post.'
+
   return (
-    <main className="min-h-svh bg-[#f3ead9] text-zinc-950">
-      <PublicHeader transparent tone="light" />
-      <section className="mx-auto flex max-w-6xl items-center justify-center px-4 py-16 md:px-6 lg:px-8">
-      <div className="w-full max-w-lg border-2 border-zinc-950 bg-[#fbf7ec] p-8 text-center shadow-[8px_8px_0_rgba(24,24,27,0.14)]">
-        <CheckCircle2 className="mx-auto size-12 text-[#b83224]" />
-        <h1 className="mt-5 text-4xl font-black uppercase tracking-tight">Takk for kjøpet!</h1>
-        <p className="mt-2 font-medium text-zinc-700">
-          {completion?.result === 'created'
-            ? completion.emailSent
-              ? 'Billetten din er sendt på e-post.'
-              : 'Betalingen er godkjent, men billett-eposten kunne ikke sendes automatisk.'
-            : completion?.result === 'duplicate'
-              ? 'Billetten er allerede opprettet og sendt tidligere.'
-              : 'Billetten din sendes på e-post.'}
-        </p>
-        {session && (
-          <div className="mt-6 grid gap-2 border-2 border-zinc-950 bg-[#f3ead9] p-4 text-left text-sm font-medium">
-            <div><span className="text-zinc-500">Show:</span> {session.metadata?.show_title ?? 'humor.events'}</div>
-            {session.metadata?.show_date && <div><span className="text-zinc-500">Dato:</span> {session.metadata.show_date}</div>}
-            <div><span className="text-zinc-500">E-post:</span> {session.customer_details?.email ?? session.customer_email ?? 'Ikke tilgjengelig'}</div>
-            {completion?.ticketCode && <div><span className="text-zinc-500">Billettkode:</span> <span className="font-mono">{completion.ticketCode}</span></div>}
+    <main
+      className="ev-surface flex min-h-svh flex-col bg-[var(--ev-bg)] text-[var(--ev-text)]"
+      data-tone="light"
+    >
+      <PublicHeader tone="light" />
+
+      <section className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 py-24 md:px-8">
+        <div
+          className="bg-[var(--ev-card)] p-7 sm:p-9"
+          style={{ borderRadius: 'var(--ev-r-card)' }}
+        >
+          <CheckCircle2
+            className="size-10"
+            style={{ color: 'var(--ev-accent-fill)' }}
+            aria-hidden
+          />
+          <h1 className="mt-5 text-balance text-[1.75rem] font-semibold leading-[1.1] tracking-[-0.03em] sm:text-4xl">
+            Takk for kjøpet
+          </h1>
+          <p
+            className={
+              emailFailed
+                ? 'mt-2.5 text-[15px] leading-relaxed text-[var(--ev-accent)]'
+                : 'mt-2.5 text-[15px] leading-relaxed text-[var(--ev-muted)]'
+            }
+          >
+            {status}
+          </p>
+
+          {session && (
+            <dl className="mt-7 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)] text-[14px]">
+              <Row label="Show" value={session.metadata?.show_title ?? 'humor.events'} />
+              {session.metadata?.show_date && <Row label="Dato" value={session.metadata.show_date} />}
+              <Row
+                label="E-post"
+                value={session.customer_details?.email ?? session.customer_email ?? 'Ikke tilgjengelig'}
+              />
+              {completion?.ticketCode && <Row label="Billettkode" value={completion.ticketCode} mono />}
+            </dl>
+          )}
+
+          <div className="mt-7 flex flex-wrap gap-2.5">
+            <Link
+              href="/events"
+              className="inline-flex h-11 items-center justify-center bg-[var(--ev-text)] px-5 text-[13px] font-semibold text-[var(--ev-bg)] transition-colors hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]"
+              style={{ borderRadius: 'var(--ev-r-chip)' }}
+            >
+              Se flere show
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex h-11 items-center justify-center px-5 text-[13px] font-semibold text-[var(--ev-muted)] ring-1 ring-inset ring-[var(--ev-line-strong)] transition-colors hover:text-[var(--ev-text)]"
+              style={{ borderRadius: 'var(--ev-r-chip)' }}
+            >
+              Forsiden
+            </Link>
           </div>
-        )}
-        <div className="mt-7 flex justify-center gap-2">
-          <Button asChild className="rounded-none border-2 border-zinc-950 bg-[#b83224] font-bold text-white hover:bg-[#9f2d21]"><Link href="/events">Se flere events</Link></Button>
-          <Button asChild variant="outline" className="rounded-none border-2 border-zinc-950 bg-transparent font-bold hover:bg-zinc-950 hover:text-white"><Link href="/">Forsiden</Link></Button>
         </div>
-      </div>
       </section>
+
+      <Footer />
     </main>
+  )
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <dt className="shrink-0 text-[var(--ev-faint)]">{label}</dt>
+      <dd className={mono ? 'truncate font-mono tracking-tight' : 'truncate text-right font-medium'}>
+        {value}
+      </dd>
+    </div>
   )
 }
 

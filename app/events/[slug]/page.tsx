@@ -5,8 +5,16 @@ import type { Metadata } from 'next'
 import { ArrowLeft, Ticket } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { startCheckoutAction } from '../actions'
-import { formatShortDate, formatShowDate, formatShowTime, formatTicketPrice, getPublicLineup, getPublishedShowBySlug, remainingTickets, ticketFillPercent } from '@/lib/public-events'
-import { shouldBypassImageOptimization } from '@/lib/utils'
+import {
+  formatShowDate,
+  formatShowTime,
+  formatTicketPrice,
+  getPublicLineup,
+  getPublishedShowBySlug,
+  remainingTickets,
+  ticketFillPercent,
+} from '@/lib/public-events'
+import { cn, shouldBypassImageOptimization } from '@/lib/utils'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 import { NaturalPosterImage } from '@/components/public/natural-poster-image'
@@ -51,161 +59,258 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const remaining = remainingTickets(show)
   const soldOut = remaining === 0
   const fillPercent = ticketFillPercent(show)
-  const lowStock = remaining !== null && remaining > 0 && (remaining <= 10 || fillPercent >= 80)
-  const [day, month = ''] = formatShortDate(show.date).split(' ')
   const showLocation = show.venue_name ?? show.venue_address
-  const showClub = show.clubName
-  const availabilityText = soldOut ? 'Utsolgt' : 'Billetter tilgjengelig'
-  const ticketWarning = soldOut
-    ? 'Utsolgt'
-    : lowStock
-      ? 'Få igjen'
-      : null
+
+  // Samme rolige mikrotekst som på kortene i listen, i stedet for et merke.
+  const capacity = soldOut
+    ? { text: 'Utsolgt', urgent: false }
+    : remaining !== null && remaining <= 10
+      ? { text: `Bare ${remaining} igjen`, urgent: true }
+      : fillPercent >= 80
+        ? { text: 'Nær utsolgt', urgent: true }
+        : null
+
+  const price = formatTicketPrice(show)
+  const checkoutNote = show.ticket_url
+    ? 'Du sendes videre til ekstern billettside.'
+    : 'Betaling åpnes i sikker checkout.'
+
+  const buyButton = (full?: boolean) => (
+    <ToastActionForm action={startCheckoutAction} className={full ? 'w-full' : undefined}>
+      <input type="hidden" name="show_id" value={show.id} />
+      <input type="hidden" name="slug" value={show.slug} />
+      <button
+        type="submit"
+        disabled={soldOut}
+        className={cn(
+          'inline-flex h-12 items-center justify-center gap-2 px-7 text-[14px] font-semibold transition-colors',
+          full && 'w-full',
+          'bg-[var(--ev-text)] text-[var(--ev-bg)]',
+          'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
+          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
+          'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]'
+        )}
+        style={{ borderRadius: 'var(--ev-r-chip)' }}
+      >
+        <Ticket className="size-4" /> {soldOut ? 'Utsolgt' : 'Kjøp billett'}
+      </button>
+    </ToastActionForm>
+  )
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <PublicHeader transparent tone="light" />
+    <main
+      className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]"
+      data-tone="light"
+    >
+      <PublicHeader tone="light" />
 
-      <section className="mx-auto max-w-4xl px-4 pb-16 pt-16 md:px-8 md:pt-24">
-        <Link href="/events" className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-medium text-zinc-500 transition-colors hover:text-[#ff6bff]">
-          <ArrowLeft className="size-4" /> Alle events
+      {/* pb-28 på mobil gir plass til den faste kjøpslinja nederst */}
+      <div className="mx-auto max-w-5xl px-4 pb-28 pt-24 md:px-8 md:pt-28 lg:pb-24">
+        <Link
+          href="/events"
+          className="mb-7 inline-flex w-fit items-center gap-2 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+        >
+          <ArrowLeft className="size-4" /> Alle show
         </Link>
 
-        <article className="overflow-hidden border border-black bg-white">
-          <div className="grid md:grid-cols-2 md:items-start">
-            <div className="relative isolate border-b border-black md:border-b-0 md:border-r">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-14">
+          {/* Plakat. Ikke beskåret her — på showsiden er hele plakaten poenget. */}
+          <div className="lg:sticky lg:top-24 lg:self-start">
+            {/* Full bredde ville gitt ~66vh plakat på mobil, så tittel og pris
+                lå under skjermkanten. Bredden knyttes til høyden i stedet. */}
+            <div
+              className="mx-auto w-full max-w-[min(100%,34vh)] overflow-hidden bg-[var(--ev-poster-ground)] lg:mx-0 lg:max-w-none"
+              style={{ borderRadius: 'var(--ev-r-card)' }}
+            >
               {show.poster_url ? (
                 <NaturalPosterImage
                   src={show.poster_url}
                   alt={show.title}
                   priority
-                  sizes="(max-width: 768px) 100vw, 50vw"
+                  sizes="(max-width: 1024px) 60vw, 400px"
                   className="relative w-full"
                 />
               ) : (
-                <div className="flex aspect-[3/4] flex-col justify-between bg-black p-8 text-white">
-                  <span className="text-xs font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
-                  <strong className="text-4xl font-medium leading-none">{show.title}</strong>
+                <div className="flex aspect-[2/3] flex-col justify-between p-7 text-white">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/45">
+                    humor.events
+                  </span>
+                  <strong className="text-3xl font-medium leading-tight">{show.title}</strong>
                 </div>
               )}
-
-              <div className="absolute left-4 top-4 z-10 grid size-16 place-items-center border border-black bg-white text-center text-black shadow-[2px_2px_0_rgba(0,0,0,0.35)] md:left-5 md:top-5 md:size-20">
-                <div>
-                  <div className="text-3xl font-medium leading-none md:text-4xl">{Number(day)}</div>
-                  <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500 md:text-xs">{month.replace('.', '')}</div>
-                </div>
-              </div>
-
-              {ticketWarning && (
-                <span className={`absolute right-4 top-4 z-10 rounded-full border border-black px-4 py-1.5 text-xs font-bold uppercase tracking-[0.22em] shadow-[2px_2px_0_rgba(0,0,0,0.35)] md:right-5 md:top-5 ${soldOut ? 'bg-black text-white' : 'bg-[#ff6bff] text-black'}`}>
-                  {ticketWarning}
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-7 p-5 sm:p-7 md:p-9">
-              {showClub && (
-                <div className="inline-flex w-fit border border-black px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-700">
-                  {showClub}
-                </div>
-              )}
-              <h1 className="text-4xl font-medium leading-tight tracking-normal md:text-5xl lg:text-6xl">{show.title}</h1>
-
-              <dl className="divide-y divide-black/10 border-y border-black/10">
-                {showClub && <Info label="Klubb" text={showClub} />}
-                <Info label="Sted" text={showLocation ?? 'Sted kommer'} />
-                <Info label="Dato" text={formatShowDate(show.date)} />
-                <Info label="Tid" text={formatShowTime(show)} />
-                <Info label="Status" text={availabilityText} tone={soldOut ? 'danger' : ticketWarning ? 'accent' : 'default'} />
-              </dl>
-
-              <div className="mt-auto">
-                <div className="mb-4 flex items-end justify-between gap-4">
-                  <div>
-                    <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Pris</div>
-                    <div className="text-4xl font-medium leading-none">{formatTicketPrice(show)}</div>
-                  </div>
-                  {ticketWarning && <div className={`text-sm font-bold uppercase tracking-[0.22em] ${soldOut ? 'text-black' : 'text-[#ff6bff]'}`}>{ticketWarning}</div>}
-                </div>
-
-                {error === 'sold-out' && <p className="mb-3 text-sm font-medium text-black">Dette showet er utsolgt.</p>}
-                {error === 'checkout' && <p className="mb-3 text-sm font-medium text-zinc-500">Checkout kunne ikke åpnes akkurat nå.</p>}
-                <ToastActionForm action={startCheckoutAction}>
-                  <input type="hidden" name="show_id" value={show.id} />
-                  <input type="hidden" name="slug" value={show.slug} />
-                  <button
-                    type="submit"
-                    disabled={soldOut}
-                    className="inline-flex w-full items-center justify-center gap-2 border border-black bg-black px-10 py-4 text-sm font-medium uppercase tracking-[0.22em] text-white transition-colors hover:border-[#ff6bff] hover:bg-[#ff6bff] hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Ticket className="size-4" /> {soldOut ? 'Utsolgt' : 'Kjøp billett'}
-                  </button>
-                </ToastActionForm>
-                <p className="mt-3 text-xs text-zinc-500">{show.ticket_url ? 'Du sendes videre til ekstern billettside.' : 'Betaling åpnes i sikker checkout.'}</p>
-              </div>
             </div>
           </div>
-        </article>
 
-        <div className="mt-10 grid gap-8 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <section className="bg-white p-5 sm:p-6">
-            <div className="mb-5 flex items-end justify-between gap-4 border-b border-black pb-3">
-              <h2 className="text-base font-medium uppercase tracking-widest text-zinc-500">Lineup</h2>
-              <span className="text-sm font-medium text-zinc-400">{lineup.length} artist{lineup.length === 1 ? '' : 'er'}</span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-1">
-              {lineup.map((item) => (
-                <Link
-                  key={item.spot.id}
-                  href={item.artist ? `/artists/${item.artist.id}` : '#'}
-                  className="group grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 border border-black bg-white p-2 transition hover:-translate-y-0.5 hover:shadow-[2px_2px_0_rgba(0,0,0,0.12)]"
-                >
-                  <div className="relative size-16 shrink-0 overflow-hidden border border-black bg-zinc-100">
-                    {item.artist?.profile_image_url ? (
-                      <Image
-                        src={item.artist.profile_image_url}
-                        alt={item.artist.stage_name ?? item.artist.full_name}
-                        fill
-                        sizes="64px"
-                        unoptimized={shouldBypassImageOptimization(item.artist.profile_image_url)}
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center bg-black text-lg font-medium text-white">
-                        {(item.artist?.stage_name ?? item.artist?.full_name ?? '?')[0]}
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{item.role?.role_name ?? 'Artist'}</div>
-                    <h3 className="truncate text-base font-medium transition-colors group-hover:text-[#ff6bff]">{item.artist?.stage_name ?? item.artist?.full_name ?? 'Artist'}</h3>
-                  </div>
-                </Link>
-              ))}
-              {lineup.length === 0 && (
-                <p className="pt-2 text-sm font-medium text-zinc-400">Lineup annonseres snart.</p>
+          <div className="flex flex-col gap-8">
+            <header className="flex flex-col gap-3">
+              {show.clubName && (
+                <div className="flex items-center gap-2 text-[14px] text-[var(--ev-muted)]">
+                  {show.clubLogoUrl ? (
+                    <Image
+                      src={show.clubLogoUrl}
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="size-5 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="grid size-5 shrink-0 place-content-center rounded-full bg-[var(--ev-card-hover)] text-[9px] font-bold"
+                    >
+                      {show.clubName.slice(0, 1)}
+                    </span>
+                  )}
+                  Av {show.clubName}
+                </div>
               )}
-            </div>
-          </section>
 
-          <section className="bg-white p-5 sm:p-6">
-            <h2 className="mb-5 border-b border-black pb-3 text-base font-medium uppercase tracking-widest text-zinc-500">Om showet</h2>
-            <p className="whitespace-pre-wrap leading-relaxed text-zinc-600">{show.description ?? 'Mer informasjon kommer snart.'}</p>
-          </section>
+              <h1 className="text-balance text-[2rem] font-semibold leading-[1.1] tracking-[-0.03em] sm:text-5xl">
+                {show.title}
+              </h1>
+
+              <p className="text-[15px] text-[var(--ev-muted)]">
+                {formatShowDate(show.date)} · {formatShowTime(show)}
+                {showLocation && <> · {showLocation}</>}
+                {show.clubCity && <>, {show.clubCity}</>}
+              </p>
+            </header>
+
+            {/* Kjøpsblokk — skjult på mobil, der den faste bunnlinja tar over */}
+            <div
+              className="hidden flex-wrap items-center gap-x-6 gap-y-4 bg-[var(--ev-card)] p-6 lg:flex"
+              style={{ borderRadius: 'var(--ev-r-card)' }}
+            >
+              <div>
+                <div className="text-[28px] font-semibold leading-none tabular-nums">{price}</div>
+                {capacity && (
+                  <div
+                    className={cn(
+                      'mt-1.5 text-[13px]',
+                      capacity.urgent ? 'text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
+                    )}
+                  >
+                    {capacity.text}
+                  </div>
+                )}
+              </div>
+              <div className="ml-auto flex flex-col items-end gap-2">
+                {buyButton()}
+                <p className="text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>
+              </div>
+            </div>
+
+            {error === 'sold-out' && (
+              <p className="text-[14px] font-medium text-[var(--ev-accent)]">Dette showet er utsolgt.</p>
+            )}
+            {error === 'checkout' && (
+              <p className="text-[14px] text-[var(--ev-muted)]">Checkout kunne ikke åpnes akkurat nå.</p>
+            )}
+
+            <Section title="Om showet">
+              <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--ev-muted)]">
+                {show.description ?? 'Mer informasjon kommer snart.'}
+              </p>
+            </Section>
+
+            <Section
+              title="Line-up"
+              aside={lineup.length > 0 ? `${lineup.length} ${lineup.length === 1 ? 'komiker' : 'komikere'}` : undefined}
+            >
+              {lineup.length === 0 ? (
+                <p className="text-[15px] text-[var(--ev-faint)]">Line-up annonseres snart.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {lineup.map((item) => {
+                    const name = item.artist?.stage_name ?? item.artist?.full_name ?? 'Artist'
+                    const inner = (
+                      <>
+                        <span className="relative size-11 shrink-0 overflow-hidden rounded-full bg-[var(--ev-card-hover)]">
+                          {item.artist?.profile_image_url ? (
+                            <Image
+                              src={item.artist.profile_image_url}
+                              alt=""
+                              fill
+                              sizes="44px"
+                              unoptimized={shouldBypassImageOptimization(item.artist.profile_image_url)}
+                              className="object-cover"
+                            />
+                          ) : (
+                            <span className="grid h-full place-content-center text-[15px] font-medium text-[var(--ev-muted)]">
+                              {name[0]}
+                            </span>
+                          )}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[15px] font-medium">{name}</span>
+                          <span className="block truncate text-[13px] text-[var(--ev-faint)]">
+                            {item.role?.role_name ?? 'Artist'}
+                          </span>
+                        </span>
+                      </>
+                    )
+
+                    return (
+                      <li key={item.spot.id}>
+                        {item.artist ? (
+                          <Link
+                            href={`/artists/${item.artist.id}`}
+                            className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-[var(--ev-card)]"
+                          >
+                            {inner}
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-3 px-2 py-2">{inner}</div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </Section>
+          </div>
         </div>
-      </section>
-      <Footer/>
+      </div>
+
+      {/* Fast kjøpslinje på mobil — prisen og handlingen alltid innen rekkevidde */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-4 border-t border-[var(--ev-line)] bg-[var(--ev-bg)]/92 px-4 py-3 backdrop-blur-md lg:hidden">
+        <div className="min-w-0">
+          <div className="text-[17px] font-semibold leading-none tabular-nums">{price}</div>
+          {capacity && (
+            <div
+              className={cn(
+                'mt-1 truncate text-[12px]',
+                capacity.urgent ? 'text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
+              )}
+            >
+              {capacity.text}
+            </div>
+          )}
+        </div>
+        <div className="ml-auto shrink-0">{buyButton()}</div>
+      </div>
+
+      <Footer />
     </main>
   )
 }
 
-function Info({ text, label, tone = 'default' }: { text: string; label?: string; tone?: 'default' | 'accent' | 'danger' }) {
-  const valueClassName = tone === 'danger' ? 'text-black' : tone === 'accent' ? 'text-[#ff6bff]' : 'text-black'
-
+function Section({
+  title,
+  aside,
+  children,
+}: {
+  title: string
+  aside?: string
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      {label && <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-400 shrink-0">{label}</span>}
-      <span className={`text-base font-medium text-right ${valueClassName}`}>{text}</span>
-    </div>
+    <section className="flex flex-col gap-4">
+      <div className="flex items-baseline justify-between gap-4 border-b border-[var(--ev-line)] pb-2.5">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
+        {aside && <span className="text-[13px] text-[var(--ev-faint)]">{aside}</span>}
+      </div>
+      {children}
+    </section>
   )
 }
