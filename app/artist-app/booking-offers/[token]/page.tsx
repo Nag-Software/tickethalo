@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
-import { OfferButtons } from '../page'
+import { OfferButtons } from '@/components/artist/offer-buttons'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
   sent: 'Venter på svar',
