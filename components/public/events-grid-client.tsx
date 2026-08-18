@@ -95,7 +95,7 @@ export function EventsGridClient({ shows, today }: Props) {
       {/* Verktøylinje — fester seg under den flytende headeren ved scroll */}
       <div className="sticky top-[74px] z-30 -mx-4 mb-8 bg-[var(--ev-bg)]/85 px-4 py-3 backdrop-blur-md md:-mx-8 md:px-8">
         <div className="flex flex-col gap-2.5">
-          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] md:-mx-8 md:px-8 [&::-webkit-scrollbar]:hidden">
+          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] md:-mx-8 md:px-8 md:[mask-image:none] [&::-webkit-scrollbar]:hidden">
             {TIME_RANGES.map((option) => (
               <Chip
                 key={option.value}
@@ -144,7 +144,7 @@ export function EventsGridClient({ shows, today }: Props) {
           </div>
 
           {cityOptions.length > 1 && (
-            <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] md:-mx-8 md:px-8 [&::-webkit-scrollbar]:hidden">
+            <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] md:-mx-8 md:px-8 md:[mask-image:none] [&::-webkit-scrollbar]:hidden">
               {cityOptions.map((option) => (
                 <Chip
                   key={option}
@@ -192,7 +192,9 @@ export function EventsGridClient({ shows, today }: Props) {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-7 lg:grid-cols-3 xl:grid-cols-4">
+        // Hårlinje mellom radene på mobil, der kortene leses som en liste.
+        // Fra sm og opp er de frittstående kort og trenger ingen strek.
+        <div className="grid grid-cols-1 gap-5 [&>*+*]:border-t [&>*+*]:border-[var(--ev-line)] [&>*+*]:pt-5 sm:grid-cols-3 sm:gap-7 sm:[&>*+*]:border-0 sm:[&>*+*]:pt-0 lg:grid-cols-4 xl:grid-cols-5">
           {filtered.map((show, index) => (
             <div
               key={show.id}

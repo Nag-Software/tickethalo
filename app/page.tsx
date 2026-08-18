@@ -69,9 +69,9 @@ export default async function Page() {
       {/* Hero — kortet ned så første showrad bryter skjermkanten.
           Én uthevet flate i stedet for fire sammenskrudde bokser: byen
           er det eneste som er farget, og det er også det eneste som beveger seg. */}
-      <section className="px-4 pb-10 pt-28 md:px-8 md:pb-12 md:pt-32 lg:pt-36">
+      <section className="px-4 pb-8 pt-24 md:px-8 md:pb-12 md:pt-32 lg:pt-36">
         <div className="mx-auto max-w-4xl text-center">
-          <h1 className="mb-5 text-balance text-[2.5rem] font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl md:text-7xl">
+          <h1 className="mb-4 text-balance text-[2rem] font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl md:text-7xl">
             <span
               className="animate-fade-in block"
               style={{ animationDelay: '0.05s', animationFillMode: 'both' }}
