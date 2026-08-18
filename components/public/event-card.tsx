@@ -44,10 +44,12 @@ export function EventCard({
   const place = [venue, show.clubCity].filter(Boolean).join(', ')
 
   return (
-    <article className="group relative flex gap-4 sm:block">
+    // sm:flex-col i stedet for sm:block, så prislinjen kan skyves ned med
+    // mt-auto og kjøpsknappene står på linje på tvers av en rad kort.
+    <article className="group relative flex gap-3.5 sm:h-full sm:flex-col sm:gap-0">
       {/* Plakat */}
       <div
-        className="relative w-24 shrink-0 overflow-hidden sm:w-full"
+        className="relative w-[88px] shrink-0 self-start overflow-hidden sm:w-full sm:self-auto"
         style={{ borderRadius: 'var(--ev-r-art)' }}
       >
         <div className="relative aspect-[2/3] bg-[var(--ev-poster-ground)]">
@@ -57,7 +59,7 @@ export function EventCard({
               alt=""
               fill
               priority={priority}
-              sizes="(max-width: 640px) 96px, (max-width: 1024px) 45vw, 23vw"
+              sizes="(max-width: 640px) 88px, (max-width: 1024px) 45vw, 23vw"
               className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.015]"
             />
           ) : (
@@ -75,23 +77,26 @@ export function EventCard({
         </div>
       </div>
 
-      {/* Tekst */}
-      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:mt-3.5">
-        <div className="flex items-baseline gap-2 text-[13px] text-[var(--ev-muted)]">
+      {/* Tekst.
+          På mobil er raden en liste, ikke et kort: byen slås sammen med
+          klubblinja og scenenavnet vike helt, slik at én rad blir omtrent
+          like høy som plakaten i stedet for dobbelt så høy. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:mt-3.5 sm:gap-1">
+        <div className="flex items-baseline gap-2 text-[12.5px] text-[var(--ev-muted)] sm:text-[13px]">
           <span className="font-medium text-[var(--ev-text)]">{formatDayLabel(show.date, today)}</span>
           <span aria-hidden className="text-[var(--ev-faint)]">·</span>
-          <span>{formatShowTime(show)}</span>
+          <span className="truncate">{formatShowTime(show)}</span>
         </div>
 
         <h3 className="text-[15px] font-semibold leading-snug tracking-[-0.01em] text-[var(--ev-text)] sm:text-base">
           {/* Strukket lenke: hele kortet er klikkbart, men kun én lenke i DOM-en */}
-          <Link href={href} className="after:absolute after:inset-0 after:content-['']">
+          <Link href={href} className="line-clamp-2 after:absolute after:inset-0 after:content-['']">
             {show.title}
           </Link>
         </h3>
 
         {show.clubName && (
-          <div className="flex items-center gap-1.5 text-[13px] text-[var(--ev-muted)]">
+          <div className="flex items-center gap-1.5 text-[12.5px] text-[var(--ev-muted)] sm:text-[13px]">
             {show.clubLogoUrl ? (
               <Image
                 src={show.clubLogoUrl}
@@ -108,48 +113,62 @@ export function EventCard({
                 {show.clubName.slice(0, 1)}
               </span>
             )}
-            <span className="truncate">Av {show.clubName}</span>
+            <span className="truncate">
+              Av {show.clubName}
+              {show.clubCity && <span className="sm:hidden"> · {show.clubCity}</span>}
+            </span>
           </div>
         )}
 
-        {place && <p className="truncate text-[13px] text-[var(--ev-faint)]">{place}</p>}
+        {place && (
+          <p
+            className={cn(
+              'truncate text-[12.5px] text-[var(--ev-faint)] sm:text-[13px]',
+              // Byen står allerede på klubblinja på mobil — ikke gjenta scenen der.
+              show.clubName && 'hidden sm:block'
+            )}
+          >
+            {place}
+          </p>
+        )}
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        {/* Pris, kapasitet og eneste handling på én linje.
+            mt-auto retter kjøpsknappene inn mot bunnen på tvers av en rad. */}
+        <div className="mt-auto flex items-center gap-x-2.5 pt-2 sm:pt-2.5">
           <span className="text-[13px] font-medium tabular-nums text-[var(--ev-text)]">
             {formatTicketPrice(show)}
           </span>
           {capacity && (
             <span
               className={cn(
-                'text-[13px]',
+                'truncate text-[12.5px] sm:text-[13px]',
                 capacity.urgent ? 'text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
               )}
             >
               {capacity.text}
             </span>
           )}
-        </div>
 
-        {/* Én handling — kortet i seg selv er lenken til showsiden */}
-        <ToastActionForm action={startCheckoutAction} className="relative z-10 mt-2.5">
-          <input type="hidden" name="show_id" value={show.id} />
-          <input type="hidden" name="slug" value={show.slug ?? show.id} />
-          <button
-            type="submit"
-            disabled={soldOut}
-            className={cn(
-              'inline-flex h-9 items-center gap-1.5 px-4 text-[13px] font-semibold transition-colors',
-              'bg-[var(--ev-text)] text-[var(--ev-bg)]',
-              'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
-              'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
-              'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]'
-            )}
-            style={{ borderRadius: 'var(--ev-r-chip)' }}
-          >
-            <Ticket className="size-4" />
-            {soldOut ? 'Utsolgt' : 'Kjøp billett'}
-          </button>
-        </ToastActionForm>
+          <ToastActionForm action={startCheckoutAction} className="relative z-10 ml-auto">
+            <input type="hidden" name="show_id" value={show.id} />
+            <input type="hidden" name="slug" value={show.slug ?? show.id} />
+            <button
+              type="submit"
+              disabled={soldOut}
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 px-3.5 text-[12.5px] font-semibold transition-colors sm:h-9 sm:px-4 sm:text-[13px]',
+                'bg-[var(--ev-text)] text-[var(--ev-bg)]',
+                'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
+                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
+                'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]'
+              )}
+              style={{ borderRadius: 'var(--ev-r-chip)' }}
+            >
+              <Ticket className="size-3.5 sm:size-4" />
+              {soldOut ? 'Utsolgt' : 'Kjøp'}
+            </button>
+          </ToastActionForm>
+        </div>
       </div>
     </article>
   )
