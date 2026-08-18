@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { PublicHeader } from '@/components/public/public-header'
+import { Footer } from '@/components/Footer'
 import { LoginForm } from '@/components/login-form'
 import { createClient } from '@/lib/supabase/server'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
@@ -23,58 +24,51 @@ export default async function ArtistLoginPage({
   }
 
   return (
-    <main className="min-h-svh bg-[#f3ead9] text-zinc-950">
-      <section className="relative isolate overflow-hidden border-b-2 border-zinc-950 bg-[#f3ead9]">
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-[0.18]"
-          style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.45'/></svg>\")",
-          }}
-        />
+    <main
+      className="ev-surface flex min-h-svh flex-col bg-[var(--ev-bg)] text-[var(--ev-text)]"
+      data-tone="light"
+    >
+      <PublicHeader tone="light" />
 
-        <PublicHeader transparent tone="light" />
+      <section className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-10 px-4 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] lg:gap-16">
+        <div>
+          <p className="text-[13px] text-[var(--ev-faint)]">Komikerportal</p>
+          <h1 className="mt-2 text-balance text-[2.25rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
+            Logg inn som komiker
+          </h1>
+          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--ev-muted)]">
+            Gå til bookingene dine, svar på tilbud og hold profilen oppdatert.
+          </p>
 
-        <div className="relative mx-auto grid w-full max-w-6xl gap-10 px-4 pb-10 pt-8 md:grid-cols-[minmax(0,0.9fr)_400px] md:items-start md:px-6 md:pb-14 md:pt-10 lg:px-8">
-          <div>
-            <div className="mb-5 inline-flex border border-zinc-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em]">
-              Portal / humor.events
-            </div>
-            <h1 className="max-w-[700px] text-[clamp(2.75rem,6.7vw,5.4rem)] font-black uppercase leading-[0.82] tracking-[-0.035em]">
-              Logg inn som komiker
-            </h1>
-            <p className="mt-5 max-w-xl text-sm font-medium text-zinc-700 md:text-base">
-              Gå til bookinger, svar på tilbud og hold profilen din oppdatert i samme uttrykk som resten av humor.events.
-            </p>
-            <div className="mt-8 border-y-2 border-zinc-950 py-5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-500">Hva du finner her</p>
-              <ul className="mt-3 space-y-2 text-sm font-medium text-zinc-700">
-                <li>Kommende show og honorar</li>
-                <li>Aktive tilbud som venter på svar</li>
-                <li>Profilen arrangørene ser</li>
-              </ul>
-            </div>
-            <Link href="/artist-app/signup" className="mt-5 inline-flex items-center gap-1.5 text-sm font-bold underline decoration-2 underline-offset-4 hover:text-[#b83224]">
-              Registrer ny profil <ArrowRight className="size-4" />
-            </Link>
-          </div>
+          <ul className="mt-8 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)]">
+            {['Kommende show og honorar', 'Aktive tilbud som venter på svar', 'Profilen arrangørene ser'].map((item) => (
+              <li key={item} className="py-3 text-[15px] font-medium">{item}</li>
+            ))}
+          </ul>
 
-          <div className="w-full max-w-sm md:justify-self-end">
-            <LoginForm
-              brandLabel="humor.events"
-              title="Komikerportal"
-              description="Logg inn med komikerprofil"
-              action="/artist-app/login/submit"
-              errorMessage={error === 'invalid' ? 'Feil e-post eller passord.' : undefined}
-              signupHref="/artist-app/signup"
-              nextPath={next}
-              theme="poster"
-              className="md:rotate-[-1deg]"
-            />
-          </div>
+          <Link
+            href="/artist-app/signup"
+            className="mt-6 inline-flex items-center gap-1.5 text-[14px] font-medium text-[var(--ev-accent)] underline underline-offset-4"
+          >
+            Registrer ny profil <ArrowRight className="size-4" />
+          </Link>
+        </div>
+
+        <div className="w-full lg:justify-self-end">
+          <LoginForm
+            brandLabel="humor.events"
+            title="Komikerportal"
+            description="Logg inn med komikerprofil"
+            action="/artist-app/login/submit"
+            errorMessage={error === 'invalid' ? 'Feil e-post eller passord.' : undefined}
+            signupHref="/artist-app/signup"
+            nextPath={next}
+            theme="portal"
+          />
         </div>
       </section>
+
+      <Footer />
     </main>
   )
 }
