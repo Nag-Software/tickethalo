@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, ArrowUpRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { formatArtistRoleSummary } from '@/lib/artist-roles'
 import { artistDisplayName, artistInitials, getPublicArtists } from '@/lib/public-artists'
 import { shouldBypassImageOptimization } from '@/lib/utils'
@@ -8,7 +8,7 @@ import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
-  title: 'Artister — humor.events',
+  title: 'Komikere — humor.events',
   description: 'Se godkjente komikere og artister i humor.events-lineupen.',
 }
 
@@ -16,74 +16,94 @@ export const dynamic = 'force-dynamic'
 
 export default async function ArtistsPage() {
   const artists = await getPublicArtists()
-  const highEnergy = artists.filter((artist) => artist.admin_energy_level === 'high').length
-  const languages = new Set(artists.map((artist) => artist.language).filter(Boolean)).size
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <section className="">
-        <PublicHeader transparent tone="light" />
-        <div className="mx-auto max-w-6xl px-4 pb-10 pt-28 md:px-6 md:pb-14 lg:px-8">
-          <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-[#ff6bff]">
-            <ArrowLeft className="size-4" /> Forsiden
-          </Link>
-          <div className="mt-4 grid gap-8 md:grid-cols-[1fr_auto] md:items-end">
-            <div>
-              <h1 className="text-5xl font-medium sm:text-6xl md:text-7xl">Våre Komikere</h1>
-            </div>
-          </div>
-        </div>
-      </section>
+    <main
+      className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]"
+      data-tone="light"
+    >
+      <PublicHeader tone="light" />
 
-      <section className="mx-auto max-w-6xl px-4 py-10 md:px-6 lg:px-8">
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <h2 className="text-2xl font-medium">Alle artister</h2>
-          <Link href="/events" className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-[#ff6bff]">
-            Events <ArrowRight className="size-4" />
+      <div className="mx-auto max-w-6xl px-4 pb-24 pt-24 md:px-8 md:pt-28">
+        <Link
+          href="/"
+          className="mb-7 inline-flex items-center gap-2 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+        >
+          <ArrowLeft className="size-4" /> Forsiden
+        </Link>
+
+        <header className="mb-9 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-balance text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
+              Våre komikere
+            </h1>
+            <p className="mt-2 text-[15px] text-[var(--ev-muted)]">
+              {artists.length} {artists.length === 1 ? 'komiker' : 'komikere'} i lineupen.
+            </p>
+          </div>
+          <Link
+            href="/events"
+            className="inline-flex items-center gap-1.5 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+          >
+            Se show <ArrowRight className="size-4" />
           </Link>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {artists.map((artist) => (
-            <Link key={artist.id} href={`/artists/${artist.id}`} className="group relative cursor-pointer block">
-              <div className="overflow-hidden mb-3 aspect-square bg-gray-100 relative">
-                {artist.profile_image_url ? (
-                  <Image
-                    src={artist.profile_image_url}
-                    alt={artistDisplayName(artist)}
-                    fill
-                    sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 31vw"
-                    unoptimized={shouldBypassImageOptimization(artist.profile_image_url)}
-                    className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+        </header>
+
+        {artists.length === 0 ? (
+          <div
+            className="border border-dashed border-[var(--ev-line-strong)] px-6 py-16 text-center text-[15px] text-[var(--ev-muted)]"
+            style={{ borderRadius: 'var(--ev-r-card)' }}
+          >
+            Ingen godkjente komikere ennå.
+          </div>
+        ) : (
+          // To i bredden på mobil: portretter leses fint i par, i motsetning
+          // til plakatene i eventlisten som trenger full radbredde.
+          <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:gap-x-5 md:grid-cols-3 lg:grid-cols-4">
+            {artists.map((artist, index) => (
+              <Link key={artist.id} href={`/artists/${artist.id}`} className="group block">
+                <div
+                  className="relative mb-3 aspect-square overflow-hidden bg-[var(--ev-card-hover)]"
+                  style={{ borderRadius: 'var(--ev-r-art)' }}
+                >
+                  {artist.profile_image_url ? (
+                    <Image
+                      src={artist.profile_image_url}
+                      alt=""
+                      fill
+                      priority={index < 4}
+                      sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 23vw"
+                      unoptimized={shouldBypassImageOptimization(artist.profile_image_url)}
+                      className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02]"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-3xl font-medium text-[var(--ev-faint)]">
+                      {artistInitials(artist)}
+                    </div>
+                  )}
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-black/5 transition-colors duration-300 group-hover:ring-[var(--ev-accent-fill)]/60"
+                    style={{ borderRadius: 'var(--ev-r-art)' }}
                   />
-                ) : (
-                  <div className="flex h-full items-center justify-center bg-black text-5xl font-medium text-white">
-                    {artistInitials(artist)}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-0.5">
-                    {formatArtistRoleSummary(artist.category, 'Komiker')}
-                  </p>
-                  <h2 className="text-lg font-medium leading-tight">{artistDisplayName(artist)}</h2>
-                  {artist.stage_name && <p className="text-sm text-zinc-500">{artist.full_name}</p>}
                 </div>
-                <ArrowUpRight className="size-4 shrink-0 mt-1 text-zinc-400 transition group-hover:text-[#ff6bff]" />
-              </div>
-              {artist.bio && <p className="mt-1 line-clamp-2 text-sm text-zinc-500">{artist.bio}</p>}
-            </Link>
-          ))}
-        </div>
-        {artists.length === 0 && (
-          <div className="border border-dashed border-black/20 p-10 text-center text-sm text-zinc-500">
-            Ingen godkjente artister ennå.
+
+                <p className="text-[12.5px] text-[var(--ev-faint)]">
+                  {formatArtistRoleSummary(artist.category, 'Komiker')}
+                </p>
+                <h2 className="mt-0.5 truncate text-[15px] font-semibold leading-snug tracking-[-0.01em]">
+                  {artistDisplayName(artist)}
+                </h2>
+                {artist.stage_name && (
+                  <p className="truncate text-[13px] text-[var(--ev-muted)]">{artist.full_name}</p>
+                )}
+              </Link>
+            ))}
           </div>
         )}
-      </section>
-      <Footer/>
+      </div>
+
+      <Footer />
     </main>
   )
 }
-
-
