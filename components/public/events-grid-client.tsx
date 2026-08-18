@@ -1,225 +1,212 @@
 'use client'
 
-import { useState } from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
+import { useMemo, useState } from 'react'
+import { CalendarIcon, X } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ArrowUpRight, CalendarIcon, Ticket } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ToastActionForm } from '@/components/toast-action-form'
-import { Button } from '@/components/ui/button'
-import { startCheckoutAction } from '@/app/events/actions'
+import { EventCard } from '@/components/public/event-card'
+import { CitySignup } from '@/components/public/city-signup'
 import type { PublicShow } from '@/lib/public-events'
-import { formatShortDate, formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-events'
+import { TIME_RANGES, type TimeRange, isInRange, toIsoDate } from '@/lib/event-filters'
 import { nb } from 'date-fns/locale'
-
-function formatDateLabel(d: Date) {
-  return d.toLocaleDateString('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 interface Props {
   shows: PublicShow[]
-  userCountry?: string
+  /** Dagens dato i Europe/Oslo, satt på serveren så filtertellingene ikke spriker ved hydrering. */
+  today: string
 }
 
-export function EventsGridClient({ shows, userCountry = 'kvelder' }: Props) {
-  const [date, setDate] = useState<Date | undefined>(undefined)
-  const [city, setCity] = useState('Alle')
-
-  const cityOptions = [
-    'Alle',
-    ...new Set(
-      shows
-        .map((show) => show.clubCity?.trim())
-        .filter((value): value is string => Boolean(value))
-        .sort((a, b) => a.localeCompare(b, 'nb-NO'))
-    ),
-  ]
-
-  const filtered = shows.filter((show) => {
-    if (city !== 'Alle' && show.clubCity !== city) return false
-    if (!date) return true
-    const showDate = new Date(show.date)
-    return (
-      showDate.getFullYear() === date.getFullYear() &&
-      showDate.getMonth() === date.getMonth() &&
-      showDate.getDate() === date.getDate()
-    )
-  })
-
+function Chip({
+  active,
+  count,
+  onClick,
+  children,
+}: {
+  active: boolean
+  count?: number
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
-    <section id="events-section" className="px-4 md:px-8 pb-16 pt-6 md:pt-16">
-      <div>
-        <div className="flex flex-wrap items-center gap-0 mb-6 md:mb-8 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'both' }}>
-          <h2 className="text-base md:text-lg lg:text-xl font-normal w-full sm:w-auto mb-2 sm:mb-0">
-            Norges morsomste
-          </h2>
-          <span className="text-base md:text-lg lg:text-xl font-normal border border-black px-2 py-1 sm:ml-2">
-            {userCountry}
-          </span>
-
-          {/* Mobile/tablet date picker */}
-          <div className="lg:hidden">
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  className={cn(
-                    'text-base md:text-lg lg:text-xl font-normal border border-l-0 border-black px-2 py-1 flex items-center bg-white hover:bg-gray-50 transition-colors',
-                    !date && 'text-muted-foreground'
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date ? formatDateLabel(date) : <span>Velg en dato</span>}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" onSelect={setDate} locale={nb} />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-
-        {cityOptions.length > 1 && (
-          <div className="mb-6 flex flex-wrap gap-2 animate-fade-in" style={{ animationDelay: '0.85s', animationFillMode: 'both' }}>
-            {cityOptions.map((option) => {
-              const active = option === city
-              const count = option === 'Alle'
-                ? shows.length
-                : shows.filter((show) => show.clubCity === option).length
-
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setCity(option)}
-                  className={cn(
-                    'inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] transition-colors',
-                    active
-                      ? 'border-black bg-black text-white'
-                      : 'border-black bg-white text-black hover:bg-[#ff6bff]'
-                  )}
-                >
-                  <span>{option}</span>
-                  <span className={cn('text-[10px]', active ? 'text-white/75' : 'text-zinc-500')}>{count}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8 lg:gap-12 mt-8 md:mt-16">
-          {/* Desktop calendar */}
-          <div
-            className="hidden lg:block animate-fade-in lg:sticky lg:top-24 self-start"
-            style={{ animationDelay: '0.9s', animationFillMode: 'both' }}
-          >
-            <Calendar mode="single" selected={date} onSelect={setDate} className="mx-auto" locale={nb} />
-          </div>
-
-          {/* Event grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 lg:col-start-2 gap-5">
-            {filtered.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                {date
-                  ? `Ingen eventer funnet for ${date.toLocaleDateString('nb-NO', { weekday: 'long', month: 'long', day: 'numeric' })}`
-                  : 'Ingen eventer funnet.'}
-              </div>
-            ) : (
-              filtered.map((show, index) => (
-                <div
-                  key={show.id}
-                  className="animate-fade-in"
-                  style={{ animationDelay: `${1.0 + index * 0.1}s`, animationFillMode: 'both' }}
-                >
-                  <EventCard show={show} />
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-1.5 text-[13px] transition-colors',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
+        active
+          ? 'bg-[var(--ev-accent-fill)] font-semibold text-[var(--ev-accent-ink)]'
+          : 'bg-[var(--ev-card)] text-[var(--ev-muted)] hover:bg-[var(--ev-card-hover)] hover:text-[var(--ev-text)]'
+      )}
+      style={{ borderRadius: 'var(--ev-r-chip)' }}
+    >
+      {children}
+      {count !== undefined && (
+        <span className={cn('tabular-nums', active ? 'opacity-70' : 'text-[var(--ev-faint)]')}>{count}</span>
+      )}
+    </button>
   )
 }
 
-function EventCard({ show }: { show: PublicShow }) {
-  const remaining = remainingTickets(show)
-  const soldOut = remaining === 0
-  const fillPercent = ticketFillPercent(show)
-  const lowStock = remaining !== null && remaining > 0 && (remaining <= 10 || fillPercent >= 80)
-  const [day, month = ''] = formatShortDate(show.date).split(' ')
-  const eventHref = `/events/${show.slug ?? show.id}`
-  const showLocation = show.venue_name ?? show.venue_address ?? 'Sted kommer'
-  const statusLabel = soldOut ? 'Utsolgt' : lowStock ? 'Få igjen' : null
+export function EventsGridClient({ shows, today }: Props) {
+  const [range, setRange] = useState<TimeRange>('alle')
+  const [city, setCity] = useState('Alle')
+  const [date, setDate] = useState<Date | undefined>(undefined)
+
+  const cityOptions = useMemo(
+    () => [
+      'Alle',
+      ...new Set(
+        shows
+          .map((show) => show.clubCity?.trim())
+          .filter((value): value is string => Boolean(value))
+          .sort((a, b) => a.localeCompare(b, 'nb-NO'))
+      ),
+    ],
+    [shows]
+  )
+
+  const matchesCity = (show: PublicShow, value: string) => value === 'Alle' || show.clubCity === value
+  const matchesDate = (show: PublicShow, value: Date | undefined) =>
+    !value || show.date.slice(0, 10) === toIsoDate(value)
+
+  const filtered = shows.filter(
+    (show) => matchesCity(show, city) && matchesDate(show, date) && (date ? true : isInRange(show.date, range, today))
+  )
+
+  // Tellingene krysser hverandre: bytelling tar hensyn til valgt tid, og omvendt.
+  const countForCity = (value: string) =>
+    shows.filter((show) => matchesCity(show, value) && matchesDate(show, date) && (date ? true : isInRange(show.date, range, today))).length
+  const countForRange = (value: TimeRange) =>
+    shows.filter((show) => matchesCity(show, city) && isInRange(show.date, value, today)).length
+
+  const hasFilters = city !== 'Alle' || range !== 'alle' || date !== undefined
+
+  const resetAll = () => {
+    setCity('Alle')
+    setRange('alle')
+    setDate(undefined)
+  }
 
   return (
-    <article className="group flex h-full flex-col overflow-hidden border border-black bg-white transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_rgba(0,0,0,0.12)]">
-      <Link href={eventHref} className="block">
-        <div className="relative flex justify-center border-b border-black bg-zinc-950 p-3 sm:p-4">
-          <div className="absolute left-3 top-3 z-10 grid size-12 place-items-center border border-black bg-white text-center text-black shadow-[2px_2px_0_rgba(255,255,255,0.18)] sm:left-4 sm:top-4 sm:size-14">
-            <div>
-              <div className="text-2xl font-medium leading-none">{Number(day)}</div>
-              <div className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-zinc-500 sm:text-[10px]">{month.replace('.', '')}</div>
+    <section id="events-section" className="px-4 pb-24 md:px-8">
+      {/* Verktøylinje — fester seg under den flytende headeren ved scroll */}
+      <div className="sticky top-[74px] z-30 -mx-4 mb-8 bg-[var(--ev-bg)]/85 px-4 py-3 backdrop-blur-md md:-mx-8 md:px-8">
+        <div className="flex flex-col gap-2.5">
+          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] md:-mx-8 md:px-8 [&::-webkit-scrollbar]:hidden">
+            {TIME_RANGES.map((option) => (
+              <Chip
+                key={option.value}
+                active={!date && range === option.value}
+                count={countForRange(option.value)}
+                onClick={() => {
+                  setRange(option.value)
+                  setDate(undefined)
+                }}
+              >
+                {option.label}
+              </Chip>
+            ))}
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-1.5 text-[13px] transition-colors',
+                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
+                    date
+                      ? 'bg-[var(--ev-accent-fill)] font-semibold text-[var(--ev-accent-ink)]'
+                      : 'bg-[var(--ev-card)] text-[var(--ev-muted)] hover:bg-[var(--ev-card-hover)] hover:text-[var(--ev-text)]'
+                  )}
+                  style={{ borderRadius: 'var(--ev-r-chip)' }}
+                >
+                  <CalendarIcon className="size-3.5" />
+                  {date
+                    ? date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })
+                    : 'Velg dato'}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={(value) => {
+                    setDate(value)
+                    if (value) setRange('alle')
+                  }}
+                  locale={nb}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {cityOptions.length > 1 && (
+            <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] md:-mx-8 md:px-8 [&::-webkit-scrollbar]:hidden">
+              {cityOptions.map((option) => (
+                <Chip
+                  key={option}
+                  active={option === city}
+                  count={countForCity(option)}
+                  onClick={() => setCity(option)}
+                >
+                  {/* Skiller den fra 'Alle' i tidsraden rett over */}
+                  {option === 'Alle' ? 'Alle byer' : option}
+                </Chip>
+              ))}
             </div>
-          </div>
-
-          <div className="relative aspect-[3/4] w-[54%] min-w-28 max-w-40 overflow-hidden border border-white/70 bg-white transition duration-500 group-hover:scale-[1.015] sm:max-w-44">
-            {show.poster_url ? (
-              <Image
-                src={show.poster_url}
-                alt={show.title}
-                fill
-                className="object-contain"
-                sizes="(max-width: 640px) 64vw, (max-width: 1024px) 34vw, 16vw"
-              />
-            ) : (
-              <div className="flex h-full flex-col justify-between bg-black p-4 text-white">
-                <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400">humor.events</span>
-                <strong className="text-2xl font-medium leading-none">{show.title}</strong>
-              </div>
-            )}
-          </div>
-        </div>
-      </Link>
-
-      <div className="flex flex-1 flex-col gap-7 bg-white p-4 sm:p-5">
-        <div className="grid gap-3">
-          <div className="flex min-h-8 items-start justify-between gap-3">
-            <span className="text-sm font-medium uppercase tracking-[0.22em] text-zinc-500">{formatShowTime(show)}</span>
-            {statusLabel && (
-              <span className={cn(
-                'shrink-0 rounded-full border border-black px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em]',
-                soldOut ? 'bg-black text-white' : 'bg-[#ff6bff] text-black'
-              )}>
-                {statusLabel}
-              </span>
-            )}
-          </div>
-          <div>
-            {show.clubName && (
-              <div className="mb-2 inline-flex border border-black px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-700">
-                {show.clubName}
-              </div>
-            )}
-            <h3 className="text-xl font-medium leading-tight tracking-normal">{show.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-500">{[show.clubCity, showLocation, formatTicketPrice(show)].filter(Boolean).join(' · ')}</p>
-          </div>
-        </div>
-
-        <div className="mt-auto grid grid-cols-2 gap-2">
-          <Button asChild variant="outline" className="h-11 rounded-none border border-black bg-transparent text-sm font-medium text-black hover:bg-black hover:text-white">
-            <Link href={eventHref}>Les mer <ArrowUpRight className="size-5" /></Link>
-          </Button>
-          <ToastActionForm action={startCheckoutAction} className="w-full">
-            <input type="hidden" name="show_id" value={show.id} />
-            <input type="hidden" name="slug" value={show.slug ?? show.id} />
-            <Button type="submit" className="h-11 w-full rounded-none border border-black bg-black text-sm font-medium text-white hover:border-[#ff6bff] hover:bg-[#ff6bff] hover:text-black disabled:opacity-45" disabled={soldOut}>
-              <Ticket className="size-5" /> {soldOut ? 'Utsolgt' : 'Kjøp'}
-            </Button>
-          </ToastActionForm>
+          )}
         </div>
       </div>
-    </article>
+
+      <div className="mb-6 flex items-baseline justify-between gap-4">
+        <h2 className="text-lg font-medium tracking-[-0.01em] text-[var(--ev-text)]">
+          {filtered.length} {filtered.length === 1 ? 'show' : 'show'}
+          {city !== 'Alle' && <span className="text-[var(--ev-muted)]"> i {city}</span>}
+        </h2>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={resetAll}
+            className="inline-flex items-center gap-1 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+          >
+            <X className="size-3.5" /> Nullstill
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div
+          className="border border-dashed border-[var(--ev-line-strong)] px-6 py-16 text-center"
+          style={{ borderRadius: 'var(--ev-r-card)' }}
+        >
+          <p className="text-[var(--ev-text)]">Ingen show med disse filtrene.</p>
+          <button
+            type="button"
+            onClick={resetAll}
+            className="mt-3 text-[13px] text-[var(--ev-accent)] underline underline-offset-4"
+          >
+            Vis alle kommende show
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-7 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((show, index) => (
+            <div
+              key={show.id}
+              className="animate-fade-in"
+              // Stram kaskade: alt er på plass innen 300 ms, uansett hvor mange show.
+              style={{ animationDelay: `${Math.min(index * 30, 300)}ms`, animationFillMode: 'both' }}
+            >
+              <EventCard show={show} today={today} priority={index < 4} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <CitySignup city={city} />
+    </section>
   )
 }

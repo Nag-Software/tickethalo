@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
-import { PublicEventCard } from '@/components/public/public-event-card'
+import { EventCard } from '@/components/public/event-card'
 import { PublicHeader } from '@/components/public/public-header'
 import { getUpcomingPublishedShows } from '@/lib/public-events'
+import { getOsloToday } from '@/lib/event-filters'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
@@ -14,9 +15,10 @@ export const dynamic = 'force-dynamic'
 
 export default async function EventsPage() {
   const shows = await getUpcomingPublishedShows()
+  const today = getOsloToday()
 
   return (
-    <main className="min-h-screen bg-white text-black">
+    <main className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]" data-tone="light">
       <section className="">
         <PublicHeader transparent tone="light" />
         <div className="mx-auto max-w-6xl px-4 pb-10 pt-28 md:px-6 md:pb-14 lg:px-8">
@@ -39,7 +41,9 @@ export default async function EventsPage() {
           </Link>
         </div>
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {shows.map((show, index) => <PublicEventCard key={show.id} show={show} priority={index < 3} />)}
+          {shows.map((show, index) => (
+            <EventCard key={show.id} show={show} today={today} priority={index < 3} />
+          ))}
         </div>
         {shows.length === 0 && (
           <div className="border border-dashed border-black/20 p-10 text-center text-sm text-zinc-500">
