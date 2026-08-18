@@ -1,8 +1,7 @@
 import Link from 'next/link'
-import { ToastActionForm } from '@/components/toast-action-form'
-import { acceptOfferAction, declineOfferAction } from '../actions'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { BookingOfferStatusToast } from './status-toast'
+import { OfferButtons } from '@/components/artist/offer-buttons'
 import { Chip, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
@@ -88,21 +87,6 @@ export default async function BookingOffersPage({
           </div>
         )}
       </Panel>
-    </>
-  )
-}
-
-export function OfferButtons({ token }: { token: string }) {
-  return (
-    <>
-      <ToastActionForm action={acceptOfferAction}>
-        <input type="hidden" name="token" value={token} />
-        <button type="submit" className={portalButton.primary}>Aksepter</button>
-      </ToastActionForm>
-      <ToastActionForm action={declineOfferAction}>
-        <input type="hidden" name="token" value={token} />
-        <button type="submit" className={portalButton.secondary}>Avslå</button>
-      </ToastActionForm>
     </>
   )
 }

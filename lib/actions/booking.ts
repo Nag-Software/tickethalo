@@ -230,7 +230,12 @@ export async function bookShow(showId: string) {
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
 
   const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
-    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', ['sent', 'accepted']),
+    // 'declined' må være med. Uten den faller en artist som nettopp takket
+    // nei rett tilbake i kandidatlisten, og siden declineBookingOffer kjører
+    // motoren med én gang, fikk de det samme showet tilbudt på nytt umiddelbart.
+    // Statusene her mates inn i `alreadyInvolved`, som både strictFilter og
+    // selectFallbackCandidates sjekker.
+    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined']),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
@@ -802,7 +807,17 @@ export async function declineBookingOffer(token: string) {
     .maybeSingle()
 
   if (error) throw new Error(error.message)
+
+  // Motoren kjøres for å fylle plassen som nettopp ble ledig. Den ser
+  // avslaget via booking_offers-statusen og tilbyr ikke showet til den
+  // samme artisten igjen — se kommentaren i bookShow().
+  //
+  // Vi skriver bevisst ingen rad i show_artist_booking_exclusions her:
+  // den tabellen filtrerer også bort artisten fra manuell tildeling i
+  // admin, og det finnes ingen måte å angre på. Et avslag skal stoppe
+  // automatikken, ikke låse artisten ute fra showet for godt.
   if (offer?.show_id) await runAutomaticBookingForShow(offer.show_id)
+
   return { result: 'declined' as const }
 }
 
@@ -844,7 +859,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
 
   const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
-    admin.from('booking_offers').select('artist_id').eq('show_id', showId).eq('status', 'sent'),
+    admin.from('booking_offers').select('artist_id').eq('show_id', showId).in('status', ['sent', 'declined']),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
