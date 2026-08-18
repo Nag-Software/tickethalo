@@ -1,14 +1,14 @@
 import Image from 'next/image'
-import { ArtistHeader } from '@/components/artist/artist-header'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
 import { updateArtistProfileAction } from '../actions'
 import { getCurrentArtist } from '@/lib/artist-portal'
 import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles'
 import { shouldBypassImageOptimization } from '@/lib/utils'
+import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
+
+const inputClass =
+  'h-10 w-full rounded-xl bg-[var(--ev-bg)] px-3.5 text-[14px] text-[var(--ev-text)] outline-none ring-1 ring-inset ring-[var(--ev-line)] transition-[box-shadow] placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)]'
 
 export default async function ArtistProfilePage() {
   const { artist } = await getCurrentArtist()
@@ -17,69 +17,118 @@ export default async function ArtistProfilePage() {
 
   return (
     <>
-      <ArtistHeader title="Profil" description="Offentlig artistprofil" />
-      <main className="grid gap-6 p-4 md:p-6 xl:grid-cols-[1fr_320px]">
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Profilinformasjon</CardTitle>
-              <CardDescription>Feltene brukes i booking og offentlig presentasjon.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ToastActionForm action={updateArtistProfileAction} encType="multipart/form-data" className="grid gap-4" successMessage="Profilen er lagret.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Fullt navn"><Input name="full_name" defaultValue={artist.full_name} required /></Field>
-                  <Field label="Scenenavn"><Input name="stage_name" defaultValue={artist.stage_name ?? ''} /></Field>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Telefon"><Input name="phone" type="tel" defaultValue={artist.phone ?? ''} /></Field>
-                  <Field label="Profilbilde"><Input name="profile_image_file" type="file" accept="image/png,image/jpeg,image/webp" /></Field>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Kategori">
-                    <div className="space-y-3">
-                      <input type="hidden" name="category_present" value="1" />
-                      <div className="flex flex-wrap gap-2">
-                        {ARTIST_ROLE_OPTIONS.map((role) => (
-                          <label key={role.value} className="cursor-pointer">
-                            <input
-                              type="checkbox"
-                              name="category"
-                              value={role.value}
-                              defaultChecked={selectedCategories.has(role.value)}
-                              className="sr-only peer"
-                            />
-                            <span className="inline-flex items-center rounded-full border px-3 py-1.5 text-sm transition-colors peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground hover:bg-muted">
-                              {role.label}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </Field>
-                  <Field label="Språk"><Select name="language" defaultValue={artist.language ?? 'Norsk'} options={['Norsk', 'Engelsk', 'Begge']} /></Field>
-                </div>
-                <Field label="Bio">
-                  <textarea name="bio" defaultValue={artist.bio ?? ''} rows={7} className="min-h-32 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" />
+      <PageHeader
+        title="Profil"
+        description="Feltene under brukes i booking og på den offentlige komikersiden."
+        actions={
+          <Chip tone={artist.status === 'approved' ? 'accent' : 'neutral'}>
+            {artist.status === 'approved' ? 'Godkjent' : 'Under vurdering'}
+          </Chip>
+        }
+      />
+
+      <div className="grid gap-7 xl:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
+        <div className="flex flex-col gap-7">
+          <ToastActionForm
+            action={updateArtistProfileAction}
+            encType="multipart/form-data"
+            successMessage="Profilen er lagret."
+          >
+            <Panel title="Profilinformasjon">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Fullt navn">
+                  <input name="full_name" defaultValue={artist.full_name} required className={inputClass} />
                 </Field>
-                <Field label="YouTube-video">
-                  <div className="grid gap-2">
-                    <Input name="youtube" type="url" defaultValue={links.youtube ?? ''} placeholder="https://youtube.com/watch?v=..." />
-                    <p className="text-xs text-muted-foreground">
-                      Oppdater denne lenken for å endre videoen i spilleren under.
-                    </p>
-                  </div>
+                <Field label="Scenenavn">
+                  <input name="stage_name" defaultValue={artist.stage_name ?? ''} className={inputClass} />
                 </Field>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Instagram"><Input name="instagram" type="url" defaultValue={links.instagram ?? ''} placeholder="https://" /></Field>
-                  <Field label="TikTok"><Input name="tiktok" type="url" defaultValue={links.tiktok ?? ''} placeholder="https://" /></Field>
-                  <Field label="Facebook"><Input name="facebook" type="url" defaultValue={links.facebook ?? ''} placeholder="https://" /></Field>
-                  <Field label="Nettside"><Input name="website" type="url" defaultValue={links.website ?? ''} placeholder="https://" /></Field>
+                <Field label="Telefon">
+                  <input name="phone" type="tel" defaultValue={artist.phone ?? ''} className={inputClass} />
+                </Field>
+                <Field label="Profilbilde">
+                  <input
+                    name="profile_image_file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="w-full text-[13px] text-[var(--ev-muted)] file:mr-3 file:rounded-full file:border-0 file:bg-[var(--ev-card-hover)] file:px-3.5 file:py-2 file:text-[13px] file:font-medium file:text-[var(--ev-text)]"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Kategori">
+                <input type="hidden" name="category_present" value="1" />
+                <div className="flex flex-wrap gap-1.5">
+                  {ARTIST_ROLE_OPTIONS.map((role) => (
+                    <label key={role.value} className="cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name="category"
+                        value={role.value}
+                        defaultChecked={selectedCategories.has(role.value)}
+                        className="peer sr-only"
+                      />
+                      <span className="inline-flex items-center rounded-full bg-[var(--ev-bg)] px-3.5 py-1.5 text-[13px] text-[var(--ev-muted)] ring-1 ring-inset ring-[var(--ev-line)] transition-colors hover:text-[var(--ev-text)] peer-checked:bg-[var(--ev-accent-fill)] peer-checked:font-semibold peer-checked:text-[var(--ev-accent-ink)] peer-checked:ring-[var(--ev-accent-fill)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ev-accent-fill)]">
+                        {role.label}
+                      </span>
+                    </label>
+                  ))}
                 </div>
-                <Button type="submit" className="w-fit">Lagre profil</Button>
-              </ToastActionForm>
-            </CardContent>
-          </Card>
+              </Field>
+
+              <Field label="Språk">
+                <select
+                  name="language"
+                  defaultValue={artist.language ?? 'Norsk'}
+                  className={`${inputClass} appearance-none`}
+                >
+                  {['Norsk', 'Engelsk', 'Begge'].map((option) => (
+                    <option key={option}>{option}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Bio">
+                <textarea
+                  name="bio"
+                  defaultValue={artist.bio ?? ''}
+                  rows={7}
+                  className="min-h-32 w-full rounded-xl bg-[var(--ev-bg)] px-3.5 py-3 text-[14px] leading-relaxed text-[var(--ev-text)] outline-none ring-1 ring-inset ring-[var(--ev-line)] transition-[box-shadow] placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)]"
+                />
+              </Field>
+
+              <Field
+                label="YouTube-video"
+                hint="Oppdater denne lenken for å endre videoen i spilleren under."
+              >
+                <input
+                  name="youtube"
+                  type="url"
+                  defaultValue={links.youtube ?? ''}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className={inputClass}
+                />
+              </Field>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Instagram">
+                  <input name="instagram" type="url" defaultValue={links.instagram ?? ''} placeholder="https://" className={inputClass} />
+                </Field>
+                <Field label="TikTok">
+                  <input name="tiktok" type="url" defaultValue={links.tiktok ?? ''} placeholder="https://" className={inputClass} />
+                </Field>
+                <Field label="Facebook">
+                  <input name="facebook" type="url" defaultValue={links.facebook ?? ''} placeholder="https://" className={inputClass} />
+                </Field>
+                <Field label="Nettside">
+                  <input name="website" type="url" defaultValue={links.website ?? ''} placeholder="https://" className={inputClass} />
+                </Field>
+              </div>
+
+              <button type="submit" className={`${portalButton.primary} w-fit`}>
+                Lagre profil
+              </button>
+            </Panel>
+          </ToastActionForm>
 
           <YouTubePlayerCard
             url={links.youtube ?? null}
@@ -88,38 +137,55 @@ export default async function ArtistProfilePage() {
           />
         </div>
 
-        <aside className="space-y-4">
+        <aside className="flex flex-col gap-7">
           {artist.profile_image_url && (
-            <Card>
-              <div className="relative aspect-square w-full overflow-hidden">
-                <Image src={artist.profile_image_url} alt={artist.stage_name ?? artist.full_name} fill unoptimized={shouldBypassImageOptimization(artist.profile_image_url)} className="object-cover" />
-              </div>
-            </Card>
+            <div
+              className="relative aspect-square w-full overflow-hidden bg-[var(--ev-card-hover)]"
+              style={{ borderRadius: 'var(--ev-r-card)' }}
+            >
+              <Image
+                src={artist.profile_image_url}
+                alt=""
+                fill
+                sizes="(max-width: 1280px) 100vw, 320px"
+                unoptimized={shouldBypassImageOptimization(artist.profile_image_url)}
+                className="object-cover"
+              />
+            </div>
           )}
-          <Card>
-            <CardHeader>
-              <CardTitle>Bookingstatus</CardTitle>
-              <CardDescription>Dette avgjør om profilen kan matches automatisk.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <ReadOnly label="Status" value={artist.status === 'approved' ? 'Godkjent' : 'Under vurdering'} />
-              <ReadOnly label="Kan bookes" value={artist.status === 'approved' && (artist.admin_score ?? 0) >= 6 ? 'Ja' : 'Ikke ennå'} />
-            </CardContent>
-          </Card>
+
+          <Panel title="Bookingstatus" description="Avgjør om profilen kan matches automatisk.">
+            <div className="flex flex-col divide-y divide-[var(--ev-line)]">
+              <DataRow
+                label="Status"
+                value={artist.status === 'approved' ? 'Godkjent' : 'Under vurdering'}
+              />
+              <DataRow
+                label="Kan bookes"
+                value={artist.status === 'approved' && (artist.admin_score ?? 0) >= 6 ? 'Ja' : 'Ikke ennå'}
+              />
+            </div>
+          </Panel>
         </aside>
-      </main>
+      </div>
     </>
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="grid gap-2 text-sm font-medium"><span>{label}</span>{children}</label>
-}
-
-function Select({ name, defaultValue, options }: { name: string; defaultValue: string; options: string[] }) {
-  return <select name={name} defaultValue={defaultValue} className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">{options.map((option) => <option key={option}>{option}</option>)}</select>
-}
-
-function ReadOnly({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2"><span className="text-muted-foreground">{label}</span><strong>{value}</strong></div>
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-[13px] font-medium">{label}</span>
+      {children}
+      {hint && <span className="text-[12px] text-[var(--ev-faint)]">{hint}</span>}
+    </label>
+  )
 }
