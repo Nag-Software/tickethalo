@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { cn } from '@/lib/utils'
 
 const Logo = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14" className="w-[15px] h-[15px] text-white">
@@ -25,14 +26,43 @@ const navLinks = [
   { href: '/artist-app/login', label: 'PORTAL' },
 ]
 
+/**
+ * @param tone Tonen på sidebakgrunnen bak headeren — avgjør hvilken farge
+ *             baren får når den setter seg fast ved scroll.
+ */
 export function PublicHeader({ transparent, tone = 'dark' }: { transparent?: boolean; tone?: 'dark' | 'light' }) {
   void transparent
-  void tone
   const [open, setOpen] = useState(false)
+  const [stuck, setStuck] = useState(false)
+
+  // Navigasjonen svever over innholdet og kolliderer med lyse plakater.
+  // Når vi har scrollet forbi heroen legger den seg inntil toppen med bakgrunn.
+  useEffect(() => {
+    const onScroll = () => setStuck(window.scrollY > 64)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   return (
     <>
-      <nav className="fixed top-8 left-4 md:left-8 z-[2000] flex items-center gap-0 animate-fade-in" style={{ animationFillMode: 'both' }}>
+      <div
+        aria-hidden
+        className={cn(
+          'fixed inset-x-0 top-0 z-[1999] h-[66px] backdrop-blur-md transition-opacity duration-300',
+          tone === 'light'
+            ? 'border-b border-black/10 bg-white/80'
+            : 'border-b border-white/10 bg-[#08070a]/80',
+          stuck ? 'opacity-100' : 'pointer-events-none opacity-0'
+        )}
+      />
+      <nav
+        className={cn(
+          'fixed left-4 z-[2000] flex items-center gap-0 animate-fade-in transition-[top] duration-300 md:left-8',
+          stuck ? 'top-4' : 'top-8'
+        )}
+        style={{ animationFillMode: 'both' }}
+      >
         {/* Logo */}
         <Link href="/" className="flex items-stretch h-[34px] border border-black flex-shrink-0 group">
           <div className="w-[34px] bg-black flex items-center justify-center">

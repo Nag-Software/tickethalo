@@ -4,6 +4,7 @@ import type { Artist, ConfirmedSpot, Show, ShowRequirement } from '@/types/datab
 export type PublicShow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id'> & {
   clubName: string | null
   clubCity: string | null
+  clubLogoUrl: string | null
   soldTickets: number
 }
 
@@ -105,8 +106,8 @@ async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' 
   const db = createAdminClient()
   const clubIds = [...new Set(shows.map((show) => show.club_id).filter((clubId): clubId is string => Boolean(clubId)))]
   const { data: clubs } = clubIds.length > 0
-    ? await db.from('clubs').select('id, name, city').in('id', clubIds)
-    : { data: [] as Array<{ id: string; name: string; city: string | null }> }
+    ? await db.from('clubs').select('id, name, city, logo_url').in('id', clubIds)
+    : { data: [] as Array<{ id: string; name: string; city: string | null; logo_url: string | null }> }
   const clubMap = new Map((clubs ?? []).map((club) => [club.id, club]))
 
   return Promise.all(shows.map(async (show) => {
@@ -122,6 +123,7 @@ async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' 
       ...show,
       clubName: club?.name ?? null,
       clubCity: club?.city ?? null,
+      clubLogoUrl: club?.logo_url ?? null,
       soldTickets: count ?? 0,
     }
   }))

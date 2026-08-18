@@ -43,6 +43,15 @@ export type Club = {
   updated_at: string
 }
 
+export type CitySubscriber = {
+  id: string
+  email: string
+  /** Bynavn, eller 'alle' når besøkende ikke hadde filtrert på en by. */
+  city: string
+  source: string | null
+  created_at: string
+}
+
 export type ClubMembership = {
   id: string
   club_id: string
@@ -565,6 +574,18 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ClubMembership>
+        Relationships: []
+      }
+      city_subscribers: {
+        Row: CitySubscriber
+        Insert: {
+          id?: string
+          email: string
+          city?: string
+          source?: string | null
+          created_at?: string
+        }
+        Update: Partial<CitySubscriber>
         Relationships: []
       }
     }

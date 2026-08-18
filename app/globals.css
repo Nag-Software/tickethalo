@@ -173,3 +173,70 @@
     @apply font-sans;
   }
 }
+/* ============================================================
+   Public surface tokens — forside og eventliste
+   Kortene leser kun disse variablene, så samme komponent
+   fungerer på mørk forside og lys /events-side.
+   ============================================================ */
+
+.ev-surface {
+  --ev-bg: #ffffff;
+  --ev-card: rgba(17, 16, 21, 0.03);
+  --ev-card-hover: rgba(17, 16, 21, 0.06);
+  --ev-line: rgba(17, 16, 21, 0.10);
+  --ev-line-strong: rgba(17, 16, 21, 0.22);
+  --ev-text: #111015;
+  --ev-muted: rgba(17, 16, 21, 0.58);
+  --ev-faint: rgba(17, 16, 21, 0.40);
+  --ev-accent: #c820c8;
+  --ev-accent-fill: #ff6bff;
+  --ev-accent-ink: #0b0a0d;
+  --ev-poster-ground: #0c0b0f;
+
+  --ev-r-art: 8px;
+  --ev-r-card: 18px;
+  --ev-r-chip: 999px;
+}
+
+.ev-surface[data-tone='dark'] {
+  --ev-bg: #08070a;
+  --ev-card: rgba(255, 255, 255, 0.04);
+  --ev-card-hover: rgba(255, 255, 255, 0.07);
+  --ev-line: rgba(255, 255, 255, 0.08);
+  --ev-line-strong: rgba(255, 255, 255, 0.20);
+  --ev-text: #f4f2f7;
+  --ev-muted: rgba(244, 242, 247, 0.60);
+  --ev-faint: rgba(244, 242, 247, 0.40);
+  --ev-accent: #ff6bff;
+  --ev-accent-fill: #ff6bff;
+  --ev-accent-ink: #0b0a0d;
+  --ev-poster-ground: #000000;
+}
+
+@keyframes badge-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-badge-spin {
+  animation: badge-spin 20s linear infinite;
+}
+
+/* Reduced motion: slå av dekorativ bevegelse, men la sluttilstanden stå.
+   Målrettet i stedet for global reset, fordi city-drop ender på opacity 0.3. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-city-drop,
+  .animate-scroll-left-fast,
+  .animate-badge-spin {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .ev-surface *,
+  .ev-surface *::before,
+  .ev-surface *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
