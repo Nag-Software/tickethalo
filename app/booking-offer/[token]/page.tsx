@@ -148,8 +148,8 @@ export default async function PublicBookingOfferPage({
 
         <p className="text-center text-xs font-medium text-zinc-600">
           Spørsmål? Kontakt oss på{' '}
-          <a href="mailto:hei@humor.events" className="underline underline-offset-2">
-            hei@humor.events
+          <a href="mailto:hei@tickethalo.com" className="underline underline-offset-2">
+            hei@tickethalo.com
           </a>
         </p>
       </div>

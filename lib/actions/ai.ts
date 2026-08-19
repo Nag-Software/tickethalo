@@ -60,7 +60,7 @@ export async function generateShowPoster(showId: string, opts: {
 
     const dateText = formatPosterDate(opts.date)
     const timeText = opts.startTime ? `kl. ${opts.startTime.slice(0, 5)}` : ''
-    const venue = opts.venue || 'humor.events'
+    const venue = opts.venue || 'Tickethalo'
     const designReference = await buildPosterDesignReference(opts.designTemplate)
     const posterPlan = designReference ? null : createPosterPlan(showId, opts.title, opts.date, sorted.length)
     const identityMapIndex = designReference ? 2 : 1
@@ -131,11 +131,11 @@ export async function generateShowPoster(showId: string, opts: {
       posterPlan ? `- Texture/detail: ${posterPlan.texture}` : null,
       ``,
       `DESIGN REQUIREMENTS:`,
-      designReference ? `- Do not invent a new layout. Preserve the selected template's exact grid and visual system as the dominant requirement.` : `- Make this poster visually distinct from other humor.events posters; follow the show-specific plan above.`,
+      designReference ? `- Do not invent a new layout. Preserve the selected template's exact grid and visual system as the dominant requirement.` : `- Make this poster visually distinct from other Tickethalo posters; follow the show-specific plan above.`,
       designReference ? `- Do not change logos, brand marks, footer logos, sponsor marks, background photography, textures, decorative marks, or color system from the template.` : `- Norwegian comedy poster quality: credible enough for Latter, Stand Up Norge, venue posters, and ticketing pages.`,
       designReference ? `- Replace only editable event text. Keep existing logo text and brand text unchanged.` : `- Title "${opts.title}" must be the dominant readable text, with a strong silhouette and high contrast.`,
       designReference ? `- Keep date, time, venue, title, and artist names legible within the template's existing text areas.` : `- Include date, time, and venue clearly. They must remain legible at phone-screen size.`,
-      designReference ? null : `- Include a small footer exactly as: "BILLETTER · HUMOR.EVENTS".`,
+      designReference ? null : `- Include a small footer exactly as: "BILLETTER · TICKETHALO".`,
       `- Keep faces crisp, undistorted, and recognizable. Authenticity is more important than stylization, humor, or visual novelty.`,
       `- The visible artist name next to or above each portrait must match the face according to the labeled IDENTITY MAP. Never swap names between faces.`,
       `- Do not copy the IDENTITY MAP layout, numbers, grid, or reference labels into the final poster; use it only to map each name to the correct face.`,

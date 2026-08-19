@@ -8,8 +8,8 @@ import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
-  title: 'Komikere — humor.events',
-  description: 'Se godkjente komikere og artister i humor.events-lineupen.',
+  title: 'Komikere — Tickethalo',
+  description: 'Se godkjente komikere og artister i Tickethalo-lineupen.',
 }
 
 export const dynamic = 'force-dynamic'

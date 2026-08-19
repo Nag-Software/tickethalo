@@ -2,7 +2,7 @@ import { PublicHeader } from '@/components/public/public-header'
 import { ArtistSignupForm } from '@/components/artist/artist-signup-form'
 import { Footer } from '@/components/Footer'
 
-export const metadata = { title: 'Registrer artistprofil — humor.events' }
+export const metadata = { title: 'Registrer artistprofil — Tickethalo' }
 
 export default async function ArtistSignupPage({
   searchParams,

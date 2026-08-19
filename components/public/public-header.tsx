@@ -80,7 +80,7 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
             <Logo className="size-3.5" />
           </span>
           <span className="hidden text-[12.5px] font-semibold tracking-[-0.01em] sm:block">
-            humor.events
+            Tickethalo
           </span>
         </Link>
 
@@ -149,7 +149,7 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
             <span className="grid size-6 shrink-0 place-content-center rounded-full bg-[var(--ev-bg)]/15">
               <Logo className="size-3.5" />
             </span>
-            <span className="text-[12.5px] font-semibold tracking-[-0.01em]">humor.events</span>
+            <span className="text-[12.5px] font-semibold tracking-[-0.01em]">Tickethalo</span>
           </Link>
 
           <button

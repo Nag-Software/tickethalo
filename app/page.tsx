@@ -8,8 +8,8 @@ import { getOsloToday, formatDayLabel } from '@/lib/event-filters'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
-  title: 'humor.events — finn stand-up nær deg',
-  description: 'Se kommende stand-up show og kjøp billetter til humor.events-arrangementer.',
+  title: 'Tickethalo — finn stand-up nær deg',
+  description: 'Se kommende stand-up show og kjøp billetter til Tickethalo-arrangementer.',
 }
 
 export const dynamic = 'force-dynamic'

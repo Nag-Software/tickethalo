@@ -3,7 +3,7 @@ import { XCircle } from 'lucide-react'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 
-export const metadata = { title: 'Betaling avbrutt — humor.events' }
+export const metadata = { title: 'Betaling avbrutt — Tickethalo' }
 
 export default async function CheckoutCancelPage({
   searchParams,

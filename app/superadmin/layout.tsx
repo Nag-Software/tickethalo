@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
-export const metadata = { title: 'Superadmin — humor.events' }
+export const metadata = { title: 'Superadmin — Tickethalo' }
 
 export default async function SuperadminLayout({ children }: { children: React.ReactNode }) {
   const pathname = await getRequestPathname()

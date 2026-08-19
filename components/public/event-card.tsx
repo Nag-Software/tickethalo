@@ -64,7 +64,7 @@ export function EventCard({
             />
           ) : (
             <div className="flex h-full flex-col justify-between p-3 text-white sm:p-4">
-              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/45">humor.events</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/45">Tickethalo</span>
               <strong className="text-sm font-medium leading-tight sm:text-2xl">{show.title}</strong>
             </div>
           )}

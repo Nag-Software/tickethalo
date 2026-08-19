@@ -1,8 +1,8 @@
-# Systemanalyse: enklere og mer sømløst LinkAI
+# Systemanalyse: enklere og mer sømløst Tickethalo
 
 ## Retning
 
-LinkAI bør føles som et profesjonelt bookingsystem der hver brukerflate har ett tydelig ansvar:
+Tickethalo bør føles som et profesjonelt bookingsystem der hver brukerflate har ett tydelig ansvar:
 
 - Admin oppretter show, setter krav og følger status.
 - Systemet matcher, sender tilbud, fyller lineup og publiserer når showet er klart.

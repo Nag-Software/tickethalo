@@ -18,15 +18,15 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const artist = await getPublicArtistById(id)
-  if (!artist) return { title: 'Artist ikke funnet — humor.events' }
+  if (!artist) return { title: 'Artist ikke funnet — Tickethalo' }
   const name = artistDisplayName(artist)
 
   return {
-    title: `${name} — humor.events`,
-    description: artist.bio ?? `${name} i humor.events-lineupen.`,
+    title: `${name} — Tickethalo`,
+    description: artist.bio ?? `${name} i Tickethalo-lineupen.`,
     openGraph: {
       title: name,
-      description: artist.bio ?? `${name} i humor.events-lineupen.`,
+      description: artist.bio ?? `${name} i Tickethalo-lineupen.`,
       images: artist.profile_image_url ? [{ url: artist.profile_image_url, alt: name }] : undefined,
     },
   }

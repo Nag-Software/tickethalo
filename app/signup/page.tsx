@@ -1,7 +1,7 @@
 import { SignupForm } from "@/components/signup-form"
 import { PublicHeader } from "@/components/public/public-header"
 
-export const metadata = { title: 'Lag komikerprofil — humor.events' }
+export const metadata = { title: 'Lag komikerprofil — Tickethalo' }
 
 export default async function SignupPage({
   searchParams,

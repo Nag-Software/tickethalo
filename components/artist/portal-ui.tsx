@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
  * Portalen brukte tre ulike visuelle språk: brutalistiske rammer på
  * oversikten, rå shadcn-Cards på undersidene, og cream + rød på
  * innloggingen. Disse komponentene leser `.ev-surface`-variablene, så
- * portalen ser ut som resten av humor.events uten at hver side må
+ * portalen ser ut som resten av Tickethalo uten at hver side må
  * gjenta de samme klassene.
  */
 

@@ -3,8 +3,8 @@ import { headers } from 'next/headers'
 export async function getRequestPathname() {
   const headerStore = await headers()
   const rawPathname =
-    headerStore.get('x-humor-pathname')
-    ?? headerStore.get('x-humor-visible-pathname')
+    headerStore.get('x-tickethalo-pathname')
+    ?? headerStore.get('x-tickethalo-visible-pathname')
     ?? headerStore.get('x-matched-path')
     ?? headerStore.get('next-url')
     ?? '/'

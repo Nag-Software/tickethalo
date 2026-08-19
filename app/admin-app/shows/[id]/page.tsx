@@ -550,7 +550,7 @@ export default async function ShowDetailPage({
                   ``,
                   activeLineup.length > 0 ? `Lineup:\n${activeLineup.map(s => `• ${artistMap[s.artist_id]?.full_name ?? '?'}`).join('\n')}` : null,
                   ``,
-                  `🎟️ Billetter: ${process.env.APP_URL ?? 'https://humor.events'}/events/${show.slug}`,
+                  `🎟️ Billetter: ${process.env.APP_URL ?? 'https://tickethalo.com'}/events/${show.slug}`,
                 ].filter(Boolean).join('\n')}</pre>
               </div>
 
@@ -565,7 +565,7 @@ export default async function ShowDetailPage({
                   ``,
                   activeLineup.length > 0 ? `Lineup:\n${activeLineup.map(s => `• ${artistMap[s.artist_id]?.full_name ?? '?'}`).join('\n')}\n` : null,
                   `Kjøp billetter her:`,
-                  `${process.env.APP_URL ?? 'https://humor.events'}/events/${show.slug}`,
+                  `${process.env.APP_URL ?? 'https://tickethalo.com'}/events/${show.slug}`,
                 ].filter(Boolean).join('\n')}</pre>
               </div>
             </div>

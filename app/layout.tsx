@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Humorevents",
-  description: "Humorevents - Your source for the best comedy events",
+  title: "Tickethalo",
+  description: "Tickethalo - Your source for the best comedy events",
 };
 
 export default function RootLayout({

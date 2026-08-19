@@ -107,7 +107,7 @@ export function ArtistSignupForm({
       <div className="grid lg:grid-cols-[280px_1fr]">
         <aside className="border-b border-[var(--ev-line)] p-6 lg:border-b-0 lg:border-r">
           <div className="lg:sticky lg:top-6">
-            <Link href="/" className="text-[13px] text-[var(--ev-faint)] transition-colors hover:text-[var(--ev-text)]">humor.events</Link>
+            <Link href="/" className="text-[13px] text-[var(--ev-faint)] transition-colors hover:text-[var(--ev-text)]">Tickethalo</Link>
             <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">Søknad</h2>
             <p className="mt-2 text-[14px] leading-relaxed text-[var(--ev-muted)]">
               Søknaden sendes til bookingteamet for vurdering.

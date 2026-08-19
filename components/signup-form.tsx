@@ -44,7 +44,7 @@ export function SignupForm({
               <div className="flex size-8 items-center justify-center rounded-md">
                 <HugeiconsIcon icon={LayoutBottomIcon} strokeWidth={2} className="size-6" />
               </div>
-              <span className="sr-only">humor.events</span>
+              <span className="sr-only">Tickethalo</span>
             </a>
             <h1 className="text-xl font-bold">Registrer artistprofil</h1>
             <FieldDescription>

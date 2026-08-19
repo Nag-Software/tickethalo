@@ -7,7 +7,7 @@ import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 import { getClubAccess } from '@/lib/club-auth'
 
-export const metadata = { title: 'Booking-center — humor.events' }
+export const metadata = { title: 'Booking-center — Tickethalo' }
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = await getRequestPathname()
@@ -45,7 +45,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const selectedClub = clubAccess.clubs.find((club) => club.id === clubAccess.selectedClubId) ?? null
 
   const sidebarUser = {
-    email: profile.email ?? user.email ?? 'admin@humor.events',
+    email: profile.email ?? user.email ?? 'admin@tickethalo.com',
     name: profile.full_name ?? profile.email ?? user.email ?? 'Admin',
     role: profile.role ?? 'admin',
     clubName: selectedClub?.name ?? null,

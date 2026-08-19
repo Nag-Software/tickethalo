@@ -14,7 +14,7 @@ export function Footer() {
       }}
     >
       <div className="mb-2 flex flex-wrap items-center justify-center gap-2 px-4">
-        <span style={{ color: 'var(--ev-text, #000)' }}>humor.events</span>™
+        <span style={{ color: 'var(--ev-text, #000)' }}>Tickethalo</span>™
         <span aria-hidden style={{ color: 'var(--ev-faint, #d4d4d8)' }}>|</span>
         <span>Norges morsomste kvelder</span>
       </div>

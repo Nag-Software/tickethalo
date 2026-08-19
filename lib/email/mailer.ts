@@ -231,7 +231,7 @@ export async function sendTicketPurchaseEmail(opts: {
     })
 
     const displayName = escapeHtml(opts.buyer_name || opts.email)
-    const showTitle = escapeHtml(opts.show_title || 'humor.events')
+    const showTitle = escapeHtml(opts.show_title || 'Tickethalo')
     const showDate = escapeHtml(opts.show_date || 'Dato kommer')
     const showTime = escapeHtml(opts.show_time || 'Tid kommer')
     const venueName = escapeHtml(opts.venue_name || 'Sted kommer')
@@ -244,7 +244,7 @@ export async function sendTicketPurchaseEmail(opts: {
       subject,
       attachments: [
         {
-          filename: 'humor-events-ticket-qr.png',
+          filename: 'tickethalo-ticket-qr.png',
           content: qrImage,
           contentType: 'image/png',
           contentId: 'ticket-qr',
@@ -256,7 +256,7 @@ export async function sendTicketPurchaseEmail(opts: {
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">
             <tr>
               <td style="background:#111827;color:#ffffff;padding:28px 30px">
-                <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#a7f3d0;font-weight:700">humor.events</div>
+                <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#a7f3d0;font-weight:700">Tickethalo</div>
                 <h1 style="margin:10px 0 0;font-size:30px;line-height:1.1;font-weight:800">Din billett er klar</h1>
                 <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hei ${displayName}, betalingen er godkjent. Vis QR-koden i døren.</p>
               </td>

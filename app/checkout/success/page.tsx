@@ -5,7 +5,7 @@ import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 
-export const metadata = { title: 'Takk for kjøpet — humor.events' }
+export const metadata = { title: 'Takk for kjøpet — Tickethalo' }
 
 export default async function CheckoutSuccessPage({
   searchParams,
@@ -57,7 +57,7 @@ export default async function CheckoutSuccessPage({
 
           {session && (
             <dl className="mt-7 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)] text-[14px]">
-              <Row label="Show" value={session.metadata?.show_title ?? 'humor.events'} />
+              <Row label="Show" value={session.metadata?.show_title ?? 'Tickethalo'} />
               {session.metadata?.show_date && <Row label="Dato" value={session.metadata.show_date} />}
               <Row
                 label="E-post"

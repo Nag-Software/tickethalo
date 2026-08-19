@@ -34,23 +34,23 @@ export async function proxy(request: NextRequest) {
   let resolvedPathname = pathname
   let response = NextResponse.next({ request: { headers: requestHeaders } })
 
-  requestHeaders.set('x-humor-visible-pathname', pathname)
-  requestHeaders.set('x-humor-hostname', hostname)
+  requestHeaders.set('x-tickethalo-visible-pathname', pathname)
+  requestHeaders.set('x-tickethalo-hostname', hostname)
 
   if ((hostname === 'admin.localhost' || hostname.startsWith('admin.')) && !pathname.startsWith('/admin-app') && !isApiPath) {
     const url = request.nextUrl.clone()
     url.pathname = `/admin-app${pathname}`
     resolvedPathname = url.pathname
-    requestHeaders.set('x-humor-pathname', resolvedPathname)
+    requestHeaders.set('x-tickethalo-pathname', resolvedPathname)
     response = NextResponse.rewrite(url, { request: { headers: requestHeaders } })
   } else if ((hostname === 'artist.localhost' || hostname.startsWith('artist.')) && !pathname.startsWith('/artist-app') && !isApiPath) {
     const url = request.nextUrl.clone()
     url.pathname = `/artist-app${pathname}`
     resolvedPathname = url.pathname
-    requestHeaders.set('x-humor-pathname', resolvedPathname)
+    requestHeaders.set('x-tickethalo-pathname', resolvedPathname)
     response = NextResponse.rewrite(url, { request: { headers: requestHeaders } })
   } else {
-    requestHeaders.set('x-humor-pathname', resolvedPathname)
+    requestHeaders.set('x-tickethalo-pathname', resolvedPathname)
     response = NextResponse.next({ request: { headers: requestHeaders } })
   }
 

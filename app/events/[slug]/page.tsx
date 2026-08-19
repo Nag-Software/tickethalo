@@ -29,12 +29,12 @@ export const dynamic = 'force-dynamic'
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const show = await getPublishedShowBySlug(slug)
-  if (!show) return { title: 'Event ikke funnet — humor.events' }
-  const description = show.description ?? `${show.title} på ${show.venue_name ?? show.venue_address ?? 'humor.events'} ${formatShowDate(show.date)}.`
+  if (!show) return { title: 'Event ikke funnet — Tickethalo' }
+  const description = show.description ?? `${show.title} på ${show.venue_name ?? show.venue_address ?? 'Tickethalo'} ${formatShowDate(show.date)}.`
   const canonical = `/events/${show.slug}`
 
   return {
-    title: `${show.title} — humor.events`,
+    title: `${show.title} — Tickethalo`,
     description,
     alternates: { canonical },
     openGraph: {
@@ -133,7 +133,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               ) : (
                 <div className="flex aspect-[2/3] flex-col justify-between p-7 text-white">
                   <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/45">
-                    humor.events
+                    Tickethalo
                   </span>
                   <strong className="text-3xl font-medium leading-tight">{show.title}</strong>
                 </div>

@@ -43,7 +43,7 @@ export default async function ClubsPage() {
         <div className="flex items-center gap-3">
           <Building2 className="size-5 text-muted-foreground" />
           <h1 className="text-lg font-semibold">Klubber</h1>
-          <span className="text-sm text-muted-foreground">humor.events superadmin</span>
+          <span className="text-sm text-muted-foreground">Tickethalo superadmin</span>
         </div>
         <div className="flex items-center gap-3">
           <form action="/superadmin/logout" method="post">

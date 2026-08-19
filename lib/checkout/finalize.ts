@@ -77,7 +77,7 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
     const emailResult = await sendTicketPurchaseEmail({
       email: buyerEmail,
       buyer_name: buyerName,
-      show_title: show?.title ?? session.metadata?.show_title ?? 'humor.events',
+      show_title: show?.title ?? session.metadata?.show_title ?? 'Tickethalo',
       show_date: show?.date ?? session.metadata?.show_date ?? '',
       show_time: show?.start_time?.slice(0, 5),
       venue_name: show?.venue_name ?? show?.venue_address ?? '',

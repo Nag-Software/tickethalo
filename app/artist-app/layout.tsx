@@ -5,7 +5,7 @@ import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 import { ArtistTopbar } from '@/components/artist/artist-topbar'
 
-export const metadata = { title: 'Komikerportal — humor.events' }
+export const metadata = { title: 'Komikerportal — Tickethalo' }
 
 export default async function ArtistLayout({ children }: { children: React.ReactNode }) {
   const pathname = await getRequestPathname()

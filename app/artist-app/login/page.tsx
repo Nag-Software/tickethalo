@@ -56,7 +56,7 @@ export default async function ArtistLoginPage({
 
         <div className="w-full lg:justify-self-end">
           <LoginForm
-            brandLabel="humor.events"
+            brandLabel="Tickethalo"
             title="Komikerportal"
             description="Logg inn med komikerprofil"
             action="/artist-app/login/submit"

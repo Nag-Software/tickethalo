@@ -225,7 +225,7 @@ function ArtistAuthLanding() {
           </h1>
           <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--ev-muted)]">
             Logg inn eller registrer komikerprofil for å bli vurdert til kommende kvelder hos
-            humor.events.
+            Tickethalo.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link href="/artist-app/login" className={portalButton.primary}>
