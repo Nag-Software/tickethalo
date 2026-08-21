@@ -31,10 +31,10 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   return (
     <>
       <Link
-        href="/artist-app/booking-offers"
+        href="/artist-app/bookings"
         className="inline-flex w-fit items-center gap-2 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
       >
-        <ArrowLeft className="size-4" /> Alle tilbud
+        <ArrowLeft className="size-4" /> Tilbake til bookinger
       </Link>
 
       <PageHeader
@@ -79,8 +79,8 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
               <p className="text-[14px] leading-relaxed text-[var(--ev-muted)]">
                 Dette tilbudet tar ikke imot svar lenger.
               </p>
-              <Link href="/artist-app/booking-offers" className={portalButton.secondary}>
-                Se andre tilbud
+              <Link href="/artist-app/bookings" className={portalButton.secondary}>
+                Se alle bookinger
               </Link>
             </>
           )}

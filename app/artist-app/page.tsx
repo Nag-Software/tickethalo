@@ -52,7 +52,7 @@ export default async function ArtistDashboardPage() {
         actions={
           <>
             {offers.length > 0 && (
-              <Link href="/artist-app/booking-offers" className={portalButton.primary}>
+                <Link href="/artist-app/bookings" className={portalButton.primary}>
                 {offers.length} {offers.length === 1 ? 'tilbud venter' : 'tilbud venter'}
               </Link>
             )}
@@ -110,7 +110,7 @@ export default async function ArtistDashboardPage() {
         actions={
           offers.length > 0 ? (
             <Link
-              href="/artist-app/booking-offers"
+              href="/artist-app/bookings"
               className="inline-flex items-center gap-1.5 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
             >
               Alle tilbud <ArrowRight className="size-3.5" />
@@ -197,9 +197,6 @@ export default async function ArtistDashboardPage() {
           <div className="flex flex-wrap gap-2">
             <Link href="/artist-app/profile" className={portalButton.primary}>
               Rediger profil
-            </Link>
-            <Link href="/artist-app/available-dates" className={portalButton.secondary}>
-              Velg datoer
             </Link>
           </div>
         </Panel>

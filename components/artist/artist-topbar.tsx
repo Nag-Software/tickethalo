@@ -8,9 +8,8 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { label: 'Oversikt', href: '/artist-app', exact: true },
-  { label: 'Tilbud', href: '/artist-app/booking-offers' },
   { label: 'Bookinger', href: '/artist-app/bookings' },
-  { label: 'Datoer', href: '/artist-app/available-dates' },
+  { label: 'Utbetaling', href: '/artist-app/economy' },
   { label: 'Profil', href: '/artist-app/profile' },
 ]
 
@@ -87,30 +86,29 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
         </div>
       </div>
 
+      <nav className="flex gap-1 overflow-x-auto border-t border-[var(--ev-line)] px-4 py-2 [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+        {navItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={isActive(item.href, item.exact) ? 'page' : undefined}
+            className={cn(
+              'flex h-9 shrink-0 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors',
+              isActive(item.href, item.exact)
+                ? 'bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)]'
+                : 'text-[var(--ev-muted)] hover:bg-[var(--ev-card)] hover:text-[var(--ev-text)]'
+            )}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+
       {/* Mobilmeny — utvider headeren i stedet for å dekke hele skjermen,
           fordi portalen er et arbeidsverktøy og konteksten bør bli stående. */}
       {open && (
         <div className="border-t border-[var(--ev-line)] px-4 pb-4 pt-3 md:hidden">
-          <nav className="flex flex-col gap-0.5">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                aria-current={isActive(item.href, item.exact) ? 'page' : undefined}
-                className={cn(
-                  'flex h-10 items-center rounded-xl px-3 text-[14px] font-medium transition-colors',
-                  isActive(item.href, item.exact)
-                    ? 'bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)]'
-                    : 'text-[var(--ev-muted)] hover:bg-[var(--ev-card)] hover:text-[var(--ev-text)]'
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--ev-line)] pt-3">
+          <div className="flex items-center justify-between gap-3">
             <span className="min-w-0 truncate text-[13px] text-[var(--ev-faint)]">{email}</span>
             <form action="/artist-app/logout" method="post">
               <button

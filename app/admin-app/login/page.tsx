@@ -30,7 +30,7 @@ export default async function AdminLoginPage({
       <div className="w-full max-w-sm">
         <LoginForm
           title="Tickethalo"
-          description="Logg inn med admin-konto"
+          description="Sign in with your Tickethalo Club Account"
           action={`${adminPrefix}/login/submit`}
           errorMessage={errorMessage}
           showSignupLink={false}
