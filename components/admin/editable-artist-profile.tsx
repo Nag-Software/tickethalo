@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { Input } from '@/components/ui/input'
-import { updateArtistProfile } from '@/app/admin-app/artists/[id]/actions'
+import { updateArtistProfile } from '@/app/admin-app/(protected)/artists/[id]/actions'
 import { ARTIST_ROLE_OPTIONS, formatArtistRoleSummary, normalizeArtistRoleList } from '@/lib/artist-roles'
 import { LANGUAGES, formatLanguageSummary, normalizeLanguages } from '@/lib/languages'
 import { shouldBypassImageOptimization } from '@/lib/utils'

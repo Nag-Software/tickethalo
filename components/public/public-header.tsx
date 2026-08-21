@@ -18,10 +18,13 @@ const Logo = ({ className }: { className?: string }) => (
   </svg>
 )
 
+// `/admin-app` only ever redirects — to the login screen or, once signed in,
+// to the club's default section. There is no payload worth prefetching, and a
+// prefetched redirect commits as an empty screen, so we ask for none.
 const navLinks = [
-  { href: '/events', label: 'Events' },
-  { href: '/artist-app/login', label: 'Comedian' },
-  { href: '/admin-app', label: 'Comedy Club' },
+  { href: '/events', label: 'Events', prefetch: undefined },
+  { href: '/artist-app/login', label: 'Comedian', prefetch: undefined },
+  { href: '/admin-app', label: 'Comedy Club', prefetch: false },
 ]
 
 /**
@@ -97,6 +100,7 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
             <Link
               key={link.href}
               href={link.href}
+              prefetch={link.prefetch}
               aria-current={isActive(link.href) ? 'page' : undefined}
               className={cn(
                 'flex h-7 items-center rounded-full px-3 text-[12.5px] font-medium transition-colors',
@@ -177,6 +181,7 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
             <Link
               key={link.href}
               href={link.href}
+              prefetch={link.prefetch}
               onClick={() => setOpen(false)}
               aria-current={isActive(link.href) ? 'page' : undefined}
               className={cn(

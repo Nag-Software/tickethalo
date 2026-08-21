@@ -6,7 +6,7 @@ import { ToastActionForm } from '@/components/toast-action-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
-import { saveClubProfileAction } from '@/app/admin-app/min-klubb/actions'
+import { saveClubProfileAction } from '@/app/admin-app/(protected)/min-klubb/actions'
 import type { Club } from '@/types/database'
 
 type ClubProfileFormProps = {

@@ -24,12 +24,44 @@ function isTimeoutError(error: unknown) {
   )
 }
 
+/** Section indexes that hold no content and only forward to a default section. */
+const SECTION_INDEXES: Record<string, string> = {
+  '/admin-app': '/admin-app/shows',
+  '/superadmin': '/superadmin/clubs',
+}
+
+/** The admin index as it is addressed through the `admin.` subdomain. */
+const ADMIN_HOST_INDEXES: Record<string, string> = {
+  '/': '/shows',
+}
+
+function stripTrailingSlash(value: string) {
+  return value.length > 1 && value.endsWith('/') ? value.slice(0, -1) : value
+}
+
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const host = request.headers.get('host') ?? request.nextUrl.host
   const hostname = host.split(':')[0]
   const requestHeaders = new Headers(request.headers)
   const isApiPath = pathname === '/api' || pathname.startsWith('/api/')
+
+  // `/admin-app` and `/superadmin` are section indexes that hold no content of
+  // their own — they only point at a default section. That hop happens here,
+  // before anything renders, because a page and its layout render in the same
+  // RSC pass: an index that redirects from the page while the layout's auth
+  // gate redirects to the login screen puts two competing redirects in one
+  // flight payload, and the router refetches forever instead of committing.
+  const isAdminHost = hostname === 'admin.localhost' || hostname.startsWith('admin.')
+  const barePathname = stripTrailingSlash(pathname)
+  const indexTarget = isAdminHost
+    ? ADMIN_HOST_INDEXES[barePathname]
+    : SECTION_INDEXES[barePathname]
+  if (indexTarget && !isApiPath) {
+    const url = request.nextUrl.clone()
+    url.pathname = indexTarget
+    return NextResponse.redirect(url)
+  }
 
   let resolvedPathname = pathname
   let response = NextResponse.next({ request: { headers: requestHeaders } })
