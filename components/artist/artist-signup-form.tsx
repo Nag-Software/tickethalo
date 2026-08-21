@@ -7,7 +7,6 @@ import {
   AtSign,
   BadgeCheck,
   Camera,
-  Clapperboard,
   Globe2,
   ImagePlus,
   Lock,
@@ -18,21 +17,21 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ARTIST_ROLE_LABEL_OPTIONS } from '@/lib/artist-roles'
+import { LocationField, type SelectedLocation } from "@/components/artist/location-field"
+import { LanguageField } from "@/components/artist/language-field"
+import { defaultLanguagesForCountry, lookupCountry } from "@/lib/geo"
+import type { LanguageCode } from "@/lib/languages"
 import { Label } from "../ui/label"
-
-const categories = ARTIST_ROLE_LABEL_OPTIONS
 
 const requiredFields = [
   { id: "full_name", label: "Name" },
-  { id: "stage_name", label: "Stage Name" },
   { id: "email", label: "Email" },
   { id: "password", label: "Password" },
   { id: "profile_image_file", label: "Profile Picture" },
   { id: "phone", label: "Phone" },
+  { id: "location", label: "Location" },
   { id: "language", label: "Language" },
   { id: "gender", label: "Gender" },
-  { id: "category", label: "Category" },
   { id: "youtube", label: "YouTube Video" },
 ] as const
 
@@ -56,18 +55,40 @@ export function ArtistSignupForm({
 }) {
   const [values, setValues] = useState<Record<RequiredFieldId, boolean>>({
     full_name: false,
-    stage_name: false,
     email: false,
     password: false,
     profile_image_file: false,
     phone: false,
+    location: false,
     language: false,
     gender: false,
-    category: false,
     youtube: false,
   })
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [imageName, setImageName] = useState<string | null>(null)
+  const [location, setLocation] = useState<SelectedLocation | null>(null)
+  const [languages, setLanguages] = useState<LanguageCode[]>([])
+  // Beholdes så hintet under språkvelgeren kan si hvor forslaget kom fra.
+  const [suggestedFrom, setSuggestedFrom] = useState<string | null>(null)
+
+  const setLanguageSelection = (next: LanguageCode[]) => {
+    setLanguages(next)
+    setValues((current) => ({ ...current, language: next.length > 0 }))
+  }
+
+  /**
+   * Å velge by fyller inn språket landet snakker — men bare når komikeren ikke
+   * alt har valgt selv, ellers ville et bytte av by overskrive et bevisst valg.
+   */
+  const selectLocation = (next: SelectedLocation) => {
+    setLocation(next)
+    setValues((current) => ({ ...current, location: true }))
+
+    if (languages.length > 0) return
+    const suggestion = defaultLanguagesForCountry(next.country)
+    if (suggestion.length === 0) return
+    setLanguageSelection(suggestion)
+    setSuggestedFrom(lookupCountry(next.country)?.name ?? next.country)
+  }
 
   useEffect(() => {
     if (errorMessage) toast.error(errorMessage)
@@ -86,16 +107,6 @@ export function ArtistSignupForm({
       ...prev,
       [field]: field === "password" ? value.length >= 8 : value.trim().length > 0,
     }))
-  }
-
-  function toggleCategory(category: string) {
-    setSelectedCategories((prev) => {
-      const next = prev.includes(category)
-        ? prev.filter((item) => item !== category)
-        : [...prev, category]
-      setValues((current) => ({ ...current, category: next.length > 0 }))
-      return next
-    })
   }
 
   return (
@@ -149,26 +160,22 @@ export function ArtistSignupForm({
             <SectionHeader icon={User} title="Identity" />
             <div className="grid gap-4 md:grid-cols-2">
               <LabeledInput icon={User} id="full_name" name="full_name" label="Full Name" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
-              <LabeledInput icon={Clapperboard} id="stage_name" name="stage_name" label="Stage Name" autoComplete="organization-title" onValue={(value) => updateTextField("stage_name", value)} required />
               <LabeledInput icon={AtSign} id="email" name="email" label="Email" type="email" placeholder="name@example.com" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
               <LabeledInput icon={Lock} id="password" name="password" label="Password" type="password" minLength={8} autoComplete="new-password" onValue={(value) => updateTextField("password", value)} required />
               <LabeledInput icon={Phone} id="phone" name="phone" label="Phone" type="tel" autoComplete="tel" onValue={(value) => updateTextField("phone", value)} required />
               <div className="space-y-2">
-                <label htmlFor="language" className="text-[13px] font-medium">Language</label>
-                <select
-                  id="language"
-                  name="language"
-                  required
-                  defaultValue=""
-                  onChange={(event) => updateTextField("language", event.target.value)}
-                  className={selectClassName}
-                >
-                  <option value="" disabled>Select Language</option>
-                  <option>Norwegian</option>
-                  <option>English</option>
-                  <option>Norwegian and English</option>
-                </select>
+                <label htmlFor="location" className="text-[13px] font-medium">Location</label>
+                <LocationField id="location" value={location} onChange={selectLocation} />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[13px] font-medium">Language</p>
+              <LanguageField
+                value={languages}
+                onChange={setLanguageSelection}
+                suggestedFrom={suggestedFrom}
+              />
             </div>
           </section>
 
@@ -212,7 +219,6 @@ export function ArtistSignupForm({
                   <option value="" disabled>Select Gender</option>
                   <option value="male">Male</option>
                   <option value="female">Female</option>
-                  <option value="other">Other</option>
                 </select>
               </div>
               <div className="space-y-2">
@@ -220,36 +226,6 @@ export function ArtistSignupForm({
                 <Label className="text-[12px] font-normal text-[var(--ev-faint)]">
                     We use this video to assess your stage presence, and it will not be published outside our internal system.
                 </Label>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-[13px] font-medium">Category</p>
-              <div className="flex flex-wrap gap-2">
-                {categories.map((category) => {
-                  const checked = selectedCategories.includes(category)
-                  return (
-                    <label
-                      key={category}
-                      className={cn(
-                        'cursor-pointer rounded-full px-3.5 py-1.5 text-[13px] transition-colors',
-                        checked
-                          ? 'bg-[var(--ev-accent-fill)] font-semibold text-[var(--ev-accent-ink)]'
-                          : 'bg-[var(--ev-bg)] text-[var(--ev-muted)] ring-1 ring-inset ring-[var(--ev-line)] hover:text-[var(--ev-text)]'
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        name="category"
-                        value={category}
-                        checked={checked}
-                        onChange={() => toggleCategory(category)}
-                        className="sr-only"
-                      />
-                      {category}
-                    </label>
-                  )
-                })}
               </div>
             </div>
 

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { approveArtist } from '@/lib/actions/artist'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { normalizeLanguages } from '@/lib/languages'
 import type { Artist, EnergyLevel, ArtistGender, ArtistStatus } from '@/types/database'
 
 export async function saveArtistAdminReview(formData: FormData) {
@@ -63,7 +64,10 @@ export async function updateArtistProfile(formData: FormData) {
   if (formData.has('email')) update.email = (formData.get('email') as string).trim()
   if (formData.has('phone')) update.phone = (formData.get('phone') as string).trim() || null
   if (formData.has('category') || formData.has('category_present')) update.category = categoryValues.length > 0 ? categoryValues : null
-  if (formData.has('language')) update.language = (formData.get('language') as string).trim() || null
+  if (formData.has('language') || formData.has('language_present')) {
+    const languages = normalizeLanguages(formData.getAll('language').map((value) => String(value)))
+    update.languages = languages.length > 0 ? languages : null
+  }
   if (formData.has('bio')) update.bio = (formData.get('bio') as string).trim() || null
   if (formData.has('gender')) update.gender = ((formData.get('gender') as string).trim() || null) as Artist['gender']
   if (formData.has('social_links')) update.social_links = social_links

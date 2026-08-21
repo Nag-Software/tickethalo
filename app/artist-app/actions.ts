@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getCurrentArtist } from '@/lib/artist-portal'
-import { canonicalRoleValues } from '@/lib/artist-roles'
-
-const MIN_BOOKABLE_SCORE = 6
+import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
+import { lookupCountry } from '@/lib/geo'
+import { normalizeLanguages } from '@/lib/languages'
 
 export async function updateArtistProfileAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
@@ -16,22 +16,27 @@ export async function updateArtistProfileAction(formData: FormData) {
     const ext = imageFile.name.split('.').pop() ?? 'jpg'
     const path = `${artist.auth_user_id ?? artist.id}/profile.${ext}`
     const { error } = await db.storage.from('artist-images').upload(path, imageFile, { upsert: true })
-    if (error) throw new Error('Profilbildet kunne ikke lastes opp akkurat nå.')
+    if (error) throw new Error('The profile image could not be uploaded right now.')
     const { data } = db.storage.from('artist-images').getPublicUrl(path)
     profileImageUrl = data.publicUrl
   }
 
   const socialLinks = socialLinksFromForm(formData)
-  const categoryValues = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
+  const languageValues = normalizeLanguages(formData.getAll('language').map((value) => String(value)))
 
+  // `category` settes bevisst ikke her. Rollen avgjør hvilke show komikeren
+  // matches mot, så den eies av klubben i admin — ikke av komikeren selv.
+  // Feltet utelates fra update-objektet, ikke bare fra skjemaet, slik at en
+  // POST med `category` heller ikke kan sette den.
   await db.from('artists').update({
     full_name: textValue(formData.get('full_name')) ?? artist.full_name,
     stage_name: textValue(formData.get('stage_name')) ?? null,
     phone: textValue(formData.get('phone')) ?? null,
     profile_image_url: profileImageUrl,
     bio: textValue(formData.get('bio')) ?? null,
-    category: categoryValues.length > 0 ? categoryValues : null,
-    language: textValue(formData.get('language')) ?? null,
+    city: textValue(formData.get('city')) ?? null,
+    country: countryValue(formData.get('country')),
+    languages: languageValues.length > 0 ? languageValues : null,
     social_links: socialLinks,
   }).eq('id', artist.id)
 
@@ -41,9 +46,9 @@ export async function updateArtistProfileAction(formData: FormData) {
 export async function toggleAvailabilityAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
   const date = textValue(formData.get('available_date'))
-  if (!date) throw new Error('Dato mangler.')
-  if (artist.status !== 'approved') throw new Error('Profilen din må være godkjent før du kan velge datoer.')
-  if ((artist.admin_score ?? 0) < MIN_BOOKABLE_SCORE) throw new Error('Du må ha score 6 eller høyere for å velge ledige bookingdatoer.')
+  if (!date) throw new Error('Date is missing.')
+  if (artist.status !== 'approved') throw new Error('Your profile must be approved before you can select dates.')
+  if ((artist.admin_score ?? 0) < MIN_BOOKABLE_SCORE) throw new Error('You need a score of 6 or higher to select available booking dates.')
 
   const { data: existing } = await db
     .from('artist_availability')
@@ -107,6 +112,12 @@ export async function declineOfferAction(formData: FormData) {
 function textValue(value: FormDataEntryValue | null) {
   const text = String(value ?? '').trim()
   return text.length > 0 ? text : undefined
+}
+
+/** Ukjente landkoder lagres ikke — kolonnen skal ikke bli fritekst igjen. */
+function countryValue(value: FormDataEntryValue | null) {
+  const text = textValue(value)?.toUpperCase()
+  return text && lookupCountry(text) ? text : null
 }
 
 function socialLinksFromForm(formData: FormData) {

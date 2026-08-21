@@ -47,24 +47,24 @@ export default async function ArtistDashboardPage() {
   return (
     <>
       <PageHeader
-        title={`Hei, ${artist.stage_name ?? artist.full_name}`}
-        description="Neste show, aktive tilbud og profilen bookingteamet jobber fra."
+        title={`Hi, ${artist.stage_name ?? artist.full_name}`}
+        description="Next show, active offers and the profile the booking team works from."
         actions={
           <>
             {offers.length > 0 && (
                 <Link href="/artist-app/bookings" className={portalButton.primary}>
-                {offers.length} {offers.length === 1 ? 'tilbud venter' : 'tilbud venter'}
+                {offers.length} {offers.length === 1 ? 'offer waiting' : 'offers waiting'}
               </Link>
             )}
             <Link href="/artist-app/profile" className={portalButton.secondary}>
-              Åpne profil
+              Open profile
             </Link>
           </>
         }
       />
 
-      {/* Neste show */}
-      <Panel title="Neste show">
+      {/* Next show */}
+      <Panel title="Next show">
         {featuredShow ? (
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
             <div
@@ -81,10 +81,10 @@ export default async function ArtistDashboardPage() {
 
             <div className="min-w-0 flex-1">
               <h3 className="text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">
-                {featuredShow.title ?? 'Neste booking'}
+                {featuredShow.title ?? 'Next booking'}
               </h3>
               <p className="mt-1 text-[14px] text-[var(--ev-muted)]">
-                {featuredShow.date ? formatDate(featuredShow.date) : 'Dato kommer'}
+                {featuredShow.date ? formatDate(featuredShow.date) : 'Date coming'}
                 {featuredShow.venue_name ? ` · ${featuredShow.venue_name}` : ''}
               </p>
               {nextSpot && (
@@ -95,31 +95,31 @@ export default async function ArtistDashboardPage() {
             </div>
 
             <Link href="/artist-app/bookings" className={`${portalButton.primary} shrink-0`}>
-              Se bookinger <ArrowUpRight className="size-4" />
+              See bookings <ArrowUpRight className="size-4" />
             </Link>
           </div>
         ) : (
-          <Empty>Ingen kommende show akkurat nå. Nye bookinger og tilbud dukker opp her først.</Empty>
+          <Empty>No upcoming shows right now. New bookings and offers will appear here first.</Empty>
         )}
       </Panel>
 
-      {/* Aktive tilbud */}
+      {/* Active offers */}
       <Panel
-        title="Aktive tilbud"
-        description="Tilbud som venter på svar."
+        title="Active offers"
+        description="Offers awaiting response."
         actions={
           offers.length > 0 ? (
             <Link
               href="/artist-app/bookings"
               className="inline-flex items-center gap-1.5 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
             >
-              Alle tilbud <ArrowRight className="size-3.5" />
+              All offers <ArrowRight className="size-3.5" />
             </Link>
           ) : undefined
         }
       >
         {offers.length === 0 ? (
-          <Empty>Ingen aktive tilbud akkurat nå.</Empty>
+          <Empty>No active offers right now.</Empty>
         ) : (
           <div className="flex flex-col gap-2">
             {offers.slice(0, 3).map((offer) => {
@@ -127,9 +127,9 @@ export default async function ArtistDashboardPage() {
               return (
                 <Row key={offer.id}>
                   <div className="min-w-0">
-                    <p className="truncate text-[15px] font-medium">{show?.title ?? 'Bookingtilbud'}</p>
+                    <p className="truncate text-[15px] font-medium">{show?.title ?? 'Booking offer'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
-                      {show?.date ? formatDate(show.date) : 'Dato kommer'}
+                      {show?.date ? formatDate(show.date) : 'Date coming'}
                       {show?.venue_name ? ` · ${show.venue_name}` : ''}
                     </p>
                   </div>
@@ -141,7 +141,7 @@ export default async function ArtistDashboardPage() {
                       href={`/artist-app/booking-offers/${offer.token}`}
                       className={portalButton.primary}
                     >
-                      Svar nå
+                      Reply now
                     </Link>
                   </div>
                 </Row>
@@ -152,9 +152,9 @@ export default async function ArtistDashboardPage() {
       </Panel>
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <Panel title="Tidligere show" description="Dine siste gjennomførte opptredener.">
+        <Panel title="Previous shows" description="Your last completed performances.">
           {previousSpots.length === 0 ? (
-            <Empty>Ingen tidligere show ennå.</Empty>
+            <Empty>No previous shows yet.</Empty>
           ) : (
             <div className="flex flex-col gap-2">
               {previousSpots.map((spot) => {
@@ -164,7 +164,7 @@ export default async function ArtistDashboardPage() {
                     <div className="min-w-0">
                       <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                       <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
-                        {show?.date ? formatDate(show.date) : 'Dato kommer'}
+                        {show?.date ? formatDate(show.date) : 'Date coming'}
                         {show?.venue_name ? ` · ${show.venue_name}` : ''}
                       </p>
                     </div>
@@ -178,25 +178,25 @@ export default async function ArtistDashboardPage() {
           )}
         </Panel>
 
-        <Panel title="Profilen din" description="Bookingteamet matcher deg mot nye kvelder ut fra denne.">
+        <Panel title="Your profile" description="The booking team matches you against new evenings based on this.">
           <div className="flex flex-col divide-y divide-[var(--ev-line)]">
-            <DataRow label="Navn" value={artist.stage_name ?? artist.full_name} />
-            <DataRow label="E-post" value={artist.email} />
+            <DataRow label="Name" value={artist.stage_name ?? artist.full_name} />
+            <DataRow label="Email" value={artist.email} />
             <DataRow
               label="Status"
               value={
                 <Chip tone={artist.status === 'approved' ? 'accent' : 'neutral'}>
-                  {artist.status === 'approved' ? 'Godkjent' : 'Vurderes'}
+                  {artist.status === 'approved' ? 'Approved' : 'Under review'}
                 </Chip>
               }
             />
-            <DataRow label="Aktive tilbud" value={offers.length} />
-            <DataRow label="Tidligere show" value={previousSpots.length} />
+            <DataRow label="Active offers" value={offers.length} />
+            <DataRow label="Previous shows" value={previousSpots.length} />
           </div>
 
           <div className="flex flex-wrap gap-2">
             <Link href="/artist-app/profile" className={portalButton.primary}>
-              Rediger profil
+              Edit profile
             </Link>
           </div>
         </Panel>
@@ -216,20 +216,20 @@ function ArtistAuthLanding() {
 
       <section className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-10 px-4 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] lg:gap-16">
         <div>
-          <p className="text-[13px] text-[var(--ev-faint)]">Komikerportal</p>
+          <p className="text-[13px] text-[var(--ev-faint)]">Comedian Portal</p>
           <h1 className="mt-2 text-balance text-[2.25rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
-            Bookinger, tilbud og profil på ett sted
+            Bookings, offers and profile in one place
           </h1>
           <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--ev-muted)]">
-            Logg inn eller registrer komikerprofil for å bli vurdert til kommende kvelder hos
+            Sign in or register a comedian profile to be considered for upcoming evenings at
             Tickethalo.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link href="/artist-app/login" className={portalButton.primary}>
-              Logg inn
+              Sign in
             </Link>
             <Link href="/artist-app/signup" className={portalButton.secondary}>
-              Registrer profil <ArrowRight className="size-4" />
+              Register Profile <ArrowRight className="size-4" />
             </Link>
           </div>
         </div>
@@ -238,9 +238,9 @@ function ArtistAuthLanding() {
           className="flex flex-col gap-4 bg-[var(--ev-card)] p-6"
           style={{ borderRadius: 'var(--ev-r-card)' }}
         >
-          <p className="text-[13px] text-[var(--ev-faint)]">Hva du finner her</p>
+          <p className="text-[13px] text-[var(--ev-faint)]">What you find here</p>
           <ul className="flex flex-col divide-y divide-[var(--ev-line)]">
-            {['Kommende show og honorar', 'Aktive tilbud som venter på svar', 'Profilen arrangørene ser'].map(
+            {['Upcoming shows and fees', 'Active offers awaiting response', 'Profile organizers see'].map(
               (item) => (
                 <li key={item} className="py-3 text-[15px] font-medium">
                   {item}
@@ -257,7 +257,7 @@ function ArtistAuthLanding() {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 }
 
 function formatDateDay(value: string) {
@@ -265,5 +265,5 @@ function formatDateDay(value: string) {
 }
 
 function formatDateMonth(value: string) {
-  return new Date(value).toLocaleDateString('nb-NO', { month: 'short' })
+  return new Date(value).toLocaleDateString('en-US', { month: 'short' })
 }

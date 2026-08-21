@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { formatArtistRoleSummary } from '@/lib/artist-roles'
+import { formatLanguageSummary } from '@/lib/languages'
 import { artistDisplayName, artistInitials, getPublicArtistById, getPublicArtistShows } from '@/lib/public-artists'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { PublicHeader } from '@/components/public/public-header'
@@ -104,7 +105,10 @@ export default async function ArtistDetailPage({ params }: Props) {
             <header className="flex flex-col gap-2">
               <p className="text-[13px] text-[var(--ev-faint)]">
                 {formatArtistRoleSummary(artist.category, 'Komiker')}
-                {artist.language && <> · {artist.language}</>}
+                {artist.city && <> · {artist.city}</>}
+                {formatLanguageSummary(artist.languages) && (
+                  <> · {formatLanguageSummary(artist.languages)}</>
+                )}
               </p>
               <h1 className="text-balance text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
                 {name}

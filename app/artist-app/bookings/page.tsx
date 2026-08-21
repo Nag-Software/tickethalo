@@ -6,18 +6,18 @@ import { OfferButtons } from '@/components/artist/offer-buttons'
 import { Chip, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
-  sent: 'Venter på svar',
-  accepted: 'Akseptert',
-  declined: 'Avslått',
-  filled_by_other: 'Fylt av andre',
-  expired: 'Utløpt',
-  cancelled: 'Kansellert',
+  sent: 'Awaiting response',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  filled_by_other: 'Filled by other',
+  expired: 'Expired',
+  cancelled: 'Cancelled',
 }
 
 const VIEWS = [
-  { value: 'upcoming', label: 'Kommende' },
-  { value: 'previous', label: 'Tidligere' },
-  { value: 'cancelled', label: 'Kansellerte' },
+  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'previous', label: 'Previous' },
+  { value: 'cancelled', label: 'Cancelled' },
 ] as const
 
 export default async function ConfirmedBookingsPage({
@@ -60,18 +60,18 @@ export default async function ConfirmedBookingsPage({
     <>
       <BookingOfferStatusToast status={status} />
       <PageHeader
-        title="Bookinger"
-        description="Svar på tilbud og hold oversikt over showene dine."
+        title="Bookings"
+        description="Reply to offers and keep track of your shows."
       />
 
       {status && <StatusMessage status={status} />}
 
       <Panel
-        title={activeOffers.length > 0 ? `${activeOffers.length} tilbud venter på svar` : 'Tilbud'}
-        description={activeOffers.length > 0 ? 'Svar ja eller nei. Når du sier ja, flyttes showet til bekreftede bookinger.' : undefined}
+        title={activeOffers.length > 0 ? `${activeOffers.length} offers awaiting response` : 'Offers'}
+        description={activeOffers.length > 0 ? 'Reply yes or no. When you say yes, the show moves to confirmed bookings.' : undefined}
       >
         {(offers ?? []).length === 0 ? (
-          <Empty>Ingen tilbud ennå.</Empty>
+          <Empty>No offers yet.</Empty>
         ) : (
           <div className="flex flex-col gap-2">
             {(offers ?? []).map((offer) => {
@@ -84,7 +84,7 @@ export default async function ConfirmedBookingsPage({
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
-                      {show?.date ? formatDate(show.date) : 'Dato kommer'}
+                      {show?.date ? formatDate(show.date) : 'Date coming'}
                       {show?.venue_name ? ` · ${show.venue_name}` : ''}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -99,7 +99,7 @@ export default async function ConfirmedBookingsPage({
                     <OfferButtons token={offer.token} />
                   ) : (
                     <Link href={`/artist-app/booking-offers/${offer.token}`} className={portalButton.secondary}>
-                      Åpne
+                      Open
                     </Link>
                   )}
                 </Row>
@@ -136,17 +136,17 @@ export default async function ConfirmedBookingsPage({
       </div>
 
       <Panel
-        title={`${filtered.length} ${filtered.length === 1 ? 'booking' : 'bookinger'}`}
+        title={`${filtered.length} ${filtered.length === 1 ? 'booking' : 'bookings'}`}
         actions={
           total > 0 && view !== 'cancelled' ? (
             <span className="text-[14px] font-medium tabular-nums">
-              {formatMoney(total, currency)} totalt
+              {formatMoney(total, currency)} total
             </span>
           ) : undefined
         }
       >
         {filtered.length === 0 ? (
-          <Empty>Ingen bookinger i denne visningen.</Empty>
+          <Empty>No bookings in this view.</Empty>
         ) : (
           <div className="flex flex-col gap-2">
             {filtered.map((spot) => {
@@ -156,14 +156,14 @@ export default async function ConfirmedBookingsPage({
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
-                      {show?.date ? formatDate(show.date) : 'Dato kommer'}
+                      {show?.date ? formatDate(show.date) : 'Date coming'}
                       {show?.start_time ? ` · ${show.start_time.slice(0, 5)}` : ''}
                       {show?.venue_name ? ` · ${show.venue_name}` : ''}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Chip tone={spot.status === 'confirmed' ? 'accent' : 'neutral'}>
-                      {spot.status === 'confirmed' ? 'Bekreftet' : spot.status}
+                      {spot.status === 'confirmed' ? 'Confirmed' : spot.status}
                     </Chip>
                     <span className="text-[14px] font-medium tabular-nums">
                       {formatMoney(spot.fee_amount, spot.currency)}
@@ -181,14 +181,14 @@ export default async function ConfirmedBookingsPage({
 
 function StatusMessage({ status }: { status: string }) {
   const text = status === 'accepted'
-    ? 'Du er bekreftet på showet. Detaljene ligger under kommende bookinger.'
+    ? 'You are confirmed for the show. Details are under upcoming bookings.'
     : status === 'filled_by_other'
-      ? 'Plassen ble fylt av en annen komiker før du rakk å bekrefte.'
+      ? 'The spot was filled by another comedian before you could confirm.'
       : status === 'already_booked'
-        ? 'Du er allerede bekreftet på dette showet.'
+        ? 'You are already confirmed for this show.'
         : status === 'declined'
-          ? 'Tilbudet er avslått.'
-          : 'Status er oppdatert.'
+          ? 'The offer is declined.'
+          : 'Status is updated.'
 
   return (
     <p className="bg-[var(--ev-card)] px-5 py-4 text-[14px] font-medium" style={{ borderRadius: 'var(--ev-r-art)' }}>
@@ -198,5 +198,5 @@ function StatusMessage({ status }: { status: string }) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 }

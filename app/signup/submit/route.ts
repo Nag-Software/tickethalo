@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { registerArtist } from '@/lib/actions/artist'
-import { canonicalRoleValues } from '@/lib/artist-roles'
+import { lookupCountry, type CountryCode } from '@/lib/geo'
+import { normalizeLanguages } from '@/lib/languages'
 import type { ArtistGender } from '@/types/database'
 
 export async function POST(request: Request) {
@@ -18,11 +19,11 @@ export async function POST(request: Request) {
       email,
       password: String(formData.get('password') ?? ''),
       full_name: String(formData.get('full_name') ?? ''),
-      stage_name: optionalString(formData.get('stage_name')),
       phone: optionalString(formData.get('phone')),
       bio: optionalString(formData.get('bio')),
-      category: categories(formData),
-      language: optionalString(formData.get('language')),
+      city: optionalString(formData.get('city')),
+      country: country(formData.get('country')),
+      languages: normalizeLanguages(formData.getAll('language').map((value) => String(value))),
       gender: gender(formData.get('gender')),
       social_links: socialLinks(formData),
       profile_image_file: fileOrUndefined(formData.get('profile_image_file')),
@@ -47,13 +48,14 @@ function toSignupErrorCode(error: unknown) {
 }
 
 function validateSignupForm(formData: FormData) {
-  const requiredTextFields = ['full_name', 'stage_name', 'email', 'password', 'phone', 'language', 'gender']
+  const requiredTextFields = ['full_name', 'email', 'password', 'phone', 'city', 'gender']
   const hasMissingText = requiredTextFields.some((field) => !optionalString(formData.get(field)))
   const hasImage = Boolean(fileOrUndefined(formData.get('profile_image_file')))
-  const hasCategory = formData.getAll('category').some((value) => optionalString(value))
+  const hasCountry = Boolean(country(formData.get('country')))
+  const hasLanguage = normalizeLanguages(formData.getAll('language').map((value) => String(value))).length > 0
   const youtube = optionalString(formData.get('youtube'))
 
-  if (hasMissingText || !hasImage || !hasCategory || !youtube) {
+  if (hasMissingText || !hasImage || !hasCountry || !hasLanguage || !youtube) {
     throw new Error('Required fields missing')
   }
 
@@ -67,18 +69,15 @@ function optionalString(value: FormDataEntryValue | null) {
   return text.length > 0 ? text : undefined
 }
 
-function categories(formData: FormData) {
-  const values = formData
-    .getAll('category')
-    .map((value) => optionalString(value))
-    .filter((value): value is string => Boolean(value))
-  const normalized = canonicalRoleValues(values)
-  return normalized.length > 0 ? normalized : undefined
+/** Kun land vi faktisk har i tabellen — ellers blir kolonnen fritekst igjen. */
+function country(value: FormDataEntryValue | null): CountryCode | undefined {
+  const text = optionalString(value)?.toUpperCase()
+  return text && lookupCountry(text) ? (text as CountryCode) : undefined
 }
 
 function gender(value: FormDataEntryValue | null): ArtistGender | undefined {
   const text = optionalString(value)
-  if (text === 'male' || text === 'female' || text === 'other') return text
+  if (text === 'male' || text === 'female') return text
   return undefined
 }
 

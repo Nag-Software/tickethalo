@@ -11,9 +11,50 @@
  * client component and needs all of this in the browser.
  */
 
+import type { LanguageCode } from '@/lib/languages'
+
 export interface Coordinates {
   lat: number
   lon: number
+}
+
+/** ISO 3166-1 alpha-2. Stored on the artist so booking can scope by country. */
+export type CountryCode = 'NO' | 'SE' | 'DK' | 'FI' | 'IS' | 'GB' | 'IE' | 'NL' | 'DE' | 'FR' | 'ES' | 'US'
+
+export interface Country {
+  code: CountryCode
+  name: string
+  /**
+   * Hva språkvelgeren foreslår når man velger en by her. Et forslag, ikke en
+   * regel — en engelskspråklig komiker i Oslo finnes, og kan overstyre.
+   */
+  defaultLanguages: LanguageCode[]
+}
+
+export const COUNTRIES: Country[] = [
+  { code: 'NO', name: 'Norway', defaultLanguages: ['no'] },
+  { code: 'SE', name: 'Sweden', defaultLanguages: ['sv'] },
+  { code: 'DK', name: 'Denmark', defaultLanguages: ['da'] },
+  { code: 'FI', name: 'Finland', defaultLanguages: ['fi'] },
+  { code: 'IS', name: 'Iceland', defaultLanguages: ['is'] },
+  { code: 'GB', name: 'United Kingdom', defaultLanguages: ['en'] },
+  { code: 'IE', name: 'Ireland', defaultLanguages: ['en'] },
+  { code: 'NL', name: 'Netherlands', defaultLanguages: ['nl'] },
+  { code: 'DE', name: 'Germany', defaultLanguages: ['de'] },
+  { code: 'FR', name: 'France', defaultLanguages: ['fr'] },
+  { code: 'ES', name: 'Spain', defaultLanguages: ['es'] },
+  { code: 'US', name: 'United States', defaultLanguages: ['en'] },
+]
+
+const COUNTRY_BY_CODE = new Map(COUNTRIES.map((country) => [country.code, country]))
+
+export function lookupCountry(code: string | null | undefined): Country | undefined {
+  return code ? COUNTRY_BY_CODE.get(code as CountryCode) : undefined
+}
+
+/** Språkforslaget for et land, tomt for ukjente koder. */
+export function defaultLanguagesForCountry(code: string | null | undefined): LanguageCode[] {
+  return lookupCountry(code)?.defaultLanguages ?? []
 }
 
 export interface Place extends Coordinates {
@@ -21,6 +62,7 @@ export interface Place extends Coordinates {
   name: string
   /** Shown as the second line in the picker, to separate the several Osloer of this world. */
   region: string
+  country: CountryCode
 }
 
 /**
@@ -33,7 +75,7 @@ export interface Place extends Coordinates {
  * Coordinates are the town centre to about three decimals (~100 m), which is
  * far finer than the city-level ranking needs.
  */
-export const PLACES: Place[] = [
+const NORWEGIAN_PLACES: Omit<Place, 'country'>[] = [
   { name: 'Oslo', region: 'Oslo', lat: 59.9139, lon: 10.7522 },
   { name: 'Bergen', region: 'Vestland', lat: 60.3913, lon: 5.3221 },
   { name: 'Trondheim', region: 'Trøndelag', lat: 63.4305, lon: 10.3951 },
@@ -114,6 +156,63 @@ export const PLACES: Place[] = [
   { name: 'Brønnøysund', region: 'Nordland', lat: 65.4747, lon: 12.2119 },
   { name: 'Finnsnes', region: 'Troms', lat: 69.23, lon: 17.98 },
   { name: 'Vadsø', region: 'Finnmark', lat: 70.0744, lon: 29.7487 },
+]
+
+/**
+ * Byer utenfor Norge, for komikere som bor et annet sted.
+ *
+ * Tynnere enn den norske listen med vilje: her trengs bare et sted å høre
+ * hjemme og et land å bli filtrert på, ikke dekning av hver klubb.
+ */
+const INTERNATIONAL_PLACES: Place[] = [
+  { name: 'Stockholm', region: 'Stockholm', country: 'SE', lat: 59.3293, lon: 18.0686 },
+  { name: 'Göteborg', region: 'Västra Götaland', country: 'SE', lat: 57.7089, lon: 11.9746 },
+  { name: 'Malmö', region: 'Skåne', country: 'SE', lat: 55.605, lon: 13.0038 },
+  { name: 'Uppsala', region: 'Uppsala', country: 'SE', lat: 59.8586, lon: 17.6389 },
+  { name: 'København', region: 'Hovedstaden', country: 'DK', lat: 55.6761, lon: 12.5683 },
+  { name: 'Aarhus', region: 'Midtjylland', country: 'DK', lat: 56.1629, lon: 10.2039 },
+  { name: 'Odense', region: 'Syddanmark', country: 'DK', lat: 55.4038, lon: 10.4024 },
+  { name: 'Aalborg', region: 'Nordjylland', country: 'DK', lat: 57.0488, lon: 9.9217 },
+  { name: 'Helsinki', region: 'Uusimaa', country: 'FI', lat: 60.1699, lon: 24.9384 },
+  { name: 'Tampere', region: 'Pirkanmaa', country: 'FI', lat: 61.4978, lon: 23.761 },
+  { name: 'Turku', region: 'Varsinais-Suomi', country: 'FI', lat: 60.4518, lon: 22.2666 },
+  { name: 'Reykjavík', region: 'Höfuðborgarsvæðið', country: 'IS', lat: 64.1466, lon: -21.9426 },
+  { name: 'London', region: 'England', country: 'GB', lat: 51.5074, lon: -0.1278 },
+  { name: 'Manchester', region: 'England', country: 'GB', lat: 53.4808, lon: -2.2426 },
+  { name: 'Birmingham', region: 'England', country: 'GB', lat: 52.4862, lon: -1.8904 },
+  { name: 'Glasgow', region: 'Scotland', country: 'GB', lat: 55.8642, lon: -4.2518 },
+  { name: 'Edinburgh', region: 'Scotland', country: 'GB', lat: 55.9533, lon: -3.1883 },
+  { name: 'Bristol', region: 'England', country: 'GB', lat: 51.4545, lon: -2.5879 },
+  { name: 'Leeds', region: 'England', country: 'GB', lat: 53.8008, lon: -1.5491 },
+  { name: 'Dublin', region: 'Leinster', country: 'IE', lat: 53.3498, lon: -6.2603 },
+  { name: 'Cork', region: 'Munster', country: 'IE', lat: 51.8985, lon: -8.4756 },
+  { name: 'Amsterdam', region: 'Noord-Holland', country: 'NL', lat: 52.3676, lon: 4.9041 },
+  { name: 'Rotterdam', region: 'Zuid-Holland', country: 'NL', lat: 51.9244, lon: 4.4777 },
+  { name: 'Utrecht', region: 'Utrecht', country: 'NL', lat: 52.0907, lon: 5.1214 },
+  { name: 'Berlin', region: 'Berlin', country: 'DE', lat: 52.52, lon: 13.405 },
+  { name: 'Hamburg', region: 'Hamburg', country: 'DE', lat: 53.5511, lon: 9.9937 },
+  { name: 'München', region: 'Bayern', country: 'DE', lat: 48.1351, lon: 11.582 },
+  { name: 'Köln', region: 'Nordrhein-Westfalen', country: 'DE', lat: 50.9375, lon: 6.9603 },
+  { name: 'Frankfurt', region: 'Hessen', country: 'DE', lat: 50.1109, lon: 8.6821 },
+  { name: 'Paris', region: 'Île-de-France', country: 'FR', lat: 48.8566, lon: 2.3522 },
+  { name: 'Lyon', region: 'Auvergne-Rhône-Alpes', country: 'FR', lat: 45.764, lon: 4.8357 },
+  { name: 'Marseille', region: "Provence-Alpes-Côte d'Azur", country: 'FR', lat: 43.2965, lon: 5.3698 },
+  { name: 'Madrid', region: 'Madrid', country: 'ES', lat: 40.4168, lon: -3.7038 },
+  { name: 'Barcelona', region: 'Catalunya', country: 'ES', lat: 41.3851, lon: 2.1734 },
+  { name: 'Valencia', region: 'València', country: 'ES', lat: 39.4699, lon: -0.3763 },
+  { name: 'New York', region: 'New York', country: 'US', lat: 40.7128, lon: -74.006 },
+  { name: 'Los Angeles', region: 'California', country: 'US', lat: 34.0522, lon: -118.2437 },
+  { name: 'Chicago', region: 'Illinois', country: 'US', lat: 41.8781, lon: -87.6298 },
+  { name: 'Austin', region: 'Texas', country: 'US', lat: 30.2672, lon: -97.7431 },
+]
+
+/**
+ * De norske stedene først, slik at et navnesammenfall (Bergen finnes også i
+ * Tyskland) løses til det norske — dette er en norsk klubbtjeneste.
+ */
+export const PLACES: Place[] = [
+  ...NORWEGIAN_PLACES.map((place) => ({ ...place, country: 'NO' as const })),
+  ...INTERNATIONAL_PLACES,
 ]
 
 /**

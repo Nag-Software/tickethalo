@@ -29,18 +29,18 @@ export default async function EconomyPage() {
   return (
     <>
       <PageHeader
-        title="Utbetaling"
-        description="Se hva du kan fakturere per bekreftet show."
+        title="Payouts"
+        description="See what you can invoice per confirmed show."
       />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Summary label="Kommende" value={formatMoney(total(upcoming), currency)} detail={`${upcoming.length} ${upcoming.length === 1 ? 'show' : 'show'}`} />
-        <Summary label="Tidligere" value={formatMoney(total(previous), currency)} detail={`${previous.length} gjennomført`} />
+        <Summary label="Upcoming" value={formatMoney(total(upcoming), currency)} detail={`${upcoming.length} ${upcoming.length === 1 ? 'show' : 'shows'}`} />
+        <Summary label="Previous" value={formatMoney(total(previous), currency)} detail={`${previous.length} completed`} />
       </div>
 
-      <Panel title="Honorar per show">
+      <Panel title="Fee per show">
         {(spots ?? []).length === 0 ? (
-          <Empty>Bekreftede show og honorar dukker opp her.</Empty>
+          <Empty>Confirmed shows and fees will appear here.</Empty>
         ) : (
           <div className="flex flex-col gap-2">
             {(spots ?? []).map((spot) => {
@@ -50,7 +50,7 @@ export default async function EconomyPage() {
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
-                      {show?.date ? formatDate(show.date) : 'Dato kommer'}
+                      {show?.date ? formatDate(show.date) : 'Date coming'}
                       {show?.venue_name ? ` · ${show.venue_name}` : ''}
                     </p>
                   </div>
@@ -78,5 +78,5 @@ function Summary({ label, value, detail }: { label: string; value: string; detai
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 }

@@ -58,7 +58,7 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
                     {user.clubLogoUrl ? (
                       <Image src={user.clubLogoUrl} alt="" width={32} height={32} className="h-full w-full object-cover" />
                     ) : (
-                      <Image src="/favicon.svg" alt="" width={32} height={32} className="rounded-full p-0" />
+                      <Image src="/icon.svg" alt="" width={32} height={32} className="rounded-full p-0" />
                     )}
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">

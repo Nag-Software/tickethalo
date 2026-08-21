@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DeleteButton } from '@/components/admin/delete-button'
 import { deleteArtistAction } from './[id]/actions'
+import { artistReadinessBlockers, READINESS_BLOCKER_LABELS } from '@/lib/artist-readiness'
+import { formatArtistRoleList } from '@/lib/artist-roles'
 import type { ArtistStatus, EnergyLevel } from '@/types/database'
 
 const statusColors: Record<ArtistStatus, string> = {
@@ -23,18 +25,21 @@ const energyColors: Record<EnergyLevel, string> = {
   uncertain: 'bg-zinc-100 text-zinc-500',
 }
 
+type ArtistsTab = 'review' | 'ready' | 'all'
+
 export default async function ArtistsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; energy?: string; ai?: string; q?: string }>
+  searchParams: Promise<{ status?: string; energy?: string; ai?: string; q?: string; tab?: string }>
 }) {
   const params = await searchParams
   const searchQuery = params.q?.trim() ?? ''
+  const tab: ArtistsTab = params.tab === 'ready' || params.tab === 'all' ? params.tab : 'review'
   const db = createAdminClient()
 
   let query = db
     .from('artists')
-    .select('id, full_name, stage_name, email, status, admin_score, admin_energy_level, is_flagged, created_at')
+    .select('id, full_name, stage_name, email, status, admin_score, admin_energy_level, is_flagged, created_at, category')
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -49,6 +54,23 @@ export default async function ArtistsPage({
 
   const { data: artists } = await query
 
+  // Blokkeringene avhenger av flere kolonner, så delingen skjer i JS etter
+  // henting. Tellingene regnes fra samme sett som filtrene over, slik at de
+  // stemmer med det som faktisk vises.
+  const withBlockers = (artists ?? []).map((artist) => ({
+    artist,
+    blockers: artistReadinessBlockers(artist),
+  }))
+  const needsReview = withBlockers.filter((row) => row.blockers.length > 0)
+  const ready = withBlockers.filter((row) => row.blockers.length === 0)
+  const visible = tab === 'ready' ? ready : tab === 'all' ? withBlockers : needsReview
+
+  const tabs: { value: ArtistsTab; label: string; count: number }[] = [
+    { value: 'all', label: 'All', count: withBlockers.length },
+    { value: 'ready', label: 'Ready', count: ready.length },
+    { value: 'review', label: 'Review needed', count: needsReview.length },
+  ]
+
   const filters: { label: string; key: string; value: string }[] = [
     { label: 'Alle', key: 'status', value: '' },
     { label: 'Pending', key: 'status', value: 'pending_review' },
@@ -61,11 +83,15 @@ export default async function ArtistsPage({
     <div>
       <AdminHeader
         title="Komikere"
-        description={`${artists?.length ?? 0} komikere`}
+        description={
+          needsReview.length > 0
+            ? `${withBlockers.length} komikere · ${needsReview.length} trenger gjennomgang`
+            : `${withBlockers.length} komikere · alle er klare for booking`
+        }
         actions={
           <div className="flex items-center gap-3">
             <Link
-              href="/admin-app/artists"
+              href={buildArtistsHref({}, { tab })}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Nullstill filter
@@ -80,7 +106,39 @@ export default async function ArtistsPage({
         }
       />
       <div className="p-6 space-y-4">
+        {/* Tab-bytte: køen som trenger admin står først, fordi en komiker uten
+            rolle/score/godkjenning aldri dukker opp i booking. */}
+        <div className="flex gap-1 border-b">
+          {tabs.map((t) => {
+            const active = tab === t.value
+            return (
+              <Link
+                key={t.value}
+                href={buildArtistsHref(params, { tab: t.value })}
+                aria-current={active ? 'page' : undefined}
+                className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  active
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+                }`}
+              >
+                {t.label}
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
+                    t.value === 'review' && t.count > 0
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {t.count}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+
         <form action="/admin-app/artists" className="flex max-w-xl gap-2">
+          {tab !== 'review' && <input type="hidden" name="tab" value={tab} />}
           {params.status && <input type="hidden" name="status" value={params.status} />}
           {params.energy && <input type="hidden" name="energy" value={params.energy} />}
           <div className="relative flex-1">
@@ -123,7 +181,8 @@ export default async function ArtistsPage({
             <thead>
               <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
                 <th className="text-left px-4 py-2.5 font-medium">Komiker</th>
-                <th className="text-left px-4 py-2.5 font-medium">E-post</th>
+                <th className="text-left px-4 py-2.5 font-medium">Bookbar</th>
+                <th className="text-left px-4 py-2.5 font-medium">Rolle</th>
                 <th className="text-left px-4 py-2.5 font-medium">Status</th>
                 <th className="text-center px-4 py-2.5 font-medium">Score</th>
                 <th className="text-left px-4 py-2.5 font-medium">Energi</th>
@@ -132,18 +191,37 @@ export default async function ArtistsPage({
               </tr>
             </thead>
             <tbody>
-              {(artists ?? []).map((a) => {
+              {visible.map(({ artist: a, blockers }) => {
+                const roles = formatArtistRoleList(a.category)
                 return (
                   <tr key={a.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3 flex items-center">
+                    <td className="px-4 py-3">
                       <Link href={`/admin-app/artists/${a.id}`} className="flex flex-col hover:underline">
                         <span className="font-medium">{a.full_name}</span>
-                        {a.stage_name && (
-                          <span className="text-xs text-muted-foreground">{a.stage_name}</span>
-                        )}
+                        <span className="text-xs text-muted-foreground">{a.email}</span>
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{a.email}</td>
+                    <td className="px-4 py-3">
+                      {blockers.length === 0 ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
+                          Bookbar
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {blockers.map((blocker) => (
+                            <span
+                              key={blocker}
+                              className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                            >
+                              {READINESS_BLOCKER_LABELS[blocker]}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
+                      {roles.length > 0 ? roles.join(', ') : '—'}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[a.status]}`}>
                         {a.status}
@@ -180,8 +258,14 @@ export default async function ArtistsPage({
               })}
             </tbody>
           </table>
-          {!artists?.length && (
-            <p className="text-center py-12 text-muted-foreground text-sm">Ingen komikere funnet.</p>
+          {visible.length === 0 && (
+            <p className="text-center py-12 text-muted-foreground text-sm">
+              {tab === 'review'
+                ? 'Ingen komikere venter på gjennomgang.'
+                : tab === 'ready'
+                  ? 'Ingen komikere er klare for booking ennå.'
+                  : 'Ingen komikere funnet.'}
+            </p>
           )}
         </div>
       </div>
@@ -190,8 +274,8 @@ export default async function ArtistsPage({
 }
 
 function buildArtistsHref(
-  params: { status?: string; energy?: string; ai?: string; q?: string },
-  overrides: { status?: string; energy?: string; ai?: string; q?: string }
+  params: { status?: string; energy?: string; ai?: string; q?: string; tab?: string },
+  overrides: { status?: string; energy?: string; ai?: string; q?: string; tab?: string }
 ) {
   const urlParams = new URLSearchParams()
   const nextParams = { ...params, ...overrides }

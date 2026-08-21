@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Tickethalo",
   description: "Tickethalo - Your source for the best comedy events",
+  // Peker på public/icon.svg i stedet for å bruke app/icon.svg-konvensjonen:
+  // samme fil brukes også som <Image> i admin, og to kopier av det samme
+  // ikonet ville før eller siden kommet ut av synk.
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({

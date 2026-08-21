@@ -15,7 +15,9 @@ export interface RegisterArtistInput {
   phone?: string
   bio?: string
   category?: string[]
-  language?: string
+  city?: string
+  country?: string
+  languages?: string[]
   gender?: ArtistGender
   social_links?: Record<string, string>
   profile_image_file?: File
@@ -80,7 +82,9 @@ export async function registerArtist(input: RegisterArtistInput) {
       profile_image_url: profile_image_url ?? null,
       bio: input.bio ?? null,
       category: normalizeCategoryValues(input.category),
-      language: input.language ?? null,
+      city: input.city ?? null,
+      country: input.country ?? null,
+      languages: input.languages?.length ? input.languages : null,
       gender: input.gender ?? null,
       social_links: input.social_links ?? null,
       status: 'pending_review',

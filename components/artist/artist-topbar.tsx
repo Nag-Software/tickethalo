@@ -7,10 +7,10 @@ import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { label: 'Oversikt', href: '/artist-app', exact: true },
-  { label: 'Bookinger', href: '/artist-app/bookings' },
-  { label: 'Utbetaling', href: '/artist-app/economy' },
-  { label: 'Profil', href: '/artist-app/profile' },
+  { label: 'Overview', href: '/artist-app', exact: true },
+  { label: 'Bookings', href: '/artist-app/bookings' },
+  { label: 'Payouts', href: '/artist-app/economy' },
+  { label: 'Profile', href: '/artist-app/profile' },
 ]
 
 export function ArtistTopbar({ name, email }: { name: string; email: string }) {
@@ -67,8 +67,8 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
             <button
               type="submit"
               className="flex size-9 items-center justify-center rounded-full text-[var(--ev-muted)] transition-colors hover:bg-[var(--ev-card-hover)] hover:text-[var(--ev-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
-              aria-label="Logg ut"
-              title="Logg ut"
+              aria-label="Log out"
+              title="Log out"
             >
               <LogOut className="size-4" />
             </button>
@@ -78,7 +78,7 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
             type="button"
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            aria-label={open ? 'Lukk meny' : 'Åpne meny'}
+            aria-label={open ? 'Close menu' : 'Open menu'}
             className="grid size-9 shrink-0 place-content-center rounded-full bg-[var(--ev-card)] text-[12px] font-semibold text-[var(--ev-muted)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] md:hidden"
           >
             {initials || '·'}
@@ -115,7 +115,7 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
                 type="submit"
                 className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
               >
-                <LogOut className="size-4" /> Logg ut
+                <LogOut className="size-4" /> Log out
               </button>
             </form>
           </div>

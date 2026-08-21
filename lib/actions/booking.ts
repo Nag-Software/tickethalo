@@ -10,8 +10,8 @@ import {
 } from '@/lib/email/mailer'
 import { generateShowPoster } from '@/lib/actions/ai'
 import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
+import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
 
-const MIN_BOOKABLE_SCORE = 6
 const ACTIVE_BOOKING_STATUSES = ['booking'] as const
 
 // ─── Scoring config ───────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { registerArtist } from '@/lib/actions/artist'
 import { sendArtistRegisteredEmail } from '@/lib/email/mailer'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { normalizeLanguages } from '@/lib/languages'
 
 export async function createArtistAction(formData: FormData) {
   const email = (formData.get('email') as string).trim()
@@ -15,7 +16,7 @@ export async function createArtistAction(formData: FormData) {
   const phone = (formData.get('phone') as string).trim() || undefined
   const bio = (formData.get('bio') as string).trim() || undefined
   const category = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
-  const language = (formData.get('language') as string).trim() || undefined
+  const languages = normalizeLanguages(formData.getAll('language').map((value) => String(value)))
 
   if (!email || !full_name) throw new Error('E-post og navn er påkrevd')
 
@@ -37,7 +38,7 @@ export async function createArtistAction(formData: FormData) {
       phone: phone ?? null,
       bio: bio ?? null,
       category: category.length > 0 ? category : null,
-      language: language ?? null,
+      languages: languages.length > 0 ? languages : null,
       status: 'pending_review',
     }).select('id').single()
 
@@ -55,7 +56,7 @@ export async function createArtistAction(formData: FormData) {
       phone,
       bio,
       category,
-      language,
+      languages,
     })
     artistId = result.artistId
   }

@@ -3,7 +3,9 @@ import { ToastActionForm } from '@/components/toast-action-form'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
 import { updateArtistProfileAction } from '../actions'
 import { getCurrentArtist } from '@/lib/artist-portal'
-import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles'
+import { formatArtistRoleList } from '@/lib/artist-roles'
+import { isArtistBookable } from '@/lib/artist-readiness'
+import { LocationLanguageFields } from '@/components/artist/location-language-fields'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 
@@ -13,16 +15,16 @@ const inputClass =
 export default async function ArtistProfilePage() {
   const { artist } = await getCurrentArtist()
   const links = artist.social_links ?? {}
-  const selectedCategories = new Set(normalizeArtistRoleList(artist.category))
+  const roleSummary = formatArtistRoleList(artist.category).join(', ')
 
   return (
     <>
       <PageHeader
-        title="Profil"
-        description="Feltene under brukes i booking og på den offentlige komikersiden."
+        title="Profile"
+        description="The fields below are used for booking and on the public comedian page."
         actions={
           <Chip tone={artist.status === 'approved' ? 'accent' : 'neutral'}>
-            {artist.status === 'approved' ? 'Godkjent' : 'Under vurdering'}
+            {artist.status === 'approved' ? 'Approved' : 'Under review'}
           </Chip>
         }
       />
@@ -32,20 +34,20 @@ export default async function ArtistProfilePage() {
           <ToastActionForm
             action={updateArtistProfileAction}
             encType="multipart/form-data"
-            successMessage="Profilen er lagret."
+            successMessage="Profile saved."
           >
-            <Panel title="Profilinformasjon">
+            <Panel title="Profile Information">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Fullt navn">
+                <Field label="Full Name">
                   <input name="full_name" defaultValue={artist.full_name} required className={inputClass} />
                 </Field>
-                <Field label="Scenenavn">
+                <Field label="Stage Name">
                   <input name="stage_name" defaultValue={artist.stage_name ?? ''} className={inputClass} />
                 </Field>
-                <Field label="Telefon">
+                <Field label="Phone">
                   <input name="phone" type="tel" defaultValue={artist.phone ?? ''} className={inputClass} />
                 </Field>
-                <Field label="Profilbilde">
+                <Field label="Profile Picture">
                   <input
                     name="profile_image_file"
                     type="file"
@@ -55,37 +57,11 @@ export default async function ArtistProfilePage() {
                 </Field>
               </div>
 
-              <Field label="Kategori">
-                <input type="hidden" name="category_present" value="1" />
-                <div className="flex flex-wrap gap-1.5">
-                  {ARTIST_ROLE_OPTIONS.map((role) => (
-                    <label key={role.value} className="cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="category"
-                        value={role.value}
-                        defaultChecked={selectedCategories.has(role.value)}
-                        className="peer sr-only"
-                      />
-                      <span className="inline-flex items-center rounded-full bg-[var(--ev-bg)] px-3.5 py-1.5 text-[13px] text-[var(--ev-muted)] ring-1 ring-inset ring-[var(--ev-line)] transition-colors hover:text-[var(--ev-text)] peer-checked:bg-[var(--ev-accent-fill)] peer-checked:font-semibold peer-checked:text-[var(--ev-accent-ink)] peer-checked:ring-[var(--ev-accent-fill)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ev-accent-fill)]">
-                        {role.label}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </Field>
-
-              <Field label="Språk">
-                <select
-                  name="language"
-                  defaultValue={artist.language ?? 'Norsk'}
-                  className={`${inputClass} appearance-none`}
-                >
-                  {['Norsk', 'Engelsk', 'Begge'].map((option) => (
-                    <option key={option}>{option}</option>
-                  ))}
-                </select>
-              </Field>
+              <LocationLanguageFields
+                initialCity={artist.city}
+                initialCountry={artist.country}
+                initialLanguages={artist.languages}
+              />
 
               <Field label="Bio">
                 <textarea
@@ -97,8 +73,8 @@ export default async function ArtistProfilePage() {
               </Field>
 
               <Field
-                label="YouTube-video"
-                hint="Oppdater denne lenken for å endre videoen i spilleren under."
+                label="YouTube Video"
+                hint="Update this link to change the video in the player below."
               >
                 <input
                   name="youtube"
@@ -119,21 +95,21 @@ export default async function ArtistProfilePage() {
                 <Field label="Facebook">
                   <input name="facebook" type="url" defaultValue={links.facebook ?? ''} placeholder="https://" className={inputClass} />
                 </Field>
-                <Field label="Nettside">
+                <Field label="Website">
                   <input name="website" type="url" defaultValue={links.website ?? ''} placeholder="https://" className={inputClass} />
                 </Field>
               </div>
 
               <button type="submit" className={`${portalButton.primary} w-fit`}>
-                Lagre profil
+                Save Profile
               </button>
             </Panel>
           </ToastActionForm>
 
           <YouTubePlayerCard
             url={links.youtube ?? null}
-            title="Innsendt YouTube-video"
-            description="Videoen du sendte inn i søknaden brukes internt av bookingteamet."
+            title="Submitted YouTube Video"
+            description="The video you submitted in the application is used internally by the booking team."
           />
         </div>
 
@@ -154,17 +130,25 @@ export default async function ArtistProfilePage() {
             </div>
           )}
 
-          <Panel title="Bookingstatus" description="Avgjør om profilen kan matches automatisk.">
+          <Panel title="Booking Status" description="Determine if the profile can be matched automatically.">
             <div className="flex flex-col divide-y divide-[var(--ev-line)]">
               <DataRow
                 label="Status"
-                value={artist.status === 'approved' ? 'Godkjent' : 'Under vurdering'}
+                value={artist.status === 'approved' ? 'Approved' : 'Under review'}
               />
               <DataRow
-                label="Kan bookes"
-                value={artist.status === 'approved' && (artist.admin_score ?? 0) >= 6 ? 'Ja' : 'Ikke ennå'}
+                label="Can be booked"
+                value={isArtistBookable(artist) ? 'Yes' : 'Not yet'}
+              />
+              {/* Rollen er lesbar, men ikke redigerbar: den settes av klubben. */}
+              <DataRow
+                label="Role"
+                value={roleSummary || <span className="text-[var(--ev-faint)]">Set by the club</span>}
               />
             </div>
+            <p className="text-[12.5px] leading-relaxed text-[var(--ev-muted)]">
+              Your role is assigned by the booking team based on your shows.
+            </p>
           </Panel>
         </aside>
       </div>

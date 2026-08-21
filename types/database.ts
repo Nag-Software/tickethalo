@@ -2,7 +2,7 @@
 
 export type Role = 'superadmin' | 'owner' | 'admin' | 'staff' | 'artist'
 export type ArtistStatus = 'pending_review' | 'approved' | 'rejected' | 'inactive' | 'flagged'
-export type ArtistGender = 'male' | 'female' | 'other'
+export type ArtistGender = 'male' | 'female'
 export type RequirementGender = 'male' | 'female' | 'any'
 export type EnergyLevel = 'high' | 'medium' | 'low' | 'uncertain'
 export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
@@ -79,7 +79,11 @@ export type Artist = {
   profile_image_url: string | null
   bio: string | null
   category: ArtistType[] | null
-  language: string | null
+  city: string | null
+  /** ISO 3166-1 alpha-2. */
+  country: string | null
+  /** ISO 639-1-koder. */
+  languages: string[] | null
   social_links: Record<string, string> | null
   gender: ArtistGender | null
   status: ArtistStatus
@@ -302,7 +306,9 @@ export type Database = {
           profile_image_url?: string | null
           bio?: string | null
           category?: ArtistType[] | null
-          language?: string | null
+          city?: string | null
+          country?: string | null
+          languages?: string[] | null
           gender?: ArtistGender | null
           social_links?: Record<string, string> | null
           status?: ArtistStatus

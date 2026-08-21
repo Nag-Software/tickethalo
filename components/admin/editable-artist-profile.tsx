@@ -5,10 +5,11 @@ import Image from 'next/image'
 import { Input } from '@/components/ui/input'
 import { updateArtistProfile } from '@/app/admin-app/artists/[id]/actions'
 import { ARTIST_ROLE_OPTIONS, formatArtistRoleSummary, normalizeArtistRoleList } from '@/lib/artist-roles'
+import { LANGUAGES, formatLanguageSummary, normalizeLanguages } from '@/lib/languages'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import type { Artist } from '@/types/database'
 
-type EditableField = 'full_name' | 'stage_name' | 'email' | 'phone' | 'category' | 'language' | 'bio' | 'social_links'
+type EditableField = 'full_name' | 'stage_name' | 'email' | 'phone' | 'category' | 'languages' | 'bio' | 'social_links'
 
 type SocialEntry = { key: string; url: string }
 
@@ -28,7 +29,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
     email: artist.email,
     phone: artist.phone ?? '',
     category: normalizeArtistRoleList(artist.category),
-    language: artist.language ?? '',
+    languages: normalizeLanguages(artist.languages),
     bio: artist.bio ?? '',
     social_links: socialLinksToEntries(artist.social_links),
   })
@@ -49,6 +50,14 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
       for (const category of value as string[]) {
         fd.append('category', category)
       }
+    } else if (field === 'languages') {
+      // Flagget skiller «ingen språk valgt» fra «feltet ble ikke sendt» — uten
+      // det kunne man ikke tømme lista igjen.
+      fd.set('language_present', '1')
+      // Serveren leser feltnavnet `language` (flere ganger), som skjemaene ellers.
+      for (const language of value as string[]) {
+        fd.append('language', language)
+      }
     } else {
       fd.set(field, value as string)
     }
@@ -68,7 +77,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
         const newValue = values[field]
         
         // Deep comparison for social_links
-        if (field === 'social_links' || field === 'category') {
+        if (field === 'social_links' || field === 'category' || field === 'languages') {
           if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
             fieldsToSave.push(field)
           }
@@ -231,17 +240,37 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
           {/* Språk */}
           <EditableFieldRow
             label="Språk"
-            isEditing={editing === 'language'}
-            display={<span className={cellClass} onClick={() => setEditing('language')}>{values.language || <em className="text-muted-foreground not-italic">—</em>}</span>}
+            isEditing={editing === 'languages'}
+            display={<span className={cellClass} onClick={() => setEditing('languages')}>{formatLanguageSummary(values.languages) || <em className="text-muted-foreground not-italic">—</em>}</span>}
             input={
-              <Input
-                autoFocus
-                value={values.language}
-                onChange={e => setValues(v => ({ ...v, language: e.target.value }))}
-                onBlur={() => setEditing(null)}
-                onKeyDown={e => handleKeyDown(e, 'language')}
-                className="h-7 text-sm"
-              />
+              <div className="space-y-2 rounded-md border border-input bg-background p-2">
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map((language) => {
+                    const checked = values.languages.includes(language.code)
+                    return (
+                      <label key={language.code} className="cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setValues((current) => ({
+                            ...current,
+                            languages: checked
+                              ? current.languages.filter((value) => value !== language.code)
+                              : [...current.languages, language.code],
+                          }))}
+                          className="sr-only peer"
+                        />
+                        <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs transition-colors peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground hover:bg-muted">
+                          {language.label}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <button type="button" onClick={() => setEditing(null)} className="text-xs text-muted-foreground hover:text-foreground">
+                  Ferdig
+                </button>
+              </div>
             }
           />
 
