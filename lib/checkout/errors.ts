@@ -12,6 +12,7 @@ export type CheckoutErrorCode =
   | 'show_past'
   | 'sold_out'
   | 'price_missing'
+  | 'club_not_payable'
   | 'stripe_config'
   | 'stripe_unavailable'
   | 'unknown'
@@ -22,6 +23,7 @@ const MESSAGES: Record<CheckoutErrorCode, string> = {
   show_past: 'This show has already happened, so tickets can no longer be bought.',
   sold_out: 'This show is sold out.',
   price_missing: 'The ticket price is missing for this show. We have been notified — please try again later.',
+  club_not_payable: 'Tickets for this show are not on sale yet. We have been notified — please try again later.',
   stripe_config: 'Payments are not set up correctly for this show. We have been notified — please try again later.',
   stripe_unavailable: 'We cannot reach the payment provider right now. Please try again in a moment.',
   unknown: 'Checkout could not be opened right now. Please try again in a moment.',
@@ -34,6 +36,9 @@ const MESSAGES: Record<CheckoutErrorCode, string> = {
  */
 const OPERATOR_FAULT = new Set<CheckoutErrorCode>([
   'price_missing',
+  // Klubben har ikke fullført Stripe-onboarding, så det finnes ingen konto å
+  // selge på vegne av. Kjøperen kan ikke gjøre noe med det — vi må.
+  'club_not_payable',
   'stripe_config',
   'unknown',
 ])

@@ -9,6 +9,7 @@ import {
   Users,
   CalendarDays,
   ShoppingCart,
+  Wallet,
   Settings,
   LogOut,
 } from 'lucide-react'
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'Shows', href: '/shows', icon: CalendarDays },
   { label: 'Komikere', href: '/artists', icon: Users },
   { label: 'Ordre', href: '/orders', icon: ShoppingCart },
+  { label: 'Økonomi', href: '/okonomi', icon: Wallet },
   { label: 'Min klubb', href: '/min-klubb', icon: Building2 },
   { label: 'Innstillinger', href: '/settings', icon: Settings },
 ]

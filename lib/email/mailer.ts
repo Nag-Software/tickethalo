@@ -1,4 +1,4 @@
-import { resend, FROM_EMAIL } from '@/lib/resend'
+import { resend, FROM_EMAIL, fromWithName } from '@/lib/resend'
 import QRCode from 'qrcode'
 
 type EmailResult = { success: boolean; resendId?: string; error?: string }
@@ -206,6 +206,18 @@ export async function sendSpotFilledEmail(opts: {
 // ─────────────────────────────────────────────────────────────
 // Ticket purchase confirmation
 // ─────────────────────────────────────────────────────────────
+/**
+ * Selgeren av billetten. Klubben er arrangør og selger — Tickethalo
+ * formidler adgangen. Blokken må stå på billetten uansett hva klubben har
+ * skrudd på av kvitteringsepost i Stripe.
+ */
+export type TicketSeller = {
+  name: string
+  legal_name?: string | null
+  org_number?: string | null
+  support_email?: string | null
+}
+
 export async function sendTicketPurchaseEmail(opts: {
   email: string
   buyer_name: string
@@ -216,6 +228,7 @@ export async function sendTicketPurchaseEmail(opts: {
   venue_address?: string | null
   ticket_code: string
   verification_url: string
+  seller?: TicketSeller | null
 }): Promise<EmailResult> {
   const subject = `Din billett til ${opts.show_title}`
   try {
@@ -238,8 +251,31 @@ export async function sendTicketPurchaseEmail(opts: {
     const venueAddress = escapeHtml(opts.venue_address)
     const ticketCode = escapeHtml(opts.ticket_code)
 
+    const seller = opts.seller ?? null
+    const sellerName = seller?.legal_name?.trim() || seller?.name?.trim() || null
+    const sellerLines = [
+      sellerName,
+      seller?.org_number ? `Org.nr ${seller.org_number}` : null,
+      seller?.support_email,
+    ].filter((line): line is string => Boolean(line))
+
+    const sellerText = sellerName
+      ? `\nSelger og arrangør: ${sellerLines.join(' · ')}\nBillett formidlet gjennom Tickethalo. Spørsmål om arrangementet rettes til arrangøren.\nBillettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).\n`
+      : ''
+
+    const sellerHtml = sellerName
+      ? `
+                <div style="margin-top:26px;border-top:1px solid #e4e4e7;padding-top:18px">
+                  <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Selger og arrangør</div>
+                  <div style="font-size:15px;font-weight:700;color:#18181b;margin-top:6px">${escapeHtml(sellerName)}</div>
+                  ${seller?.org_number ? `<div style="font-size:13px;color:#52525b;margin-top:2px">Org.nr ${escapeHtml(seller.org_number)}</div>` : ''}
+                  ${seller?.support_email ? `<div style="font-size:13px;color:#52525b;margin-top:2px"><a href="mailto:${escapeHtml(seller.support_email)}" style="color:#52525b">${escapeHtml(seller.support_email)}</a></div>` : ''}
+                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">Billetten er formidlet gjennom Tickethalo. Spørsmål om arrangementet, ombooking og refusjon rettes til arrangøren.<br />Billettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).</p>
+                </div>`
+      : ''
+
     const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: sellerName ? fromWithName(sellerName) : FROM_EMAIL,
       to: opts.email,
       subject,
       attachments: [
@@ -250,7 +286,7 @@ export async function sendTicketPurchaseEmail(opts: {
           contentId: 'ticket-qr',
         },
       ],
-      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. Dette er billetten din til ${opts.show_title}.\n\nDato: ${opts.show_date}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\nBillettkode: ${opts.ticket_code}\n\nVis QR-koden eller billettkoden i døren. QR-verifisering: ${opts.verification_url}\n`,
+      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. Dette er billetten din til ${opts.show_title}.\n\nDato: ${opts.show_date}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\nBillettkode: ${opts.ticket_code}\n\nVis QR-koden eller billettkoden i døren. QR-verifisering: ${opts.verification_url}\n${sellerText}`,
       html: `
         <div style="margin:0;background:#f4f4f5;padding:32px 12px;font-family:Inter,Arial,sans-serif;color:#18181b">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">
@@ -297,6 +333,7 @@ export async function sendTicketPurchaseEmail(opts: {
                 </div>
 
                 <p style="margin:22px 0 0;color:#52525b;font-size:14px;line-height:1.6">QR-koden og billettkoden er personlige. Ta med denne e-posten til inngangen, så scanner vi billetten og bekrefter at den er gyldig.</p>
+${sellerHtml}
               </td>
             </tr>
           </table>

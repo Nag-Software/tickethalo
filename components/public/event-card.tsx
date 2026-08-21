@@ -98,7 +98,9 @@ export function EventCard({
         </h3>
 
         {show.clubName && (
-          <div className="flex items-center gap-2 text-[15px] text-[var(--ev-muted)] sm:gap-1.5 sm:text-[13px]">
+          // `relative z-10` lifts the club link above the title's stretched
+          // link, the same trick the buy button below uses.
+          <div className="relative z-10 flex w-fit max-w-full items-center gap-2 text-[15px] text-[var(--ev-muted)] sm:gap-1.5 sm:text-[13px]">
             {show.clubLogoUrl ? (
               <Image
                 src={show.clubLogoUrl}
@@ -115,7 +117,16 @@ export function EventCard({
                 {show.clubName.slice(0, 1)}
               </span>
             )}
-            <span className="truncate">By {show.clubName}</span>
+            {show.clubSlug ? (
+              <Link
+                href={`/clubs/${show.clubSlug}`}
+                className="truncate underline-offset-4 transition-colors hover:text-[var(--ev-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
+              >
+                By {show.clubName}
+              </Link>
+            ) : (
+              <span className="truncate">By {show.clubName}</span>
+            )}
           </div>
         )}
 

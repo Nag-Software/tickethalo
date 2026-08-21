@@ -1,10 +1,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { needsSessionRefresh } from '@/lib/session-cookie'
 
-function hasSupabaseAuthCookie(request: NextRequest) {
-  return request.cookies
+function getSupabaseAuthCookieValue(request: NextRequest) {
+  // Store sesjoner deles i `…-auth-token.0`, `.1`. Navnene sorterer riktig
+  // så lenge det er under ti biter, og det er det alltid.
+  const chunks = request.cookies
     .getAll()
-    .some(({ name }) => name.startsWith('sb-') && name.includes('-auth-token'))
+    .filter(({ name }) => name.startsWith('sb-') && name.includes('-auth-token'))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  if (chunks.length === 0) return null
+  return chunks.map(({ value }) => value).join('')
 }
 
 function isTimeoutError(error: unknown) {
@@ -97,7 +104,9 @@ export async function proxy(request: NextRequest) {
     response = NextResponse.next({ request: { headers: requestHeaders } })
   }
 
-  if (hasSupabaseAuthCookie(request)) {
+  const authCookie = getSupabaseAuthCookieValue(request)
+
+  if (authCookie && needsSessionRefresh(authCookie)) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,

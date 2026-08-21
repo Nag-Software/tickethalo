@@ -4,11 +4,13 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createShow, updateShowStatus } from '@/lib/actions/shows'
-import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
+import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendManualBookingOffer, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
 import { generateShowPoster } from '@/lib/actions/ai'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
+import { normalizeCurrency } from '@/lib/currencies'
+import { assertClubCanSell } from '@/lib/stripe-connect'
 import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -595,8 +597,14 @@ export async function sendFallbackOffersAction(formData: FormData) {
 
 export async function updateShowDetailsAction(formData: FormData) {
   const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
+  const show = await assertShowAccess(showId)
   const db = createAdminClient()
+
+  // Valutaen velges ikke per show — den er registrert på klubben under
+  // Min klubb, og showet følger den.
+  const { data: club } = show.club_id
+    ? await db.from('clubs').select('currency').eq('id', show.club_id).maybeSingle()
+    : { data: null }
 
   const { error } = await db.from('shows').update({
     title: String(formData.get('title') ?? '').trim(),
@@ -609,7 +617,8 @@ export async function updateShowDetailsAction(formData: FormData) {
     venue_address: optionalText(formData.get('venue_address')),
     capacity: optionalInteger(formData.get('capacity')),
     ticket_price: optionalMoneyToMinor(formData.get('ticket_price')),
-    currency: optionalText(formData.get('currency')) ?? 'NOK',
+    // Uten klubbvaluta lar vi showets egen stå — den skal ikke falle tilbake til NOK.
+    ...(club?.currency ? { currency: normalizeCurrency(club.currency) } : {}),
   }).eq('id', showId)
 
   if (error) throw new Error(error.message)
@@ -705,6 +714,9 @@ export async function bookShowAction(formData: FormData) {
 export async function publishShowAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
+  // Publisering er det som åpner billettsalget. Uten en ferdig Connect-konto
+  // finnes det ingen selger å ta imot pengene på vegne av.
+  await assertClubCanSell(showId)
   const db = createAdminClient()
   await db.from('shows').update({
     status: 'published',
@@ -1002,6 +1014,19 @@ export async function addArtistToRequirementAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
+export async function sendOfferToArtistAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  const artistId = formData.get('artist_id') as string
+  const requirementId = formData.get('show_requirement_id') as string
+  await assertRequirementAccess(showId, requirementId)
+
+  if (!artistId) throw new Error('Velg en komiker å sende tilbud til.')
+
+  await sendManualBookingOffer(showId, artistId, requirementId)
+  revalidatePath(`/admin-app/shows/${showId}`)
+  revalidatePath('/admin-app/bookings')
+}
+
 export async function addManualSpotAction(_prevState: ManualSpotActionState, formData: FormData): Promise<ManualSpotActionState> {
   const showId = formData.get('show_id') as string
   const artistId = formData.get('artist_id') as string
@@ -1199,6 +1224,25 @@ export async function confirmLineupAction(formData: FormData) {
 
   revalidatePath(`/admin-app/shows/${showId}`)
   redirect(`/admin-app/shows/${showId}?tab=marketing`)
+}
+
+/**
+ * Publiserer lineupen selv om ikke alle plasser er fylt.
+ *
+ * Bookeren i klubben bestemmer selv når lineupen er god nok — ventende
+ * tilbud trekkes ikke tilbake, så plasser kan fortsatt fylles etterpå.
+ */
+export async function publishLineupAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  await assertShowAccess(showId)
+
+  const result = await automateFullbookedShow(showId, { force: true })
+  if (!result.published) {
+    throw new Error(result.message ?? 'Kunne ikke publisere lineupen.')
+  }
+
+  revalidatePath(`/admin-app/shows/${showId}`)
+  revalidatePath('/admin-app/shows')
 }
 
 export async function deleteShowAction(formData: FormData) {

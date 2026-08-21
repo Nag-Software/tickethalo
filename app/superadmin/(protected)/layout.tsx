@@ -1,11 +1,9 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { getAuthUser, getSessionProfile } from '@/lib/session'
 
 export default async function SuperadminProtectedLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     redirect('/superadmin/login')
@@ -16,12 +14,7 @@ export default async function SuperadminProtectedLayout({ children }: { children
     redirect(destination)
   }
 
-  const db = createAdminClient()
-  const { data: profile } = await db
-    .from('profiles')
-    .select('role')
-    .eq('auth_user_id', user.id)
-    .single()
+  const profile = await getSessionProfile(user.id)
 
   if (!profile || profile.role !== 'superadmin') {
     redirect('/superadmin/login?error=unauthorized')

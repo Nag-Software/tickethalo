@@ -283,6 +283,11 @@ export default async function ShowDetailPage({
                   {['draft', 'booking'].includes(show.status) && (requirements ?? []).length > 0 && !allSlotsFilled && (
                     <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                       Tilbud sendes automatisk når krav lagres og når nye artister godkjennes. Plasser fylles først når artister godkjenner tilbudet.
+                      {' '}Du kan når som helst{' '}
+                      <Link href={`/admin-app/shows/${id}?tab=lineup`} className="font-medium underline underline-offset-2">
+                        publisere lineupen manuelt
+                      </Link>
+                      {' '}selv om ikke alle plasser er fylt.
                     </div>
                   )}
                   {allSlotsFilled && show.status !== 'published' && (
@@ -336,13 +341,13 @@ export default async function ShowDetailPage({
                   <span className="text-xs font-medium text-muted-foreground">Sted / adresse</span>
                   <input name="venue_address" defaultValue={show.venue_address ?? ''} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
                 </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Pris</span>
+                <label className="space-y-1 md:col-span-2">
+                  <span className="text-xs font-medium text-muted-foreground">Pris ({show.currency})</span>
                   <input name="ticket_price" type="number" min={0} step="0.01" defaultValue={show.ticket_price ? show.ticket_price / 100 : ''} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Valuta</span>
-                  <input name="currency" defaultValue={show.currency} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+                  <span className="block text-[11px] text-muted-foreground">
+                    Valuta styres av klubben og endres under{' '}
+                    <Link href="/admin-app/min-klubb" className="underline underline-offset-2">Min klubb</Link>.
+                  </span>
                 </label>
               </div>
               <label className="space-y-1 block">

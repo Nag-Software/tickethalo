@@ -146,7 +146,7 @@ export default async function EventDetailPage({ params }: Props) {
           <div className="flex flex-col gap-8">
             <header className="flex flex-col gap-3">
               {show.clubName && (
-                <div className="flex items-center gap-2 text-[16px] text-[var(--ev-muted)] sm:text-[14px]">
+                <div className="flex w-fit max-w-full items-center gap-2 text-[16px] text-[var(--ev-muted)] sm:text-[14px]">
                   {show.clubLogoUrl ? (
                     <Image
                       src={show.clubLogoUrl}
@@ -163,7 +163,16 @@ export default async function EventDetailPage({ params }: Props) {
                       {show.clubName.slice(0, 1)}
                     </span>
                   )}
-                  By {show.clubName}
+                  {show.clubSlug ? (
+                    <Link
+                      href={`/clubs/${show.clubSlug}`}
+                      className="truncate underline-offset-4 transition-colors hover:text-[var(--ev-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
+                    >
+                      By {show.clubName}
+                    </Link>
+                  ) : (
+                    <>By {show.clubName}</>
+                  )}
                 </div>
               )}
 
@@ -201,6 +210,21 @@ export default async function EventDetailPage({ params }: Props) {
                 <p className="text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>
               </div>
             </div>
+
+            {/* Klubben er selger og arrangør av showet — Tickethalo formidler
+                billetten. Kjøperen inngår avtalen med klubben, så det må stå
+                der kjøpet skjer, ikke bare i vilkårene. */}
+            {show.clubName && (
+              <p className="text-[13px] leading-relaxed text-[var(--ev-faint)]">
+                Organiser and seller: {show.clubLegalName ?? show.clubName}
+                {show.clubOrgNumber ? ` (org. no. ${show.clubOrgNumber})` : ''}. The ticket is sold by
+                the organiser; Tickethalo handles the ticketing —{' '}
+                <Link href="/kjopsvilkar" className="underline underline-offset-2 hover:text-[var(--ev-text)]">
+                  terms of purchase
+                </Link>
+                .
+              </p>
+            )}
 
             <Section title="About the show">
               <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-[var(--ev-muted)] sm:text-[15px]">

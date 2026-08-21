@@ -2,15 +2,17 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Building2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { isClubPayoutReady } from '@/lib/stripe-connect'
 
 export const metadata = { title: 'Klubber — Superadmin' }
+
 
 export default async function ClubsPage() {
   const db = createAdminClient()
 
   const { data: clubs } = await db
     .from('clubs')
-    .select('id, name, slug, city, created_at')
+    .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, legal_name, org_number')
     .order('name')
 
   const clubIds = (clubs ?? []).map((c) => c.id)
@@ -71,7 +73,11 @@ export default async function ClubsPage() {
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {clubs.map((club) => (
+            {clubs.map((club) => {
+              const ready = isClubPayoutReady(club)
+              const hasAccount = Boolean(club.stripe_account_id)
+
+              return (
               <Link
                 key={club.id}
                 href={`/superadmin/clubs/${club.id}`}
@@ -87,8 +93,22 @@ export default async function ClubsPage() {
                   <span>{memberMap.get(club.id) ?? 0} admin{(memberMap.get(club.id) ?? 0) !== 1 ? 's' : ''}</span>
                   <span>{showMap.get(club.id) ?? 0} show{(showMap.get(club.id) ?? 0) !== 1 ? 's' : ''}</span>
                 </div>
+                {/* En klubb uten ferdig Connect-konto kan ikke selge billetter
+                    — showene blir liggende upublisert. Det bør ses herfra. */}
+                <div className="mt-3">
+                  {ready ? (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                      Klar for salg
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      {hasAccount ? 'Oppsett ikke fullført' : 'Ingen Stripe-konto'}
+                    </span>
+                  )}
+                </div>
               </Link>
-            ))}
+              )
+            })}
           </div>
         )}
       </main>

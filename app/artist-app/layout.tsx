@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { getArtistForAuthUser, getAuthUser } from '@/lib/session'
 import { ArtistTopbar } from '@/components/artist/artist-topbar'
 
 export const metadata = { title: 'Comedian Portal — Tickethalo' }
@@ -13,8 +12,7 @@ export default async function ArtistLayout({ children }: { children: React.React
 
   if (isPublicRoute) return children
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     if (pathname === '/artist-app' || pathname === '/artist-app/') return children
@@ -26,12 +24,9 @@ export default async function ArtistLayout({ children }: { children: React.React
     redirect(destination)
   }
 
-  const db = createAdminClient()
-  const { data: artist } = await db
-    .from('artists')
-    .select('full_name, stage_name, email, status')
-    .eq('auth_user_id', user.id)
-    .single()
+  // Samme oppslag som `getPortalDestinationForAuthUser` nettopp gjorde — det
+  // er cachet per request, så det koster ingen ny runde.
+  const artist = await getArtistForAuthUser(user.id)
 
   if (!artist) redirect('/artist-app/signup?error=missing')
 

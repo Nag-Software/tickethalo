@@ -13,6 +13,9 @@ export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 
 export type ConfirmedSpotStatus = 'confirmed' | 'cancelled' | 'completed' | 'paid'
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled'
 export type TicketStatus = 'valid' | 'used' | 'refunded' | 'cancelled'
+export type ClubPayoutStatus = 'pending' | 'paid' | 'failed' | 'cancelled'
+/** `capped` = Stripe-gebyret oversteg provisjonen. Da er det prisen som må endres. */
+export type FeeTrueupStatus = 'pending' | 'done' | 'not_needed' | 'capped' | 'failed'
 export type EmailLogStatus = 'pending' | 'sent' | 'failed'
 export type MarketingTaskKey =
   | 'publish_event_page'
@@ -36,9 +39,47 @@ export type Club = {
   logo_url: string | null
   header_image_url: string | null
   gallery_image_urls: string[]
+  /** @deprecated Erstattet av `club_locations` i migrasjon 026. */
   location_name: string | null
+  /** @deprecated Erstattet av `club_locations` i migrasjon 026. */
   address_line: string | null
   city: string | null
+  /** Hex (#rrggbb) hentet fra logoen ved opplasting. Null = standard Tickethalo-aksent. */
+  brand_color: string | null
+  /** ISO 4217. Standardvaluta for nye show i klubben. */
+  currency: string
+
+  // Selgeridentitet. Klubben er selger og arrangør — Tickethalo formidler.
+  legal_name: string | null
+  org_number: string | null
+  support_email: string | null
+
+  // Stripe Connect. Betalingen opprettes på denne kontoen (direct charge).
+  stripe_account_id: string | null
+  charges_enabled: boolean
+  payouts_enabled: boolean
+  onboarding_completed_at: string | null
+  requirements_due: unknown | null
+
+  /** Formidlingsprovisjon i basispunkter. 1000 = 10 %. */
+  platform_fee_bps: number
+  /** 0 = provisjonen er unntatt etter mval. § 3-7. */
+  commission_vat_bps: number
+  /** Dager etter showdato før utbetaling frigis. */
+  payout_hold_days: number
+  /** Tickethalo dekker Stripe-gebyret av sin provisjon. */
+  absorb_stripe_fee: boolean
+
+  created_at: string
+  updated_at: string
+}
+
+export type ClubLocation = {
+  id: string
+  club_id: string
+  name: string
+  address_line: string | null
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -214,6 +255,55 @@ export type Order = {
   status: OrderStatus
   buyer_email: string | null
   buyer_name: string | null
+
+  // Hovedbok. Klubben eier billettinntekten; Tickethalos eneste inntekt er
+  // `platform_fee_amount`. Se migrasjon 032.
+  club_id: string | null
+  stripe_connected_account_id: string | null
+  stripe_charge_id: string | null
+  stripe_application_fee_id: string | null
+  gross_amount: number | null
+  platform_fee_amount: number | null
+  stripe_fee_amount: number | null
+  club_net_amount: number | null
+  fee_trueup_amount: number | null
+  fee_trueup_status: FeeTrueupStatus
+  payment_method_type: string | null
+  refunded_at: string | null
+  refund_reason: string | null
+
+  created_at: string
+  updated_at: string
+}
+
+export type ClubPayout = {
+  id: string
+  club_id: string
+  amount: number
+  currency: string
+  stripe_payout_id: string | null
+  period_start: string | null
+  period_end: string | null
+  status: ClubPayoutStatus
+  failure_reason: string | null
+  created_at: string
+  updated_at: string
+  paid_at: string | null
+}
+
+export type ClubSettlement = {
+  id: string
+  club_id: string
+  period_start: string
+  period_end: string
+  gross_amount: number
+  commission_amount: number
+  commission_vat_amount: number
+  refunded_amount: number
+  net_amount: number
+  currency: string
+  document_number: string | null
+  issued_at: string | null
   created_at: string
   updated_at: string
 }
@@ -471,6 +561,19 @@ export type Database = {
           status?: OrderStatus
           buyer_email?: string | null
           buyer_name?: string | null
+          club_id?: string | null
+          stripe_connected_account_id?: string | null
+          stripe_charge_id?: string | null
+          stripe_application_fee_id?: string | null
+          gross_amount?: number | null
+          platform_fee_amount?: number | null
+          stripe_fee_amount?: number | null
+          club_net_amount?: number | null
+          fee_trueup_amount?: number | null
+          fee_trueup_status?: FeeTrueupStatus
+          payment_method_type?: string | null
+          refunded_at?: string | null
+          refund_reason?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -565,10 +668,78 @@ export type Database = {
           location_name?: string | null
           address_line?: string | null
           city?: string | null
+          brand_color?: string | null
+          currency?: string
+          legal_name?: string | null
+          org_number?: string | null
+          support_email?: string | null
+          stripe_account_id?: string | null
+          charges_enabled?: boolean
+          payouts_enabled?: boolean
+          onboarding_completed_at?: string | null
+          requirements_due?: unknown | null
+          platform_fee_bps?: number
+          commission_vat_bps?: number
+          payout_hold_days?: number
+          absorb_stripe_fee?: boolean
           created_at?: string
           updated_at?: string
         }
         Update: Partial<Club>
+        Relationships: []
+      }
+      club_locations: {
+        Row: ClubLocation
+        Insert: {
+          id?: string
+          club_id: string
+          name: string
+          address_line?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ClubLocation>
+        Relationships: []
+      }
+      club_payouts: {
+        Row: ClubPayout
+        Insert: {
+          id?: string
+          club_id: string
+          amount: number
+          currency?: string
+          stripe_payout_id?: string | null
+          period_start?: string | null
+          period_end?: string | null
+          status?: ClubPayoutStatus
+          failure_reason?: string | null
+          created_at?: string
+          updated_at?: string
+          paid_at?: string | null
+        }
+        Update: Partial<ClubPayout>
+        Relationships: []
+      }
+      club_settlements: {
+        Row: ClubSettlement
+        Insert: {
+          id?: string
+          club_id: string
+          period_start: string
+          period_end: string
+          gross_amount?: number
+          commission_amount?: number
+          commission_vat_amount?: number
+          refunded_amount?: number
+          net_amount?: number
+          currency?: string
+          document_number?: string | null
+          issued_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ClubSettlement>
         Relationships: []
       }
       club_memberships: {
@@ -595,7 +766,16 @@ export type Database = {
         Relationships: []
       }
     }
-    Views: Record<string, never>
+    Views: {
+      /** Solgte billetter per show. Se migrasjon 031. */
+      show_ticket_counts: {
+        Row: {
+          show_id: string
+          sold_tickets: number
+        }
+        Relationships: []
+      }
+    }
     Functions: {
       accept_booking_offer: {
         Args: { p_token: string }
@@ -619,6 +799,12 @@ export type Database = {
           p_currency?: string | null
           p_buyer_email?: string | null
           p_buyer_name?: string | null
+          p_club_id?: string | null
+          p_connected_account_id?: string | null
+          p_charge_id?: string | null
+          p_application_fee_id?: string | null
+          p_platform_fee_amount?: number | null
+          p_payment_method_type?: string | null
         }
         Returns: {
           result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show'

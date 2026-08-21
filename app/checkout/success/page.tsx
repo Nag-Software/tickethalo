@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { stripe } from '@/lib/stripe'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
@@ -88,12 +89,15 @@ function resolveOutcome(
 export default async function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string }>
+  searchParams: Promise<{ session_id?: string; s?: string }>
 }) {
-  const { session_id } = await searchParams
-  const session = session_id ? await getSession(session_id) : null
-  const completion = session ? await finalizeCheckoutSession(session) : null
+  const { session_id, s: showId } = await searchParams
+  const seller = await getSeller(showId, session_id)
+  const session = session_id ? await getSession(session_id, seller?.stripe_account_id ?? null) : null
+  const completion = session ? await finalizeCheckoutSession(session, { accountId: seller?.stripe_account_id ?? null }) : null
   const outcome = resolveOutcome(session_id, session, completion)
+
+  const sellerName = seller?.legal_name?.trim() || seller?.name?.trim() || null
 
   if (outcome.tone !== 'success') {
     console.warn(`[Checkout Success] ${outcome.heading} — session=${session_id ?? 'none'} result=${completion?.result ?? 'none'}`)
@@ -143,6 +147,7 @@ export default async function CheckoutSuccessPage({
           {(session || (session_id && outcome.tone !== 'success')) && (
             <dl className="mt-7 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)] text-[14px]">
               {session && <Row label="Show" value={session.metadata?.show_title ?? 'Tickethalo'} />}
+              {sellerName && <Row label="Seller" value={sellerName} />}
               {session?.metadata?.show_date && <Row label="Date" value={session.metadata.show_date} />}
               {session && (
                 <Row
@@ -153,6 +158,29 @@ export default async function CheckoutSuccessPage({
               {completion?.ticketCode && <Row label="Ticket code" value={completion.ticketCode} mono />}
               {outcome.tone !== 'success' && session_id && <Row label="Reference" value={session_id} mono />}
             </dl>
+          )}
+
+          {/* Klubben er selger og arrangør — Tickethalo formidler billetten.
+              Kjøperen skal vite hvem avtalen er med, og hvem de kontakter. */}
+          {sellerName && (
+            <p className="mt-6 text-[13px] leading-relaxed text-[var(--ev-faint)]">
+              Sold by {sellerName}
+              {seller?.org_number ? ` (org. no. ${seller.org_number})` : ''}, the organiser of this show.
+              {seller?.support_email ? (
+                <>
+                  {' '}Questions about the show:{' '}
+                  <a href={`mailto:${seller.support_email}`} className="underline underline-offset-2">
+                    {seller.support_email}
+                  </a>
+                  .
+                </>
+              ) : null}{' '}
+              Tickethalo handles the ticketing — see our{' '}
+              <Link href="/kjopsvilkar" className="underline underline-offset-2">
+                terms of purchase
+              </Link>
+              .
+            </p>
           )}
 
           <div className="mt-7 flex flex-wrap gap-2.5">
@@ -190,11 +218,53 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   )
 }
 
-async function getSession(sessionId: string) {
+async function getSession(sessionId: string, accountId: string | null) {
   try {
-    return await stripe.checkout.sessions.retrieve(sessionId)
+    // Betalingen er en direct charge på klubbens Connect-konto — sesjonen
+    // finnes ikke på plattformkontoen. Uten kontoen får vi 404 her.
+    return await stripe.checkout.sessions.retrieve(
+      sessionId,
+      undefined,
+      accountId ? { stripeAccount: accountId } : undefined,
+    )
   } catch (error) {
     console.error('[Checkout Success] Could not retrieve session:', error)
     return null
   }
+}
+
+/**
+ * Klubben bak showet. `s` i success-URL-en peker på showet, ikke på
+ * Stripe-kontoen — konto-ID-en slås opp her i stedet for å eksponeres.
+ */
+async function getSeller(showId: string | undefined, sessionId: string | undefined) {
+  const db = createAdminClient()
+
+  let clubId: string | null = null
+
+  if (showId) {
+    const { data: show } = await db.from('shows').select('club_id').eq('id', showId).maybeSingle()
+    clubId = show?.club_id ?? null
+  }
+
+  // Eldre kjøpslenker har ingen `s`. Da finner vi kontoen via ordren
+  // webhooken allerede har opprettet, i stedet for å vise kjøperen en feil.
+  if (!clubId && sessionId) {
+    const { data: order } = await db
+      .from('orders')
+      .select('club_id')
+      .eq('stripe_checkout_session_id', sessionId)
+      .maybeSingle()
+    clubId = order?.club_id ?? null
+  }
+
+  if (!clubId) return null
+
+  const { data: club } = await db
+    .from('clubs')
+    .select('name, legal_name, org_number, support_email, stripe_account_id')
+    .eq('id', clubId)
+    .maybeSingle()
+
+  return club ?? null
 }

@@ -1,34 +1,29 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 import { getClubAccess } from '@/lib/club-auth'
+import { getAuthUser, getSessionProfile } from '@/lib/session'
 
 export default async function AdminProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = await getRequestPathname()
   const adminPrefix = '/admin-app'
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     redirect(`${adminPrefix}/login`)
   }
 
+  // Profilen, portalvalget og klubbtilgangen deler ett oppslag: alle tre går
+  // gjennom de request-cachede funksjonene i `lib/session`.
+  const profile = await getSessionProfile(user.id)
+
   const destination = await getPortalDestinationForAuthUser(user.id)
   if (destination && destination !== adminPrefix && destination !== '/superadmin') {
     redirect(destination)
   }
-
-  const db = createAdminClient()
-  const { data: profile } = await db
-    .from('profiles')
-    .select('id, role, full_name, email')
-    .eq('auth_user_id', user.id)
-    .single()
 
   const allowed: string[] = ['superadmin', 'owner', 'admin', 'staff']
   if (!profile || !allowed.includes(profile.role)) {

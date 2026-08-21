@@ -3,10 +3,20 @@ import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
+import { settleStripeFee } from '@/lib/stripe-fees'
+import { syncAccountStatus } from '@/lib/stripe-connect'
 
 /**
  * 6.9 Stripe webhook endpoint: /api/webhooks/stripe
- * Handles: checkout.session.completed, payment_intent.payment_failed, charge.refunded
+ *
+ * Tar imot to strømmer:
+ *  - Plattform-events (`account.updated`) med STRIPE_WEBHOOK_SECRET.
+ *  - Connect-events fra klubbenes kontoer med STRIPE_CONNECT_WEBHOOK_SECRET.
+ *
+ * Billettsalget skjer som direct charge på klubbens konto, så
+ * `checkout.session.completed` og `charge.*` kommer alltid i den andre
+ * strømmen — med `event.account` satt til klubbens konto-ID. Den ID-en må
+ * følge med på alle Stripe-oppslag nedstrøms, ellers leter vi på feil konto.
  */
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -17,35 +27,57 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing stripe-signature' }, { status: 400 })
   }
 
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
-  if (!webhookSecret) {
+  const secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET]
+    .filter((secret): secret is string => Boolean(secret))
+
+  if (secrets.length === 0) {
     // Uten secret kan ingenting verifiseres. 500 gjør at Stripe prøver igjen
     // etter at miljøvariabelen er på plass, i stedet for å forkaste eventet.
-    console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET is not configured')
+    console.error('[Stripe Webhook] No webhook secret is configured')
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  let event: Stripe.Event
-  try {
-    event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Invalid signature'
+  let event: Stripe.Event | null = null
+  let lastError = 'no secret matched'
+
+  for (const secret of secrets) {
+    try {
+      event = stripe.webhooks.constructEvent(body, sig, secret)
+      break
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : 'Invalid signature'
+    }
+  }
+
+  if (!event) {
     // Nesten alltid en secret fra feil Stripe-konto eller miljø. Uten denne
     // loggen ser det ut som at ingen kjøp skjer.
-    console.error(`[Stripe Webhook] Signature verification failed: ${message}`)
-    return NextResponse.json({ error: message }, { status: 400 })
+    console.error(`[Stripe Webhook] Signature verification failed: ${lastError}`)
+    return NextResponse.json({ error: lastError }, { status: 400 })
   }
+
+  // Tom for plattform-events, klubbens konto-ID for Connect-events.
+  const account = event.account ?? null
 
   try {
     switch (event.type) {
       case 'checkout.session.completed':
-        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session)
+        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, account)
+        break
+      case 'charge.succeeded':
+        await handleChargeSucceeded(event.data.object as Stripe.Charge, account)
         break
       case 'payment_intent.payment_failed':
         await handlePaymentFailed(event.data.object as Stripe.PaymentIntent)
         break
       case 'charge.refunded':
         await handleRefund(event.data.object as Stripe.Charge)
+        break
+      case 'charge.dispute.created':
+        await handleDispute(event.data.object as Stripe.Dispute, account)
+        break
+      case 'account.updated':
+        await syncAccountStatus((event.data.object as Stripe.Account).id)
         break
       default:
         // Unhandled event type — ignore
@@ -66,8 +98,8 @@ export async function POST(req: NextRequest) {
 // Handlers
 // ─────────────────────────────────────────────────────────────
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  const completion = await finalizeCheckoutSession(session)
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session, account: string | null) {
+  const completion = await finalizeCheckoutSession(session, { accountId: account })
 
   // `finalizeCheckoutSession` returnerer utfallet i stedet for å kaste. Kaster
   // vi videre her, får Stripe 500 og prøver igjen — det er ønsket for feil som
@@ -82,6 +114,20 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (completion.result === 'created' && !completion.emailSent) {
     console.error(`[Stripe Webhook] Ticket ${completion.ticketCode} created but email failed: ${completion.emailError ?? 'unknown error'}`)
+  }
+}
+
+/**
+ * Gebyr-oppgjøret. Kjøres på `charge.succeeded` fordi det er først da Stripe
+ * har bokført hva betalingen faktisk kostet. Er transaksjonen ikke bokført
+ * ennå, blir ordren stående `pending` og plukkes opp av cron.
+ */
+async function handleChargeSucceeded(charge: Stripe.Charge, account: string | null) {
+  if (!account) return
+
+  const outcome = await settleStripeFee(charge.id, account)
+  if (outcome.result === 'pending') {
+    console.warn(`[Fees] Charge ${charge.id} not settled yet: ${outcome.reason} — cron will retry`)
   }
 }
 
@@ -100,10 +146,11 @@ async function handleRefund(charge: Stripe.Charge) {
     : null
   if (!paymentIntentId) return
 
-  // Update order
+  // Update order. Beløpene i hovedboken står — avregningen trenger dem for å
+  // vise hva som ble solgt og hvor mye som gikk tilbake.
   const { data: order } = await admin
     .from('orders')
-    .update({ status: 'refunded' })
+    .update({ status: 'refunded', refunded_at: new Date().toISOString() })
     .eq('stripe_payment_intent_id', paymentIntentId)
     .select('id')
     .single()
@@ -115,4 +162,24 @@ async function handleRefund(charge: Stripe.Charge) {
       .update({ status: 'refunded' })
       .eq('order_id', order.id)
   }
+}
+
+/**
+ * Disputen belaster klubbens konto — klubben er selger og bærer
+ * arrangementsrisikoen. Vi logger den slik at den kan følges opp.
+ */
+async function handleDispute(dispute: Stripe.Dispute, account: string | null) {
+  const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge.id
+  const admin = createAdminClient()
+
+  const { data: order } = await admin
+    .from('orders')
+    .select('id, club_id, buyer_email')
+    .eq('stripe_charge_id', chargeId)
+    .maybeSingle()
+
+  console.error(
+    `[Stripe Webhook] Dispute ${dispute.id} (${dispute.reason}, ${dispute.amount}) on account ${account ?? 'platform'} ` +
+      `— order=${order?.id ?? 'unknown'} club=${order?.club_id ?? 'unknown'}`,
+  )
 }

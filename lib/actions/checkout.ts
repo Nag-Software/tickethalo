@@ -3,6 +3,12 @@
 import type Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { stripe } from '@/lib/stripe'
+import {
+  CLUB_CONNECT_FIELDS,
+  type ConnectClub,
+  commissionFor,
+  isClubPayoutReady,
+} from '@/lib/stripe-connect'
 import { CheckoutError, isMissingStripeResource, toCheckoutError } from '@/lib/checkout/errors'
 
 type ShowForCheckout = {
@@ -18,6 +24,11 @@ type ShowForCheckout = {
 /**
  * 6.8 Create Stripe Checkout Session
  *
+ * Betalingen opprettes PÅ klubbens Connect-konto (direct charge): klubben er
+ * selger av billetten, og pengene er klubbens fra betalingsøyeblikket.
+ * Tickethalo tar formidlingsprovisjonen som `application_fee_amount` og rører
+ * aldri resten. Se `lib/stripe-connect.ts`.
+ *
  * Always throws `CheckoutError` — the caller turns the code into a message.
  */
 export async function createCheckoutSession(showId: string, requestUrl: string) {
@@ -25,7 +36,7 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
 
   const { data: show, error } = await admin
     .from('shows')
-    .select('id, title, slug, date, ticket_price, currency, stripe_price_id, capacity, status')
+    .select('id, title, slug, date, ticket_price, currency, stripe_price_id, capacity, status, club_id')
     .eq('id', showId)
     .single()
 
@@ -33,6 +44,18 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
   if (show.status !== 'published') throw new CheckoutError('show_not_published', { detail: `status=${show.status}` })
   if (show.date < new Date().toISOString().slice(0, 10)) throw new CheckoutError('show_past', { detail: `date=${show.date}` })
   if (!show.ticket_price) throw new CheckoutError('price_missing')
+
+  const club = await loadClub(show.club_id)
+  const clubDetail = club
+    ? `club=${club.id} charges=${club.charges_enabled} payouts=${club.payouts_enabled} org=${Boolean(club.org_number)}`
+    : `show ${show.id} has no club`
+
+  if (!isClubPayoutReady(club)) {
+    throw new CheckoutError('club_not_payable', { detail: clubDetail })
+  }
+
+  // Garantert av `isClubPayoutReady` — kontoen er en del av det den sjekker.
+  const account = club.stripe_account_id as string
 
   // Check remaining capacity
   if (show.capacity !== null) {
@@ -49,22 +72,22 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
 
   const origin = new URL(requestUrl).origin
   const cachedPriceId = show.stripe_price_id
-  const priceId = cachedPriceId ?? (await createPrice(show))
+  const priceId = cachedPriceId ?? (await createPrice(show, account))
 
   let session: Stripe.Checkout.Session
   try {
-    session = await createSession(show, priceId, origin)
+    session = await createSession(show, club, priceId, origin)
   } catch (sessionError) {
-    // Cached price IDs do not survive a change of Stripe account, and an archived
-    // price disappears the same way. Recreate the price once before giving up —
-    // the alternative is cleaning up every show by hand in the database.
+    // Pris-ID-er hører til én Stripe-konto. Etter overgangen til Connect ligger
+    // gamle ID-er på plattformkontoen og er ukjente for klubbens konto — samme
+    // symptom som en arkivert pris. Lag prisen på nytt én gang før vi gir opp.
     if (!cachedPriceId || !isMissingStripeResource(sessionError, priceId)) {
       throw toCheckoutError(sessionError)
     }
 
-    console.warn(`[Checkout] Price ${priceId} for show ${show.id} is unknown to Stripe — creating a replacement`)
+    console.warn(`[Checkout] Price ${priceId} for show ${show.id} is unknown to ${account} — creating a replacement`)
     try {
-      session = await createSession(show, await createPrice(show), origin)
+      session = await createSession(show, club, await createPrice(show, account), origin)
     } catch (retryError) {
       throw toCheckoutError(retryError)
     }
@@ -74,24 +97,40 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
   return { url: session.url, sessionId: session.id }
 }
 
-/** Creates a product + one-off price in Stripe and caches the price ID on the show. */
-async function createPrice(show: ShowForCheckout) {
+async function loadClub(clubId: string | null): Promise<ConnectClub | null> {
+  if (!clubId) return null
+  const admin = createAdminClient()
+  const { data } = await admin.from('clubs').select(CLUB_CONNECT_FIELDS).eq('id', clubId).single()
+  return (data as unknown as ConnectClub | null) ?? null
+}
+
+/** Creates a product + one-off price on the club's account and caches the IDs on the show. */
+async function createPrice(show: ShowForCheckout, account: string) {
   const admin = createAdminClient()
 
   try {
-    const product = await stripe.products.create({
-      name: show.title,
-      metadata: { show_id: show.id, event_slug: show.slug },
-    })
+    const product = await stripe.products.create(
+      {
+        name: show.title,
+        metadata: { show_id: show.id, event_slug: show.slug },
+      },
+      { stripeAccount: account },
+    )
 
-    const price = await stripe.prices.create({
-      unit_amount: show.ticket_price!,
-      currency: show.currency.toLowerCase(),
-      product: product.id,
-    })
+    const price = await stripe.prices.create(
+      {
+        unit_amount: show.ticket_price!,
+        currency: show.currency.toLowerCase(),
+        product: product.id,
+      },
+      { stripeAccount: account },
+    )
 
     // Persist for reuse
-    await admin.from('shows').update({ stripe_price_id: price.id }).eq('id', show.id)
+    await admin
+      .from('shows')
+      .update({ stripe_price_id: price.id, stripe_product_id: product.id })
+      .eq('id', show.id)
 
     return price.id
   } catch (error) {
@@ -99,25 +138,37 @@ async function createPrice(show: ShowForCheckout) {
   }
 }
 
-function createSession(show: ShowForCheckout, priceId: string, origin: string) {
-  return stripe.checkout.sessions.create({
-    mode: 'payment',
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/checkout/cancel?event=${show.slug}`,
-    metadata: {
-      show_id: show.id,
-      show_title: show.title,
-      show_date: show.date,
-      event_slug: show.slug,
-      app_origin: origin,
-    },
-    payment_intent_data: {
+function createSession(show: ShowForCheckout, club: ConnectClub, priceId: string, origin: string) {
+  const commission = commissionFor(show.ticket_price!, club)
+
+  return stripe.checkout.sessions.create(
+    {
+      mode: 'payment',
+      line_items: [{ price: priceId, quantity: 1 }],
+      // `s` lar suksesssiden finne fram til riktig Connect-konto. Sesjonen
+      // finnes bare på klubbens konto, så uten den kan den ikke hentes.
+      success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&s=${show.id}`,
+      cancel_url: `${origin}/checkout/cancel?event=${show.slug}`,
       metadata: {
         show_id: show.id,
+        show_title: show.title,
+        show_date: show.date,
         event_slug: show.slug,
+        app_origin: origin,
+        club_id: club.id,
+        connected_account_id: club.stripe_account_id ?? '',
       },
+      payment_intent_data: {
+        // Formidlingsprovisjonen. Resten blir stående på klubbens konto.
+        application_fee_amount: commission,
+        metadata: {
+          show_id: show.id,
+          event_slug: show.slug,
+          club_id: club.id,
+        },
+      },
+      allow_promotion_codes: true,
     },
-    allow_promotion_codes: true,
-  })
+    { stripeAccount: club.stripe_account_id! },
+  )
 }

@@ -1,298 +1,191 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Building2, MapPin, Sparkles, Trash2, UploadCloud } from 'lucide-react'
+import { Building2, Trash2 } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
+import { ClubLocationsField } from '@/components/admin/club-locations-field'
+import { CurrencyField } from '@/components/admin/currency-field'
+import { CopyLink } from '@/components/admin/copy-link'
 import { saveClubProfileAction } from '@/app/admin-app/(protected)/min-klubb/actions'
-import type { Club } from '@/types/database'
+import type { Club, ClubLocation } from '@/types/database'
 
 type ClubProfileFormProps = {
-  club: Pick<Club, 'id' | 'name' | 'slug' | 'description' | 'logo_url' | 'header_image_url' | 'location_name' | 'address_line' | 'city'>
+  club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency'>
+  locations: Array<Pick<ClubLocation, 'id' | 'name' | 'address_line'>>
+  /** Full adresse til klubbsiden, klar til deling. */
+  clubUrl: string
 }
 
-function Dropzone({
-  title,
-  description,
-  preview,
-  emptyLabel,
-  active,
-  onClick,
-  onDrop,
-  onDragOver,
-  onDragLeave,
-  onClear,
+/** Felles form på feltene: fylt flate framfor ramme, én ramme mindre per felt. */
+const inputClass =
+  'w-full rounded-2xl bg-zinc-100/80 px-4 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-foreground/20'
+
+function TextField({
+  name,
+  label,
+  hint,
+  defaultValue,
+  placeholder,
+  required,
 }: {
-  title: string
-  description: string
-  preview?: string | null
-  emptyLabel: string
-  active: boolean
-  onClick: () => void
-  onDrop: (event: React.DragEvent<HTMLDivElement>) => void
-  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void
-  onDragLeave: () => void
-  onClear?: () => void
+  name: string
+  label: string
+  hint?: string
+  defaultValue?: string
+  placeholder?: string
+  required?: boolean
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-foreground">{title}</div>
-          <div className="text-xs text-muted-foreground">{description}</div>
-        </div>
-        {preview && onClear ? (
-          <button type="button" onClick={onClear} className="inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground">
-            <Trash2 className="h-3.5 w-3.5" />
-            Fjern
-          </button>
-        ) : null}
-      </div>
-
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onClick}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            onClick()
-          }
-        }}
-        className={`group relative overflow-hidden rounded-[1.75rem] border border-dashed p-4 transition ${active ? 'border-black bg-black/5 shadow-[0_0_0_4px_rgba(24,24,27,0.06)]' : 'border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50'}`}
-      >
-        {preview ? (
-          <div className="relative aspect-[16/10] overflow-hidden rounded-[1.25rem] border border-black/10 bg-zinc-100">
-            <img src={preview} alt="" className="h-full w-full object-cover" />
-            <div className="absolute inset-x-3 bottom-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur">
-              Slipp nytt bilde her for å erstatte
-            </div>
-          </div>
-        ) : (
-          <div className="flex aspect-[16/10] flex-col items-center justify-center rounded-[1.25rem] bg-[radial-gradient(circle_at_top,_rgba(0,0,0,0.06),_transparent_45%),linear-gradient(135deg,_#fff,_#faf8f2)] px-6 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white shadow-sm">
-              <UploadCloud className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-medium text-foreground">{emptyLabel}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Dra et bilde hit eller trykk for å velge fil</p>
-          </div>
-        )}
-      </div>
+    <div className="space-y-2">
+      <label htmlFor={`club-${name}`} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
+      <input
+        id={`club-${name}`}
+        name={name}
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+        required={required}
+        className={`h-11 ${inputClass}`}
+      />
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
 
-export function ClubProfileForm({ club }: ClubProfileFormProps) {
+export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormProps) {
   const logoInputRef = useRef<HTMLInputElement>(null)
-  const headerInputRef = useRef<HTMLInputElement>(null)
-
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
-  const [headerPreview, setHeaderPreview] = useState<string | null>(club.header_image_url)
-  const [logoActive, setLogoActive] = useState(false)
-  const [headerActive, setHeaderActive] = useState(false)
 
-  function replaceSingleFile(input: HTMLInputElement | null, file: File | null, setPreview: (value: string | null) => void) {
+  /**
+   * Filfeltet settes programmatisk, slik at «Fjern» faktisk tømmer det som
+   * sendes inn — ikke bare bildet på skjermen.
+   */
+  function replaceLogo(file: File | null) {
+    const input = logoInputRef.current
     if (!input) return
 
     const transfer = new DataTransfer()
-    if (file) {
-      transfer.items.add(file)
-      setPreview(URL.createObjectURL(file))
-    } else {
-      setPreview(null)
-    }
-
+    if (file) transfer.items.add(file)
     input.files = transfer.files
+    setLogoPreview(file ? URL.createObjectURL(file) : null)
   }
 
   return (
-    <ToastActionForm action={saveClubProfileAction} successMessage="Klubbprofilen ble oppdatert." className="space-y-6">
-      <input ref={logoInputRef} type="file" name="logoFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(logoInputRef.current, event.currentTarget.files?.[0] ?? null, setLogoPreview)} />
-      <input ref={headerInputRef} type="file" name="headerFile" accept="image/*" className="hidden" onChange={(event) => replaceSingleFile(headerInputRef.current, event.currentTarget.files?.[0] ?? null, setHeaderPreview)} />
+    <ToastActionForm
+      action={saveClubProfileAction}
+      successMessage="Klubbprofilen ble lagret."
+      className="space-y-8"
+    >
+      <input
+        ref={logoInputRef}
+        type="file"
+        name="logoFile"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => replaceLogo(event.currentTarget.files?.[0] ?? null)}
+      />
+      {/* Tom verdi = logoen ble fjernet. */}
+      <input
+        type="hidden"
+        name="existingLogoUrl"
+        value={logoPreview && logoPreview === club.logo_url ? club.logo_url ?? '' : ''}
+      />
 
-      <input type="hidden" name="existingLogoUrl" value={logoPreview && logoPreview === club.logo_url ? club.logo_url ?? '' : ''} />
-      <input type="hidden" name="existingHeaderImageUrl" value={headerPreview && headerPreview === club.header_image_url ? club.header_image_url ?? '' : ''} />
+      {/* Logo */}
+      <div className="flex items-center gap-5">
+        <button
+          type="button"
+          onClick={() => logoInputRef.current?.click()}
+          className="grid size-20 shrink-0 place-content-center overflow-hidden rounded-3xl bg-zinc-100 transition-colors hover:bg-zinc-200/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+        >
+          {logoPreview ? (
+            // Blob-URL rett etter valg, så next/image gir ingenting her.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoPreview} alt="" className="size-full object-contain p-2" />
+          ) : (
+            <Building2 className="size-6 text-muted-foreground" aria-hidden />
+          )}
+          <span className="sr-only">Last opp logo</span>
+        </button>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
-        <div className="space-y-6">
-          <div className="rounded-[2rem] border bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-amber-700">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Identitet
-                </div>
-                <h3 className="mt-3 text-xl font-semibold tracking-tight">Gi klubben et tydelig uttrykk</h3>
-                <p className="mt-1 text-sm text-muted-foreground">Oppdater navn, fortelling og lokasjon slik at klubbprofilen føles ferdig.</p>
-              </div>
-              <div className="rounded-2xl border bg-zinc-50 px-3 py-2 text-right text-xs text-muted-foreground">
-                <div className="font-medium text-foreground">/{club.slug}</div>
-                <div>Intern klubbslug</div>
-              </div>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="club-name">
-                  <FieldTitle>Klubbnavn</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-name" name="name" defaultValue={club.name} placeholder="Latter Oslo" required />
-                  <FieldDescription>Vises i admin-app, på events og i klubbvalg.</FieldDescription>
-                </FieldContent>
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="club-city">
-                  <FieldTitle>By</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-city" name="city" defaultValue={club.city ?? ''} placeholder="Oslo" />
-                  <FieldDescription>Brukes i filtre, etiketter og oversikter.</FieldDescription>
-                </FieldContent>
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="club-location">
-                  <FieldTitle>Lokasjon</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-location" name="locationName" defaultValue={club.location_name ?? ''} placeholder="Sentrum Scene" />
-                  <FieldDescription>Navnet på klubbens faste venue eller rom.</FieldDescription>
-                </FieldContent>
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="club-address">
-                  <FieldTitle>Adresse</FieldTitle>
-                </FieldLabel>
-                <FieldContent>
-                  <Input id="club-address" name="addressLine" defaultValue={club.address_line ?? ''} placeholder="Arbeidersamfunnets plass 1" />
-                  <FieldDescription>Full adresse for publikum og artister.</FieldDescription>
-                </FieldContent>
-              </Field>
-            </div>
-
-            <div className="mt-5 rounded-[1.5rem] border bg-zinc-50/80 p-4">
-              <label htmlFor="club-description" className="mb-2 block text-sm font-medium text-foreground">Om klubben</label>
-              <textarea
-                id="club-description"
-                name="description"
-                defaultValue={club.description ?? ''}
-                placeholder="Fortell kort om stemningen, publikumet og hva som gjør klubben spesiell."
-                rows={7}
-                className="min-h-40 w-full resize-y rounded-[1.5rem] border border-input bg-white px-4 py-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">Kort, tydelig og visuelt. Denne teksten bør føles som klubbens egen intro.</p>
-            </div>
-          </div>
-
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-[2rem] border bg-white p-6 shadow-sm">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black text-white">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight">Brand assets</h3>
-                <p className="text-sm text-muted-foreground">Logo og header brukes som klubbens signaturflater.</p>
-              </div>
-            </div>
-
-            <div className="space-y-5">
-              <Dropzone
-                title="Logo"
-                description="Best som kvadratisk merke eller enkel logotype."
-                preview={logoPreview}
-                emptyLabel="Slipp inn klubbens logo"
-                active={logoActive}
-                onClick={() => logoInputRef.current?.click()}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setLogoActive(false)
-                  replaceSingleFile(logoInputRef.current, Array.from(event.dataTransfer.files).find((file) => file.type.startsWith('image/')) ?? null, setLogoPreview)
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setLogoActive(true)
-                }}
-                onDragLeave={() => setLogoActive(false)}
-                onClear={() => replaceSingleFile(logoInputRef.current, null, setLogoPreview)}
-              />
-
-              <Dropzone
-                title="Headerbilde"
-                description="Et bredt bilde som setter stemning øverst på klubbkortet og siden."
-                preview={headerPreview}
-                emptyLabel="Slipp inn et hero-bilde"
-                active={headerActive}
-                onClick={() => headerInputRef.current?.click()}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setHeaderActive(false)
-                  replaceSingleFile(headerInputRef.current, Array.from(event.dataTransfer.files).find((file) => file.type.startsWith('image/')) ?? null, setHeaderPreview)
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setHeaderActive(true)
-                }}
-                onDragLeave={() => setHeaderActive(false)}
-                onClear={() => replaceSingleFile(headerInputRef.current, null, setHeaderPreview)}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border bg-[radial-gradient(circle_at_top_left,_rgba(255,224,178,0.5),_transparent_24%),linear-gradient(135deg,_#fff,_#faf8f2)] p-6 shadow-sm">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-foreground shadow-sm">
-                <MapPin className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight">Preview</h3>
-                <p className="text-sm text-muted-foreground">Slik ser klubbens profil ut med dagens innhold.</p>
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-[1.75rem] border bg-white shadow-sm">
-              <div className="relative aspect-[16/9] bg-zinc-100">
-                {headerPreview ? <img src={headerPreview} alt="" className="h-full w-full object-cover" /> : null}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
-                <div className="absolute inset-x-4 bottom-4 flex items-end gap-3 text-white">
-                  <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/15 backdrop-blur">
-                    {logoPreview ? <img src={logoPreview} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-6 w-6" />}
-                  </div>
-                  <div>
-                    <div className="text-lg font-semibold leading-tight">{club.name}</div>
-                    <div className="text-xs text-white/75">{club.city || 'By mangler'} • {club.location_name || 'Lokasjon mangler'}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3 p-4">
-                <div className="rounded-2xl bg-zinc-50 p-3 text-sm text-muted-foreground">
-                  {club.description || 'Om klubben-teksten kommer til å vises her når du lagrer.'}
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span className="rounded-full border bg-white px-3 py-1.5">{club.address_line || 'Adresse mangler'}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <Button type="submit" size="lg">
-                Lagre klubbprofil
-              </Button>
-            </div>
+        <div className="space-y-1">
+          <div className="text-sm font-medium text-foreground">Logo</div>
+          <p className="text-xs text-muted-foreground">
+            Kvadratisk merke eller enkel logotype. Fargen på klubbsiden hentes herfra.
+          </p>
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => logoInputRef.current?.click()}
+              className="text-xs font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              {logoPreview ? 'Bytt logo' : 'Last opp'}
+            </button>
+            {logoPreview && (
+              <button
+                type="button"
+                onClick={() => replaceLogo(null)}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+                Fjern
+              </button>
+            )}
           </div>
         </div>
-      </section>
+      </div>
+
+      {/* Feltene */}
+      <div className="space-y-6">
+        <TextField
+          name="name"
+          label="Klubbnavn"
+          defaultValue={club.name}
+          placeholder="Latter Oslo"
+          required
+        />
+
+        <TextField
+          name="city"
+          label="By"
+          defaultValue={club.city ?? ''}
+          placeholder="Oslo"
+          hint="Brukes i filtre og på eventene."
+        />
+
+        <ClubLocationsField locations={locations} />
+
+        <CurrencyField value={club.currency} />
+
+        <div className="space-y-2">
+          <label htmlFor="club-description" className="text-sm font-medium text-foreground">
+            Om klubben
+          </label>
+          <textarea
+            id="club-description"
+            name="description"
+            defaultValue={club.description ?? ''}
+            rows={5}
+            placeholder="Kort om stemningen, publikum og hva som gjør klubben spesiell."
+            className={`resize-y py-3 ${inputClass}`}
+          />
+          <p className="text-xs text-muted-foreground">Noen få setninger. Står øverst på klubbsiden.</p>
+        </div>
+      </div>
+
+      <div className="space-y-6 border-t pt-6">
+        <CopyLink url={clubUrl} />
+
+        <div className="flex items-center justify-end">
+          <button
+            type="submit"
+            className="inline-flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background transition-opacity hover:opacity-90"
+          >
+            Lagre
+          </button>
+        </div>
+      </div>
     </ToastActionForm>
   )
 }

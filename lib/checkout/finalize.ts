@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
 
@@ -8,6 +9,57 @@ type FinalizeCheckoutResult = {
   ticketCode?: string | null
   emailSent?: boolean
   emailError?: string
+  /** Settes når betalingen er bokført, slik at gebyr-oppgjøret kan kjøres. */
+  chargeId?: string | null
+}
+
+/**
+ * Betalingen ligger på klubbens Connect-konto, ikke på plattformkontoen.
+ * Uten `stripeAccount` finner Stripe verken payment intent eller charge.
+ */
+type ChargeFacts = {
+  chargeId: string | null
+  applicationFeeId: string | null
+  applicationFeeAmount: number | null
+  paymentMethodType: string | null
+}
+
+async function readChargeFacts(
+  paymentIntentId: string | null,
+  accountId: string | null,
+): Promise<ChargeFacts> {
+  const empty: ChargeFacts = {
+    chargeId: null,
+    applicationFeeId: null,
+    applicationFeeAmount: null,
+    paymentMethodType: null,
+  }
+  if (!paymentIntentId || !accountId) return empty
+
+  try {
+    const intent = await stripe.paymentIntents.retrieve(
+      paymentIntentId,
+      { expand: ['latest_charge'] },
+      { stripeAccount: accountId },
+    )
+
+    const charge = typeof intent.latest_charge === 'object' ? intent.latest_charge : null
+    if (!charge) return empty
+
+    const applicationFee = charge.application_fee
+    return {
+      chargeId: charge.id,
+      applicationFeeId:
+        typeof applicationFee === 'string' ? applicationFee : applicationFee?.id ?? null,
+      applicationFeeAmount: charge.application_fee_amount ?? intent.application_fee_amount ?? null,
+      paymentMethodType: charge.payment_method_details?.type ?? null,
+    }
+  } catch (error) {
+    // Hovedboken er verdt et forsøk, men den skal aldri stoppe en billett.
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[Checkout] Could not read charge for ${paymentIntentId} on ${accountId}: ${message}`)
+    return empty
+  }
 }
 
 function resolveAppOrigin(session: Stripe.Checkout.Session) {
@@ -24,7 +76,10 @@ function buildTicketVerificationUrl(origin: string, ticketCode: string) {
   return `${origin.replace(/\/$/, '')}/admin-app/tickets/verify?code=${encodeURIComponent(ticketCode)}`
 }
 
-export async function finalizeCheckoutSession(session: Stripe.Checkout.Session): Promise<FinalizeCheckoutResult> {
+export async function finalizeCheckoutSession(
+  session: Stripe.Checkout.Session,
+  options?: { accountId?: string | null },
+): Promise<FinalizeCheckoutResult> {
   const admin = createAdminClient()
   const showId = session.metadata?.show_id
 
@@ -34,16 +89,26 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
   const buyerEmail = session.customer_details?.email ?? session.customer_email ?? ''
   const buyerName = session.customer_details?.name ?? ''
 
+  const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : null
+  const accountId = options?.accountId ?? session.metadata?.connected_account_id ?? null
+  const charge = await readChargeFacts(paymentIntentId, accountId)
+
   const { data: completion, error: completionError } = await admin
     .rpc('complete_checkout_order', {
       p_show_id: showId,
       p_session_id: session.id,
-      p_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+      p_payment_intent_id: paymentIntentId,
       p_stripe_customer_id: typeof session.customer === 'string' ? session.customer : null,
       p_amount_total: session.amount_total ?? 0,
       p_currency: (session.currency ?? 'nok').toUpperCase(),
       p_buyer_email: buyerEmail || null,
       p_buyer_name: buyerName || null,
+      p_club_id: session.metadata?.club_id ?? null,
+      p_connected_account_id: accountId,
+      p_charge_id: charge.chargeId,
+      p_application_fee_id: charge.applicationFeeId,
+      p_platform_fee_amount: charge.applicationFeeAmount,
+      p_payment_method_type: charge.paymentMethodType,
     })
     .single()
 
@@ -61,6 +126,7 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
       orderId: completion.order_id,
       ticketCode: completion.ticket_code,
       emailSent: false,
+      chargeId: charge.chargeId,
     }
   }
 
@@ -70,9 +136,19 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
   if (buyerEmail && completion.ticket_code) {
     const { data: show } = await admin
       .from('shows')
-      .select('title, date, start_time, venue_name, venue_address')
+      .select('title, date, start_time, venue_name, venue_address, club_id')
       .eq('id', showId)
       .single()
+
+    // Klubben er selger av billetten og må navngis på den.
+    const clubId = session.metadata?.club_id ?? show?.club_id ?? null
+    const { data: club } = clubId
+      ? await admin
+          .from('clubs')
+          .select('name, legal_name, org_number, support_email')
+          .eq('id', clubId)
+          .maybeSingle()
+      : { data: null }
 
     const emailResult = await sendTicketPurchaseEmail({
       email: buyerEmail,
@@ -84,6 +160,7 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
       venue_address: show?.venue_name ? show.venue_address : null,
       ticket_code: completion.ticket_code,
       verification_url: buildTicketVerificationUrl(resolveAppOrigin(session), completion.ticket_code),
+      seller: club,
     })
 
     emailSent = emailResult.success
@@ -95,5 +172,6 @@ export async function finalizeCheckoutSession(session: Stripe.Checkout.Session):
     ticketCode: completion.ticket_code,
     emailSent,
     emailError,
+    chargeId: charge.chargeId,
   }
 }

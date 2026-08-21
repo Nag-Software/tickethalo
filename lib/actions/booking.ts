@@ -11,6 +11,7 @@ import {
 import { generateShowPoster } from '@/lib/actions/ai'
 import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
 import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
+import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
 
 const ACTIVE_BOOKING_STATUSES = ['booking'] as const
 
@@ -452,8 +453,17 @@ export async function runAutomaticBookingForOpenShows() {
   return results
 }
 
-export async function automateFullbookedShow(showId: string) {
+/**
+ * Publiserer showet når alle lineup-plasser er fylt.
+ *
+ * `force: true` hopper over fyllingssjekken slik at bookeren i klubben kan
+ * publisere en delvis fylt lineup manuelt. Plakat genereres da fra de
+ * artistene som faktisk er bekreftet, og resterende tilbud lever videre —
+ * godkjennes de senere, oppdateres lineupen på det allerede publiserte showet.
+ */
+export async function automateFullbookedShow(showId: string, options: { force?: boolean } = {}) {
   const admin = createAdminClient()
+  const force = options.force === true
 
   const { data: requirements } = await admin
     .from('show_requirements')
@@ -462,35 +472,57 @@ export async function automateFullbookedShow(showId: string) {
 
   if (!requirements?.length) return { fullbooked: false, reason: 'no_requirements' as const }
 
-  for (const req of requirements) {
-    const { count } = await admin
-      .from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', req.id)
-      .in('status', ['confirmed', 'completed', 'paid'])
+  if (!force) {
+    for (const req of requirements) {
+      const { count } = await admin
+        .from('confirmed_spots')
+        .select('*', { count: 'exact', head: true })
+        .eq('show_requirement_id', req.id)
+        .in('status', ['confirmed', 'completed', 'paid'])
 
-    if ((count ?? 0) < req.quantity) {
-      return {
-        fullbooked: false,
-        reason: 'requirements_not_filled' as const,
-        message: `Krav "${req.role_name}" er ikke fylt (${count ?? 0}/${req.quantity})`,
+      if ((count ?? 0) < req.quantity) {
+        return {
+          fullbooked: false,
+          reason: 'requirements_not_filled' as const,
+          message: `Krav "${req.role_name}" er ikke fylt (${count ?? 0}/${req.quantity})`,
+        }
       }
     }
   }
 
   const { data: show } = await admin
     .from('shows')
-    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id')
+    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, club_id')
     .eq('id', showId)
     .single()
 
   if (!show) return { fullbooked: false, reason: 'show_not_found' as const }
+
+  // Denne funksjonen publiserer showet, også fra cron. Er klubbens
+  // Connect-konto ikke ferdig, ville billettsalget åpnet uten en selger å ta
+  // imot pengene på vegne av.
+  const club = await getClubForShow(showId)
+  if (!isClubPayoutReady(club)) {
+    return {
+      fullbooked: false,
+      reason: 'club_not_payable' as const,
+      message: `Klubben mangler: ${missingReadinessLabels(club).join(', ')}`,
+    }
+  }
 
   const { data: spots } = await admin
     .from('confirmed_spots')
     .select('artist_id, show_requirement_id')
     .eq('show_id', showId)
     .in('status', ['confirmed', 'completed', 'paid'])
+
+  if (force && (spots ?? []).length === 0) {
+    return {
+      fullbooked: false,
+      reason: 'no_confirmed_artists' as const,
+      message: 'Minst én artist må være bekreftet før lineupen kan publiseres.',
+    }
+  }
 
   const artistIds = [...new Set((spots ?? []).map((spot) => spot.artist_id))]
   const { data: artistRows } = artistIds.length > 0
@@ -563,7 +595,21 @@ export async function automateFullbookedShow(showId: string) {
       .eq('id', showId).eq('status', 'published')
   }
 
-  return { fullbooked: true, posterUrl, published: true, publishedAt }
+  // Fullbooket-flyten seeder markedsføringsoppgavene i accept_booking_offer.
+  // Ved manuell publisering når showet aldri den tilstanden, så seed dem her.
+  if (force && !alreadyPublished) {
+    await admin.from('marketing_tasks').upsert([
+      { show_id: showId, task_key: 'publish_event_page', label: 'Publiser event-side', is_completed: true },
+      { show_id: showId, task_key: 'activate_ticket_sales', label: 'Aktiver billettsalg', is_completed: false },
+      { show_id: showId, task_key: 'upload_poster', label: 'Last opp plakat', is_completed: Boolean(posterUrl) },
+      { show_id: showId, task_key: 'create_facebook_event', label: 'Opprett Facebook-event', is_completed: false },
+      { show_id: showId, task_key: 'share_facebook_groups', label: 'Del i Facebook-grupper', is_completed: false },
+      { show_id: showId, task_key: 'send_calendar_partners', label: 'Send til kalenderpartnere', is_completed: false },
+      { show_id: showId, task_key: 'schedule_email', label: 'Planlegg e-postkampanje', is_completed: false },
+    ], { onConflict: 'show_id,task_key', ignoreDuplicates: true })
+  }
+
+  return { fullbooked: true, forced: force, posterUrl, published: true, publishedAt }
 }
 
 /**
@@ -907,3 +953,82 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   }
 }
 
+
+/**
+ * Sender et bookingtilbud til én valgt komiker på en gitt lineup-plass.
+ *
+ * Brukes av "+ Send tilbud" i admin-appen: bookeren velger komiker selv
+ * i stedet for å la scoringsmotoren plukke kandidater. Komikeren må
+ * fortsatt takke ja før plassen fylles.
+ */
+export async function sendManualBookingOffer(
+  showId: string,
+  artistId: string,
+  requirementId: string,
+) {
+  const admin = createAdminClient()
+
+  const [{ data: show }, { data: requirement }, { data: artist }] = await Promise.all([
+    admin.from('shows').select('id, title, date, status').eq('id', showId).single(),
+    admin.from('show_requirements').select('id, role_name, quantity').eq('id', requirementId).eq('show_id', showId).single(),
+    admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
+  ])
+
+  if (!show) throw new Error('Showet finnes ikke.')
+  if (!requirement) throw new Error('Denne lineup-plassen tilhører ikke showet.')
+  if (!artist) throw new Error('Komikeren finnes ikke.')
+
+  const [{ count: filled }, { data: existingSpot }, { data: existingOffer }] = await Promise.all([
+    admin.from('confirmed_spots')
+      .select('*', { count: 'exact', head: true })
+      .eq('show_requirement_id', requirementId)
+      .in('status', ['confirmed', 'completed', 'paid']),
+    admin.from('confirmed_spots')
+      .select('id')
+      .eq('show_id', showId)
+      .eq('artist_id', artistId)
+      .in('status', ['confirmed', 'completed', 'paid'])
+      .maybeSingle(),
+    admin.from('booking_offers')
+      .select('id')
+      .eq('show_id', showId)
+      .eq('artist_id', artistId)
+      .eq('status', 'sent')
+      .maybeSingle(),
+  ])
+
+  if ((filled ?? 0) >= requirement.quantity) throw new Error('Denne lineup-plassen er allerede fylt.')
+  if (existingSpot) throw new Error('Denne komikeren er allerede i lineupen.')
+  if (existingOffer) throw new Error('Denne komikeren har allerede et tilbud som venter på svar.')
+
+  const { data: offer, error } = await admin
+    .from('booking_offers')
+    .insert({
+      show_id: showId,
+      artist_id: artistId,
+      show_requirement_id: requirementId,
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    .select('token')
+    .single()
+
+  if (error || !offer) throw new Error(error?.message ?? 'Kunne ikke opprette tilbudet.')
+
+  // Manuelt tilbud betyr at bookeren aktivt jobber med showet — la det gå ut
+  // av draft slik at svar fra komikeren behandles av bookingflyten.
+  await admin.from('shows').update({ status: 'booking' }).eq('id', showId).eq('status', 'draft')
+
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  await sendBookingOfferEmail({
+    email: artist.email,
+    full_name: artist.full_name,
+    show_title: show.title,
+    show_date: show.date,
+    token: offer.token,
+    response_url: `${baseUrl}/booking-offer/${offer.token}`,
+  })
+
+  return { offerId: offer.token, artistName: artist.full_name }
+}

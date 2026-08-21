@@ -21,6 +21,29 @@ export function Footer() {
       {/* A touch target, not just text: as a plain line it was 19px tall, below
           the WCAG 2.5.8 minimum. 44px for a thumb on mobile; on desktop padding
           brings it to 28px without changing how the footer looks. */}
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 pt-2 text-[13px]">
+        <Link
+          href="/kjopsvilkar"
+          className="inline-flex h-9 items-center underline-offset-4 transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:h-auto sm:py-1"
+          style={{ color: 'var(--ev-muted, #71717a)' }}
+        >
+          Terms of purchase
+        </Link>
+        <Link
+          href="/vilkar"
+          className="inline-flex h-9 items-center underline-offset-4 transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:h-auto sm:py-1"
+          style={{ color: 'var(--ev-muted, #71717a)' }}
+        >
+          Platform terms
+        </Link>
+        <Link
+          href="/personvern"
+          className="inline-flex h-9 items-center underline-offset-4 transition-colors hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:h-auto sm:py-1"
+          style={{ color: 'var(--ev-muted, #71717a)' }}
+        >
+          Privacy
+        </Link>
+      </div>
       <div className="flex flex-wrap items-center justify-center gap-2 px-4 pt-2 sm:gap-4 sm:pt-0">
         <Link
           href="/artist-app/login"

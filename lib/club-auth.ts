@@ -1,6 +1,7 @@
+import { cache } from 'react'
 import { cookies } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthUser, getSessionProfile } from '@/lib/session'
 
 export const ADMIN_APP_CLUB_COOKIE = 'admin_app_club_id'
 
@@ -18,61 +19,54 @@ export type ClubAccess = {
   clubs: ClubOption[]
 }
 
+const NO_ACCESS: ClubAccess = { isSuperadmin: false, clubIds: [], selectedClubId: null, clubs: [] }
+
 /**
  * Returns club access for the currently authenticated user.
- * - Superadmin: { isSuperadmin: true, clubIds: null } (all-access)
- * - Club admin: { isSuperadmin: false, clubIds: [...] }
- * - No access: { isSuperadmin: false, clubIds: [] }
+ * - Superadmin: every club, with the one picked in the club switcher selected
+ * - Club admin: the clubs they are a member of
+ * - No access: empty
+ *
+ * Cachet per request: sidene under `(protected)` kaller denne i tillegg til
+ * layouten, og uten `cache()` ble brukeren, profilen og klubbene hentet på
+ * nytt for hver av dem. Brukeren og profilen kommer fra `lib/session`, som
+ * deler de samme oppslagene med layoutene og portal-auth.
  */
-export async function getClubAccess(): Promise<ClubAccess> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { isSuperadmin: false, clubIds: [], selectedClubId: null, clubs: [] }
+export const getClubAccess = cache(async (): Promise<ClubAccess> => {
+  const user = await getAuthUser()
+  if (!user) return NO_ACCESS
 
-  const db = createAdminClient()
-  const { data: profile } = await db
-    .from('profiles')
-    .select('id, role')
-    .eq('auth_user_id', user.id)
-    .single()
+  const profile = await getSessionProfile(user.id)
+  if (!profile) return NO_ACCESS
 
-  if (!profile) return { isSuperadmin: false, clubIds: [], selectedClubId: null, clubs: [] }
-
+  // Superadmin er ikke medlem av noe — den ene ekstra spørringen tas bare her.
   if (profile.role === 'superadmin') {
-    const { data: clubs } = await db
+    const { data: clubs } = await createAdminClient()
       .from('clubs')
       .select('id, name, city, logo_url')
       .order('name')
 
-    const clubOptions = clubs ?? []
-    const cookieStore = await cookies()
-    const cookieValue = cookieStore.get(ADMIN_APP_CLUB_COOKIE)?.value ?? null
-    const fallbackClubId = clubOptions[0]?.id ?? null
-    const selectedClubId = clubOptions.some((club) => club.id === cookieValue)
-      ? cookieValue
-      : fallbackClubId
-
-    return {
-      isSuperadmin: true,
-      clubIds: selectedClubId ? [selectedClubId] : [],
-      selectedClubId,
-      clubs: clubOptions,
-    }
+    return toAccess(clubs ?? [], { isSuperadmin: true, selectedFromCookie: await getSelectedClubCookie() })
   }
 
-  const { data: memberships } = await db
-    .from('club_memberships')
-    .select('club_id, clubs(id, name, city, logo_url)')
-    .eq('profile_id', profile.id)
+  return toAccess(profile.clubs, { isSuperadmin: false, selectedFromCookie: null })
+})
 
-  const clubs = (memberships ?? [])
-    .map((membership) => Array.isArray(membership.clubs) ? membership.clubs[0] : membership.clubs)
-    .filter((club): club is ClubOption => Boolean(club?.id && club?.name))
+async function getSelectedClubCookie() {
+  const cookieStore = await cookies()
+  return cookieStore.get(ADMIN_APP_CLUB_COOKIE)?.value ?? null
+}
 
-  const selectedClubId = clubs[0]?.id ?? null
+function toAccess(
+  clubs: ClubOption[],
+  { isSuperadmin, selectedFromCookie }: { isSuperadmin: boolean; selectedFromCookie: string | null },
+): ClubAccess {
+  const selectedClubId = clubs.some((club) => club.id === selectedFromCookie)
+    ? selectedFromCookie
+    : clubs[0]?.id ?? null
 
   return {
-    isSuperadmin: false,
+    isSuperadmin,
     clubIds: selectedClubId ? [selectedClubId] : [],
     selectedClubId,
     clubs,
@@ -132,6 +126,35 @@ export async function assertRequirementAccess(showId: string, requirementId: str
   }
 
   return requirement
+}
+
+/**
+ * Ordren tilhører klubbens show. Brukes av refusjon — klubben er selger og
+ * er ansvarlig for refusjoner på egne arrangementer, men bare på sine egne.
+ */
+export async function assertOrderAccess(orderId: string) {
+  if (!orderId) {
+    throw new Error('Mangler ordre-id.')
+  }
+
+  const access = await getClubAccess()
+  if (access.clubIds.length === 0) {
+    throw new Error('Du har ikke tilgang til noen klubb.')
+  }
+
+  const db = createAdminClient()
+  const { data: order } = await db
+    .from('orders')
+    .select('id, show_id, club_id, status')
+    .eq('id', orderId)
+    .in('club_id', access.clubIds)
+    .maybeSingle()
+
+  if (!order) {
+    throw new Error('Du har ikke tilgang til denne ordren.')
+  }
+
+  return order
 }
 
 export async function assertOfferAccess(showId: string, offerId: string) {

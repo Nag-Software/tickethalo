@@ -19,6 +19,8 @@ import {
   movePendingOfferAction,
   swapArtistAction,
   addArtistToRequirementAction,
+  sendOfferToArtistAction,
+  publishLineupAction,
   cancelOfferAction,
   updateOfferStatusAction,
   openRequirementEnergyLevelsAction,
@@ -159,6 +161,10 @@ export function LineupTab({
   const [openAddReqId, setOpenAddReqId] = useState<string | null>(null)
   const [addArtistId, setAddArtistId] = useState('')
 
+  // "Send tilbud" panel per requirement
+  const [openOfferReqId, setOpenOfferReqId] = useState<string | null>(null)
+  const [offerArtistId, setOfferArtistId] = useState('')
+
   // "Flytt" panel per requirement
   const [openMoveReqId, setOpenMoveReqId] = useState<string | null>(null)
   const [moveOfferId, setMoveOfferId] = useState('')
@@ -272,6 +278,39 @@ export function LineupTab({
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+      }
+    })
+  }
+
+  function handleSendOffer(reqId: string) {
+    if (!offerArtistId) return
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      fd.set('artist_id', offerArtistId)
+      fd.set('show_requirement_id', reqId)
+      try {
+        await sendOfferToArtistAction(fd)
+        toast.success('Tilbud sendt til komikeren.')
+        setOpenOfferReqId(null)
+        setOfferArtistId('')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+      }
+    })
+  }
+
+  function handlePublishLineup() {
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      try {
+        await publishLineupAction(fd)
+        toast.success('Lineupen er publisert.')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Kunne ikke publisere lineupen')
       }
     })
   }
@@ -433,6 +472,13 @@ export function LineupTab({
   }
 
   const unassignedOffers = allOffers.filter(o => !o.show_requirement_id && o.status === 'sent')
+  const pendingOfferArtistIds = new Set(allOffers.filter(o => o.status === 'sent').map(o => o.artist_id))
+  const totalSlots = requirements.reduce((sum, req) => sum + req.quantity, 0)
+  const filledSlots = requirements.reduce((sum, req) => {
+    const reqFilled = activeSpots.filter(s => s.show_requirement_id === req.id).length
+    return sum + Math.min(reqFilled, req.quantity)
+  }, 0)
+  const offerableArtists = selectableArtists.filter(a => !pendingOfferArtistIds.has(a.id))
 
   return (
     <div className="space-y-5">
@@ -483,7 +529,21 @@ export function LineupTab({
                   <>
                     <button
                       onClick={() => {
+                        setOpenOfferReqId(openOfferReqId === req.id ? null : req.id)
+                        setOpenAddReqId(null)
+                        setOpenMoveReqId(null)
+                        setOpenInfoReqId(null)
+                        setOfferArtistId('')
+                      }}
+                      disabled={isPending}
+                      className="text-xs font-medium px-2.5 py-1 rounded-md border hover:bg-muted transition-colors disabled:opacity-50"
+                    >
+                      + Send tilbud
+                    </button>
+                    <button
+                      onClick={() => {
                         setOpenAddReqId(openAddReqId === req.id ? null : req.id)
+                        setOpenOfferReqId(null)
                         setOpenMoveReqId(null)
                         setOpenInfoReqId(null)
                         setAddArtistId('')
@@ -500,6 +560,7 @@ export function LineupTab({
                   onClick={() => {
                     setOpenInfoReqId(isInfoOpen ? null : req.id)
                     setOpenAddReqId(null)
+                    setOpenOfferReqId(null)
                     setOpenMoveReqId(null)
                   }}
                   className="inline-flex size-7 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -801,6 +862,43 @@ export function LineupTab({
               </div>
             )}
 
+            {/* Send offer panel */}
+            {openOfferReqId === req.id && !isLocked && (
+              <div className="border-t bg-muted/10 px-4 py-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={offerArtistId}
+                    onChange={e => setOfferArtistId(e.target.value)}
+                    disabled={isPending}
+                    className="flex-1 min-w-48 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+                  >
+                    <option value="">Velg komiker...</option>
+                    {offerableArtists.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleSendOffer(req.id)}
+                    disabled={!offerArtistId || isPending}
+                    className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50 transition-opacity"
+                  >
+                    Send tilbud
+                  </button>
+                  <button
+                    onClick={() => { setOpenOfferReqId(null); setOfferArtistId('') }}
+                    className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
+                  >
+                    Avbryt
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Komikeren får tilbudet på e-post og må takke ja før plassen fylles.
+                </p>
+              </div>
+            )}
+
             {/* Add artist panel */}
             {openAddReqId === req.id && !isLocked && (
               <div className="border-t bg-muted/10 px-4 py-3 flex flex-wrap items-center gap-2">
@@ -874,6 +972,44 @@ export function LineupTab({
               Sett opp bookingkrav
             </Link>
           </div>
+        </div>
+      )}
+
+      {/* Manual publish — booker decides when the lineup is good enough */}
+      {requirements.length > 0 && !allSlotsFilled && ['draft', 'booking', 'fullbooked'].includes(showStatus) && (
+        <div className="rounded-xl border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <h3 className="font-semibold text-sm">Publiser lineup nå</h3>
+              <p className="text-sm text-muted-foreground">
+                {filledSlots === 0
+                  ? 'Minst én komiker må ha takket ja før lineupen kan publiseres.'
+                  : `${filledSlots} av ${totalSlots} plasser er fylt. Publiser når du er fornøyd — ventende tilbud fortsetter å løpe, og komikere som takker ja etterpå legges til i lineupen.`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePublishLineup}
+              disabled={isPending || filledSlots === 0}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Publiser lineup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Published with open slots */}
+      {requirements.length > 0 && !allSlotsFilled && showStatus === 'published' && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 p-5">
+          <h3 className="font-bold text-emerald-900 dark:text-emerald-300">Publisert med åpne plasser</h3>
+          <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">
+            {filledSlots} av {totalSlots} plasser er fylt. Eventsiden er live, og lineupen oppdateres når flere komikere takker ja.{' '}
+            <Link href={`/admin-app/shows/${showId}?tab=marketing`} className="underline underline-offset-2">
+              Regenerer plakaten
+            </Link>{' '}
+            når lineupen har endret seg.
+          </p>
         </div>
       )}
 

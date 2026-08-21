@@ -5,7 +5,29 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { cloneShowAction, createShowAction } from '../actions'
 import { getClubAccess } from '@/lib/club-auth'
+import { CURRENCIES, normalizeCurrency } from '@/lib/currencies'
 
+
+/** Valutaen klubben selger i — standard for et nytt show. */
+async function getClubCurrency(clubId: string | null) {
+  if (!clubId) return normalizeCurrency(null)
+
+  const db = createAdminClient()
+  const { data: club } = await db.from('clubs').select('currency').eq('id', clubId).maybeSingle()
+  return normalizeCurrency(club?.currency)
+}
+
+function CurrencyOptions() {
+  return (
+    <>
+      {CURRENCIES.map((currency) => (
+        <option key={currency.code} value={currency.code}>
+          {currency.code} — {currency.name}
+        </option>
+      ))}
+    </>
+  )
+}
 
 export default async function NewShowPage({
   searchParams,
@@ -14,6 +36,7 @@ export default async function NewShowPage({
 }) {
   const { from } = await searchParams
   const clubAccess = await getClubAccess()
+  const clubCurrency = await getClubCurrency(clubAccess.selectedClubId)
 
   if (from) {
     const db = createAdminClient()
@@ -67,11 +90,9 @@ export default async function NewShowPage({
                     defaultValue={template.ticket_price ? String(template.ticket_price / 100) : ''} />
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Valuta</label>
-                    <select name="currency" defaultValue={template.currency}
+                    <select name="currency" defaultValue={normalizeCurrency(template.currency)}
                       className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                      <option value="NOK">NOK</option>
-                      <option value="EUR">EUR</option>
-                      <option value="USD">USD</option>
+                      <CurrencyOptions />
                     </select>
                   </div>
                 </div>
@@ -138,11 +159,9 @@ export default async function NewShowPage({
               <Field name="ticket_price" label="Billettpris (kr)" type="number" min={0} step={0.01} placeholder="199" />
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Valuta</label>
-                <select name="currency" defaultValue="NOK"
+                <select name="currency" defaultValue={clubCurrency}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                  <option value="NOK">NOK</option>
-                  <option value="EUR">EUR</option>
-                  <option value="USD">USD</option>
+                  <CurrencyOptions />
                 </select>
               </div>
             </div>

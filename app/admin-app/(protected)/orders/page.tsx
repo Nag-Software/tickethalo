@@ -1,9 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { getClubAccess } from '@/lib/club-auth'
-import { stripe } from '@/lib/stripe'
-import Stripe from 'stripe'
 import { CircleHelp, CreditCard } from 'lucide-react'
+import { refundOrderAction } from '@/lib/actions/refund'
+import { RefundOrderButton } from '@/components/admin/refund-order-button'
 
 type PaymentMethodInfo = {
   key: 'vipps' | 'klarna' | 'card' | 'unknown'
@@ -31,56 +31,18 @@ const statusLabels: Record<string, string> = {
   cancelled: 'Avbrutt',
 }
 
-function resolvePaymentMethod(session: Stripe.Checkout.Session): PaymentMethodInfo {
-  const methodTypes = session.payment_method_types ?? []
-
-  if (methodTypes.includes('vipps')) {
-    return { key: 'vipps', label: 'Vipps' }
-  }
-
-  if (methodTypes.includes('klarna')) {
-    return { key: 'klarna', label: 'Klarna' }
-  }
-
-  const paymentIntent = typeof session.payment_intent === 'object' ? session.payment_intent : null
-  const paymentMethod = paymentIntent && typeof paymentIntent.payment_method === 'object'
-    ? paymentIntent.payment_method
-    : null
-
-  if (paymentMethod?.type === 'klarna') {
-    return { key: 'klarna', label: 'Klarna' }
-  }
-
-  if (paymentMethod?.type === 'card' || methodTypes.includes('card')) {
-    return { key: 'card', label: 'Bankkort' }
-  }
-
-  return { key: 'unknown', label: 'Ukjent' }
-}
-
-async function getPaymentMethodMap(sessionIds: string[]) {
-  if (!process.env.STRIPE_SECRET_KEY || sessionIds.length === 0) {
-    return {} as Record<string, PaymentMethodInfo>
-  }
-
-  const results = await Promise.allSettled(
-    sessionIds.map(async (sessionId) => {
-      const session = await stripe.checkout.sessions.retrieve(sessionId, {
-        expand: ['payment_intent.payment_method'],
-      })
-
-      return [sessionId, resolvePaymentMethod(session)] as const
-    }),
-  )
-
-  return results.reduce<Record<string, PaymentMethodInfo>>((accumulator, result) => {
-    if (result.status === 'fulfilled') {
-      const [sessionId, paymentMethod] = result.value
-      accumulator[sessionId] = paymentMethod
-    }
-
-    return accumulator
-  }, {})
+/**
+ * Betalingsmåten lagres på ordren ved kjøp (migrasjon 032). Før dette hentet
+ * lista én Stripe-sesjon per rad — hundre ordrer ga hundre kall, og etter
+ * overgangen til Connect ville hvert av dem måttet vite hvilken klubbkonto
+ * sesjonen lå på.
+ */
+function resolvePaymentMethod(type: string | null): PaymentMethodInfo {
+  if (!type) return unknownPaymentMethod
+  if (type === 'vipps') return { key: 'vipps', label: 'Vipps' }
+  if (type === 'klarna') return { key: 'klarna', label: 'Klarna' }
+  if (type === 'card') return { key: 'card', label: 'Bankkort' }
+  return unknownPaymentMethod
 }
 
 function PaymentMethodBadge({ method }: { method: PaymentMethodInfo }) {
@@ -136,7 +98,7 @@ export default async function OrdersPage() {
   const { data: orders } = showIds.length
     ? await db
         .from('orders')
-        .select('id, show_id, stripe_checkout_session_id, amount_total, currency, status, buyer_email, buyer_name, created_at')
+        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, created_at, payment_method_type, platform_fee_amount, club_net_amount')
         .in('show_id', showIds)
         .order('created_at', { ascending: false })
         .limit(100)
@@ -144,7 +106,6 @@ export default async function OrdersPage() {
 
   const orderShowIds = [...new Set((orders ?? []).filter(o => o.show_id).map(o => o.show_id as string))]
   const orderIds = (orders ?? []).map((order) => order.id)
-  const stripeSessionIds = [...new Set((orders ?? []).flatMap((order) => order.stripe_checkout_session_id ? [order.stripe_checkout_session_id] : []))]
   const { data: showRows } = orderShowIds.length
     ? await db.from('shows').select('id, title').in('id', orderShowIds)
     : { data: [] as Array<{ id: string; title: string }> }
@@ -161,8 +122,6 @@ export default async function OrdersPage() {
     return accumulator
   }, {})
 
-  const paymentMethodMap = await getPaymentMethodMap(stripeSessionIds)
-
   return (
     <div>
       <AdminHeader title="Ordere" description={`${orders?.length ?? 0} ordre`} />
@@ -174,9 +133,11 @@ export default async function OrdersPage() {
                 <th className="text-left px-4 py-2.5 font-medium">Kjøper</th>
                 <th className="text-left px-4 py-2.5 font-medium">Show</th>
                 <th className="text-left px-4 py-2.5 font-medium">Beløp</th>
+                <th className="text-left px-4 py-2.5 font-medium">Klubbens andel</th>
                 <th className="text-left px-4 py-2.5 font-medium">Status</th>
                 <th className="text-left px-4 py-2.5 font-medium">Betalingsmåte</th>
                 <th className="text-left px-4 py-2.5 font-medium">Tidspunkt</th>
+                <th className="text-right px-4 py-2.5 font-medium">Refusjon</th>
               </tr>
             </thead>
             <tbody>
@@ -184,9 +145,15 @@ export default async function OrdersPage() {
                 const show = o.show_id ? showMap[o.show_id] : null
                 const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }
                 const isCheckedIn = ticketSummary.total > 0 && ticketSummary.checkedIn === ticketSummary.total
-                const paymentMethod = o.stripe_checkout_session_id
-                  ? paymentMethodMap[o.stripe_checkout_session_id] ?? unknownPaymentMethod
-                  : unknownPaymentMethod
+                const paymentMethod = resolvePaymentMethod(o.payment_method_type)
+                const money = (value: number | null | undefined) =>
+                  value === null || value === undefined
+                    ? '—'
+                    : new Intl.NumberFormat('nb-NO', {
+                        style: 'currency',
+                        currency: (o.currency ?? 'NOK').toUpperCase(),
+                        maximumFractionDigits: 0,
+                      }).format(value / 100)
 
                 return (
                   <tr key={o.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
@@ -196,16 +163,16 @@ export default async function OrdersPage() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{show?.title ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <div className="font-medium">
-                        {o.amount_total
-                          ? new Intl.NumberFormat('nb-NO', {
-                              style: 'currency',
-                              currency: (o.currency ?? 'NOK').toUpperCase(),
-                              maximumFractionDigits: 0,
-                            }).format(o.amount_total / 100)
-                          : '—'}
-                      </div>
+                      <div className="font-medium">{money(o.amount_total)}</div>
                       <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} stk</div>
+                    </td>
+                    {/* Klubben er selger. Beløpet over er kundens betaling;
+                        dette er det klubben sitter igjen med etter provisjon. */}
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{money(o.club_net_amount)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {o.platform_fee_amount ? `${money(o.platform_fee_amount)} provisjon` : '—'}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
@@ -222,6 +189,19 @@ export default async function OrdersPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(o.created_at).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end">
+                        {o.status === 'paid' ? (
+                          <RefundOrderButton
+                            action={refundOrderAction}
+                            orderId={o.id}
+                            amountLabel={money(o.amount_total)}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
