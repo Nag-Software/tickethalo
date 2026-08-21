@@ -24,15 +24,23 @@ function isTimeoutError(error: unknown) {
   )
 }
 
-/** Section indexes that hold no content and only forward to a default section. */
+/**
+ * Routes that hold no content of their own and only forward somewhere else,
+ * keyed and valued by their internal (non-subdomain) path.
+ *
+ * These hops belong here, ahead of rendering, rather than in a `page.tsx` that
+ * calls `redirect()`. A page and its layout render in the same RSC pass, so a
+ * redirecting page underneath a portal's auth gate puts two competing
+ * redirects into one flight payload — the target of the page's redirect and
+ * the login screen — and the router refetches forever instead of committing.
+ */
 const SECTION_INDEXES: Record<string, string> = {
   '/admin-app': '/admin-app/shows',
+  '/admin-app/artist-economy': '/admin-app/shows',
   '/superadmin': '/superadmin/clubs',
-}
-
-/** The admin index as it is addressed through the `admin.` subdomain. */
-const ADMIN_HOST_INDEXES: Record<string, string> = {
-  '/': '/shows',
+  '/artist-app/settings': '/artist-app/profile',
+  '/artist-app/booking-offers': '/artist-app/bookings',
+  '/artist-app/invoices': '/artist-app',
 }
 
 function stripTrailingSlash(value: string) {
@@ -46,20 +54,23 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const isApiPath = pathname === '/api' || pathname.startsWith('/api/')
 
-  // `/admin-app` and `/superadmin` are section indexes that hold no content of
-  // their own — they only point at a default section. That hop happens here,
-  // before anything renders, because a page and its layout render in the same
-  // RSC pass: an index that redirects from the page while the layout's auth
-  // gate redirects to the login screen puts two competing redirects in one
-  // flight payload, and the router refetches forever instead of committing.
   const isAdminHost = hostname === 'admin.localhost' || hostname.startsWith('admin.')
+  const isArtistHost = hostname === 'artist.localhost' || hostname.startsWith('artist.')
+
+  // The portals answer both at `/admin-app/…` and, through their own
+  // subdomain, at `/…`. Resolve to the internal path so SECTION_INDEXES is
+  // written once, then send the visitor to the target as *they* address it.
   const barePathname = stripTrailingSlash(pathname)
-  const indexTarget = isAdminHost
-    ? ADMIN_HOST_INDEXES[barePathname]
-    : SECTION_INDEXES[barePathname]
+  const hostPrefix = isAdminHost ? '/admin-app' : isArtistHost ? '/artist-app' : ''
+  const isHostScoped = hostPrefix !== '' && !barePathname.startsWith(hostPrefix)
+  const internalPathname = isHostScoped
+    ? `${hostPrefix}${barePathname === '/' ? '' : barePathname}`
+    : barePathname
+
+  const indexTarget = SECTION_INDEXES[internalPathname]
   if (indexTarget && !isApiPath) {
     const url = request.nextUrl.clone()
-    url.pathname = indexTarget
+    url.pathname = isHostScoped ? indexTarget.slice(hostPrefix.length) || '/' : indexTarget
     return NextResponse.redirect(url)
   }
 
