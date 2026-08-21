@@ -21,7 +21,6 @@ export type TimeRange = 'all' | 'tonight' | 'this-weekend' | 'this-week' | 'this
 export const TIME_RANGES: Array<{ value: TimeRange; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'this-week', label: 'This week' },
-  { value: 'this-month', label: 'This month' },
 ]
 
 /**

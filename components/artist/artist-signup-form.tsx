@@ -24,16 +24,16 @@ import { Label } from "../ui/label"
 const categories = ARTIST_ROLE_LABEL_OPTIONS
 
 const requiredFields = [
-  { id: "full_name", label: "Navn" },
-  { id: "stage_name", label: "Scenenavn" },
-  { id: "email", label: "E-post" },
-  { id: "password", label: "Passord" },
-  { id: "profile_image_file", label: "Profilbilde" },
-  { id: "phone", label: "Telefon" },
-  { id: "language", label: "Språk" },
-  { id: "gender", label: "Kjønn" },
-  { id: "category", label: "Kategori" },
-  { id: "youtube", label: "YouTube-video" },
+  { id: "full_name", label: "Name" },
+  { id: "stage_name", label: "Stage Name" },
+  { id: "email", label: "Email" },
+  { id: "password", label: "Password" },
+  { id: "profile_image_file", label: "Profile Picture" },
+  { id: "phone", label: "Phone" },
+  { id: "language", label: "Language" },
+  { id: "gender", label: "Gender" },
+  { id: "category", label: "Category" },
+  { id: "youtube", label: "YouTube Video" },
 ] as const
 
 type RequiredFieldId = (typeof requiredFields)[number]["id"]
@@ -108,14 +108,14 @@ export function ArtistSignupForm({
         <aside className="border-b border-[var(--ev-line)] p-6 lg:border-b-0 lg:border-r">
           <div className="lg:sticky lg:top-6">
             <Link href="/" className="text-[13px] text-[var(--ev-faint)] transition-colors hover:text-[var(--ev-text)]">Tickethalo</Link>
-            <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">Søknad</h2>
+            <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">Application</h2>
             <p className="mt-2 text-[14px] leading-relaxed text-[var(--ev-muted)]">
-              Søknaden sendes til bookingteamet for vurdering.
+              Your application is sent to the booking team for review.
             </p>
 
             <div className="mt-6 rounded-xl bg-[var(--ev-bg)] p-4">
               <div className="mb-2.5 flex items-center justify-between gap-3 text-[13px]">
-                <span className="text-[var(--ev-muted)]">Utfylt</span>
+                <span className="text-[var(--ev-muted)]">Completed</span>
                 <span className="font-semibold tabular-nums">{completed}/{requiredFields.length}</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ev-card-hover)]">
@@ -126,8 +126,8 @@ export function ArtistSignupForm({
               </div>
               <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--ev-muted)]">
                 {missing.length === 0
-                  ? "Alt obligatorisk er fylt ut."
-                  : `Mangler: ${missing.map((field) => field.label).slice(0, 3).join(", ")}${missing.length > 3 ? ` +${missing.length - 3}` : ""}`}
+                  ? "All required fields are filled out."
+                  : `Missing: ${missing.map((field) => field.label).slice(0, 3).join(", ")}${missing.length > 3 ? ` +${missing.length - 3}` : ""}`}
               </p>
             </div>
           </div>
@@ -146,15 +146,15 @@ export function ArtistSignupForm({
           )}
 
           <section className="space-y-4">
-            <SectionHeader icon={User} title="Identitet" />
+            <SectionHeader icon={User} title="Identity" />
             <div className="grid gap-4 md:grid-cols-2">
-              <LabeledInput icon={User} id="full_name" name="full_name" label="Fullt navn" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
-              <LabeledInput icon={Clapperboard} id="stage_name" name="stage_name" label="Scenenavn" autoComplete="organization-title" onValue={(value) => updateTextField("stage_name", value)} required />
-              <LabeledInput icon={AtSign} id="email" name="email" label="E-post" type="email" placeholder="navn@eksempel.no" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
-              <LabeledInput icon={Lock} id="password" name="password" label="Passord" type="password" minLength={8} autoComplete="new-password" onValue={(value) => updateTextField("password", value)} required />
-              <LabeledInput icon={Phone} id="phone" name="phone" label="Telefon" type="tel" autoComplete="tel" onValue={(value) => updateTextField("phone", value)} required />
+              <LabeledInput icon={User} id="full_name" name="full_name" label="Full Name" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
+              <LabeledInput icon={Clapperboard} id="stage_name" name="stage_name" label="Stage Name" autoComplete="organization-title" onValue={(value) => updateTextField("stage_name", value)} required />
+              <LabeledInput icon={AtSign} id="email" name="email" label="Email" type="email" placeholder="name@example.com" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
+              <LabeledInput icon={Lock} id="password" name="password" label="Password" type="password" minLength={8} autoComplete="new-password" onValue={(value) => updateTextField("password", value)} required />
+              <LabeledInput icon={Phone} id="phone" name="phone" label="Phone" type="tel" autoComplete="tel" onValue={(value) => updateTextField("phone", value)} required />
               <div className="space-y-2">
-                <label htmlFor="language" className="text-[13px] font-medium">Språk</label>
+                <label htmlFor="language" className="text-[13px] font-medium">Language</label>
                 <select
                   id="language"
                   name="language"
@@ -163,26 +163,26 @@ export function ArtistSignupForm({
                   onChange={(event) => updateTextField("language", event.target.value)}
                   className={selectClassName}
                 >
-                  <option value="" disabled>Velg språk</option>
-                  <option>Norsk</option>
-                  <option>Engelsk</option>
-                  <option>Norsk og engelsk</option>
+                  <option value="" disabled>Select Language</option>
+                  <option>Norwegian</option>
+                  <option>English</option>
+                  <option>Norwegian and English</option>
                 </select>
               </div>
             </div>
           </section>
 
           <section className="space-y-4">
-            <SectionHeader icon={Camera} title="Profil" />
+            <SectionHeader icon={Camera} title="Profile" />
             <label htmlFor="profile_image_file" className="flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-[var(--ev-line-strong)] p-4 transition-colors hover:bg-[var(--ev-bg)]">
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[var(--ev-bg)] text-[var(--ev-muted)]">
                 <ImagePlus className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium">Profilbilde</p>
-                <p className="truncate text-[13px] text-[var(--ev-muted)]">{imageName ?? "PNG, JPG eller WebP"}</p>
+                <p className="text-[13px] font-medium">Profile Picture</p>
+                <p className="truncate text-[13px] text-[var(--ev-muted)]">{imageName ?? "PNG, JPG or WebP"}</p>
               </div>
-              <span className="shrink-0 rounded-full bg-[var(--ev-text)] px-3.5 py-2 text-[13px] font-semibold text-[var(--ev-bg)]">Velg bilde</span>
+              <span className="shrink-0 rounded-full bg-[var(--ev-text)] px-3.5 py-2 text-[13px] font-semibold text-[var(--ev-bg)]">Choose Image</span>
               <input
                 id="profile_image_file"
                 name="profile_image_file"
@@ -200,7 +200,7 @@ export function ArtistSignupForm({
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label htmlFor="gender" className="text-[13px] font-medium">Kjønn</label>
+                <label htmlFor="gender" className="text-[13px] font-medium">Gender</label>
                 <select
                   id="gender"
                   name="gender"
@@ -209,22 +209,22 @@ export function ArtistSignupForm({
                   onChange={(event) => updateTextField("gender", event.target.value)}
                   className={selectClassName}
                 >
-                  <option value="" disabled>Velg kjønn</option>
-                  <option value="male">Mann</option>
-                  <option value="female">Kvinne</option>
-                  <option value="other">Annet</option>
+                  <option value="" disabled>Select Gender</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <LabeledInput icon={Video} id="youtube" name="youtube" label="YouTube-video" type="url" placeholder="https://youtube.com/watch?v=..." onValue={(value) => updateTextField("youtube", value)} required />
+                <LabeledInput icon={Video} id="youtube" name="youtube" label="YouTube Video" type="url" placeholder="https://youtube.com/watch?v=..." onValue={(value) => updateTextField("youtube", value)} required />
                 <Label className="text-[12px] font-normal text-[var(--ev-faint)]">
-                    Vi benytter denne videoen til å vurdere ditt sceneutrykk, og den vil ikke bli publisert utenfor vårt interne system.
+                    We use this video to assess your stage presence, and it will not be published outside our internal system.
                 </Label>
               </div>
             </div>
 
             <div className="space-y-2">
-              <p className="text-[13px] font-medium">Kategori</p>
+              <p className="text-[13px] font-medium">Category</p>
               <div className="flex flex-wrap gap-2">
                 {categories.map((category) => {
                   const checked = selectedCategories.includes(category)
@@ -254,30 +254,30 @@ export function ArtistSignupForm({
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="bio" className="text-[13px] font-medium">Kort bio</label>
+              <label htmlFor="bio" className="text-[13px] font-medium">Short Bio</label>
               <textarea
                 id="bio"
                 name="bio"
                 rows={4}
                 className={textareaClassName}
-                placeholder="Fortell kort om sceneerfaring, stil og type show."
+                placeholder="Tell us briefly about your stage experience, style and type of show."
               />
             </div>
           </section>
 
           <section className="space-y-4 border-t border-[var(--ev-line)] pt-6">
-            <SectionHeader icon={Globe2} title="SoMe-lenker" aside="valgfritt" />
+            <SectionHeader icon={Globe2} title="Social Media Links" aside="optional" />
             <div className="grid gap-4 md:grid-cols-2">
               <Input id="instagram" name="instagram" type="url" placeholder="Instagram URL" className={fieldClassName} />
               <Input id="tiktok" name="tiktok" type="url" placeholder="TikTok URL" className={fieldClassName} />
               <Input id="facebook" name="facebook" type="url" placeholder="Facebook URL" className={fieldClassName} />
-              <Input id="website" name="website" type="url" placeholder="Nettside URL" className={fieldClassName} />
+              <Input id="website" name="website" type="url" placeholder="Website URL" className={fieldClassName} />
             </div>
           </section>
 
           <div className="flex flex-col gap-3 border-t border-[var(--ev-line)] pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[14px] text-[var(--ev-muted)]">
-              {missing.length === 0 ? "Alt klart." : `${missing.length} felt mangler før innsending.`}
+              {missing.length === 0 ? "All set." : `${missing.length} fields are missing before submission.`}
             </p>
             <Button
               type="submit"
@@ -285,7 +285,7 @@ export function ArtistSignupForm({
               disabled={missing.length > 0}
             >
               <BadgeCheck className="size-4" />
-              Registrer artistprofil
+              Register Artist Profile
             </Button>
           </div>
         </form>

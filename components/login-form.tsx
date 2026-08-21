@@ -83,7 +83,7 @@ export function LoginForm({
             isPortal && 'mt-1 text-[14px] text-[var(--ev-muted)]',
           )}>{description}</CardDescription>
         </CardHeader>
-        <CardContent className={cn(isPoster && 'px-6 py-5')}>
+        <CardContent className={cn(isPoster && 'p-5')}>
           <form action={action} method="post">
             <FieldGroup>
               {nextPath && <input type="hidden" name="next" value={nextPath} />}

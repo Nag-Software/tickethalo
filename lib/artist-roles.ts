@@ -2,14 +2,14 @@ export type CanonicalArtistRole = 'headliner' | 'konferansier' | 'stand-up' | 'o
 
 export const ARTIST_ROLE_OPTIONS: Array<{ value: CanonicalArtistRole; label: string }> = [
   { value: 'headliner', label: 'Headliner' },
-  { value: 'konferansier', label: 'Konferansier' },
+  { value: 'konferansier', label: 'Host' },
   { value: 'stand-up', label: 'Stand-up' },
   { value: 'open mic', label: 'Open Mic' },
 ]
 
 const ARTIST_ROLE_LABELS: Record<CanonicalArtistRole, string> = {
   headliner: 'Headliner',
-  konferansier: 'Konferansier',
+  konferansier: 'Host',
   'stand-up': 'Stand-up',
   'open mic': 'Open Mic',
 }

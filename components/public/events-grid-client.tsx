@@ -7,8 +7,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import { EventCard } from '@/components/public/event-card'
 import { CitySignup } from '@/components/public/city-signup'
+import { LocationPicker, type LocationOrigin } from '@/components/public/location-picker'
 import type { PublicShow } from '@/lib/public-events'
 import { ALL_CITIES, TIME_RANGES, type TimeRange, isInRange, toIsoDate } from '@/lib/event-filters'
+import { distanceToCity } from '@/lib/geo'
 import { enGB } from 'date-fns/locale'
 
 interface Props {
@@ -67,10 +69,11 @@ export function EventsGridClient({ shows, today }: Props) {
   const [range, setRange] = useState<TimeRange>('all')
   const [city, setCity] = useState(ALL_CITIES)
   const [date, setDate] = useState<Date | undefined>(undefined)
+  /** Set by "Find my location". Sorts the list by distance; it does not filter. */
+  const [origin, setOrigin] = useState<LocationOrigin | null>(null)
 
-  const cityOptions = useMemo(
+  const cityNames = useMemo(
     () => [
-      ALL_CITIES,
       ...new Set(
         shows
           .map((show) => show.clubCity?.trim())
@@ -90,24 +93,36 @@ export function EventsGridClient({ shows, today }: Props) {
     (show) => matchesCity(show, city) && matchesDate(show, date) && (date ? true : isInRange(show.date, range, today))
   )
 
+  // `shows` arrives date-ordered and Array#sort is stable, so shows an equal
+  // distance away — which in practice means the same city — stay in date order.
+  const ordered = origin
+    ? [...filtered].sort(
+        (a, b) =>
+          (distanceToCity(origin, a.clubCity) ?? Infinity) - (distanceToCity(origin, b.clubCity) ?? Infinity)
+      )
+    : filtered
+
   // The counts cross-reference each other: the city count respects the selected time range, and vice versa.
   const countForCity = (value: string) =>
     shows.filter((show) => matchesCity(show, value) && matchesDate(show, date) && (date ? true : isInRange(show.date, range, today))).length
   const countForRange = (value: TimeRange) =>
     shows.filter((show) => matchesCity(show, city) && isInRange(show.date, value, today)).length
 
-  const hasFilters = city !== ALL_CITIES || range !== 'all' || date !== undefined
+  const hasFilters = city !== ALL_CITIES || range !== 'all' || date !== undefined || origin !== null
 
   const resetAll = () => {
     setCity(ALL_CITIES)
     setRange('all')
     setDate(undefined)
+    setOrigin(null)
   }
+
+  const locationOptions = cityNames.map((name) => ({ city: name, count: countForCity(name) }))
 
   return (
     <section id="events-section" className="px-4 pb-24 md:px-8">
       {/* Toolbar — sticks below the floating header on scroll */}
-      <div className="sticky top-[49px] w-fit rounded-lg z-30 -mx-4 mb-6 bg-[var(--ev-bg)]/85 sm:mb-8 px-4 py-3 backdrop-blur-xs md:-mx-8 md:px-8">
+      <div className="sticky top-[49px] z-50 w-fit rounded-lg -mx-4 mb-6 bg-[var(--ev-bg)]/85 sm:mb-8 px-4 py-3 backdrop-blur-xs md:-mx-8 md:px-8">
         <div className="flex flex-col gap-2.5">
           <div
             role="group"
@@ -155,25 +170,14 @@ export function EventsGridClient({ shows, today }: Props) {
             </Popover>
           </div>
 
-          {cityOptions.length > 1 && (
-            <div
-              role="group"
-              aria-label="Filter by city"
-              className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-0.5 sm:gap-1.5 [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] md:-mx-8 md:px-8 md:[mask-image:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {cityOptions.map((option) => (
-                <Chip
-                  key={option}
-                  active={option === city}
-                  count={countForCity(option)}
-                  onClick={() => setCity(option)}
-                >
-                  {/* Sets it apart from 'All' in the time row right above */}
-                  {option === ALL_CITIES ? 'All cities' : option}
-                </Chip>
-              ))}
-            </div>
-          )}
+          <LocationPicker
+            options={locationOptions}
+            value={city}
+            onValueChange={setCity}
+            origin={origin}
+            onOriginChange={setOrigin}
+            totalCount={countForCity(ALL_CITIES)}
+          />
         </div>
       </div>
 
@@ -185,7 +189,11 @@ export function EventsGridClient({ shows, today }: Props) {
           className="text-[22px] font-semibold tracking-[-0.015em] text-[var(--ev-text)] sm:text-lg sm:font-medium sm:tracking-[-0.01em]"
         >
           {filtered.length} {filtered.length === 1 ? 'show' : 'shows'}
-          {city !== ALL_CITIES && <span className="font-medium text-[var(--ev-muted)]"> in {city}</span>}
+          {origin ? (
+            <span className="font-medium text-[var(--ev-muted)]"> nearest you first</span>
+          ) : (
+            city !== ALL_CITIES && <span className="font-medium text-[var(--ev-muted)]"> in {city}</span>
+          )}
         </h2>
         {hasFilters && (
           <button
@@ -216,7 +224,7 @@ export function EventsGridClient({ shows, today }: Props) {
         // Hairline between rows on mobile, where the cards read as a list.
         // From sm up they are free-standing cards and need no rule.
         <div className="grid grid-cols-1 gap-5 [&>*+*]:border-t [&>*+*]:border-[var(--ev-line)] [&>*+*]:pt-5 sm:grid-cols-3 sm:gap-7 sm:[&>*+*]:border-0 sm:[&>*+*]:pt-0 lg:grid-cols-4 xl:grid-cols-5">
-          {filtered.map((show, index) => (
+          {ordered.map((show, index) => (
             <div
               key={show.id}
               className="animate-fade-in"
