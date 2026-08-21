@@ -1,17 +1,24 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { ALL_CITIES } from '@/lib/event-filters'
 
-/** Bevisst enkel — vi avviser åpenbart søppel, resten tar e-postleveransen. */
+/** Deliberately simple — we reject obvious junk, the email delivery handles the rest. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-export async function subscribeToCityAction(formData: FormData) {
+export type SubscribeResult = { error: string }
+
+export async function subscribeToCityAction(formData: FormData): Promise<SubscribeResult | undefined> {
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
   const rawCity = String(formData.get('city') ?? '').trim()
-  const city = rawCity && rawCity !== 'Alle' ? rawCity : 'alle'
+  // 'alle' and 'forside' are stored values, not UI copy — existing rows use them,
+  // so they stay as they are even though the interface is now English.
+  const city = rawCity && rawCity !== ALL_CITIES ? rawCity : 'alle'
 
-  if (!EMAIL.test(email)) throw new Error('Skriv inn en gyldig e-postadresse.')
-  if (email.length > 254) throw new Error('E-postadressen er for lang.')
+  // Returned, not thrown: Next redacts thrown server action messages in
+  // production, which would leave the user with a generic failure toast.
+  if (!EMAIL.test(email)) return { error: 'Enter a valid email address.' }
+  if (email.length > 254) return { error: 'That email address is too long.' }
 
   const db = createAdminClient()
   const { error } = await db
@@ -20,6 +27,6 @@ export async function subscribeToCityAction(formData: FormData) {
 
   if (error) {
     console.error('city_subscribers upsert failed', error)
-    throw new Error('Kunne ikke registrere deg akkurat nå. Prøv igjen.')
+    return { error: 'We could not sign you up right now. Please try again.' }
   }
 }

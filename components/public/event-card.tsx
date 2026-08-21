@@ -9,22 +9,26 @@ import { formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent 
 import { formatDayLabel } from '@/lib/event-filters'
 
 /**
- * Ett kort for ett show — brukt både på forsiden (mørk) og på /events (lys).
- * Farger leses fra `.ev-surface`-variablene, så tonen bestemmes av forelderen.
+ * One card for one show — used both on the front page (dark) and on /events (light).
+ * Colours are read from the `.ev-surface` variables, so the parent decides the tone.
  *
- * Layout: rad på mobil (96px plakat + tekst), kolonne fra `sm` og opp der
- * plakaten fyller hele bredden. Plakaten har ingen ramme rundt seg — kortet
- * er kunsten, ikke en boks rundt kunsten.
+ * Layout: a row on mobile (104px poster + text), a column from `sm` up where the
+ * poster fills the full width. The poster has no frame around it — the card is
+ * the artwork, not a box around the artwork.
+ *
+ * The type scale splits at `sm`: the mobile row is lifted to at least 15px, while
+ * the column from `sm` up keeps the tighter scale — there the cards sit four or
+ * five across, and large text would burst them.
  */
 
-/** Kapasitet som rolig mikrotekst, ikke som merke. Null når det ikke haster. */
+/** Capacity as calm microcopy, not as a badge. Null when there is no urgency. */
 function capacityNote(show: PublicShow): { text: string; urgent: boolean } | null {
   const remaining = remainingTickets(show)
-  if (remaining === 0) return { text: 'Utsolgt', urgent: false }
+  if (remaining === 0) return { text: 'Sold out', urgent: false }
 
   const fill = ticketFillPercent(show)
-  if (remaining !== null && remaining <= 10) return { text: `${remaining} igjen`, urgent: true }
-  if (fill >= 80) return { text: 'Nær utsolgt', urgent: true }
+  if (remaining !== null && remaining <= 10) return { text: `${remaining} left`, urgent: true }
+  if (fill >= 80) return { text: 'Almost sold out', urgent: true }
   return null
 }
 
@@ -44,12 +48,12 @@ export function EventCard({
   const place = [venue, show.clubCity].filter(Boolean).join(', ')
 
   return (
-    // sm:flex-col i stedet for sm:block, så prislinjen kan skyves ned med
-    // mt-auto og kjøpsknappene står på linje på tvers av en rad kort.
+    // sm:flex-col rather than sm:block, so the price line can be pushed down
+    // with mt-auto and the buy buttons line up across a row of cards.
     <article className="group relative flex gap-3.5 sm:h-full sm:flex-col sm:gap-0">
-      {/* Plakat */}
+      {/* Poster */}
       <div
-        className="relative w-[88px] shrink-0 self-start overflow-hidden sm:w-full sm:self-auto"
+        className="relative w-[104px] shrink-0 self-start overflow-hidden sm:w-full sm:self-auto"
         style={{ borderRadius: 'var(--ev-r-art)' }}
       >
         <div className="relative aspect-[2/3] bg-[var(--ev-poster-ground)]">
@@ -59,16 +63,16 @@ export function EventCard({
               alt=""
               fill
               priority={priority}
-              sizes="(max-width: 640px) 88px, (max-width: 1024px) 45vw, 23vw"
+              sizes="(max-width: 640px) 104px, (max-width: 1024px) 45vw, 23vw"
               className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.015]"
             />
           ) : (
             <div className="flex h-full flex-col justify-between p-3 text-white sm:p-4">
-              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/45">Tickethalo</span>
-              <strong className="text-sm font-medium leading-tight sm:text-2xl">{show.title}</strong>
+              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/60">Tickethalo</span>
+              <strong className="text-[15px] font-medium leading-tight sm:text-2xl">{show.title}</strong>
             </div>
           )}
-          {/* Hårkant som tennes ved hover — E5 */}
+          {/* Hairline edge that lights up on hover — E5 */}
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10 transition-colors duration-300 group-hover:ring-[var(--ev-accent-fill)]/60"
@@ -77,72 +81,61 @@ export function EventCard({
         </div>
       </div>
 
-      {/* Tekst.
-          På mobil er raden en liste, ikke et kort: byen slås sammen med
-          klubblinja og scenenavnet vike helt, slik at én rad blir omtrent
-          like høy som plakaten i stedet for dobbelt så høy. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:mt-3.5 sm:gap-1">
-        <div className="flex items-baseline gap-2 text-[12.5px] text-[var(--ev-muted)] sm:text-[13px]">
+      {/* Text. On mobile the row is a list, not a card — but every line stands
+          on its own, with no merging to save height. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:mt-3.5">
+        <div className="flex items-baseline gap-2 text-[15px] text-[var(--ev-muted)] sm:text-[13px]">
           <span className="font-medium text-[var(--ev-text)]">{formatDayLabel(show.date, today)}</span>
           <span aria-hidden className="text-[var(--ev-faint)]">·</span>
           <span className="truncate">{formatShowTime(show)}</span>
         </div>
 
-        <h3 className="text-[15px] font-semibold leading-snug tracking-[-0.01em] text-[var(--ev-text)] sm:text-base">
-          {/* Strukket lenke: hele kortet er klikkbart, men kun én lenke i DOM-en */}
+        <h3 className="text-[19px] font-semibold leading-snug tracking-[-0.01em] text-[var(--ev-text)] sm:text-base">
+          {/* Stretched link: the whole card is clickable, but only one link in the DOM */}
           <Link href={href} className="line-clamp-2 after:absolute after:inset-0 after:content-['']">
             {show.title}
           </Link>
         </h3>
 
         {show.clubName && (
-          <div className="flex items-center gap-1.5 text-[12.5px] text-[var(--ev-muted)] sm:text-[13px]">
+          <div className="flex items-center gap-2 text-[15px] text-[var(--ev-muted)] sm:gap-1.5 sm:text-[13px]">
             {show.clubLogoUrl ? (
               <Image
                 src={show.clubLogoUrl}
                 alt=""
-                width={16}
-                height={16}
-                className="size-4 shrink-0 rounded-full object-cover"
+                width={20}
+                height={20}
+                className="size-5 shrink-0 rounded-full object-cover sm:size-4"
               />
             ) : (
               <span
                 aria-hidden
-                className="grid size-4 shrink-0 place-content-center rounded-full bg-[var(--ev-card-hover)] text-[8px] font-bold text-[var(--ev-muted)]"
+                className="grid size-5 shrink-0 place-content-center rounded-full bg-[var(--ev-card-hover)] text-[10px] font-bold text-[var(--ev-muted)] sm:size-4 sm:text-[8px]"
               >
                 {show.clubName.slice(0, 1)}
               </span>
             )}
-            <span className="truncate">
-              Av {show.clubName}
-              {show.clubCity && <span className="sm:hidden"> · {show.clubCity}</span>}
-            </span>
+            <span className="truncate">By {show.clubName}</span>
           </div>
         )}
 
-        {place && (
-          <p
-            className={cn(
-              'truncate text-[12.5px] text-[var(--ev-faint)] sm:text-[13px]',
-              // Byen står allerede på klubblinja på mobil — ikke gjenta scenen der.
-              show.clubName && 'hidden sm:block'
-            )}
-          >
-            {place}
-          </p>
-        )}
+        {/* Venue and city on their own line, on mobile too. The city used to be
+            glued to the end of the club line to save height — at a readable font
+            size it simply got truncated, and one more line is cheaper than
+            hiding where the show actually is. */}
+        {place && <p className="truncate text-[15px] text-[var(--ev-faint)] sm:text-[13px]">{place}</p>}
 
-        {/* Pris, kapasitet og eneste handling på én linje.
-            mt-auto retter kjøpsknappene inn mot bunnen på tvers av en rad. */}
-        <div className="mt-auto flex items-center gap-x-2.5 pt-2 sm:pt-2.5">
-          <span className="text-[13px] font-medium tabular-nums text-[var(--ev-text)]">
+        {/* Price, capacity and the only action on one line.
+            mt-auto aligns the buy buttons to the bottom across a row. */}
+        <div className="mt-auto flex items-center gap-x-3 pt-2.5 sm:gap-x-2.5">
+          <span className="text-[17px] font-semibold tabular-nums text-[var(--ev-text)] sm:text-[13px] sm:font-medium">
             {formatTicketPrice(show)}
           </span>
           {capacity && (
             <span
               className={cn(
-                'truncate text-[12.5px] sm:text-[13px]',
-                capacity.urgent ? 'text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
+                'truncate text-[15px] sm:text-[13px]',
+                capacity.urgent ? 'font-medium text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
               )}
             >
               {capacity.text}
@@ -156,7 +149,11 @@ export function EventCard({
               type="submit"
               disabled={soldOut}
               className={cn(
-                'inline-flex h-8 items-center gap-1.5 px-3.5 text-[12.5px] font-semibold transition-colors sm:h-9 sm:px-4 sm:text-[13px]',
+                // h-11 = a 44px touch target on mobile, the minimum for a primary
+                // action driven by a thumb. From sm up it is a mouse pointer and the
+                // cards sit four or five across — there the original height is right.
+                'inline-flex h-11 items-center gap-2 px-4 text-[15px] font-semibold transition-colors',
+                'sm:h-9 sm:gap-1.5 sm:text-[13px]',
                 'bg-[var(--ev-text)] text-[var(--ev-bg)]',
                 'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
@@ -164,8 +161,10 @@ export function EventCard({
               )}
               style={{ borderRadius: 'var(--ev-r-chip)' }}
             >
-              <Ticket className="size-3.5 sm:size-4" />
-              {soldOut ? 'Utsolgt' : 'Kjøp'}
+              <Ticket className="size-4 sm:size-3.5" aria-hidden />
+              {soldOut ? 'Sold out' : 'Buy'}
+              {/* Without this a screen reader just reads "Buy" twenty times in a row. */}
+              <span className="sr-only"> ticket for {show.title}</span>
             </button>
           </ToastActionForm>
         </div>

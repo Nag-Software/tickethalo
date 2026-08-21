@@ -12,7 +12,24 @@ type ToastActionFormProps = Omit<React.ComponentProps<'form'>, 'action' | 'onSub
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === 'string' && error.trim()) return error
-  return 'Noe gikk galt. Prøv igjen.'
+  return 'Something went wrong. Please try again.'
+}
+
+/**
+ * Server actions that return `{ error }` instead of throwing. Next redacts the
+ * message from thrown errors in production, so any action with a message the
+ * user is meant to read returns it as a value.
+ */
+function getReturnedErrorMessage(result: unknown) {
+  if (typeof result !== 'object' || result === null || !('error' in result)) return null
+
+  const error = (result as { error?: unknown }).error
+  if (typeof error === 'string') return error.trim() || null
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return null
 }
 
 function isNextControlFlowError(error: unknown) {
@@ -50,9 +67,13 @@ export function ToastActionForm({ action, successMessage, children, ...props }: 
 
         startTransition(async () => {
           try {
-            await action(formData)
-            if (successMessage) toast.success(successMessage)
+            const returnedError = getReturnedErrorMessage(await action(formData))
+            // Refresh on a returned error too: it usually means the server state
+            // has changed since the page was rendered — a show that sold out while
+            // the tab sat open, for example.
             router.refresh()
+            if (returnedError) toast.error(returnedError)
+            else if (successMessage) toast.success(successMessage)
           } catch (error) {
             if (isNextControlFlowError(error)) throw error
             toast.error(getErrorMessage(error))

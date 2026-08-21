@@ -185,18 +185,26 @@
 .ev-surface {
   /* Vipps-paletten, hentet fra deres egne tokens.
      --ev-accent brukes til tekst (amber, AA-sikker på cream),
-     --ev-accent-fill til flater. De er med vilje ikke samme farge. */
-  --ev-bg: #fff4ec;
+     --ev-accent-fill til flater. De er med vilje ikke samme farge.
+
+     Alle tekstfarger er målt mot --ev-bg og ligger over WCAG 2.1 AA (4.5:1).
+     Tallene i parentes er kontrastforholdet — hold dem der hvis paletten
+     justeres, ellers ryker universell utforming på de svakeste linjene. */
+  --ev-bg: #fffefb;
   --ev-card: rgba(46, 12, 1, 0.04);
   --ev-card-hover: rgba(46, 12, 1, 0.08);
   --ev-line: rgba(46, 12, 1, 0.12);
   --ev-line-strong: rgba(46, 12, 1, 0.26);
-  --ev-text: #2e0c01;
-  --ev-muted: rgba(46, 12, 1, 0.62);
-  --ev-faint: rgba(46, 12, 1, 0.42);
-  --ev-accent: #b23004;
+  --ev-text: #2e0c01; /* 15.6:1 */
+  --ev-muted: rgba(46, 12, 1, 0.72); /* 7.1:1 — var 0.62 */
+  --ev-faint: rgba(46, 12, 1, 0.6); /* 4.7:1 — var 0.42, som ga 2.7:1 */
+  --ev-accent: #b23004; /* 5.9:1 */
   --ev-accent-fill: #ff5b24;
-  --ev-accent-ink: #ffffff;
+  /* Merketeksten på oransje flate. Hvit ga bare 3.1:1 og strøk på all
+     tekst under 24px (chips, knapper); mørk brun gir 5.8:1 på samme
+     oransje, og er dessuten det mørk tone allerede bruker. Heroens
+     bypille er stor display-tekst og setter hvit eksplisitt. */
+  --ev-accent-ink: #fff4ec; /* 5.8:1 mot --ev-accent-fill */
   --ev-poster-ground: #2e0c01;
 
   --ev-r-art: 8px;
@@ -211,8 +219,8 @@
   --ev-line: rgba(255, 244, 236, 0.10);
   --ev-line-strong: rgba(255, 244, 236, 0.24);
   --ev-text: #fff4ec;
-  --ev-muted: rgba(255, 244, 236, 0.62);
-  --ev-faint: rgba(255, 244, 236, 0.42);
+  --ev-muted: rgba(255, 244, 236, 0.78); /* 11.6:1 — var 0.62 */
+  --ev-faint: rgba(255, 244, 236, 0.6); /* 6.7:1 — var 0.42, som ga 3.8:1 */
   --ev-accent: #ff985f;
   --ev-accent-fill: #ff5b24;
   --ev-accent-ink: #2e0c01;

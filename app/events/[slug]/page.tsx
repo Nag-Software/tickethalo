@@ -21,7 +21,6 @@ import { NaturalPosterImage } from '@/components/public/natural-poster-image'
 
 type Props = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ error?: string }>
 }
 
 export const dynamic = 'force-dynamic'
@@ -29,8 +28,8 @@ export const dynamic = 'force-dynamic'
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const show = await getPublishedShowBySlug(slug)
-  if (!show) return { title: 'Event ikke funnet — Tickethalo' }
-  const description = show.description ?? `${show.title} på ${show.venue_name ?? show.venue_address ?? 'Tickethalo'} ${formatShowDate(show.date)}.`
+  if (!show) return { title: 'Event not found — Tickethalo' }
+  const description = show.description ?? `${show.title} at ${show.venue_name ?? show.venue_address ?? 'Tickethalo'} on ${formatShowDate(show.date)}.`
   const canonical = `/events/${show.slug}`
 
   return {
@@ -50,8 +49,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default async function EventDetailPage({ params, searchParams }: Props) {
-  const [{ slug }, { error }] = await Promise.all([params, searchParams])
+export default async function EventDetailPage({ params }: Props) {
+  const { slug } = await params
   const show = await getPublishedShowBySlug(slug)
   if (!show) notFound()
 
@@ -61,19 +60,19 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const fillPercent = ticketFillPercent(show)
   const showLocation = show.venue_name ?? show.venue_address
 
-  // Samme rolige mikrotekst som på kortene i listen, i stedet for et merke.
+  // The same calm microcopy as on the cards in the list, instead of a badge.
   const capacity = soldOut
-    ? { text: 'Utsolgt', urgent: false }
+    ? { text: 'Sold out', urgent: false }
     : remaining !== null && remaining <= 10
-      ? { text: `Bare ${remaining} igjen`, urgent: true }
+      ? { text: `Only ${remaining} left`, urgent: true }
       : fillPercent >= 80
-        ? { text: 'Nær utsolgt', urgent: true }
+        ? { text: 'Almost sold out', urgent: true }
         : null
 
   const price = formatTicketPrice(show)
   const checkoutNote = show.ticket_url
-    ? 'Du sendes videre til ekstern billettside.'
-    : 'Betaling åpnes i sikker checkout.'
+    ? 'You will be sent on to an external ticket page.'
+    : 'Payment opens in secure checkout.'
 
   const buyButton = (full?: boolean) => (
     <ToastActionForm action={startCheckoutAction} className={full ? 'w-full' : undefined}>
@@ -83,7 +82,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
         type="submit"
         disabled={soldOut}
         className={cn(
-          'inline-flex h-12 items-center justify-center gap-2 px-7 text-[14px] font-semibold transition-colors',
+          'inline-flex h-12 items-center justify-center gap-2 px-7 text-[16px] font-semibold transition-colors lg:text-[14px]',
           full && 'w-full',
           'bg-[var(--ev-text)] text-[var(--ev-bg)]',
           'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
@@ -92,32 +91,35 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
         )}
         style={{ borderRadius: 'var(--ev-r-chip)' }}
       >
-        <Ticket className="size-4" /> {soldOut ? 'Utsolgt' : 'Kjøp billett'}
+        <Ticket className="size-4" /> {soldOut ? 'Sold out' : 'Buy ticket'}
       </button>
     </ToastActionForm>
   )
 
   return (
     <main
+      // The document root is still lang="nb" for the Norwegian portals — see
+      // app/page.tsx for why this page declares its own language.
+      lang="en"
       className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]"
       data-tone="light"
     >
       <PublicHeader tone="light" />
 
-      {/* pb-28 på mobil gir plass til den faste kjøpslinja nederst */}
+      {/* pb-28 on mobile leaves room for the fixed buy bar at the bottom */}
       <div className="mx-auto max-w-5xl px-4 pb-28 pt-24 md:px-8 md:pt-28 lg:pb-24">
         <Link
           href="/events"
-          className="mb-7 inline-flex w-fit items-center gap-2 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+          className="-ml-2 mb-5 inline-flex h-11 w-fit items-center gap-2 rounded-full px-2 text-[15px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:ml-0 sm:mb-7 sm:h-auto sm:px-0 sm:text-[13px] sm:font-normal"
         >
-          <ArrowLeft className="size-4" /> Alle show
+          <ArrowLeft className="size-4" aria-hidden /> All shows
         </Link>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-14">
-          {/* Plakat. Ikke beskåret her — på showsiden er hele plakaten poenget. */}
+          {/* Poster. Not cropped here — on the show page the whole poster is the point. */}
           <div className="lg:sticky lg:top-24 lg:self-start">
-            {/* Full bredde ville gitt ~66vh plakat på mobil, så tittel og pris
-                lå under skjermkanten. Bredden knyttes til høyden i stedet. */}
+            {/* Full width would give a ~66vh poster on mobile, pushing the title
+                and price below the fold. The width is tied to the height instead. */}
             <div
               className="mx-auto w-full max-w-[min(100%,34vh)] overflow-hidden bg-[var(--ev-poster-ground)] lg:mx-0 lg:max-w-none"
               style={{ borderRadius: 'var(--ev-r-card)' }}
@@ -132,7 +134,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                 />
               ) : (
                 <div className="flex aspect-[2/3] flex-col justify-between p-7 text-white">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/45">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/60">
                     Tickethalo
                   </span>
                   <strong className="text-3xl font-medium leading-tight">{show.title}</strong>
@@ -144,7 +146,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
           <div className="flex flex-col gap-8">
             <header className="flex flex-col gap-3">
               {show.clubName && (
-                <div className="flex items-center gap-2 text-[14px] text-[var(--ev-muted)]">
+                <div className="flex items-center gap-2 text-[16px] text-[var(--ev-muted)] sm:text-[14px]">
                   {show.clubLogoUrl ? (
                     <Image
                       src={show.clubLogoUrl}
@@ -161,7 +163,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       {show.clubName.slice(0, 1)}
                     </span>
                   )}
-                  Av {show.clubName}
+                  By {show.clubName}
                 </div>
               )}
 
@@ -169,14 +171,14 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                 {show.title}
               </h1>
 
-              <p className="text-[15px] text-[var(--ev-muted)]">
+              <p className="text-[17px] text-[var(--ev-muted)] sm:text-[15px]">
                 {formatShowDate(show.date)} · {formatShowTime(show)}
                 {showLocation && <> · {showLocation}</>}
                 {show.clubCity && <>, {show.clubCity}</>}
               </p>
             </header>
 
-            {/* Kjøpsblokk — skjult på mobil, der den faste bunnlinja tar over */}
+            {/* Buy block — hidden on mobile, where the fixed bottom bar takes over */}
             <div
               className="hidden flex-wrap items-center gap-x-6 gap-y-4 bg-[var(--ev-card)] p-6 lg:flex"
               style={{ borderRadius: 'var(--ev-r-card)' }}
@@ -187,7 +189,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   <div
                     className={cn(
                       'mt-1.5 text-[13px]',
-                      capacity.urgent ? 'text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
+                      capacity.urgent ? 'font-medium text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
                     )}
                   >
                     {capacity.text}
@@ -200,25 +202,18 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               </div>
             </div>
 
-            {error === 'sold-out' && (
-              <p className="text-[14px] font-medium text-[var(--ev-accent)]">Dette showet er utsolgt.</p>
-            )}
-            {error === 'checkout' && (
-              <p className="text-[14px] text-[var(--ev-muted)]">Checkout kunne ikke åpnes akkurat nå.</p>
-            )}
-
-            <Section title="Om showet">
-              <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--ev-muted)]">
-                {show.description ?? 'Mer informasjon kommer snart.'}
+            <Section title="About the show">
+              <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-[var(--ev-muted)] sm:text-[15px]">
+                {show.description ?? 'More information coming soon.'}
               </p>
             </Section>
 
             <Section
               title="Line-up"
-              aside={lineup.length > 0 ? `${lineup.length} ${lineup.length === 1 ? 'komiker' : 'komikere'}` : undefined}
+              aside={lineup.length > 0 ? `${lineup.length} ${lineup.length === 1 ? 'comedian' : 'comedians'}` : undefined}
             >
               {lineup.length === 0 ? (
-                <p className="text-[15px] text-[var(--ev-faint)]">Line-up annonseres snart.</p>
+                <p className="text-[17px] text-[var(--ev-faint)] sm:text-[15px]">Line-up announced soon.</p>
               ) : (
                 <ul className="flex flex-col gap-1">
                   {lineup.map((item) => {
@@ -242,8 +237,8 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                           )}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-[15px] font-medium">{name}</span>
-                          <span className="block truncate text-[13px] text-[var(--ev-faint)]">
+                          <span className="block truncate text-[17px] font-medium sm:text-[15px]">{name}</span>
+                          <span className="block truncate text-[15px] text-[var(--ev-faint)] sm:text-[13px]">
                             {item.role?.role_name ?? 'Artist'}
                           </span>
                         </span>
@@ -272,15 +267,15 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {/* Fast kjøpslinje på mobil — prisen og handlingen alltid innen rekkevidde */}
+      {/* Fixed buy bar on mobile — price and action always within reach */}
       <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-4 border-t border-[var(--ev-line)] bg-[var(--ev-bg)]/92 px-4 py-3 backdrop-blur-md lg:hidden">
         <div className="min-w-0">
-          <div className="text-[17px] font-semibold leading-none tabular-nums">{price}</div>
+          <div className="text-[20px] font-semibold leading-none tabular-nums">{price}</div>
           {capacity && (
             <div
               className={cn(
-                'mt-1 truncate text-[12px]',
-                capacity.urgent ? 'text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
+                'mt-1.5 truncate text-[14px]',
+                capacity.urgent ? 'font-medium text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
               )}
             >
               {capacity.text}
@@ -307,8 +302,8 @@ function Section({
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-baseline justify-between gap-4 border-b border-[var(--ev-line)] pb-2.5">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
-        {aside && <span className="text-[13px] text-[var(--ev-faint)]">{aside}</span>}
+        <h2 className="text-[19px] font-semibold tracking-[-0.01em] sm:text-[15px]">{title}</h2>
+        {aside && <span className="text-[15px] text-[var(--ev-faint)] sm:text-[13px]">{aside}</span>}
       </div>
       {children}
     </section>

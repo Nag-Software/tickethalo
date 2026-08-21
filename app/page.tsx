@@ -8,16 +8,16 @@ import { getOsloToday, formatDayLabel } from '@/lib/event-filters'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
-  title: 'Tickethalo — finn stand-up nær deg',
-  description: 'Se kommende stand-up show og kjøp billetter til Tickethalo-arrangementer.',
+  title: 'Tickethalo — find stand-up near you',
+  description: 'Browse upcoming stand-up shows and buy tickets to Tickethalo events.',
 }
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Én linje ekte status under tittelen, i stedet for en statisk undertekst.
- * «3 show i kveld — første kl. 19:30» sier mer på et halvt sekund enn
- * noen markedsføringssetning gjør på fem.
+ * One line of real status under the title, instead of a static subtitle.
+ * "3 shows tonight — first at 19:30" says more in half a second than any
+ * marketing sentence does in five.
  */
 function heroStatus(shows: PublicShow[], today: string): string | null {
   if (shows.length === 0) return null
@@ -28,14 +28,18 @@ function heroStatus(shows: PublicShow[], today: string): string | null {
 
   if (tonight.length > 0) {
     const cities = new Set(tonight.map((show) => show.clubCity).filter(Boolean))
-    const where = cities.size === 1 ? ` i ${[...cities][0]}` : cities.size > 1 ? ` i ${cities.size} byer` : ''
-    const first = tonight[0].start_time ? ` — første kl. ${formatShowTime(tonight[0]).slice(0, 5)}` : ''
-    return `${tonight.length} show i kveld${where}${first}`
+    const where = cities.size === 1 ? ` in ${[...cities][0]}` : cities.size > 1 ? ` in ${cities.size} cities` : ''
+    const first = tonight[0].start_time ? ` — first at ${formatShowTime(tonight[0]).slice(0, 5)}` : ''
+    return `${tonight.length} ${tonight.length === 1 ? 'show' : 'shows'} tonight${where}${first}`
   }
 
   const next = shows[0]
-  const where = next.clubCity ? ` i ${next.clubCity}` : ''
-  return `Neste show ${formatDayLabel(next.date, today).toLowerCase()}${where}`
+  const where = next.clubCity ? ` in ${next.clubCity}` : ''
+  // "Today"/"Tomorrow" read best lowercased mid-sentence; a dated label
+  // ("Wed 21 Aug") keeps its capitals and takes a preposition instead.
+  const label = formatDayLabel(next.date, today)
+  const when = label === 'Today' || label === 'Tomorrow' ? label.toLowerCase() : `on ${label}`
+  return `Next show ${when}${where}`
 }
 
 export default async function Page() {
@@ -45,6 +49,10 @@ export default async function Page() {
 
   return (
     <main
+      // The document root is still lang="nb" for the Norwegian portals. This
+      // page is English, and without its own language code screen readers
+      // would read it with Norwegian pronunciation — WCAG 3.1.2.
+      lang="en"
       className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]"
       data-tone="light"
     >
@@ -66,26 +74,30 @@ export default async function Page() {
         }
       />
 
-      {/* Hero — kortet ned så første showrad bryter skjermkanten.
-          Én uthevet flate i stedet for fire sammenskrudde bokser: byen
-          er det eneste som er farget, og det er også det eneste som beveger seg. */}
-      <section className="px-4 pb-8 pt-24 md:px-8 md:pb-12 md:pt-32 lg:pt-36">
+      {/* Hero — cut short so the first show row breaks the fold.
+          One highlighted surface instead of four boxes bolted together: the
+          city is the only coloured thing, and the only thing that moves. */}
+      <section className="px-4 pb-6 pt-20 md:px-8 md:pb-12 md:pt-32 lg:pt-36">
         <div className="mx-auto max-w-4xl text-center">
           <h1 className="mb-4 text-balance text-[2rem] font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl md:text-7xl">
             <span
               className="animate-fade-in block"
               style={{ animationDelay: '0.05s', animationFillMode: 'both' }}
             >
-              Utforsk stand-up
+              Explore stand-up
             </span>
             <span
               className="animate-fade-in mt-1 flex items-baseline justify-center gap-[0.22em] leading-[1.3] sm:mt-2"
               style={{ animationDelay: '0.14s', animationFillMode: 'both' }}
             >
-              <span>i</span>
-              {/* Ingen overflow-hidden her — CityTicker klipper selv, og et klipp
-                  på dette nivået ville også begrenset breddemålingen inni. */}
-              <span className="rounded-full bg-[var(--ev-accent-fill)] px-[0.3em] pb-[0.1em] pt-[0.04em] text-[var(--ev-accent-ink)]">
+              <span>in</span>
+              {/* No overflow-hidden here — CityTicker clips itself, and a clip
+                  at this level would also constrain the width measurement inside. */}
+              {/* White on orange only holds 3.1:1 — enough for display type
+                  (WCAG "large text"), but not otherwise. Hence it is set here
+                  rather than via --ev-accent-ink, which the rest of the site
+                  uses for small text on the same surface. */}
+              <span className="rounded-full bg-[var(--ev-accent-fill)] px-[0.3em] pb-[0.1em] pt-[0.04em] text-white">
                 <CityTicker />
               </span>
             </span>
@@ -93,12 +105,12 @@ export default async function Page() {
 
           {status && (
             <p
-              className="animate-fade-in flex items-center justify-center gap-2 text-[14px] text-[var(--ev-muted)]"
+              className="animate-fade-in flex items-center justify-center gap-2 text-[17px] text-[var(--ev-muted)] sm:text-[14px]"
               style={{ animationDelay: '0.33s', animationFillMode: 'both' }}
             >
               <span
                 aria-hidden
-                className="inline-block size-1.5 rounded-full bg-[var(--ev-accent-fill)]"
+                className="inline-block size-2 rounded-full bg-[var(--ev-accent-fill)] sm:size-1.5"
               />
               {status}
             </p>

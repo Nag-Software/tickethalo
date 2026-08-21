@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react'
 
 /**
- * Bølget sirkel som SVG i stedet for badge.png, slik at merket kan
- * ta fargen fra temaet. PNG-en var låst til magenta.
+ * A scalloped circle as SVG instead of badge.png, so the mark can take its
+ * colour from the theme. The PNG was locked to magenta.
  *
- * Hver bue er en halvsirkel over korden mellom to nabopunkter på
- * sirkelen — det gir en jevn kantbølge uten håndskrevet path-data.
+ * Each arc is a semicircle over the chord between two neighbouring points on
+ * the circle — that gives an even scalloped edge without hand-written path data.
  */
 function scallopPath(bumps: number, radius: number, cx: number, cy: number) {
   const step = (Math.PI * 2) / bumps
@@ -30,8 +30,8 @@ interface Props {
   showIcon?: boolean
   icon?: React.ReactNode
   className?: string
-  /** Skjul merket når man har scrollet forbi dette punktet. Det er et scroll-hint —
-   *  når du først har scrollet har det gjort jobben, og det kolliderer med filterlinjen. */
+  /** Hide the badge once scrolled past this point. It is a scroll hint — once you
+   *  have scrolled it has done its job, and it collides with the filter bar. */
   hideAfter?: number
 }
 

@@ -100,7 +100,7 @@ export function LoginForm({
                 </div>
               )}
               <Field>
-                <FieldLabel htmlFor="email">E-post</FieldLabel>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
                 <Input
                   id="email"
                   name="email"
@@ -115,7 +115,7 @@ export function LoginForm({
               </Field>
               <Field>
                 <div className="flex items-center">
-                  <FieldLabel htmlFor="password">Passord</FieldLabel>
+                  <FieldLabel htmlFor="password">Password</FieldLabel>
                 </div>
                 <Input
                   id="password"
@@ -137,7 +137,7 @@ export function LoginForm({
                     isPortal && 'h-11 w-full rounded-full border-0 bg-[var(--ev-text)] text-[13px] font-semibold text-[var(--ev-bg)] hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
                   )}
                 >
-                  Logg inn
+                  Sign in
                 </Button>
                 {showSignupLink && (
                   <FieldDescription className={cn(
@@ -145,12 +145,12 @@ export function LoginForm({
                     isPoster && 'pt-2 text-sm font-medium text-zinc-600',
                     isPortal && 'pt-1 text-[13px] text-[var(--ev-muted)]',
                   )}>
-                    Ny her?{' '}
+                    New here?{' '}
                     <Link href={signupHref} className={cn(
                       isPoster && 'font-bold underline decoration-2 underline-offset-4 hover:text-[#b83224]',
                       isPortal && 'font-medium text-[var(--ev-accent)] underline underline-offset-4',
                     )}>
-                      Registrer profil
+                      Sign up here
                     </Link>
                   </FieldDescription>
                 )}

@@ -32,16 +32,16 @@ export default async function ArtistLoginPage({
 
       <section className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-10 px-4 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] lg:gap-16">
         <div>
-          <p className="text-[13px] text-[var(--ev-faint)]">Komikerportal</p>
+          <p className="text-[13px] text-[var(--ev-accent-fill)] font-medium">SIGN IN</p>
           <h1 className="mt-2 text-balance text-[2.25rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
-            Logg inn som komiker
+            Get better gigs
           </h1>
           <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--ev-muted)]">
-            Gå til bookingene dine, svar på tilbud og hold profilen oppdatert.
+            Get bookingrequests, answer offers and keep your profile up to date.
           </p>
 
           <ul className="mt-8 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)]">
-            {['Kommende show og honorar', 'Aktive tilbud som venter på svar', 'Profilen arrangørene ser'].map((item) => (
+            {['Upcomming gigs', 'Active bookingrequests', 'Profile management'].map((item) => (
               <li key={item} className="py-3 text-[15px] font-medium">{item}</li>
             ))}
           </ul>
@@ -50,17 +50,17 @@ export default async function ArtistLoginPage({
             href="/artist-app/signup"
             className="mt-6 inline-flex items-center gap-1.5 text-[14px] font-medium text-[var(--ev-accent)] underline underline-offset-4"
           >
-            Registrer ny profil <ArrowRight className="size-4" />
+            Register new profile <ArrowRight className="size-4" />
           </Link>
         </div>
 
         <div className="w-full lg:justify-self-end">
           <LoginForm
             brandLabel="Tickethalo"
-            title="Komikerportal"
-            description="Logg inn med komikerprofil"
+            title="Comedian portal"
+            description="Sign in with your comedian profile"
             action="/artist-app/login/submit"
-            errorMessage={error === 'invalid' ? 'Feil e-post eller passord.' : undefined}
+            errorMessage={error === 'invalid' ? 'Invalid email or password.' : undefined}
             signupHref="/artist-app/signup"
             nextPath={next}
             theme="portal"
