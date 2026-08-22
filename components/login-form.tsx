@@ -29,7 +29,11 @@ export function LoginForm({
   brandLabel,
   brandHref = '/',
   showSignupLink = true,
-  signupHref = '/signup',
+  signupHref = '/artist-app/signup',
+  signupLabel = 'Sign up here',
+  signupPrompt = 'New here?',
+  submitLabel = 'Sign in',
+  submitClassName,
   nextPath,
   theme = 'default',
   ...props
@@ -42,6 +46,11 @@ export function LoginForm({
   brandHref?: string
   showSignupLink?: boolean
   signupHref?: string
+  signupLabel?: string
+  signupPrompt?: string
+  submitLabel?: string
+  /** Extra classes on the submit button — the club portal signs in on a violet CTA. */
+  submitClassName?: string
   nextPath?: string
   /** 'portal' bruker .ev-surface-tokens, slik at kortet hører hjemme på cream-bunnen. */
   theme?: 'default' | 'poster' | 'portal'
@@ -135,9 +144,10 @@ export function LoginForm({
                   className={cn(
                     isPoster && 'h-11 w-full rounded-none border-2 border-zinc-950 bg-[#b83224] font-bold text-white shadow-[4px_4px_0_#18181b] transition hover:translate-x-0.5 hover:translate-y-0.5 hover:bg-[#9f2d21] hover:shadow-[2px_2px_0_#18181b]',
                     isPortal && 'h-11 w-full rounded-full border-0 bg-[var(--ev-text)] text-[13px] font-semibold text-[var(--ev-bg)] hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
+                    submitClassName,
                   )}
                 >
-                  Sign in
+                  {submitLabel}
                 </Button>
                 {showSignupLink && (
                   <FieldDescription className={cn(
@@ -145,12 +155,12 @@ export function LoginForm({
                     isPoster && 'pt-2 text-sm font-medium text-zinc-600',
                     isPortal && 'pt-1 text-[13px] text-[var(--ev-muted)]',
                   )}>
-                    New here?{' '}
+                    {signupPrompt}{' '}
                     <Link href={signupHref} className={cn(
                       isPoster && 'font-bold underline decoration-2 underline-offset-4 hover:text-[#b83224]',
                       isPortal && 'font-medium text-[var(--ev-accent)] underline underline-offset-4',
                     )}>
-                      Sign up here
+                      {signupLabel}
                     </Link>
                   </FieldDescription>
                 )}

@@ -31,7 +31,7 @@ const navLinks = [
  * @param tone The tone of the page background behind the header.
  *
  * The header declares its own `.ev-surface`, because it is also used on pages
- * that do not sit inside such a scope (/artist-app, /booking-offer, /signup).
+ * that do not sit inside such a scope (/artist-app, /booking-offer).
  * So `tone` has to be set here rather than merely inherited.
  */
 export function PublicHeader({ transparent, tone = 'light' }: { transparent?: boolean; tone?: 'dark' | 'light' }) {

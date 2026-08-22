@@ -122,7 +122,7 @@ export function EventsGridClient({ shows, today }: Props) {
   return (
     <section id="events-section" className="px-4 pb-24 md:px-8">
       {/* Toolbar — sticks below the floating header on scroll */}
-      <div className="sticky top-[49px] z-50 w-fit rounded-lg -mx-4 mb-6 bg-[var(--ev-bg)]/85 sm:mb-8 px-4 py-3 backdrop-blur-xs md:-mx-8 md:px-8">
+      <div className="sticky w-fit top-[49px] z-50 rounded-lg -mx-4 mb-6 bg-[var(--ev-bg)]/85 sm:mb-8 px-4 py-3 backdrop-blur-xs md:-mx-8 md:px-8">
         <div className="flex flex-col gap-2.5">
           <div
             role="group"
@@ -168,16 +168,27 @@ export function EventsGridClient({ shows, today }: Props) {
                 />
               </PopoverContent>
             </Popover>
+            <div className="hidden sm:block">
+              <LocationPicker
+              options={locationOptions}
+              value={city}
+              onValueChange={setCity}
+              origin={origin}
+              onOriginChange={setOrigin}
+              totalCount={countForCity(ALL_CITIES)}
+              />
+            </div>
           </div>
-
-          <LocationPicker
-            options={locationOptions}
-            value={city}
-            onValueChange={setCity}
-            origin={origin}
-            onOriginChange={setOrigin}
-            totalCount={countForCity(ALL_CITIES)}
-          />
+          <div className="block sm:hidden">
+              <LocationPicker
+              options={locationOptions}
+              value={city}
+              onValueChange={setCity}
+              origin={origin}
+              onOriginChange={setOrigin}
+              totalCount={countForCity(ALL_CITIES)}
+              />
+            </div>
         </div>
       </div>
 

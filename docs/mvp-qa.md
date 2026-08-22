@@ -32,7 +32,7 @@ Forventning:
 
 ## Kritisk ende-til-ende-flow
 
-1. Artist registrerer seg fra `artist.localhost:3000/signup`.
+1. Artist registrerer seg fra `localhost:3000/artist-app/signup`.
 2. Admin logger inn fra `admin.localhost:3000/login`.
 3. Admin åpner ny artist, ser AI-vurdering, setter score og godkjenner.
 4. Artist logger inn og velger opptil tre datoer.

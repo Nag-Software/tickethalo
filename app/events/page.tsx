@@ -1,63 +1,66 @@
-import Link from 'next/link'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
-import { EventCard } from '@/components/public/event-card'
 import { PublicHeader } from '@/components/public/public-header'
+import { EventsGridClient } from '@/components/public/events-grid-client'
+import { CityTicker } from '@/components/public/city-ticker'
 import { getUpcomingPublishedShows } from '@/lib/public-events'
 import { getOsloToday } from '@/lib/event-filters'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
-  title: 'Events — Tickethalo',
-  description: 'Every published upcoming Tickethalo show, with posters, prices and tickets.',
+  title: 'Tickethalo — find stand-up near you',
+  description: 'Browse upcoming stand-up shows and buy tickets to Tickethalo events.',
 }
 
 export const dynamic = 'force-dynamic'
 
-export default async function EventsPage() {
-  const shows = await getUpcomingPublishedShows()
+export default async function Page() {
+  const shows = await getUpcomingPublishedShows(20)
   const today = getOsloToday()
 
   return (
     <main
-      // The document root is still lang="nb" for the Norwegian portals — see
-      // app/page.tsx for why this page declares its own language.
+      // The document root is still lang="nb" for the Norwegian portals. This
+      // page is English, and without its own language code screen readers
+      // would read it with Norwegian pronunciation — WCAG 3.1.2.
       lang="en"
       className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]"
       data-tone="light"
     >
-      <section className="">
-        <PublicHeader transparent tone="light" />
-        <div className="mx-auto max-w-6xl px-4 pb-10 pt-28 md:px-6 md:pb-14 lg:px-8">
-          <Link href="/" className="-ml-2 mb-6 inline-flex h-11 items-center gap-2 rounded-full px-2 text-[15px] font-medium transition-colors hover:text-[var(--ev-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:ml-0 sm:mb-8 sm:h-auto sm:px-0 sm:text-sm">
-            <ArrowLeft className="size-4" aria-hidden /> Back to home
-          </Link>
-          <div className="mt-4">
-            <div className="mb-4 inline-flex border border-[var(--ev-line-strong)] px-2.5 py-1 text-[12px] font-bold uppercase tracking-[0.2em] sm:text-[10px] sm:tracking-[0.22em]">Program</div>
-            <h1 className="text-5xl font-medium sm:text-6xl md:text-7xl">Upcoming events</h1>
-            <p className="mt-4 max-w-xl text-[18px] text-[var(--ev-muted)] sm:text-base">Published shows, venues and tickets from today onwards.</p>
-          </div>
+      <PublicHeader tone="light" />
+
+      {/* Hero — cut short so the first show row breaks the fold.
+          One highlighted surface instead of four boxes bolted together: the
+          city is the only coloured thing, and the only thing that moves. */}
+      <section className="px-4 pb-6 pt-25 md:px-8 md:pb-12 md:pt-32 lg:pt-36">
+        <div className="mx-auto max-w-4xl text-center">
+          <h1 className="mb-4 text-balance text-[2rem] font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl md:text-7xl">
+            <span
+              className="animate-fade-in block"
+              style={{ animationDelay: '0.05s', animationFillMode: 'both' }}
+            >
+              Explore comedy
+            </span>
+            <span
+              className="animate-fade-in mt-1 flex items-baseline justify-center gap-[0.22em] leading-[1.3] sm:mt-2"
+              style={{ animationDelay: '0.14s', animationFillMode: 'both' }}
+            >
+              <span>in</span>
+              {/* No overflow-hidden here — CityTicker clips itself, and a clip
+                  at this level would also constrain the width measurement inside. */}
+              {/* White on orange only holds 3.1:1 — enough for display type
+                  (WCAG "large text"), but not otherwise. Hence it is set here
+                  rather than via --ev-accent-ink, which the rest of the site
+                  uses for small text on the same surface. */}
+              <span className="rounded-full bg-[var(--ev-accent-fill)] px-[0.3em] pb-[0.1em] pt-[0.04em] text-white">
+                <CityTicker />
+              </span>
+            </span>
+          </h1>
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-5 md:px-6 lg:px-8">
-        <div className="mb-5 flex items-end justify-between gap-4 border-b border-[var(--ev-line-strong)] pb-3">
-          <h2 className="text-2xl font-medium">All shows</h2>
-          <Link href="/artists" className="-mr-2 inline-flex h-11 items-center gap-1.5 rounded-full px-2 text-[15px] font-medium transition-colors hover:text-[var(--ev-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:mr-0 sm:h-auto sm:px-0 sm:text-sm">
-            Comedians <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </div>
-        <div className="grid grid-cols-1 gap-5 [&>*+*]:border-t [&>*+*]:border-[var(--ev-line)] [&>*+*]:pt-5 sm:grid-cols-2 sm:[&>*+*]:border-0 sm:[&>*+*]:pt-0 lg:grid-cols-3">
-          {shows.map((show, index) => (
-            <EventCard key={show.id} show={show} today={today} priority={index < 3} />
-          ))}
-        </div>
-        {shows.length === 0 && (
-          <div className="border border-dashed border-[var(--ev-line-strong)] p-10 text-center text-[17px] text-[var(--ev-muted)] sm:text-sm">
-            No published upcoming events.
-          </div>
-        )}
-      </section>
-      <Footer/>
+      <EventsGridClient shows={shows} today={today} />
+
+      <Footer />
     </main>
   )
 }

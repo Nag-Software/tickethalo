@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-const CITIES = ['Bergen', 'Oslo', 'Trondheim', 'Drammen', 'Stavanger']
+const CITIES = ['Oslo', 'London', 'Copenhagen', 'New York']
 const INTERVAL = 2600
 
 /**

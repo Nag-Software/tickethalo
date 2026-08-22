@@ -83,7 +83,15 @@
   --sidebar-ring: oklch(0.708 0 0);
 
   /* Public surface palette. Components rendered in a portal inherit these. */
-  --ev-bg: #fffefb;
+
+  /* The ground colour for every public surface — forsiden, /events, portalene,
+     login-sidene. It is #fdf4ed and it stays #fdf4ed: sidene setter aldri sin
+     egen bakgrunn, de leser denne, så en endring her flytter hele designet.
+     Ikke overstyr --ev-bg lokalt på en side for å treffe en skisse — juster
+     verdien her hvis grunnfargen faktisk skal endres.
+     Unntaket er .ev-surface[data-tone='dark'] lenger ned, som er den mørke
+     varianten av den samme flaten. */
+  --ev-bg: #fdf4ed;
   --ev-card: rgba(46, 12, 1, 0.04);
   --ev-card-hover: rgba(46, 12, 1, 0.08);
   --ev-line: rgba(46, 12, 1, 0.12);
