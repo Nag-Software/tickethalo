@@ -111,8 +111,8 @@ export default async function AdminLoginPage({
             <Image
               src="/mann.png"
               alt="Tom Soyler"
-              width={500}
-              height={500}
+              width={350}
+              height={350}
               className="w-full object-cover"
             />
           </div>

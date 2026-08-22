@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
   turbopack: {},
   images: {
+    // Bildene serveres rett fra kilden i stedet for gjennom /_next/image.
+    // Vercels bildeoptimalisering har en kvote på Hobby-planen, og når den er
+    // brukt opp svarer den 402 og bildet blir borte fra siden. Uten optimizer
+    // finnes ikke den feilen — men filene går ut i full størrelse, så dette
+    // står til opplastingene skaleres ned ved lagring (sharp).
+    // remotePatterns under brukes ikke så lenge dette står, men blir stående
+    // slik at det er én linje å skru tilbake.
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
