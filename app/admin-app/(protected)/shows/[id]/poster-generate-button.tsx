@@ -14,7 +14,7 @@ type PosterGenerateButtonProps = {
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === 'string' && error.trim()) return error
-  return 'Noe gikk galt. Prøv igjen.'
+  return 'Something went wrong. Please try again.'
 }
 
 function isNextControlFlowError(error: unknown) {
@@ -45,9 +45,9 @@ export function PosterGenerateButton({ showId, posterUrl, action, children }: Po
               : ''
 
             if (newPosterUrl && newPosterUrl === posterUrl) {
-              toast.info('Plakaten ble generert, men URL-en er uendret.')
+              toast.info('The poster was generated, but the URL is unchanged.')
             } else {
-              toast.success('Ny plakat er klar.')
+              toast.success('New poster is ready.')
             }
 
             router.refresh()
@@ -59,7 +59,7 @@ export function PosterGenerateButton({ showId, posterUrl, action, children }: Po
       }}
       className="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-70"
     >
-      {isPending ? 'Genererer...' : children}
+      {isPending ? 'Generating…' : children}
     </button>
   )
 }

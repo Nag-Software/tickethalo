@@ -66,11 +66,11 @@ export type ClubReadiness = Pick<
  */
 export function describeClubReadiness(club: ClubReadiness): ReadinessItem[] {
   return [
-    { key: 'stripe_account', label: 'Stripe-konto opprettet', done: Boolean(club.stripe_account_id) },
-    { key: 'charges', label: 'Kan ta imot betaling', done: club.charges_enabled },
-    { key: 'payouts', label: 'Bankkonto for utbetaling', done: club.payouts_enabled },
-    { key: 'legal_name', label: 'Juridisk navn', done: Boolean(club.legal_name?.trim()) },
-    { key: 'org_number', label: 'Organisasjonsnummer', done: Boolean(club.org_number?.trim()) },
+    { key: 'stripe_account', label: 'Stripe account created', done: Boolean(club.stripe_account_id) },
+    { key: 'charges', label: 'Can accept payments', done: club.charges_enabled },
+    { key: 'payouts', label: 'Bank account for payouts', done: club.payouts_enabled },
+    { key: 'legal_name', label: 'Legal name', done: Boolean(club.legal_name?.trim()) },
+    { key: 'org_number', label: 'Company registration number', done: Boolean(club.org_number?.trim()) },
   ]
 }
 
@@ -147,7 +147,7 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
 }
 
 /** Onboarding-lenke (KYC + bankkonto). Lenken er kortlivet og må hentes på nytt. */
-export async function createOnboardingLink(club: ConnectClub, returnPath = '/admin-app/okonomi') {
+export async function createOnboardingLink(club: ConnectClub, returnPath = '/admin-app/finances') {
   const accountId = await getOrCreateConnectedAccount(club)
   const origin = accountOrigin().replace(/\/$/, '')
 

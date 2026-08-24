@@ -21,5 +21,5 @@ export async function refundOrderAction(formData: FormData) {
   if (!result.ok) throw new Error(result.error)
 
   revalidatePath('/admin-app/orders')
-  revalidatePath('/admin-app/okonomi')
+  revalidatePath('/admin-app/finances')
 }

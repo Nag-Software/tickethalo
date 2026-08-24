@@ -12,7 +12,7 @@ type MarketingTemplateUploadButtonProps = {
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === 'string' && error.trim()) return error
-  return 'Noe gikk galt. Prøv igjen.'
+  return 'Something went wrong. Please try again.'
 }
 
 function isNextControlFlowError(error: unknown) {
@@ -46,7 +46,7 @@ export function MarketingTemplateUploadButton({ showId, action }: MarketingTempl
           startTransition(async () => {
             try {
               await action(formData)
-              toast.success('Template lastet opp.')
+              toast.success('Template uploaded.')
               router.refresh()
             } catch (error) {
               if (isNextControlFlowError(error)) throw error
@@ -64,7 +64,7 @@ export function MarketingTemplateUploadButton({ showId, action }: MarketingTempl
         className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-70"
       >
         <span aria-hidden="true">+</span>
-        {isPending ? 'Laster opp...' : 'Last opp template'}
+        {isPending ? 'Uploading…' : 'Upload template'}
       </button>
     </div>
   )

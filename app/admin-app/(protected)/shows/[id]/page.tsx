@@ -13,6 +13,8 @@ import {
   updateShowDetailsAction,
   uploadMarketingDesignAction,
 } from '../actions'
+import { buildBookingSpots } from '@/lib/booking-spots'
+import { OverviewTab } from './overview-tab'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
 import { MarketingTemplateUploadButton } from './marketing-template-upload-button'
@@ -43,8 +45,9 @@ export default async function ShowDetailPage({
   const shouldLoadTickets = tab === 'tickets'
   const shouldLoadMarketingTasks = tab === 'marketing'
   const shouldLoadMarketingDesigns = tab === 'marketing'
-  const shouldLoadRelatedArtists = tab === 'lineup' || tab === 'marketing'
-  const shouldLoadSelectableArtists = tab === 'lineup'
+  const shouldLoadRelatedArtists = tab === 'overview' || tab === 'lineup' || tab === 'marketing'
+  // The overview's booking card offers and adds artists straight from a row.
+  const shouldLoadSelectableArtists = tab === 'lineup' || tab === 'overview'
 
   const [
     { data: show },
@@ -54,6 +57,7 @@ export default async function ShowDetailPage({
     { data: tickets },
     { data: marketingTasks },
     { data: marketingDesigns },
+    { count: soldTicketCount },
   ] = await Promise.all([
     db.from('shows').select('*').eq('id', id).single(),
     db.from('show_requirements').select('*').eq('show_id', id).order('lineup_position').order('created_at'),
@@ -68,6 +72,10 @@ export default async function ShowDetailPage({
     shouldLoadMarketingDesigns
       ? db.from('show_marketing_designs').select('*').eq('show_id', id).order('created_at', { ascending: false })
       : Promise.resolve({ data: [] as ShowMarketingDesign[] }),
+    // The overview card shows ticket sales, but never the rows — a count is enough.
+    tab === 'overview'
+      ? db.from('tickets').select('id', { count: 'exact', head: true }).eq('show_id', id).in('status', ['valid', 'used'])
+      : Promise.resolve({ count: 0 }),
   ])
 
   if (!show) notFound()
@@ -103,8 +111,6 @@ export default async function ShowDetailPage({
     return { ...r, filled, pendingOffers, isFull: filled >= r.quantity }
   })
   const allSlotsFilled = reqFillStatus.length > 0 && reqFillStatus.every(r => r.isFull)
-  const totalSlots = reqFillStatus.reduce((s, r) => s + r.quantity, 0)
-  const totalFilled = reqFillStatus.reduce((s, r) => s + Math.min(r.filled, r.quantity), 0)
   const activeArtistIds = new Set(activeLineup.map(spot => spot.artist_id))
   const activeOfferArtistIds = new Set((offers ?? []).filter(o => ['sent', 'accepted'].includes(o.status)).map(o => o.artist_id))
   const excludedArtistIds = new Set((bookingExclusions ?? []).map(row => row.artist_id))
@@ -139,10 +145,10 @@ export default async function ShowDetailPage({
   }
 
   const TABS: { key: ShowTab; label: string; badge?: number }[] = [
-    { key: 'overview', label: 'Oversikt' },
+    { key: 'overview', label: 'Overview' },
     { key: 'lineup', label: 'Lineup', badge: (offerStats.sent || activeLineup.length) ? Math.max(offerStats.sent, activeLineup.length) : undefined },
-    { key: 'marketing', label: 'Markedsføring' },
-    { key: 'tickets', label: 'Billetter' },
+    { key: 'marketing', label: 'Marketing' },
+    { key: 'tickets', label: 'Tickets' },
   ]
 
   const STATUS_COLORS: Record<string, string> = {
@@ -170,9 +176,23 @@ export default async function ShowDetailPage({
   }
 
   const SHOW_STATUS_LABELS: Record<string, string> = {
-    draft: 'Planlegger', booking: 'Booker', fullbooked: 'Lineup klar',
-    published: 'Publisert', completed: 'Gjennomført', cancelled: 'Kansellert',
+    draft: 'Planning', booking: 'Booking', fullbooked: 'Lineup ready',
+    published: 'Published', completed: 'Completed', cancelled: 'Cancelled',
   }
+
+  const ticketsSold = soldTicketCount ?? 0
+  const bookingSpots = tab === 'overview'
+    ? buildBookingSpots({
+      requirements: requirements ?? [],
+      confirmedSpots: lineup ?? [],
+      offers: offers ?? [],
+      artistName: (artistId) => {
+        const artist = artistMap[artistId]
+        return artist ? artist.stage_name ?? artist.full_name : 'Unknown artist'
+      },
+      currency: show.currency,
+    })
+    : []
 
   const showLocation = show.venue_address ?? show.venue_name
   const selectedMarketingDesign = (marketingDesigns ?? []).find((design) => design.id === show.selected_marketing_design_id) ?? (marketingDesigns ?? [])[0] ?? null
@@ -188,13 +208,13 @@ export default async function ShowDetailPage({
               {SHOW_STATUS_LABELS[show.status] ?? show.status}
             </span>
             <Link href="/admin-app/shows" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              ← Tilbake
+              ← Back
             </Link>
             <DeleteButton
               action={deleteShowAction}
               id={show.id}
               idField="show_id"
-              confirmMessage={`Slett showen "${show.title}"? Dette kan ikke angres.`}
+              confirmMessage={`Delete the show "${show.title}"? This cannot be undone.`}
             />
           </div>
         }
@@ -226,150 +246,22 @@ export default async function ShowDetailPage({
 
         {/* ══════════════════ OVERVIEW ══════════════════ */}
         {tab === 'overview' && (
-          <div className="space-y-6">
-            {totalSlots > 0 && (
-              <div className="rounded-xl border bg-card p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-semibold text-sm">fremgang</h2>
-                  <span className="text-sm font-bold tabular-nums">{totalFilled}/{totalSlots} plasser fylt</span>
-                </div>
-                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.round((totalFilled / totalSlots) * 100)}%` }} />
-                </div>
-                <div className="grid gap-2">
-                  {reqFillStatus.map((r) => (
-                    <div key={r.id} className="flex items-center gap-3">
-                      <span className="text-sm font-medium w-32 truncate">{r.role_name}</span>
-                      <div className="flex gap-1">
-                        {Array.from({ length: r.quantity }).map((_, i) => (
-                          <div key={i} className={`size-5 rounded-sm border-2 flex items-center justify-center text-[10px] font-bold transition-colors ${
-                            i < r.filled ? 'bg-emerald-500 border-emerald-500 text-white'
-                              : i < r.filled + r.pendingOffers ? 'bg-amber-100 border-amber-400 text-amber-700'
-                              : 'bg-muted border-muted-foreground/20'
-                          }`}>
-                            {i < r.filled ? '✓' : i < r.filled + r.pendingOffers ? '?' : ''}
-                          </div>
-                        ))}
-                      </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ml-auto ${r.isFull ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {r.isFull ? 'Fylt' : `${r.filled}/${r.quantity}`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="rounded-xl border bg-card p-5 space-y-2">
-                <h2 className="font-semibold text-sm">Info</h2>
-                <dl className="space-y-1.5 text-sm">
-                  <div className="flex justify-between"><dt className="text-muted-foreground">Dato</dt><dd className="font-medium">{show.date}</dd></div>
-                  <div className="flex justify-between"><dt className="text-muted-foreground">Tid</dt><dd className="font-medium">{show.start_time ?? '—'}{show.end_time ? `–${show.end_time}` : ''}</dd></div>
-                  <div className="flex justify-between"><dt className="text-muted-foreground">Sted</dt><dd className="font-medium">{showLocation ?? '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-muted-foreground">Kapasitet</dt><dd className="font-medium">{show.capacity ?? '—'}</dd></div>
-                  <div className="flex justify-between"><dt className="text-muted-foreground">Pris</dt><dd className="font-medium">{show.ticket_price ? `${show.ticket_price / 100} ${show.currency}` : '—'}</dd></div>
-                </dl>
-              </div>
-
-              <div className="rounded-xl border bg-card p-5 space-y-3">
-                <h2 className="font-semibold text-sm">Automatikk</h2>
-                <div className="space-y-2">
-                  {show.status === 'draft' && (requirements ?? []).length === 0 && (
-                    <Link href={`/admin-app/shows/${id}?tab=lineup`} className="block w-full text-center text-sm px-3 py-2 rounded-md border border-dashed text-muted-foreground hover:text-foreground transition-colors">
-                      + Legg til krav først
-                    </Link>
-                  )}
-                  {['draft', 'booking'].includes(show.status) && (requirements ?? []).length > 0 && !allSlotsFilled && (
-                    <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                      Tilbud sendes automatisk når krav lagres og når nye artister godkjennes. Plasser fylles først når artister godkjenner tilbudet.
-                      {' '}Du kan når som helst{' '}
-                      <Link href={`/admin-app/shows/${id}?tab=lineup`} className="font-medium underline underline-offset-2">
-                        publisere lineupen manuelt
-                      </Link>
-                      {' '}selv om ikke alle plasser er fylt.
-                    </div>
-                  )}
-                  {allSlotsFilled && show.status !== 'published' && (
-                    <div className="rounded-md bg-purple-50 dark:bg-purple-950/20 border border-purple-300/50 px-3 py-2 text-xs text-purple-700 dark:text-purple-400">
-                      Lineup er fylt. Systemet genererer plakat og publiserer automatisk.
-                    </div>
-                  )}
-                  {show.status === 'published' && (
-                    <Link href={`/events/${show.slug}`} target="_blank" className="block w-full text-center text-sm px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition-colors font-medium">
-                      🔗 Vis eventside
-                    </Link>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <ToastActionForm action={updateShowDetailsAction} className="rounded-xl border bg-card p-5 space-y-4">
-              <input type="hidden" name="show_id" value={show.id} />
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-sm">Rediger show</h2>
-                <button type="submit" className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors">
-                  Lagre endringer
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-                <label className="space-y-1 md:col-span-2">
-                  <span className="text-xs font-medium text-muted-foreground">Tittel</span>
-                  <input name="title" required defaultValue={show.title} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1 md:col-span-2">
-                  <span className="text-xs font-medium text-muted-foreground">Slug</span>
-                  <input name="slug" required defaultValue={show.slug} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Dato</span>
-                  <input name="date" type="date" required defaultValue={show.date} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Start</span>
-                  <input name="start_time" type="time" defaultValue={(show.start_time ?? '').slice(0, 5)} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Slutt</span>
-                  <input name="end_time" type="time" defaultValue={(show.end_time ?? '').slice(0, 5)} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Kapasitet</span>
-                  <input name="capacity" type="number" min={0} defaultValue={show.capacity ?? ''} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1 md:col-span-4">
-                  <span className="text-xs font-medium text-muted-foreground">Sted / adresse</span>
-                  <input name="venue_address" defaultValue={show.venue_address ?? ''} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                </label>
-                <label className="space-y-1 md:col-span-2">
-                  <span className="text-xs font-medium text-muted-foreground">Pris ({show.currency})</span>
-                  <input name="ticket_price" type="number" min={0} step="0.01" defaultValue={show.ticket_price ? show.ticket_price / 100 : ''} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-                  <span className="block text-[11px] text-muted-foreground">
-                    Valuta styres av klubben og endres under{' '}
-                    <Link href="/admin-app/min-klubb" className="underline underline-offset-2">Min klubb</Link>.
-                  </span>
-                </label>
-              </div>
-              <label className="space-y-1 block">
-                <span className="text-xs font-medium text-muted-foreground">Beskrivelse</span>
-                <textarea name="description" defaultValue={show.description ?? ''} rows={4} className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
-              </label>
-            </ToastActionForm>
-
-            {show.poster_url && (
-              <div className="rounded-xl border bg-card p-5 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-semibold text-sm">Plakat</h2>
-                  <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
-                    Regenerer
-                  </PosterGenerateButton>
-                </div>
-                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border bg-muted/20">
-                  <Image src={show.poster_url} alt={`Plakat for ${show.title}`} fill sizes="(max-width: 768px) 92vw, 50vw" className="object-contain" />
-                </div>
-              </div>
-            )}
-          </div>
+          <OverviewTab
+            show={show}
+            spots={bookingSpots}
+            bookingCandidates={bookingCandidates.map((artist) => ({
+              id: artist.id,
+              full_name: artist.full_name,
+              stage_name: artist.stage_name,
+              admin_score: artist.admin_score,
+              admin_energy_level: artist.admin_energy_level,
+              category: artist.category,
+            }))}
+            ticketsSold={ticketsSold}
+            hasRequirements={(requirements ?? []).length > 0}
+            allSlotsFilled={allSlotsFilled}
+            updateShowDetailsAction={updateShowDetailsAction}
+          />
         )}
 
         {/* ══════════════════ LINEUP ══════════════════ */}
@@ -447,35 +339,35 @@ export default async function ShowDetailPage({
               <div className="rounded-xl border bg-card p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-semibold text-sm">Lineup-plakat</h2>
+                    <h2 className="font-semibold text-sm">Lineup poster</h2>
                     {selectedMarketingDesign && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">Bruker {selectedMarketingDesign.label || selectedMarketingDesign.file_name}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Using {selectedMarketingDesign.label || selectedMarketingDesign.file_name}</p>
                     )}
                   </div>
                   <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
-                    {show.poster_url ? 'Regenerer' : 'Generer'}
+                    {show.poster_url ? 'Regenerate' : 'Generate'}
                   </PosterGenerateButton>
                 </div>
                 {show.poster_url ? (
                   <div className="space-y-2">
                     <div className="relative mx-auto aspect-[2/3] w-full max-w-[520px] overflow-hidden rounded-lg border bg-muted/20">
-                      <Image src={show.poster_url} alt={`Plakat for ${show.title}`} fill sizes="(max-width: 768px) 92vw, 520px" className="object-contain" />
+                      <Image src={show.poster_url} alt={`Poster for ${show.title}`} fill sizes="(max-width: 768px) 92vw, 520px" className="object-contain" />
                     </div>
                     <a href={show.poster_url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline block">
-                      Åpne i ny fane
+                      Open in new tab
                     </a>
                   </div>
                 ) : (
                   <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] items-center justify-center rounded-lg border border-dashed bg-muted/30 text-sm text-muted-foreground">
-                    {show.status === 'draft' ? 'Plakat genereres når lineup er bekreftet.' : 'Ingen plakat generert ennå.'}
+                    {show.status === 'draft' ? 'The poster is generated once the lineup is confirmed.' : 'No poster generated yet.'}
                   </div>
                 )}
               </div>
 
               <div className="rounded-xl border bg-card p-5 min-h-[640px] flex flex-col gap-4">
                 <div className="space-y-1">
-                  <h2 className="font-semibold text-sm">Plakat templates</h2>
-                  <p className="text-xs text-muted-foreground">Design AI-en skal jobbe ut fra.</p>
+                  <h2 className="font-semibold text-sm">Poster templates</h2>
+                  <p className="text-xs text-muted-foreground">The design the AI works from.</p>
                 </div>
 
                 <div className="flex-1 space-y-3">
@@ -486,7 +378,7 @@ export default async function ShowDetailPage({
 
                       return (
                         <div key={design.id} className={`rounded-lg border p-2 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/30'}`}>
-                          <ToastActionForm action={selectMarketingDesignAction} successMessage="Template valgt.">
+                          <ToastActionForm action={selectMarketingDesignAction} successMessage="Template selected.">
                             <input type="hidden" name="show_id" value={show.id} />
                             <input type="hidden" name="design_id" value={design.id} />
                             <button type="submit" className="block w-full text-left">
@@ -496,7 +388,7 @@ export default async function ShowDetailPage({
                                   <p className="text-[11px] text-muted-foreground uppercase">{design.file_type}{fileSize ? ` · ${fileSize}` : ''}</p>
                                 </div>
                                 {isSelected && (
-                                  <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Valgt</span>
+                                  <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Selected</span>
                                 )}
                               </div>
                               <div className="relative aspect-[3/4] overflow-hidden rounded-md border bg-muted/20">
@@ -506,13 +398,13 @@ export default async function ShowDetailPage({
                           </ToastActionForm>
                           <div className="mt-2 flex items-center justify-between gap-2">
                             <a href={design.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">
-                              Åpne fil
+                              Open file
                             </a>
-                            <ToastActionForm action={deleteMarketingDesignAction} successMessage="Template slettet.">
+                            <ToastActionForm action={deleteMarketingDesignAction} successMessage="Template deleted.">
                               <input type="hidden" name="show_id" value={show.id} />
                               <input type="hidden" name="design_id" value={design.id} />
                               <button type="submit" className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
-                                Slett
+                                Delete
                               </button>
                             </ToastActionForm>
                           </div>
@@ -521,7 +413,7 @@ export default async function ShowDetailPage({
                     })
                   ) : (
                     <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-                      Ingen templates lagt til.
+                      No templates added.
                     </div>
                   )}
                 </div>
@@ -532,7 +424,7 @@ export default async function ShowDetailPage({
 
             {(marketingTasks ?? []).length > 0 && (
               <div className="rounded-xl border bg-card divide-y">
-                <div className="px-4 py-2.5 font-semibold text-sm border-b bg-muted/20">Sjekkliste</div>
+                <div className="px-4 py-2.5 font-semibold text-sm border-b bg-muted/20">Checklist</div>
                 {(marketingTasks ?? []).map((task) => (
                   <div key={task.id} className="flex items-center gap-3 px-4 py-3">
                     <div className={`size-5 rounded border-2 shrink-0 flex items-center justify-center text-[10px] ${task.is_completed ? 'bg-primary border-primary text-primary-foreground' : 'border-input'}`}>
@@ -543,37 +435,6 @@ export default async function ShowDetailPage({
                 ))}
               </div>
             )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-xl border bg-card p-5 space-y-2">
-                <h2 className="font-semibold text-sm">Facebook-tekst</h2>
-                <pre className="text-xs bg-muted rounded-lg p-3 whitespace-pre-wrap font-sans select-all leading-relaxed">{[
-                  `🎭 ${show.title}`,
-                  ``,
-                  `📅 ${show.date}${show.start_time ? ` kl. ${show.start_time}` : ''}`,
-                  `📍 ${showLocation ?? 'Sted TBA'}`,
-                  ``,
-                  activeLineup.length > 0 ? `Lineup:\n${activeLineup.map(s => `• ${artistMap[s.artist_id]?.full_name ?? '?'}`).join('\n')}` : null,
-                  ``,
-                  `🎟️ Billetter: ${process.env.APP_URL ?? 'https://tickethalo.com'}/events/${show.slug}`,
-                ].filter(Boolean).join('\n')}</pre>
-              </div>
-
-              <div className="rounded-xl border bg-card p-5 space-y-2">
-                <h2 className="font-semibold text-sm">E-posttekst</h2>
-                <pre className="text-xs bg-muted rounded-lg p-3 whitespace-pre-wrap font-sans select-all leading-relaxed">{[
-                  `Emne: ${show.title} – ${show.date}`,
-                  ``,
-                  `Hei!`,
-                  ``,
-                  `Vi inviterer til ${show.title}${showLocation ? ` på ${showLocation}` : ''}, ${show.date}${show.start_time ? ` kl. ${show.start_time}` : ''}.`,
-                  ``,
-                  activeLineup.length > 0 ? `Lineup:\n${activeLineup.map(s => `• ${artistMap[s.artist_id]?.full_name ?? '?'}`).join('\n')}\n` : null,
-                  `Kjøp billetter her:`,
-                  `${process.env.APP_URL ?? 'https://tickethalo.com'}/events/${show.slug}`,
-                ].filter(Boolean).join('\n')}</pre>
-              </div>
-            </div>
           </div>
         )}
 
@@ -582,14 +443,14 @@ export default async function ShowDetailPage({
           <>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm font-semibold text-muted-foreground">
-              {tickets?.length ?? 0} billetter
+              {tickets?.length ?? 0} tickets
             </p>
             <Link
               href={`/admin-app/scanner/${id}`}
               target="_blank"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
             >
-              📷 Åpne scanner
+              📷 Open scanner
             </Link>
           </div>
           <div className="rounded-lg border overflow-x-auto">
@@ -612,7 +473,7 @@ export default async function ShowDetailPage({
               </tbody>
             </table>
             {!tickets?.length && (
-              <p className="text-center py-12 text-muted-foreground text-sm">Ingen billetter solgt ennå.</p>
+              <p className="text-center py-12 text-muted-foreground text-sm">No tickets sold yet.</p>
             )}
           </div>
           </>

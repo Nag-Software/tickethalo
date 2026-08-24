@@ -5,7 +5,7 @@ import { ClubProfileForm } from '@/components/admin/club-profile-form'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export default async function MinKlubbPage() {
+export default async function MyClubPage() {
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
 
@@ -24,25 +24,25 @@ export default async function MinKlubbPage() {
   ])
 
   if (clubError || !club) {
-    throw new Error('Fant ikke klubbprofilen.')
+    throw new Error('Club profile not found.')
   }
 
-  // Samme rekkefølge som resten av appen bruker når den bygger absolutte
-  // lenker (se lib/actions/booking.ts).
+  // Same order the rest of the app uses when it builds absolute links
+  // (see lib/actions/booking.ts).
   const origin = (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 
   return (
     <div>
       <AdminHeader
-        title="Min klubb"
-        description="Det publikum ser på klubbsiden."
+        title="My club"
+        description="What the audience sees on the club page."
         actions={
           <Link
             href={`/clubs/${club.slug}`}
             target="_blank"
             className="inline-flex items-center text-[var(--ev-text)] gap-1 text-[14px] text-muted-foreground transition-colors hover:text-foreground"
           >
-            Se klubbsiden
+            View club page
             <ArrowUpRight className="size-3.5" aria-hidden />
           </Link>
         }

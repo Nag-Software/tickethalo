@@ -103,6 +103,11 @@
   --ev-accent-fill: #ff5b24;
   --ev-accent-ink: #fff4ec;
   --ev-poster-ground: #2e0c01;
+  /* Lilla brukes kun av de to knappene i forsidens hero. Den står utenfor
+     oransjeskalaen med vilje: knappene skal skille seg fra alt annet på
+     flaten. #6b2fb5 gir 7.6:1 mot hvitt kort, og hvit tekst på fyllet 7.6:1. */
+  --ev-violet: #6b2fb5;
+  --ev-violet-strong: #55248f;
   --ev-r-art: 8px;
   --ev-r-card: 10px;
   --ev-r-chip: 999px;
@@ -220,6 +225,36 @@
   --ev-accent-fill: #ff5b24;
   --ev-accent-ink: #2e0c01;
   --ev-poster-ground: #000000;
+}
+
+/* De to knappene i forsidens hero. Formen er felles, fargene settes på stedet. */
+.ev-hero-cta {
+  display: inline-flex;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  /* Kortet er smalt på mobil. Uten nowrap brekker "Gigs for comedians" i to
+     linjer inne i pillen. */
+  white-space: nowrap;
+  padding-inline: 1.125rem;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1;
+  transition: background-color 200ms, color 200ms;
+}
+
+.ev-hero-cta:focus-visible {
+  outline: 2px solid var(--ev-accent-fill);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .ev-hero-cta {
+    height: 2.5rem;
+    padding-inline: 1.375rem;
+    font-size: 14px;
+  }
 }
 
 @keyframes badge-spin {

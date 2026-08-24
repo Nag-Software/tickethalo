@@ -27,11 +27,11 @@ import {
 
 const navItems = [
   { label: 'Shows', href: '/shows', icon: CalendarDays },
-  { label: 'Komikere', href: '/artists', icon: Users },
-  { label: 'Ordre', href: '/orders', icon: ShoppingCart },
-  { label: 'Økonomi', href: '/okonomi', icon: Wallet },
-  { label: 'Min klubb', href: '/min-klubb', icon: Building2 },
-  { label: 'Innstillinger', href: '/settings', icon: Settings },
+  { label: 'Comedians', href: '/artists', icon: Users },
+  { label: 'Orders', href: '/orders', icon: ShoppingCart },
+  { label: 'Finances', href: '/finances', icon: Wallet },
+  { label: 'My club', href: '/my-club', icon: Building2 },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
 interface AdminSidebarProps {
@@ -64,7 +64,7 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
                     )}
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="font-semibold">{user.clubName ?? 'Bookingsystem'}</span>
+                    <span className="font-semibold">{user.clubName ?? 'Booking system'}</span>
                     <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
                   </div>
                 </Link>
@@ -76,7 +76,7 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigasjon</SidebarGroupLabel>
+          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarMenu>
             {navItems.map((item) => {
               const active = pathname.startsWith(item.href)
@@ -102,11 +102,11 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
             <div className="px-2 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Logg ut">
+            <SidebarMenuButton asChild tooltip="Log out">
               <form action={`${pathPrefix}/logout`} method="post">
                 <button type="submit" className="flex w-full items-center gap-2">
                   <LogOut className="size-4" />
-                  <span>Logg ut</span>
+                  <span>Log out</span>
                 </button>
               </form>
             </SidebarMenuButton>

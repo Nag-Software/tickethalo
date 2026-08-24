@@ -90,16 +90,16 @@ const LINEUP_REFRESH_INTERVAL_MS = 4000
 const EMPTY_STATE_ENERGY_PROMPT_DELAY_MS = 300000
 
 const ENERGY_LABELS: Record<RequirementEnergy, string> = {
-  any: 'Alle',
-  high: 'Høy',
-  low: 'Lav',
-  uncertain: 'Ukjent',
+  any: 'Any',
+  high: 'High',
+  low: 'Low',
+  uncertain: 'Unknown',
 }
 
 const GENDER_LABELS: Record<RequirementGender, string> = {
-  any: 'Alle',
-  male: 'Mann',
-  female: 'Dame',
+  any: 'Any',
+  male: 'Male',
+  female: 'Female',
 }
 
 function formatEditableNumber(value: number | null) {
@@ -108,8 +108,8 @@ function formatEditableNumber(value: number | null) {
 }
 
 function formatRequirementCurrency(minorAmount: number | null, currency: string) {
-  if (minorAmount == null) return 'Ikke satt'
-  return new Intl.NumberFormat('nb-NO', {
+  if (minorAmount == null) return 'Not set'
+  return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
@@ -117,17 +117,17 @@ function formatRequirementCurrency(minorAmount: number | null, currency: string)
 }
 
 function requirementSummary(requirement: Requirement, currency: string) {
-  const honorar = requirement.compensation_type === 'fixed'
+  const fee = requirement.compensation_type === 'fixed'
     ? formatRequirementCurrency(requirement.compensation_amount, currency)
     : requirement.compensation_type === 'percent'
-      ? requirement.compensation_percent == null ? 'Ikke satt' : `${formatEditableNumber(requirement.compensation_percent)} %`
-      : 'Ikke satt'
+      ? requirement.compensation_percent == null ? 'Not set' : `${formatEditableNumber(requirement.compensation_percent)}%`
+      : 'Not set'
 
   return [
     `Score ${requirement.min_score ?? 'any'}`,
-    `Energi ${ENERGY_LABELS[requirement.energy_level] ?? requirement.energy_level}`,
-    `Kjønn ${GENDER_LABELS[requirement.required_gender] ?? requirement.required_gender}`,
-    honorar,
+    `Energy ${ENERGY_LABELS[requirement.energy_level] ?? requirement.energy_level}`,
+    `Gender ${GENDER_LABELS[requirement.required_gender] ?? requirement.required_gender}`,
+    fee,
   ]
 }
 
@@ -157,19 +157,19 @@ export function LineupTab({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  // "Legg til" panel per requirement
+  // "Add" panel per requirement
   const [openAddReqId, setOpenAddReqId] = useState<string | null>(null)
   const [addArtistId, setAddArtistId] = useState('')
 
-  // "Send tilbud" panel per requirement
+  // "Send offer" panel per requirement
   const [openOfferReqId, setOpenOfferReqId] = useState<string | null>(null)
   const [offerArtistId, setOfferArtistId] = useState('')
 
-  // "Flytt" panel per requirement
+  // "Move" panel per requirement
   const [openMoveReqId, setOpenMoveReqId] = useState<string | null>(null)
   const [moveOfferId, setMoveOfferId] = useState('')
 
-  // "Bytt komiker" panel per spot
+  // "Swap comedian" panel per spot
   const [swapSpotId, setSwapSpotId] = useState<string | null>(null)
   const [swapArtistId, setSwapArtistId] = useState('')
 
@@ -254,10 +254,10 @@ export function LineupTab({
       fd.set('show_id', showId)
       try {
         await removeSpotAndReopenAction(fd)
-        toast.success('Artist fjernet. Ny tilbudsrunde starter automatisk.')
+        toast.success('Artist removed. A new offer round starts automatically.')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -272,12 +272,12 @@ export function LineupTab({
       fd.set('currency', showCurrency)
       try {
         await addArtistToRequirementAction(fd)
-        toast.success('Artist lagt til i lineupen.')
+        toast.success('Artist added to the lineup.')
         setOpenAddReqId(null)
         setAddArtistId('')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -291,12 +291,12 @@ export function LineupTab({
       fd.set('show_requirement_id', reqId)
       try {
         await sendOfferToArtistAction(fd)
-        toast.success('Tilbud sendt til komikeren.')
+        toast.success('Offer sent to the comedian.')
         setOpenOfferReqId(null)
         setOfferArtistId('')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -307,10 +307,10 @@ export function LineupTab({
       fd.set('show_id', showId)
       try {
         await publishLineupAction(fd)
-        toast.success('Lineupen er publisert.')
+        toast.success('The lineup is published.')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Kunne ikke publisere lineupen')
+        toast.error(err instanceof Error ? err.message : 'Could not publish the lineup')
       }
     })
   }
@@ -324,12 +324,12 @@ export function LineupTab({
       fd.set('show_id', showId)
       try {
         await movePendingOfferAction(fd)
-        toast.success('Tilbud flyttet.')
+        toast.success('Offer moved.')
         setOpenMoveReqId(null)
         setMoveOfferId('')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -343,12 +343,12 @@ export function LineupTab({
       fd.set('show_id', showId)
       try {
         await swapArtistAction(fd)
-        toast.success('Artist byttet.')
+        toast.success('Artist swapped.')
         setSwapSpotId(null)
         setSwapArtistId('')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -360,10 +360,10 @@ export function LineupTab({
       fd.set('show_id', showId)
       try {
         await cancelOfferAction(fd)
-        toast.success('Tilbud trukket tilbake.')
+        toast.success('Offer withdrawn.')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -376,10 +376,10 @@ export function LineupTab({
       fd.set('status', 'accepted')
       try {
         await updateOfferStatusAction(fd)
-        toast.success('Artist godkjent og lagt til i lineup.')
+        toast.success('Artist approved and added to the lineup.')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -391,10 +391,10 @@ export function LineupTab({
       fd.set('req_id', reqId)
       try {
         await openRequirementEnergyLevelsAction(fd)
-        toast.success('Energinivå åpnet. Booking prøver på nytt automatisk.')
+        toast.success('Energy level opened up. Booking retries automatically.')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Kunne ikke åpne energinivå')
+        toast.error(err instanceof Error ? err.message : 'Could not open up the energy level')
       }
     })
   }
@@ -447,7 +447,7 @@ export function LineupTab({
           await moveSpotAction(fd)
           router.refresh()
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+          toast.error(err instanceof Error ? err.message : 'Something went wrong')
         }
       })
       return
@@ -463,10 +463,10 @@ export function LineupTab({
       fd.set('show_id', showId)
       try {
         await movePendingOfferAction(fd)
-        toast.success('Tilbud flyttet.')
+        toast.success('Offer moved.')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Noe gikk galt')
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
   }
@@ -516,11 +516,11 @@ export function LineupTab({
                 <div className={`size-2 rounded-full shrink-0 ${isLocked ? 'bg-emerald-500' : reqPending.length > 0 ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
                 <span className="font-semibold text-sm">{req.role_name}</span>
                 {isLocked && (
-                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Låst</span>
+                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Locked</span>
                 )}
                 {!isLocked && reqPending.length > 0 && (
                   <span className="text-xs text-amber-600 font-medium">
-                    {reqPending.length} venter svar
+                    {reqPending.length} awaiting reply
                   </span>
                 )}
               </div>
@@ -538,7 +538,7 @@ export function LineupTab({
                       disabled={isPending}
                       className="text-xs font-medium px-2.5 py-1 rounded-md border hover:bg-muted transition-colors disabled:opacity-50"
                     >
-                      + Send tilbud
+                      + Send offer
                     </button>
                     <button
                       onClick={() => {
@@ -551,7 +551,7 @@ export function LineupTab({
                       disabled={isPending}
                       className="text-xs font-medium px-2.5 py-1 rounded-md border hover:bg-muted transition-colors disabled:opacity-50"
                     >
-                      + Legg til
+                      + Add
                     </button>
                   </>
                 )}
@@ -564,8 +564,8 @@ export function LineupTab({
                     setOpenMoveReqId(null)
                   }}
                   className="inline-flex size-7 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Vis kravinfo"
-                  title="Kravinfo"
+                  aria-label="Show requirement info"
+                  title="Requirement info"
                 >
                   <Info className="size-3.5" />
                 </button>
@@ -646,7 +646,7 @@ export function LineupTab({
                         <button
                           className="shrink-0 rounded p-1.5 hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
                           disabled={isPending}
-                          aria-label="Handlinger"
+                          aria-label="Actions"
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                             <circle cx="8" cy="3" r="1.5" />
@@ -662,13 +662,13 @@ export function LineupTab({
                             setSwapArtistId('')
                           }}
                         >
-                          Bytt komiker
+                          Swap comedian
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
                           onClick={() => handleRemoveSpot(spot.id)}
                         >
-                          Fjern
+                          Remove
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -683,7 +683,7 @@ export function LineupTab({
                         disabled={isPending}
                         className="flex-1 min-w-48 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                       >
-                        <option value="">Velg ny komiker...</option>
+                        <option value="">Select a new comedian…</option>
                         {selectableArtists
                           .filter(a => a.id !== spot.artist_id)
                           .map(a => (
@@ -697,13 +697,13 @@ export function LineupTab({
                         disabled={!swapArtistId || isPending}
                         className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50 transition-opacity"
                       >
-                        Bekreft
+                        Confirm
                       </button>
                       <button
                         onClick={() => { setSwapSpotId(null); setSwapArtistId('') }}
                         className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
                       >
-                        Avbryt
+                        Cancel
                       </button>
                     </div>
                   )}
@@ -754,17 +754,17 @@ export function LineupTab({
                         <div className="text-xs text-muted-foreground/60 truncate">{artist?.email}</div>
                       </div>
                       <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
-                        Venter svar
+                        Awaiting reply
                       </span>
                       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {offer.sent_at ? new Date(offer.sent_at).toLocaleDateString('nb-NO') : '—'}
+                        {offer.sent_at ? new Date(offer.sent_at).toLocaleDateString('en-GB') : '—'}
                       </span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
                             className="shrink-0 rounded p-1.5 hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
                             disabled={isPending}
-                            aria-label="Handlinger"
+                            aria-label="Actions"
                           >
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                               <circle cx="8" cy="3" r="1.5" />
@@ -775,13 +775,13 @@ export function LineupTab({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-40">
                           <DropdownMenuItem onClick={() => handleApproveOffer(offer.id)}>
-                            Godkjenn
+                            Approve
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             variant="destructive"
                             onClick={() => handleCancelOffer(offer.id)}
                           >
-                            Trekk ut
+                            Withdraw
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -798,12 +798,12 @@ export function LineupTab({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                        Ingen oppnår krav, vil du åpne opp for alle energinivåer?
+                        No one meets the requirement — open it up to all energy levels?
                       </p>
                       <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
                         {energySuggestion.candidates > 0
-                          ? `${energySuggestion.candidates} kandidat${energySuggestion.candidates === 1 ? '' : 'er'} matcher rolle, kjønn og score hvis energi settes til Alle.`
-                          : 'Åpner energikravet for denne spotten og starter ny tilbudsrunde.'}
+                          ? `${energySuggestion.candidates} candidate${energySuggestion.candidates === 1 ? '' : 's'} match the role, gender and score if energy is set to Any.`
+                          : 'Opens up the energy requirement for this spot and starts a new offer round.'}
                       </p>
                     </div>
                     <button
@@ -812,15 +812,15 @@ export function LineupTab({
                       disabled={isPending}
                       className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
                     >
-                      Åpne energinivåer
+                      Open up energy levels
                     </button>
                   </div>
                 </div>
               ) : (
                 <p className="px-4 py-5 text-sm text-muted-foreground">
                   {showStatus === 'draft'
-                    ? 'Start booking for å sende tilbud til artister.'
-                    : 'Ingen aktive tilbud eller bekreftede artister ennå.'}
+                    ? 'Start booking to send offers to artists.'
+                    : 'No active offers or confirmed artists yet.'}
                 </p>
               )
             )}
@@ -834,14 +834,14 @@ export function LineupTab({
                   disabled={isPending}
                   className="flex-1 min-w-48 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                 >
-                  <option value="">Velg ventende tilbud...</option>
+                  <option value="">Select a pending offer…</option>
                   {movableOffers.map((offer) => {
                     const artist = artistMap[offer.artist_id]
                     const sourceReq = requirements.find((targetReq) => targetReq.id === offer.show_requirement_id)
-                    const sourceLabel = sourceReq ? ` fra ${sourceReq.role_name}` : ' uten spot'
+                    const sourceLabel = sourceReq ? ` from ${sourceReq.role_name}` : ' without a spot'
                     return (
                       <option key={offer.id} value={offer.id}>
-                        {artist?.stage_name ?? artist?.full_name ?? 'Ukjent komiker'}{sourceLabel}
+                        {artist?.stage_name ?? artist?.full_name ?? 'Unknown comedian'}{sourceLabel}
                       </option>
                     )
                   })}
@@ -851,13 +851,13 @@ export function LineupTab({
                   disabled={!moveOfferId || isPending}
                   className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50 transition-opacity"
                 >
-                  Flytt hit
+                  Move here
                 </button>
                 <button
                   onClick={() => { setOpenMoveReqId(null); setMoveOfferId('') }}
                   className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
                 >
-                  Avbryt
+                  Cancel
                 </button>
               </div>
             )}
@@ -872,7 +872,7 @@ export function LineupTab({
                     disabled={isPending}
                     className="flex-1 min-w-48 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                   >
-                    <option value="">Velg komiker...</option>
+                    <option value="">Select comedian…</option>
                     {offerableArtists.map(a => (
                       <option key={a.id} value={a.id}>
                         {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
@@ -884,17 +884,17 @@ export function LineupTab({
                     disabled={!offerArtistId || isPending}
                     className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50 transition-opacity"
                   >
-                    Send tilbud
+                    Send offer
                   </button>
                   <button
                     onClick={() => { setOpenOfferReqId(null); setOfferArtistId('') }}
                     className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
                   >
-                    Avbryt
+                    Cancel
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Komikeren får tilbudet på e-post og må takke ja før plassen fylles.
+                  The comedian gets the offer by email and has to accept before the spot is filled.
                 </p>
               </div>
             )}
@@ -908,7 +908,7 @@ export function LineupTab({
                   disabled={isPending}
                   className="flex-1 min-w-48 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                 >
-                  <option value="">Velg komiker...</option>
+                  <option value="">Select comedian…</option>
                   {selectableArtists.map(a => (
                     <option key={a.id} value={a.id}>
                       {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
@@ -920,13 +920,13 @@ export function LineupTab({
                   disabled={!addArtistId || isPending}
                   className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50 transition-opacity"
                 >
-                  Legg til
+                  Add
                 </button>
                 <button
                   onClick={() => { setOpenAddReqId(null); setAddArtistId('') }}
                   className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
                 >
-                  Avbryt
+                  Cancel
                 </button>
               </div>
             )}
@@ -938,8 +938,8 @@ export function LineupTab({
       {unassignedOffers.length > 0 && (
         <div className="rounded-xl border bg-card overflow-hidden">
           <div className="px-4 py-3 border-b bg-muted/20 flex items-center gap-2">
-            <span className="font-semibold text-sm">Øvrige tilbud</span>
-            <span className="text-xs text-muted-foreground">Ikke tilknyttet krav</span>
+            <span className="font-semibold text-sm">Other offers</span>
+            <span className="text-xs text-muted-foreground">Not linked to a requirement</span>
           </div>
           <div className="divide-y">
             {unassignedOffers.map(o => {
@@ -948,10 +948,10 @@ export function LineupTab({
                 <div key={o.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 text-sm font-medium">{artist?.full_name ?? '—'}</div>
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                    Venter svar
+                    Awaiting reply
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {o.sent_at ? new Date(o.sent_at).toLocaleDateString('nb-NO') : '—'}
+                    {o.sent_at ? new Date(o.sent_at).toLocaleDateString('en-GB') : '—'}
                   </span>
                 </div>
               )
@@ -963,13 +963,13 @@ export function LineupTab({
       {/* Empty state */}
       {requirements.length === 0 && (
         <div className="rounded-xl border border-dashed p-12 text-center text-muted-foreground text-sm">
-          Ingen krav definert ennå.
+          No requirements defined yet.
           <div className="mt-3">
             <Link
               href={`/admin-app/shows/${showId}?tab=requirements`}
               className="text-primary underline-offset-2 hover:underline text-sm"
             >
-              Sett opp bookingkrav
+              Set up booking requirements
             </Link>
           </div>
         </div>
@@ -980,11 +980,11 @@ export function LineupTab({
         <div className="rounded-xl border bg-card p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-0.5">
-              <h3 className="font-semibold text-sm">Publiser lineup nå</h3>
+              <h3 className="font-semibold text-sm">Publish lineup now</h3>
               <p className="text-sm text-muted-foreground">
                 {filledSlots === 0
-                  ? 'Minst én komiker må ha takket ja før lineupen kan publiseres.'
-                  : `${filledSlots} av ${totalSlots} plasser er fylt. Publiser når du er fornøyd — ventende tilbud fortsetter å løpe, og komikere som takker ja etterpå legges til i lineupen.`}
+                  ? 'At least one comedian has to accept before the lineup can be published.'
+                  : `${filledSlots} of ${totalSlots} spots are filled. Publish when you are happy — pending offers keep running, and comedians who accept later are added to the lineup.`}
               </p>
             </div>
             <button
@@ -993,7 +993,7 @@ export function LineupTab({
               disabled={isPending || filledSlots === 0}
               className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              Publiser lineup
+              Publish lineup
             </button>
           </div>
         </div>
@@ -1002,13 +1002,13 @@ export function LineupTab({
       {/* Published with open slots */}
       {requirements.length > 0 && !allSlotsFilled && showStatus === 'published' && (
         <div className="rounded-xl border border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 p-5">
-          <h3 className="font-bold text-emerald-900 dark:text-emerald-300">Publisert med åpne plasser</h3>
+          <h3 className="font-bold text-emerald-900 dark:text-emerald-300">Published with open spots</h3>
           <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">
-            {filledSlots} av {totalSlots} plasser er fylt. Eventsiden er live, og lineupen oppdateres når flere komikere takker ja.{' '}
+            {filledSlots} of {totalSlots} spots are filled. The event page is live, and the lineup updates as more comedians accept.{' '}
             <Link href={`/admin-app/shows/${showId}?tab=marketing`} className="underline underline-offset-2">
-              Regenerer plakaten
+              Regenerate the poster
             </Link>{' '}
-            når lineupen har endret seg.
+            once the lineup has changed.
           </p>
         </div>
       )}
@@ -1016,9 +1016,9 @@ export function LineupTab({
       {/* All-filled celebration */}
       {allSlotsFilled && showStatus === 'booking' && (
         <div className="rounded-xl border-2 border-purple-300 bg-purple-50/50 dark:bg-purple-950/20 p-5">
-          <h3 className="font-bold text-purple-900 dark:text-purple-300">Lineup er klar! 🎉</h3>
+          <h3 className="font-bold text-purple-900 dark:text-purple-300">The lineup is ready! 🎉</h3>
           <p className="text-sm text-purple-700 dark:text-purple-400 mt-0.5">
-            Alle plasser er fylt. Systemet genererer lineup-plakat, publiserer eventside og starter markedsføring automatisk.
+            Every spot is filled. The system generates the lineup poster, publishes the event page and starts marketing automatically.
           </p>
         </div>
       )}

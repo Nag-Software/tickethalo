@@ -12,7 +12,7 @@ import {
 } from '@/lib/currencies'
 
 /**
- * Valutavelger med søk.
+ * Currency picker with search.
  *
  * Som lokasjonsfeltet ligger selve verdien i et skjult felt utenfor popoveren:
  * Radix flytter innholdet ut av skjemaet i DOM-en, og et felt som havner der
@@ -42,7 +42,7 @@ export function CurrencyField({ value }: { value: string | null }) {
       <input type="hidden" name="currency" value={selected} />
 
       <label htmlFor={fieldId} className="text-sm font-medium text-foreground">
-        Valuta
+        Currency
       </label>
 
       <Popover
@@ -72,8 +72,8 @@ export function CurrencyField({ value }: { value: string | null }) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
-                // Enter velger det øverste treffet. Skjemaet under skal ikke
-                // sendes inn av et tastetrykk her.
+                // Enter picks the top match. The form below must not be
+                // submitted by a keypress here.
                 if (event.key === 'Enter') {
                   event.preventDefault()
                   if (matches.length > 0) choose(matches[0].code)
@@ -85,14 +85,14 @@ export function CurrencyField({ value }: { value: string | null }) {
                   listRef.current?.querySelector('button')?.focus()
                 }
               }}
-              placeholder="Søk på valuta eller kode"
+              placeholder="Search by currency or code"
               className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
 
           {matches.length === 0 ? (
             <p className="px-3.5 py-6 text-center text-sm text-muted-foreground">
-              Ingen valuta matcher «{query}».
+              No currency matches “{query}”.
             </p>
           ) : (
             <ul ref={listRef} className="max-h-64 overflow-y-auto p-2">
@@ -121,7 +121,7 @@ export function CurrencyField({ value }: { value: string | null }) {
         </PopoverContent>
       </Popover>
 
-      <p className="text-xs text-muted-foreground">Standardvaluta for nye show i klubben.</p>
+      <p className="text-xs text-muted-foreground">Default currency for new shows in the club.</p>
     </div>
   )
 }

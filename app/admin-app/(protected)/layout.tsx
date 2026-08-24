@@ -16,8 +16,8 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
     redirect(`${adminPrefix}/login`)
   }
 
-  // Profilen, portalvalget og klubbtilgangen deler ett oppslag: alle tre går
-  // gjennom de request-cachede funksjonene i `lib/session`.
+  // The profile, the portal choice and the club access share one lookup: all
+  // three go through the request-cached helpers in `lib/session`.
   const profile = await getSessionProfile(user.id)
 
   const destination = await getPortalDestinationForAuthUser(user.id)
@@ -42,11 +42,11 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
   }
 
   if (pathname.startsWith('/admin-app/scanner')) {
-    return <div className="admin-app-shell">{children}</div>
+    return <div lang="en" className="admin-app-shell">{children}</div>
   }
 
   return (
-    <div className="admin-app-shell">
+    <div lang="en" className="admin-app-shell">
       <SidebarProvider>
         <AdminSidebar
           user={sidebarUser}

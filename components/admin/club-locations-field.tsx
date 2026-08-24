@@ -6,21 +6,21 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { ClubLocation } from '@/types/database'
 
 type LocationDraft = {
-  /** Stabil nøkkel for React. Ikke det samme som databaseraden. */
+  /** Stable key for React. Not the same as the database row. */
   key: string
-  /** Null for lokasjoner som ennå ikke er lagret. */
+  /** Null for locations that have not been saved yet. */
   id: string | null
   name: string
   addressLine: string
 }
 
 /**
- * Lokasjonene til en klubb, som én nedtrekksliste.
+ * A club's locations, as a single dropdown.
  *
- * Feltet lagres sammen med resten av klubbprofilen: radene ligger som skjulte
- * felt i skjemaet, ikke som egne kall. Derfor står de skjulte feltene utenfor
- * popoveren — Radix flytter innholdet i popoveren ut av skjemaet i DOM-en, og
- * felt som havner der blir aldri sendt med.
+ * The field is saved together with the rest of the club profile: the rows sit
+ * as hidden inputs in the form, not as separate calls. That is why the hidden
+ * inputs live outside the popover — Radix moves the popover content out of the
+ * form in the DOM, and inputs that end up there are never submitted.
  */
 export function ClubLocationsField({
   locations,
@@ -53,8 +53,8 @@ export function ClubLocationsField({
   }
 
   /**
-   * Enter legger til raden. `preventDefault` fordi feltene ligger i en portal
-   * utenfor skjemaet — uten den ville tasten bare falt på gulvet.
+   * Enter adds the row. `preventDefault` because the inputs live in a portal
+   * outside the form — without it the keypress would just fall through.
    */
   function submitOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') return
@@ -68,14 +68,14 @@ export function ClubLocationsField({
 
   const summary =
     drafts.length === 0
-      ? 'Ingen lokasjoner'
+      ? 'No locations'
       : drafts.length === 1
         ? drafts[0].name
         : `${drafts[0].name} +${drafts.length - 1}`
 
   return (
     <div className="space-y-2">
-      {/* Verdiene som faktisk sendes inn. Rekkefølgen her er rekkefølgen de får. */}
+      {/* The values actually submitted. The order here is the order they get. */}
       {drafts.map((draft) => (
         <div key={draft.key}>
           <input type="hidden" name="locationId" value={draft.id ?? ''} />
@@ -85,7 +85,7 @@ export function ClubLocationsField({
       ))}
 
       <label htmlFor={fieldId} className="text-sm font-medium text-foreground">
-        Lokasjoner
+        Locations
       </label>
 
       <Popover open={open} onOpenChange={setOpen}>
@@ -100,7 +100,7 @@ export function ClubLocationsField({
               {summary}
             </span>
             <span className="shrink-0 text-xs text-muted-foreground">
-              {drafts.length > 0 && `${drafts.length} stk`}
+              {drafts.length > 0 && `${drafts.length}`}
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           </button>
@@ -126,7 +126,7 @@ export function ClubLocationsField({
                     className="grid size-7 shrink-0 place-content-center rounded-full text-muted-foreground transition-colors hover:bg-zinc-200 hover:text-foreground"
                   >
                     <X className="size-3.5" aria-hidden />
-                    <span className="sr-only">Fjern {draft.name}</span>
+                    <span className="sr-only">Remove {draft.name}</span>
                   </button>
                 </li>
               ))}
@@ -139,14 +139,14 @@ export function ClubLocationsField({
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
                 onKeyDown={submitOnEnter}
-                placeholder="Navn på lokasjon"
+                placeholder="Location name"
                 className="h-9 w-full rounded-xl bg-zinc-100/80 px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100"
               />
               <input
                 value={newAddress}
                 onChange={(event) => setNewAddress(event.target.value)}
                 onKeyDown={submitOnEnter}
-                placeholder="Adresse (valgfritt)"
+                placeholder="Address (optional)"
                 className="h-9 w-full rounded-xl bg-zinc-100/80 px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100"
               />
               <button
@@ -156,7 +156,7 @@ export function ClubLocationsField({
                 className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-foreground text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-30"
               >
                 <Plus className="size-4" aria-hidden />
-                Legg til lokasjon
+                Add location
               </button>
             </div>
           </div>
@@ -164,7 +164,7 @@ export function ClubLocationsField({
       </Popover>
 
       <p className="text-xs text-muted-foreground">
-        Stedene klubben spiller på. Vises på klubbsiden med kartlenke.
+        The venues the club plays. Shown on the club page with a map link.
       </p>
     </div>
   )

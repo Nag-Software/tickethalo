@@ -18,6 +18,21 @@ const statusColors: Record<ArtistStatus, string> = {
   flagged: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400',
 }
 
+const ARTIST_STATUS_LABELS: Record<ArtistStatus, string> = {
+  pending_review: 'Pending review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  inactive: 'Inactive',
+  flagged: 'Flagged',
+}
+
+const ENERGY_LABELS: Record<EnergyLevel, string> = {
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  uncertain: 'Unknown',
+}
+
 const energyColors: Record<EnergyLevel, string> = {
   high: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400',
   medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
@@ -54,9 +69,9 @@ export default async function ArtistsPage({
 
   const { data: artists } = await query
 
-  // Blokkeringene avhenger av flere kolonner, så delingen skjer i JS etter
-  // henting. Tellingene regnes fra samme sett som filtrene over, slik at de
-  // stemmer med det som faktisk vises.
+  // The blockers depend on several columns, so the split happens in JS after
+  // fetching. The counts come from the same set as the filters above, so they
+  // match what is actually shown.
   const withBlockers = (artists ?? []).map((artist) => ({
     artist,
     blockers: artistReadinessBlockers(artist),
@@ -72,21 +87,21 @@ export default async function ArtistsPage({
   ]
 
   const filters: { label: string; key: string; value: string }[] = [
-    { label: 'Alle', key: 'status', value: '' },
+    { label: 'All', key: 'status', value: '' },
     { label: 'Pending', key: 'status', value: 'pending_review' },
-    { label: 'Godkjent', key: 'status', value: 'approved' },
-    { label: 'Avvist', key: 'status', value: 'rejected' },
-    { label: 'Flagget', key: 'status', value: 'flagged' },
+    { label: 'Approved', key: 'status', value: 'approved' },
+    { label: 'Rejected', key: 'status', value: 'rejected' },
+    { label: 'Flagged', key: 'status', value: 'flagged' },
   ]
 
   return (
     <div>
       <AdminHeader
-        title="Komikere"
+        title="Comedians"
         description={
           needsReview.length > 0
-            ? `${withBlockers.length} komikere · ${needsReview.length} trenger gjennomgang`
-            : `${withBlockers.length} komikere · alle er klare for booking`
+            ? `${withBlockers.length} comedians · ${needsReview.length} need review`
+            : `${withBlockers.length} comedians · all ready for booking`
         }
         actions={
           <div className="flex items-center gap-3">
@@ -94,20 +109,14 @@ export default async function ArtistsPage({
               href={buildArtistsHref({}, { tab })}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              Nullstill filter
-            </Link>
-            <Link
-              href="/admin-app/artists/new"
-              className="text-xs bg-primary text-primary-foreground rounded-md px-3 py-1.5 hover:bg-primary/90 transition-colors"
-            >
-              + Ny komiker
+              Reset filters
             </Link>
           </div>
         }
       />
       <div className="p-6 space-y-4">
-        {/* Tab-bytte: køen som trenger admin står først, fordi en komiker uten
-            rolle/score/godkjenning aldri dukker opp i booking. */}
+        {/* Tab order: the queue that needs an admin comes first, because a comedian
+            without role/score/approval never shows up in booking. */}
         <div className="flex gap-1 border-b">
           {tabs.map((t) => {
             const active = tab === t.value
@@ -146,12 +155,12 @@ export default async function ArtistsPage({
             <Input
               name="q"
               defaultValue={searchQuery}
-              placeholder="Søk etter navn, scenenavn eller e-post"
+              placeholder="Search by name, stage name or email"
               className="pl-9"
             />
           </div>
           <Button type="submit" variant="outline">
-            <Search className="size-4" /> Søk
+            <Search className="size-4" /> Search
           </Button>
         </form>
 
@@ -180,13 +189,13 @@ export default async function ArtistsPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
-                <th className="text-left px-4 py-2.5 font-medium">Komiker</th>
-                <th className="text-left px-4 py-2.5 font-medium">Bookbar</th>
-                <th className="text-left px-4 py-2.5 font-medium">Rolle</th>
+                <th className="text-left px-4 py-2.5 font-medium">Comedian</th>
+                <th className="text-left px-4 py-2.5 font-medium">Bookable</th>
+                <th className="text-left px-4 py-2.5 font-medium">Role</th>
                 <th className="text-left px-4 py-2.5 font-medium">Status</th>
                 <th className="text-center px-4 py-2.5 font-medium">Score</th>
-                <th className="text-left px-4 py-2.5 font-medium">Energi</th>
-                <th className="text-left px-4 py-2.5 font-medium">Dato</th>
+                <th className="text-left px-4 py-2.5 font-medium">Energy</th>
+                <th className="text-left px-4 py-2.5 font-medium">Date</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
@@ -204,7 +213,7 @@ export default async function ArtistsPage({
                     <td className="px-4 py-3">
                       {blockers.length === 0 ? (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
-                          Bookbar
+                          Bookable
                         </span>
                       ) : (
                         <div className="flex flex-wrap gap-1">
@@ -224,11 +233,11 @@ export default async function ArtistsPage({
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[a.status]}`}>
-                        {a.status}
+                        {ARTIST_STATUS_LABELS[a.status] ?? a.status}
                       </span>
                       {a.is_flagged && (
                         <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400">
-                          flagget
+                          flagged
                         </span>
                       )}
                     </td>
@@ -238,19 +247,19 @@ export default async function ArtistsPage({
                     <td className="px-4 py-3">
                       {a.admin_energy_level ? (
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${energyColors[a.admin_energy_level]}`}>
-                          {a.admin_energy_level}
+                          {ENERGY_LABELS[a.admin_energy_level] ?? a.admin_energy_level}
                         </span>
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                      {new Date(a.created_at).toLocaleDateString('nb-NO')}
+                      {new Date(a.created_at).toLocaleDateString('en-GB')}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <DeleteButton
                         action={deleteArtistAction}
                         id={a.id}
                         idField="artist_id"
-                        confirmMessage={`Slett artisten "${a.full_name}"? Dette kan ikke angres.`}
+                        confirmMessage={`Delete the artist "${a.full_name}"? This cannot be undone.`}
                       />
                     </td>
                   </tr>
@@ -261,10 +270,10 @@ export default async function ArtistsPage({
           {visible.length === 0 && (
             <p className="text-center py-12 text-muted-foreground text-sm">
               {tab === 'review'
-                ? 'Ingen komikere venter på gjennomgang.'
+                ? 'No comedians are waiting for review.'
                 : tab === 'ready'
-                  ? 'Ingen komikere er klare for booking ennå.'
-                  : 'Ingen komikere funnet.'}
+                  ? 'No comedians are ready for booking yet.'
+                  : 'No comedians found.'}
             </p>
           )}
         </div>

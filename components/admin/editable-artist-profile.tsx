@@ -51,8 +51,8 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
         fd.append('category', category)
       }
     } else if (field === 'languages') {
-      // Flagget skiller «ingen språk valgt» fra «feltet ble ikke sendt» — uten
-      // det kunne man ikke tømme lista igjen.
+      // The flag separates "no languages picked" from "the field was not sent" —
+      // without it the list could never be emptied again.
       fd.set('language_present', '1')
       // Serveren leser feltnavnet `language` (flere ganger), som skjemaene ellers.
       for (const language of value as string[]) {
@@ -117,7 +117,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
 
   return (
     <section className="rounded-xl border bg-card p-5 space-y-4">
-      <h2 className="font-semibold text-sm">Innsendt profil</h2>
+      <h2 className="font-semibold text-sm">Submitted profile</h2>
       <div className="flex flex-col gap-4 sm:flex-row">
         {artist.profile_image_url && (
           <Image
@@ -133,7 +133,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
         <div className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm flex-1 sm:grid-cols-2">
           {/* Fullt navn */}
           <EditableFieldRow
-            label="Fullt navn"
+            label="Full name"
             isEditing={editing === 'full_name'}
             display={<span className={cellClass} onClick={() => setEditing('full_name')}>{values.full_name || '—'}</span>}
             input={
@@ -150,7 +150,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
 
           {/* Scenenavn */}
           <EditableFieldRow
-            label="Scenenavn"
+            label="Stage name"
             isEditing={editing === 'stage_name'}
             display={<span className={cellClass} onClick={() => setEditing('stage_name')}>{values.stage_name || <em className="text-muted-foreground not-italic">—</em>}</span>}
             input={
@@ -185,7 +185,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
 
           {/* Telefon */}
           <EditableFieldRow
-            label="Telefon"
+            label="Phone"
             isEditing={editing === 'phone'}
             display={<span className={cellClass} onClick={() => setEditing('phone')}>{values.phone || <em className="text-muted-foreground not-italic">—</em>}</span>}
             input={
@@ -202,7 +202,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
 
           {/* Kategori */}
           <EditableFieldRow
-            label="Kategori"
+            label="Category"
             isEditing={editing === 'category'}
             display={<span className={cellClass} onClick={() => setEditing('category')}>{formatArtistRoleSummary(values.category, '') || <em className="text-muted-foreground not-italic">—</em>}</span>}
             input={
@@ -237,9 +237,9 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
             }
           />
 
-          {/* Språk */}
+          {/* Languages */}
           <EditableFieldRow
-            label="Språk"
+            label="Languages"
             isEditing={editing === 'languages'}
             display={<span className={cellClass} onClick={() => setEditing('languages')}>{formatLanguageSummary(values.languages) || <em className="text-muted-foreground not-italic">—</em>}</span>}
             input={
@@ -295,7 +295,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
             className={`text-sm whitespace-pre-wrap min-h-[1.5rem] ${cellClass}`}
             onClick={() => setEditing('bio')}
           >
-            {values.bio || <em className="text-muted-foreground not-italic">Klikk for å legge til bio...</em>}
+            {values.bio || <em className="text-muted-foreground not-italic">Click to add a bio…</em>}
           </p>
         )}
       </div>
@@ -303,7 +303,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
       {/* Social links */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <p className="text-xs text-muted-foreground">Sosiale lenker</p>
+          <p className="text-xs text-muted-foreground">Social links</p>
           {editing !== 'social_links' && (
             <button
               onClick={() => setEditing('social_links')}
@@ -318,7 +318,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
             {values.social_links.map((entry, i) => (
               <div key={i} className="flex gap-2">
                 <Input
-                  placeholder="nøkkel (f.eks. instagram)"
+                  placeholder="key (e.g. instagram)"
                   value={entry.key}
                   onChange={e => {
                     const updated = [...values.social_links]
@@ -350,7 +350,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
                 onClick={() => setValues(v => ({ ...v, social_links: [...v.social_links, { key: '', url: '' }] }))}
                 className="text-xs text-muted-foreground hover:text-foreground border rounded px-2 py-1"
               >
-                + Legg til lenke
+                + Add link
               </button>
               <button
                 onClick={() => setEditing(null)}
@@ -374,14 +374,14 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
                     {entry.key}
                   </a>
                 ))
-              : <span className={`text-sm ${cellClass}`} onClick={() => setEditing('social_links')}><em className="text-muted-foreground not-italic">Ingen lenker</em></span>
+              : <span className={`text-sm ${cellClass}`} onClick={() => setEditing('social_links')}><em className="text-muted-foreground not-italic">No links</em></span>
             }
           </div>
         )}
       </div>
 
       {isPending && (
-        <p className="text-xs text-muted-foreground animate-pulse">Lagrer...</p>
+        <p className="text-xs text-muted-foreground animate-pulse">Saving…</p>
       )}
     </section>
   )

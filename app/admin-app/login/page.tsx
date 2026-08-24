@@ -16,7 +16,7 @@ const BETA_HREF = 'mailto:hei@tickethalo.com?subject=Beta%20access%20-%20comedy%
 
 /** The violet CTA from the design. The orange accent stays the page's accent colour. */
 const VIOLET_CTA =
-  'bg-[#4c1d95] text-white hover:bg-[#3d1578] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4c1d95]'
+  'bg-[var(--ev-text)] text-white hover:bg-[var(--ev-accent-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4c1d95]'
 
 const STEPS = [
   'Pick comedians for your club',

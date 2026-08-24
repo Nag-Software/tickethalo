@@ -123,7 +123,7 @@ async function ensurePercentAllocationWithinLimit(
   }, 0)
 
   if (currentTotal + nextPercent > 100.0001) {
-    throw new Error('Total prosent for lineupen kan ikke overstige 100%.')
+    throw new Error('Total percentage for the lineup cannot exceed 100%.')
   }
 }
 
@@ -182,11 +182,11 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     : null
 
   if (compensationPercent != null && (Number.isNaN(compensationPercent) || compensationPercent < 0 || compensationPercent > 100)) {
-    throw new Error('Prosent må være mellom 0 og 100.')
+    throw new Error('Percentage must be between 0 and 100.')
   }
 
   if (compensationAmount != null && (Number.isNaN(compensationAmount) || compensationAmount < 0)) {
-    throw new Error('Fast beløp må være 0 eller høyere.')
+    throw new Error('A fixed amount must be 0 or higher.')
   }
 
   return {
@@ -261,7 +261,7 @@ async function cloneMarketingDesigns(
       .from(MARKETING_DESIGN_BUCKET)
       .copy(design.file_path, nextPath)
 
-    if (copyError) throw new Error('Kunne ikke kopiere designfilene fra showet som klones.')
+    if (copyError) throw new Error('Could not copy the design files from the show being cloned.')
 
     filePath = nextPath
     const { data: urlData } = db.storage.from(MARKETING_DESIGN_BUCKET).getPublicUrl(nextPath)
@@ -411,19 +411,19 @@ export async function uploadMarketingDesignAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const designFile = formData.get('design_file')
 
-  if (!showId) throw new Error('Show mangler.')
+  if (!showId) throw new Error('Show is missing.')
   await assertShowAccess(showId)
   if (!(designFile instanceof File) || designFile.size === 0) {
-    throw new Error('Velg en bildefil først.')
+    throw new Error('Pick an image file first.')
   }
 
   if (designFile.size > MAX_MARKETING_DESIGN_BYTES) {
-    throw new Error('Designfilen kan maks være 50 MB.')
+    throw new Error('The design file can be at most 50 MB.')
   }
 
   const fileType = marketingDesignFileType(designFile)
   if (!fileType) {
-    throw new Error('Design må være PNG, JPG, WebP, GIF, AVIF eller HEIC/HEIF.')
+    throw new Error('The design must be PNG, JPG, WebP, GIF, AVIF or HEIC/HEIF.')
   }
 
   const db = createAdminClient()
@@ -435,7 +435,7 @@ export async function uploadMarketingDesignAction(formData: FormData) {
     .from(MARKETING_DESIGN_BUCKET)
     .upload(filePath, designFile, { contentType: mimeType, upsert: false })
 
-  if (uploadError) throw new Error('Designfilen kunne ikke lastes opp akkurat nå.')
+  if (uploadError) throw new Error('The design file could not be uploaded right now.')
 
   const { data: urlData } = db.storage.from(MARKETING_DESIGN_BUCKET).getPublicUrl(filePath)
   const { data: design, error: insertError } = await db
@@ -481,7 +481,7 @@ export async function selectMarketingDesignAction(formData: FormData) {
   const designId = optionalText(formData.get('design_id'))
   const db = createAdminClient()
 
-  if (!showId) throw new Error('Show mangler.')
+  if (!showId) throw new Error('Show is missing.')
   await assertShowAccess(showId)
 
   if (designId) {
@@ -492,7 +492,7 @@ export async function selectMarketingDesignAction(formData: FormData) {
       .eq('show_id', showId)
       .single()
 
-    if (error || !design) throw new Error('Designmalen finnes ikke på dette showet.')
+    if (error || !design) throw new Error('That design template does not exist on this show.')
   }
 
   const { error } = await db
@@ -509,7 +509,7 @@ export async function deleteMarketingDesignAction(formData: FormData) {
   const designId = formData.get('design_id') as string
   const db = createAdminClient()
 
-  if (!showId || !designId) throw new Error('Mangler show eller design.')
+  if (!showId || !designId) throw new Error('Show or design is missing.')
   await assertShowAccess(showId)
 
   const { data: design, error } = await db
@@ -519,7 +519,7 @@ export async function deleteMarketingDesignAction(formData: FormData) {
     .eq('show_id', showId)
     .single()
 
-  if (error || !design) throw new Error('Designmalen finnes ikke på dette showet.')
+  if (error || !design) throw new Error('That design template does not exist on this show.')
 
   await db
     .from('shows')
@@ -567,17 +567,17 @@ export async function startBookingAction(formData: FormData) {
     .eq('show_id', showId)
 
   if (reqError) throw new Error(reqError.message)
-  if (!reqs || reqs.length === 0) throw new Error('Legg til minst én lineup-plass før booking startes.')
+  if (!reqs || reqs.length === 0) throw new Error('Add at least one lineup spot before starting booking.')
 
   for (const req of reqs) {
-    if (!req.role_name?.trim()) throw new Error('Alle lineup-plasser må ha et rollenavn.')
-    if (!req.compensation_type) throw new Error('Alle lineup-plasser må ha honorarmodell satt.')
+    if (!req.role_name?.trim()) throw new Error('Every lineup spot must have a role name.')
+    if (!req.compensation_type) throw new Error('Every lineup spot must have a fee model set.')
   }
 
   const percentTotal = reqs
     .filter((r) => r.compensation_type === 'percent')
     .reduce((sum, r) => sum + (r.compensation_percent ?? 0), 0)
-  if (percentTotal > 100) throw new Error(`Prosentfordeling overstiger 100 % (${percentTotal} %).`)
+  if (percentTotal > 100) throw new Error(`Percentage allocation exceeds 100% (${percentTotal}%).`)
 
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).eq('status', 'draft')
   scheduleShowAutomation(showId, 'manual-start')
@@ -600,8 +600,8 @@ export async function updateShowDetailsAction(formData: FormData) {
   const show = await assertShowAccess(showId)
   const db = createAdminClient()
 
-  // Valutaen velges ikke per show — den er registrert på klubben under
-  // Min klubb, og showet følger den.
+  // The currency is not picked per show — it is registered on the club under
+  // My club, and the show follows it.
   const { data: club } = show.club_id
     ? await db.from('clubs').select('currency').eq('id', show.club_id).maybeSingle()
     : { data: null }
@@ -617,11 +617,15 @@ export async function updateShowDetailsAction(formData: FormData) {
     venue_address: optionalText(formData.get('venue_address')),
     capacity: optionalInteger(formData.get('capacity')),
     ticket_price: optionalMoneyToMinor(formData.get('ticket_price')),
-    // Uten klubbvaluta lar vi showets egen stå — den skal ikke falle tilbake til NOK.
+    // Without a club currency we leave the show's own — it must not fall back to NOK.
     ...(club?.currency ? { currency: normalizeCurrency(club.currency) } : {}),
   }).eq('id', showId)
 
+  // Next redacts the message on a thrown error in production, and a taken slug
+  // is the one failure the booker can actually fix, so it comes back as a value.
+  if (error?.code === '23505') return { error: 'That slug is already used by another show.' }
   if (error) throw new Error(error.message)
+
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -640,12 +644,105 @@ export async function updateRequirementAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
+/**
+ * The role for a single lineup spot, set straight from the booking card.
+ *
+ * Only the role is written — score, energy, gender and fee keep whatever the
+ * booker set on the requirement.
+ */
+export async function updateSpotRoleAction(formData: FormData) {
+  const showId = String(formData.get('show_id') ?? '')
+  const reqId = String(formData.get('req_id') ?? '')
+  await assertRequirementAccess(showId, reqId)
+
+  const roleName = canonicalRoleLabel(String(formData.get('role_name') ?? '').trim())
+  if (!roleName) throw new Error('Pick a role for this spot.')
+
+  const db = createAdminClient()
+  const { error } = await db
+    .from('show_requirements')
+    .update({ role_name: roleName })
+    .eq('id', reqId)
+    .eq('show_id', showId)
+
+  if (error) throw new Error(error.message)
+
+  // Another role matches other comedians, so an open spot is offered again.
+  scheduleShowAutomation(showId, `spot-role-${reqId}`)
+  revalidatePath(`/admin-app/shows/${showId}`)
+}
+
+/**
+ * The fee for a single lineup spot, set straight from the booking card.
+ *
+ * The fee lives on the requirement, but the artist reads it off their own spot
+ * or offer — so those follow along, the same way they are set when a spot is
+ * created or an offer is moved. A paid-out spot is left alone.
+ */
+export async function updateSpotFeeAction(formData: FormData) {
+  const showId = String(formData.get('show_id') ?? '')
+  const reqId = String(formData.get('req_id') ?? '')
+  await assertRequirementAccess(showId, reqId)
+
+  const compensationType = optionalCompensationType(formData.get('compensation_type'))
+  const compensationAmount = compensationType === 'fixed'
+    ? optionalMoneyToMinor(formData.get('compensation_amount'))
+    : null
+  const compensationPercent = compensationType === 'percent'
+    ? optionalDecimal(formData.get('compensation_percent'))
+    : null
+
+  if (compensationPercent != null && (Number.isNaN(compensationPercent) || compensationPercent < 0 || compensationPercent > 100)) {
+    throw new Error('Percentage must be between 0 and 100.')
+  }
+
+  if (compensationAmount != null && (Number.isNaN(compensationAmount) || compensationAmount < 0)) {
+    throw new Error('A fixed amount must be 0 or higher.')
+  }
+
+  await ensurePercentAllocationWithinLimit(showId, compensationPercent, reqId)
+
+  const db = createAdminClient()
+  const { error } = await db
+    .from('show_requirements')
+    .update({
+      compensation_type: compensationType,
+      compensation_amount: compensationAmount,
+      compensation_percent: compensationPercent,
+    })
+    .eq('id', reqId)
+    .eq('show_id', showId)
+
+  if (error) throw new Error(error.message)
+
+  const feeAmount = compensationType === 'fixed' ? compensationAmount : null
+  const [spotResult, offerResult] = await Promise.all([
+    db
+      .from('confirmed_spots')
+      .update({ fee_amount: feeAmount })
+      .eq('show_id', showId)
+      .eq('show_requirement_id', reqId)
+      .in('status', ['confirmed', 'completed']),
+    db
+      .from('booking_offers')
+      .update({ fee_amount: feeAmount })
+      .eq('show_id', showId)
+      .eq('show_requirement_id', reqId)
+      .eq('status', 'sent'),
+  ])
+
+  const syncError = spotResult.error ?? offerResult.error
+  if (syncError) throw new Error(syncError.message)
+
+  revalidatePath(`/admin-app/shows/${showId}`)
+}
+
 export async function openRequirementEnergyLevelsAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const reqId = formData.get('req_id') as string
   const db = createAdminClient()
 
-  if (!showId || !reqId) throw new Error('Mangler show eller spot.')
+  if (!showId || !reqId) throw new Error('Show or spot is missing.')
   await assertRequirementAccess(showId, reqId)
 
   const { error } = await db
@@ -665,7 +762,7 @@ export async function reorderRequirementsAction(formData: FormData) {
   const orderedIds = JSON.parse(String(formData.get('ordered_ids') ?? '[]')) as string[]
 
   if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
-    throw new Error('Mangler lineup-rekkefølge.')
+    throw new Error('Lineup order is missing.')
   }
 
   await assertShowAccess(showId)
@@ -705,8 +802,8 @@ export async function bookShowAction(formData: FormData) {
   const result = await bookShow(showId)
   if (result.offersCreated === 0) {
     throw new Error(result.candidatesMatched === 0
-      ? 'Fant ingen godkjente artister som matcher score- og energikravene.'
-      : 'Ingen nye bookingtilbud ble sendt. Matchende artister har allerede fått tilbud eller er i lineupen.')
+      ? 'Found no approved artists matching the score and energy requirements.'
+      : 'No new booking offers were sent. Matching artists have already been offered a spot or are in the lineup.')
   }
   revalidatePath(`/admin-app/shows/${showId}`)
 }
@@ -714,8 +811,8 @@ export async function bookShowAction(formData: FormData) {
 export async function publishShowAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
-  // Publisering er det som åpner billettsalget. Uten en ferdig Connect-konto
-  // finnes det ingen selger å ta imot pengene på vegne av.
+  // Publishing is what opens ticket sales. Without a finished Connect account
+  // there is no seller to receive the money on behalf of.
   await assertClubCanSell(showId)
   const db = createAdminClient()
   await db.from('shows').update({
@@ -806,7 +903,7 @@ export async function removeSpotAndReopenAction(formData: FormData) {
     .eq('show_id', showId)
     .single()
 
-  if (!spot) throw new Error('Spot ikke funnet.')
+  if (!spot) throw new Error('Spot not found.')
 
   // Cancel active offers for this requirement so the slot re-opens cleanly
   await db
@@ -851,7 +948,7 @@ export async function moveSpotAction(formData: FormData) {
   ])
 
   if (req && (filled ?? 0) >= req.quantity) {
-    throw new Error('Denne rollen er allerede fylt.')
+    throw new Error('This role is already filled.')
   }
 
   const { error } = await db
@@ -870,7 +967,7 @@ export async function movePendingOfferAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const db = createAdminClient()
 
-  if (!offerId || !newReqId || !showId) throw new Error('Mangler tilbud, spot eller show.')
+  if (!offerId || !newReqId || !showId) throw new Error('Offer, spot or show is missing.')
   await assertOfferAccess(showId, offerId)
   await assertRequirementAccess(showId, newReqId)
 
@@ -893,11 +990,11 @@ export async function movePendingOfferAction(formData: FormData) {
       .in('status', ['confirmed', 'completed', 'paid']),
   ])
 
-  if (!offer) throw new Error('Tilbudet finnes ikke på dette showet.')
-  if (!requirement) throw new Error('Spotten finnes ikke på dette showet.')
-  if (offer.status !== 'sent') throw new Error('Kun tilbud som venter svar kan flyttes.')
+  if (!offer) throw new Error('That offer does not exist on this show.')
+  if (!requirement) throw new Error('That spot does not exist on this show.')
+  if (offer.status !== 'sent') throw new Error('Only offers awaiting a reply can be moved.')
   if (offer.show_requirement_id === newReqId) return
-  if ((filled ?? 0) >= requirement.quantity) throw new Error('Denne spotten er allerede fylt.')
+  if ((filled ?? 0) >= requirement.quantity) throw new Error('This spot is already filled.')
 
   const { error } = await db
     .from('booking_offers')
@@ -926,7 +1023,7 @@ export async function swapArtistAction(formData: FormData) {
     .eq('id', spotId)
     .single()
 
-  if (!oldSpot) throw new Error('Spot ikke funnet.')
+  if (!oldSpot) throw new Error('Spot not found.')
 
   const { data: existingSpot } = await db
     .from('confirmed_spots')
@@ -936,7 +1033,7 @@ export async function swapArtistAction(formData: FormData) {
     .in('status', ['confirmed', 'completed', 'paid'])
     .maybeSingle()
 
-  if (existingSpot) throw new Error('Denne artisten er allerede i lineupen.')
+  if (existingSpot) throw new Error('This artist is already in the lineup.')
 
   await db
     .from('confirmed_spots')
@@ -976,7 +1073,7 @@ export async function addArtistToRequirementAction(formData: FormData) {
     .in('status', ['confirmed', 'completed', 'paid'])
     .maybeSingle()
 
-  if (existingSpot) throw new Error('Denne artisten er allerede i lineupen.')
+  if (existingSpot) throw new Error('This artist is already in the lineup.')
 
   const { count: filled } = await db.from('confirmed_spots')
     .select('*', { count: 'exact', head: true })
@@ -984,7 +1081,7 @@ export async function addArtistToRequirementAction(formData: FormData) {
     .in('status', ['confirmed', 'completed', 'paid'])
 
   if (requirement && (filled ?? 0) >= requirement.quantity) {
-    throw new Error('Denne rollen er allerede fylt.')
+    throw new Error('This role is already filled.')
   }
 
   const feeAmount = requirement?.compensation_type === 'fixed' ? requirement.compensation_amount : null
@@ -1020,7 +1117,7 @@ export async function sendOfferToArtistAction(formData: FormData) {
   const requirementId = formData.get('show_requirement_id') as string
   await assertRequirementAccess(showId, requirementId)
 
-  if (!artistId) throw new Error('Velg en komiker å sende tilbud til.')
+  if (!artistId) throw new Error('Pick a comedian to send the offer to.')
 
   await sendManualBookingOffer(showId, artistId, requirementId)
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -1036,7 +1133,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
   const db = createAdminClient()
 
   if (!showId || !artistId || !requirementId) {
-    return manualSpotState('error', 'Velg artist og rolle før du legger til i lineup.')
+    return manualSpotState('error', 'Pick an artist and a role before adding to the lineup.')
   }
 
   const requirement = await assertRequirementAccess(showId, requirementId)
@@ -1049,7 +1146,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
     .in('status', ['confirmed', 'completed', 'paid'])
     .maybeSingle()
 
-  if (existingSpot) return manualSpotState('error', 'Denne artisten er allerede i lineupen.')
+  if (existingSpot) return manualSpotState('error', 'This artist is already in the lineup.')
 
   const { count: filled } = await db.from('confirmed_spots')
     .select('*', { count: 'exact', head: true })
@@ -1057,7 +1154,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
     .in('status', ['confirmed', 'completed', 'paid'])
 
   if (requirement && (filled ?? 0) >= requirement.quantity) {
-    return manualSpotState('error', 'Denne rollen er allerede fylt. Øk antall plasser eller fjern en artist først.')
+    return manualSpotState('error', 'This role is already filled. Add more spots or remove an artist first.')
   }
 
   const { error } = await db.from('confirmed_spots').insert({
@@ -1075,7 +1172,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['draft'])
   scheduleFullbookedAutomation(showId, 'manual-spot')
   revalidatePath(`/admin-app/shows/${showId}`)
-  return manualSpotState('success', 'Artisten ble lagt til i lineupen.')
+  return manualSpotState('success', 'The artist was added to the lineup.')
 }
 
 export async function updateSpotAction(formData: FormData) {
@@ -1104,7 +1201,7 @@ export async function updateSpotAction(formData: FormData) {
 export async function generatePosterAction(formData: FormData) {
   const showId = formData.get('show_id') as string
 
-  if (!showId) throw new Error('Mangler show-id for plakatgenerering.')
+  if (!showId) throw new Error('Show id is missing for poster generation.')
   await assertShowAccess(showId)
 
   const posterUrl = await generatePosterForShow(showId)
@@ -1183,12 +1280,12 @@ async function generatePosterForShow(showId: string) {
     throwOnError: true,
   })
 
-  if (!posterUrl) throw new Error('Kunne ikke generere plakat akkurat nå.')
+  if (!posterUrl) throw new Error('Could not generate the poster right now.')
 
   const { error: taskError } = await db.from('marketing_tasks').upsert({
     show_id: showId,
     task_key: 'upload_poster',
-    label: 'Lineup-plakat generert',
+    label: 'Lineup poster generated',
     is_completed: true,
   }, { onConflict: 'show_id,task_key', ignoreDuplicates: false })
   if (taskError) console.warn('[Poster] Marketing task update failed:', taskError)
@@ -1219,7 +1316,7 @@ export async function confirmLineupAction(formData: FormData) {
 
   const result = await automateFullbookedShow(showId)
   if (!result.fullbooked) {
-    throw new Error(result.message ?? 'Lineupen er ikke fullbooket ennå.')
+    throw new Error(result.message ?? 'The lineup is not fully booked yet.')
   }
 
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -1229,8 +1326,8 @@ export async function confirmLineupAction(formData: FormData) {
 /**
  * Publiserer lineupen selv om ikke alle plasser er fylt.
  *
- * Bookeren i klubben bestemmer selv når lineupen er god nok — ventende
- * tilbud trekkes ikke tilbake, så plasser kan fortsatt fylles etterpå.
+ * The club's booker decides when the lineup is good enough — pending offers
+ * are not withdrawn, so spots can still be filled afterwards.
  */
 export async function publishLineupAction(formData: FormData) {
   const showId = formData.get('show_id') as string
@@ -1238,7 +1335,7 @@ export async function publishLineupAction(formData: FormData) {
 
   const result = await automateFullbookedShow(showId, { force: true })
   if (!result.published) {
-    throw new Error(result.message ?? 'Kunne ikke publisere lineupen.')
+    throw new Error(result.message ?? 'Could not publish the lineup.')
   }
 
   revalidatePath(`/admin-app/shows/${showId}`)

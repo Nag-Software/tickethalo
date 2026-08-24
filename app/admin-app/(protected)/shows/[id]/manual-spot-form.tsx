@@ -64,18 +64,18 @@ export function ManualSpotForm({
       <label className="space-y-1 md:col-span-2">
         <span className="text-xs font-medium text-muted-foreground">Artist</span>
         <select name="artist_id" required disabled={isPending} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60">
-          <option value="">Velg artist</option>
+          <option value="">Select artist</option>
           {artists.map(artist => (
             <option key={artist.id} value={artist.id}>
-              {artist.stage_name ?? artist.full_name} · score {artist.admin_score ?? '—'} · {artist.admin_energy_level ?? 'energi ukjent'}
+              {artist.stage_name ?? artist.full_name} · score {artist.admin_score ?? '—'} · {artist.admin_energy_level ?? 'energy unknown'}
             </option>
           ))}
         </select>
       </label>
       <label className="space-y-1 md:col-span-2">
-        <span className="text-xs font-medium text-muted-foreground">Rolle/krav</span>
+        <span className="text-xs font-medium text-muted-foreground">Role / requirement</span>
         <select name="show_requirement_id" required disabled={isPending} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60">
-          <option value="">Velg rolle</option>
+          <option value="">Select role</option>
           {requirements.map(req => (
             <option key={req.id} value={req.id}>{req.role_name} ({req.filled}/{req.quantity})</option>
           ))}
@@ -86,12 +86,12 @@ export function ManualSpotForm({
         <input name="fee_amount" type="number" min={0} step="0.01" placeholder="0" disabled={isPending} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60" />
       </label>
       <label className="space-y-1">
-        <span className="text-xs font-medium text-muted-foreground">Valuta</span>
+        <span className="text-xs font-medium text-muted-foreground">Currency</span>
         <input name="currency" defaultValue={currency} disabled={isPending} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60" />
       </label>
       <div className="flex justify-end md:col-span-6">
         <button type="submit" disabled={isPending} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60">
-          {isPending ? 'Legger til...' : 'Legg til i lineup'}
+          {isPending ? 'Adding…' : 'Add to lineup'}
         </button>
       </div>
     </form>

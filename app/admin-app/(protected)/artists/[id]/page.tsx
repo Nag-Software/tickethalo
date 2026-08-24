@@ -33,13 +33,13 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
         actions={
           <div className="flex items-center gap-2">
             <Link href="/admin-app/artists" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              ← Tilbake
+              ← Back
             </Link>
             <DeleteButton
               action={deleteArtistAction}
               id={artist.id}
               idField="artist_id"
-              confirmMessage={`Slett komikeren "${artist.full_name}"? Dette kan ikke angres.`}
+              confirmMessage={`Delete the comedian "${artist.full_name}"? This cannot be undone.`}
             />
           </div>
         }
@@ -53,38 +53,38 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
 
           <YouTubePlayerCard
             url={artist.social_links?.youtube ?? null}
-            title="Innsendt YouTube-video"
-            description="Videoen komikeren sendte inn i søknaden."
+            title="Submitted YouTube video"
+            description="The video the comedian sent in with their application."
           />
         </div>
 
         {/* ── Right: Admin review form ── */}
         <div className="space-y-4">
           <section className="rounded-xl border bg-card p-5 space-y-5">
-            <h2 className="font-semibold text-sm">Komikervurdering</h2>
+            <h2 className="font-semibold text-sm">Comedian review</h2>
 
-            <ToastActionForm action={saveArtistAdminReview} className="space-y-5" successMessage="Vurderingen er lagret.">
+            <ToastActionForm action={saveArtistAdminReview} className="space-y-5" successMessage="The review has been saved.">
               <input type="hidden" name="artist_id" value={artist.id} />
 
-              {/* Kjønn */}
+              {/* Gender */}
               <AdminChipGroup
-                label="Kjønn"
+                label="Gender"
                 name="gender"
                 current={artist.gender ?? ''}
                 chips={[
-                  { value: 'male', label: 'Mann' },
-                  { value: 'female', label: 'Kvinne' },
+                  { value: 'male', label: 'Male' },
+                  { value: 'female', label: 'Female' },
                 ]}
               />
 
-              {/* Energinivå */}
+              {/* Energy level */}
               <AdminChipGroup
-                label="Energinivå"
+                label="Energy level"
                 name="admin_energy_level"
                 current={artist.admin_energy_level ?? ''}
                 chips={[
-                  { value: 'high', label: 'Høy' },
-                  { value: 'low', label: 'Lav' },
+                  { value: 'high', label: 'High' },
+                  { value: 'low', label: 'Low' },
                 ]}
               />
 
@@ -109,9 +109,9 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 </div>
               </div>
 
-              {/* Kategorier — multi-select */}
+              {/* Categories — multi-select */}
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Kategorier</p>
+                <p className="text-xs font-medium text-muted-foreground">Categories</p>
                 <div className="flex flex-wrap gap-1.5">
                   {ARTIST_ROLE_OPTIONS.map((chip) => (
                     <label key={chip.value} className="cursor-pointer">
@@ -135,39 +135,39 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 <label className="text-xs font-medium text-muted-foreground">Status</label>
                 <select name="status" defaultValue={artist.status}
                   className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring">
-                  <option value="pending_review">Til vurdering</option>
-                  <option value="approved">Godkjent</option>
-                  <option value="rejected">Avvist</option>
-                  <option value="inactive">Inaktiv</option>
-                  <option value="flagged">Flagget</option>
+                  <option value="pending_review">Pending review</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="flagged">Flagged</option>
                 </select>
               </div>
 
               {/* Notes */}
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Notater</label>
+                <label className="text-xs font-medium text-muted-foreground">Notes</label>
                 <textarea
                   name="admin_notes"
                   defaultValue={artist.admin_notes ?? ''}
                   rows={3}
                   className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="Interne notater..."
+                  placeholder="Internal notes…"
                 />
               </div>
 
               {/* Flag */}
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Flagget</label>
+                <label className="text-xs font-medium text-muted-foreground">Flagged</label>
                 <select name="is_flagged" defaultValue={artist.is_flagged ? 'true' : 'false'}
                   className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring">
-                  <option value="false">Nei</option>
-                  <option value="true">Ja — flagget</option>
+                  <option value="false">No</option>
+                  <option value="true">Yes — flagged</option>
                 </select>
               </div>
 
               {artist.is_flagged && (
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Årsak til flagging</label>
+                  <label className="text-xs font-medium text-muted-foreground">Reason for flagging</label>
                   <input
                     name="flag_reason"
                     defaultValue={artist.flag_reason ?? ''}
@@ -178,7 +178,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
 
               <button type="submit"
                 className="w-full bg-primary text-primary-foreground rounded-md px-3 py-2 text-sm font-medium hover:bg-primary/90 transition-colors">
-                Lagre
+                Save
               </button>
             </ToastActionForm>
 
@@ -191,21 +191,21 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                     <input type="hidden" name="admin_score" value={artist.admin_score ?? 7} />
                     <button type="submit"
                       className="w-full text-xs px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
-                      ✓ Godkjenn
+                      ✓ Approve
                     </button>
                   </ToastActionForm>
                   <ToastActionForm action={rejectArtistAction} className="flex-1">
                     <input type="hidden" name="artist_id" value={artist.id} />
                     <button type="submit"
                       className="w-full text-xs px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors">
-                      ✕ Avvis
+                      ✕ Reject
                     </button>
                   </ToastActionForm>
                 </div>
               ) : artist.status === 'approved' ? (
-                <p className="text-xs text-emerald-600 font-medium">✓ Godkjent – endelig avgjørelse</p>
+                <p className="text-xs text-emerald-600 font-medium">✓ Approved – final decision</p>
               ) : artist.status === 'rejected' ? (
-                <p className="text-xs text-destructive font-medium">✕ Avvist – endelig avgjørelse</p>
+                <p className="text-xs text-destructive font-medium">✕ Rejected – final decision</p>
               ) : null}
             </div>
           </section>

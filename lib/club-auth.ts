@@ -122,7 +122,7 @@ export async function assertRequirementAccess(showId: string, requirementId: str
     .maybeSingle()
 
   if (!requirement) {
-    throw new Error('Denne lineup-plassen tilhører ikke showet.')
+    throw new Error('This lineup spot does not belong to the show.')
   }
 
   return requirement
@@ -172,7 +172,7 @@ export async function assertOfferAccess(showId: string, offerId: string) {
     .maybeSingle()
 
   if (!offer) {
-    throw new Error('Tilbudet tilhører ikke dette showet.')
+    throw new Error('The offer does not belong to this show.')
   }
 
   return offer
@@ -193,7 +193,7 @@ export async function assertSpotAccess(showId: string, spotId: string) {
     .maybeSingle()
 
   if (!spot) {
-    throw new Error('Spotten tilhører ikke dette showet.')
+    throw new Error('The spot does not belong to this show.')
   }
 
   return spot

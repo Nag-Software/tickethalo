@@ -21,7 +21,7 @@ function getOptionalText(formData: FormData, key: string) {
 function getRequiredText(formData: FormData, key: string, label: string) {
   const value = getOptionalText(formData, key)
   if (!value) {
-    throw new Error(`${label} er påkrevd.`)
+    throw new Error(`${label} is required.`)
   }
 
   return value
@@ -35,11 +35,11 @@ function getLogoFile(formData: FormData) {
   }
 
   if (!value.type.startsWith('image/')) {
-    throw new Error('Logoen må være et bilde.')
+    throw new Error('The logo must be an image.')
   }
 
   if (value.size > MAX_IMAGE_SIZE_BYTES) {
-    throw new Error('Logoen kan ikke være større enn 8 MB.')
+    throw new Error('The logo cannot be larger than 8 MB.')
   }
 
   return value
@@ -88,7 +88,7 @@ async function uploadClubLogo(clubId: string, file: File, bytes: Buffer) {
     .upload(path, bytes, { contentType: file.type, upsert: false })
 
   if (error) {
-    throw new Error('Kunne ikke laste opp logoen.')
+    throw new Error('Could not upload the logo.')
   }
 
   const { data } = admin.storage.from(CLUB_MEDIA_BUCKET).getPublicUrl(path)
@@ -97,8 +97,8 @@ async function uploadClubLogo(clubId: string, file: File, bytes: Buffer) {
 
 /**
  * Skriver lokasjonslista slik den ble sendt inn: rader som er borte slettes,
- * resten oppdateres i den rekkefølgen de står. Ider fra klienten kontrolleres
- * mot klubbens egne rader før de brukes.
+ * the rest are updated in the order they appear. Ids from the client are
+ * checked against the club's own rows before they are used.
  */
 async function syncClubLocations(clubId: string, locations: LocationInput[]) {
   const admin = createAdminClient()
@@ -119,7 +119,7 @@ async function syncClubLocations(clubId: string, locations: LocationInput[]) {
       .eq('club_id', clubId)
       .in('id', removedIds)
 
-    if (error) throw new Error('Kunne ikke fjerne lokasjonen.')
+    if (error) throw new Error('Could not remove the location.')
   }
 
   const updates = locations
@@ -141,7 +141,7 @@ async function syncClubLocations(clubId: string, locations: LocationInput[]) {
   )
 
   if (updateResults.some((result) => result.error)) {
-    throw new Error('Kunne ikke oppdatere lokasjonene.')
+    throw new Error('Could not update the locations.')
   }
 
   if (inserts.length > 0) {
@@ -154,7 +154,7 @@ async function syncClubLocations(clubId: string, locations: LocationInput[]) {
       })),
     )
 
-    if (error) throw new Error('Kunne ikke lagre lokasjonen.')
+    if (error) throw new Error('Could not save the location.')
   }
 }
 
@@ -172,10 +172,10 @@ export async function saveClubProfileAction(formData: FormData) {
     throw new Error('Fant ikke valgt klubb.')
   }
 
-  const name = getRequiredText(formData, 'name', 'Klubbnavn')
+  const name = getRequiredText(formData, 'name', 'Club name')
   const city = getOptionalText(formData, 'city')
   const description = getOptionalText(formData, 'description')
-  // Ukjente koder faller tilbake på NOK framfor å avvise hele lagringen.
+  // Unknown codes fall back to NOK rather than rejecting the whole save.
   const currency = normalizeCurrency(getOptionalText(formData, 'currency'))
   const locations = getLocations(formData)
 
@@ -184,7 +184,7 @@ export async function saveClubProfileAction(formData: FormData) {
   const keepsExistingLogo = getOptionalText(formData, 'existingLogoUrl') === currentClub.logo_url
 
   let logoUrl = currentClub.logo_url
-  // Fargen følger logoen: ny logo gir ny farge, fjernet logo gir standardfargen.
+  // The colour follows the logo: a new logo gives a new colour, a removed logo the default.
   let brandColor: string | null | undefined = undefined
 
   if (logoFile) {
@@ -209,11 +209,11 @@ export async function saveClubProfileAction(formData: FormData) {
     .eq('id', clubId)
 
   if (error) {
-    throw new Error('Kunne ikke lagre klubbprofilen.')
+    throw new Error('Could not save the club profile.')
   }
 
   await syncClubLocations(clubId, locations)
 
   revalidatePath('/admin-app')
-  revalidatePath('/admin-app/min-klubb')
+  revalidatePath('/admin-app/my-club')
 }

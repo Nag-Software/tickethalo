@@ -6,17 +6,17 @@ import { ToastActionForm } from '@/components/toast-action-form'
 import { ClubLocationsField } from '@/components/admin/club-locations-field'
 import { CurrencyField } from '@/components/admin/currency-field'
 import { CopyLink } from '@/components/admin/copy-link'
-import { saveClubProfileAction } from '@/app/admin-app/(protected)/min-klubb/actions'
+import { saveClubProfileAction } from '@/app/admin-app/(protected)/my-club/actions'
 import type { Club, ClubLocation } from '@/types/database'
 
 type ClubProfileFormProps = {
   club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency'>
   locations: Array<Pick<ClubLocation, 'id' | 'name' | 'address_line'>>
-  /** Full adresse til klubbsiden, klar til deling. */
+  /** Full address of the club page, ready to share. */
   clubUrl: string
 }
 
-/** Felles form på feltene: fylt flate framfor ramme, én ramme mindre per felt. */
+/** Shared look for the fields: a filled surface instead of a border. */
 const inputClass =
   'w-full rounded-2xl bg-zinc-100/80 px-4 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-foreground/20'
 
@@ -58,8 +58,8 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
 
   /**
-   * Filfeltet settes programmatisk, slik at «Fjern» faktisk tømmer det som
-   * sendes inn — ikke bare bildet på skjermen.
+   * The file input is set programmatically, so that "Remove" actually clears
+   * what gets submitted — not just the image on screen.
    */
   function replaceLogo(file: File | null) {
     const input = logoInputRef.current
@@ -74,7 +74,7 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
   return (
     <ToastActionForm
       action={saveClubProfileAction}
-      successMessage="Klubbprofilen ble lagret."
+      successMessage="Club profile saved."
       className="space-y-8"
     >
       <input
@@ -85,7 +85,7 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
         className="hidden"
         onChange={(event) => replaceLogo(event.currentTarget.files?.[0] ?? null)}
       />
-      {/* Tom verdi = logoen ble fjernet. */}
+      {/* Empty value = the logo was removed. */}
       <input
         type="hidden"
         name="existingLogoUrl"
@@ -100,19 +100,19 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
           className="grid size-20 shrink-0 place-content-center overflow-hidden rounded-3xl bg-zinc-100 transition-colors hover:bg-zinc-200/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
         >
           {logoPreview ? (
-            // Blob-URL rett etter valg, så next/image gir ingenting her.
+            // Blob URL right after picking, so next/image buys us nothing here.
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoPreview} alt="" className="size-full object-contain p-2" />
           ) : (
             <Building2 className="size-6 text-muted-foreground" aria-hidden />
           )}
-          <span className="sr-only">Last opp logo</span>
+          <span className="sr-only">Upload logo</span>
         </button>
 
         <div className="space-y-1">
           <div className="text-sm font-medium text-foreground">Logo</div>
           <p className="text-xs text-muted-foreground">
-            Kvadratisk merke eller enkel logotype. Fargen på klubbsiden hentes herfra.
+            A square mark or a simple logotype. The club page colour is taken from this.
           </p>
           <div className="flex items-center gap-3 pt-1">
             <button
@@ -120,7 +120,7 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
               onClick={() => logoInputRef.current?.click()}
               className="text-xs font-medium text-foreground underline-offset-4 hover:underline"
             >
-              {logoPreview ? 'Bytt logo' : 'Last opp'}
+              {logoPreview ? 'Replace logo' : 'Upload'}
             </button>
             {logoPreview && (
               <button
@@ -129,18 +129,18 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
                 className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Trash2 className="size-3.5" aria-hidden />
-                Fjern
+                Remove
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Feltene */}
+      {/* Fields */}
       <div className="space-y-6">
         <TextField
           name="name"
-          label="Klubbnavn"
+          label="Club name"
           defaultValue={club.name}
           placeholder="Latter Oslo"
           required
@@ -148,10 +148,10 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
 
         <TextField
           name="city"
-          label="By"
+          label="City"
           defaultValue={club.city ?? ''}
           placeholder="Oslo"
-          hint="Brukes i filtre og på eventene."
+          hint="Used in filters and on the events."
         />
 
         <ClubLocationsField locations={locations} />
@@ -160,17 +160,17 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
 
         <div className="space-y-2">
           <label htmlFor="club-description" className="text-sm font-medium text-foreground">
-            Om klubben
+            About the club
           </label>
           <textarea
             id="club-description"
             name="description"
             defaultValue={club.description ?? ''}
             rows={5}
-            placeholder="Kort om stemningen, publikum og hva som gjør klubben spesiell."
+            placeholder="A little about the vibe, the audience and what makes the club special."
             className={`resize-y py-3 ${inputClass}`}
           />
-          <p className="text-xs text-muted-foreground">Noen få setninger. Står øverst på klubbsiden.</p>
+          <p className="text-xs text-muted-foreground">A few sentences. Shown at the top of the club page.</p>
         </div>
       </div>
 
@@ -182,7 +182,7 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
             type="submit"
             className="inline-flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background transition-opacity hover:opacity-90"
           >
-            Lagre
+            Save
           </button>
         </div>
       </div>

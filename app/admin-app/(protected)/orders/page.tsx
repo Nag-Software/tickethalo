@@ -12,7 +12,7 @@ type PaymentMethodInfo = {
 
 const unknownPaymentMethod: PaymentMethodInfo = {
   key: 'unknown',
-  label: 'Ukjent',
+  label: 'Unknown',
 }
 
 const statusStyles: Record<string, string> = {
@@ -24,24 +24,24 @@ const statusStyles: Record<string, string> = {
 }
 
 const statusLabels: Record<string, string> = {
-  pending: 'Venter',
-  paid: 'Betalt',
-  failed: 'Feilet',
-  refunded: 'Refundert',
-  cancelled: 'Avbrutt',
+  pending: 'Pending',
+  paid: 'Paid',
+  failed: 'Failed',
+  refunded: 'Refunded',
+  cancelled: 'Cancelled',
 }
 
 /**
- * Betalingsmåten lagres på ordren ved kjøp (migrasjon 032). Før dette hentet
- * lista én Stripe-sesjon per rad — hundre ordrer ga hundre kall, og etter
- * overgangen til Connect ville hvert av dem måttet vite hvilken klubbkonto
- * sesjonen lå på.
+ * The payment method is stored on the order at purchase time (migration 032).
+ * Before that the list fetched one Stripe session per row — a hundred orders
+ * meant a hundred calls, and after the move to Connect each of them would have
+ * had to know which club account the session lived on.
  */
 function resolvePaymentMethod(type: string | null): PaymentMethodInfo {
   if (!type) return unknownPaymentMethod
   if (type === 'vipps') return { key: 'vipps', label: 'Vipps' }
   if (type === 'klarna') return { key: 'klarna', label: 'Klarna' }
-  if (type === 'card') return { key: 'card', label: 'Bankkort' }
+  if (type === 'card') return { key: 'card', label: 'Card' }
   return unknownPaymentMethod
 }
 
@@ -124,20 +124,20 @@ export default async function OrdersPage() {
 
   return (
     <div>
-      <AdminHeader title="Ordere" description={`${orders?.length ?? 0} ordre`} />
+      <AdminHeader title="Orders" description={`${orders?.length ?? 0} orders`} />
       <div className="p-6">
         <div className="rounded-lg border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/30 border-b text-xs text-muted-foreground">
-                <th className="text-left px-4 py-2.5 font-medium">Kjøper</th>
+                <th className="text-left px-4 py-2.5 font-medium">Buyer</th>
                 <th className="text-left px-4 py-2.5 font-medium">Show</th>
-                <th className="text-left px-4 py-2.5 font-medium">Beløp</th>
-                <th className="text-left px-4 py-2.5 font-medium">Klubbens andel</th>
+                <th className="text-left px-4 py-2.5 font-medium">Amount</th>
+                <th className="text-left px-4 py-2.5 font-medium">Club&apos;s share</th>
                 <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                <th className="text-left px-4 py-2.5 font-medium">Betalingsmåte</th>
-                <th className="text-left px-4 py-2.5 font-medium">Tidspunkt</th>
-                <th className="text-right px-4 py-2.5 font-medium">Refusjon</th>
+                <th className="text-left px-4 py-2.5 font-medium">Payment method</th>
+                <th className="text-left px-4 py-2.5 font-medium">Time</th>
+                <th className="text-right px-4 py-2.5 font-medium">Refund</th>
               </tr>
             </thead>
             <tbody>
@@ -149,7 +149,7 @@ export default async function OrdersPage() {
                 const money = (value: number | null | undefined) =>
                   value === null || value === undefined
                     ? '—'
-                    : new Intl.NumberFormat('nb-NO', {
+                    : new Intl.NumberFormat('en-GB', {
                         style: 'currency',
                         currency: (o.currency ?? 'NOK').toUpperCase(),
                         maximumFractionDigits: 0,
@@ -164,14 +164,14 @@ export default async function OrdersPage() {
                     <td className="px-4 py-3 text-muted-foreground">{show?.title ?? '—'}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{money(o.amount_total)}</div>
-                      <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} stk</div>
+                      <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} pcs</div>
                     </td>
-                    {/* Klubben er selger. Beløpet over er kundens betaling;
-                        dette er det klubben sitter igjen med etter provisjon. */}
+                    {/* The club is the seller. The amount above is what the customer
+                        paid; this is what the club keeps after commission. */}
                     <td className="px-4 py-3">
                       <div className="font-medium">{money(o.club_net_amount)}</div>
                       <div className="text-xs text-muted-foreground">
-                        {o.platform_fee_amount ? `${money(o.platform_fee_amount)} provisjon` : '—'}
+                        {o.platform_fee_amount ? `${money(o.platform_fee_amount)} commission` : '—'}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -180,7 +180,7 @@ export default async function OrdersPage() {
                           {statusLabels[o.status] ?? o.status}
                         </span>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isCheckedIn ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'}`}>
-                          {isCheckedIn ? 'Innsjekket' : 'Ikke sjekket inn'}
+                          {isCheckedIn ? 'Checked in' : 'Not checked in'}
                         </span>
                       </div>
                     </td>
@@ -188,7 +188,7 @@ export default async function OrdersPage() {
                       <PaymentMethodBadge method={paymentMethod} />
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(o.created_at).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">
@@ -209,7 +209,7 @@ export default async function OrdersPage() {
             </tbody>
           </table>
           {!orders?.length && (
-            <p className="text-center py-12 text-muted-foreground text-sm">Ingen ordere ennå.</p>
+            <p className="text-center py-12 text-muted-foreground text-sm">No orders yet.</p>
           )}
         </div>
       </div>

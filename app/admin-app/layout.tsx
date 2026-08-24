@@ -4,7 +4,7 @@
  * `/admin-app/login` from inside the same layout that renders it — doing so
  * left the router refetching the login route forever instead of committing it.
  */
-export const metadata = { title: 'Booking-center — Tickethalo' }
+export const metadata = { title: 'Booking centre — Tickethalo' }
 
 export default function AdminAppLayout({ children }: { children: React.ReactNode }) {
   return children

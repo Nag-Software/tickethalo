@@ -23,9 +23,9 @@ export type ReadinessBlocker = 'approval' | 'score' | 'role'
 const BLOCKER_ORDER: ReadinessBlocker[] = ['approval', 'score', 'role']
 
 export const READINESS_BLOCKER_LABELS: Record<ReadinessBlocker, string> = {
-  approval: 'Ikke godkjent',
-  score: 'Mangler score',
-  role: 'Mangler rolle',
+  approval: 'Not approved',
+  score: 'Score missing',
+  role: 'Role missing',
 }
 
 /** Alt som hindrer at komikeren kan bookes. Tom liste = klar. */

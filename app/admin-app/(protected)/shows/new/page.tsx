@@ -8,7 +8,7 @@ import { getClubAccess } from '@/lib/club-auth'
 import { CURRENCIES, normalizeCurrency } from '@/lib/currencies'
 
 
-/** Valutaen klubben selger i — standard for et nytt show. */
+/** The currency the club sells in — the default for a new show. */
 async function getClubCurrency(clubId: string | null) {
   if (!clubId) return normalizeCurrency(null)
 
@@ -54,11 +54,11 @@ export default async function NewShowPage({
       return (
         <div>
           <AdminHeader
-            title="Nytt event fra mal"
-            description={`Kloner: ${template.title}`}
+            title="New event from template"
+            description={`Cloning: ${template.title}`}
             actions={
               <Link href="/admin-app/shows/new" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                ← Velg annen mal
+                ← Pick another template
               </Link>
             }
           />
@@ -69,27 +69,27 @@ export default async function NewShowPage({
               {/* Show details */}
               <div className="rounded-2xl border bg-card p-5 shadow-sm md:p-6">
                 <div className="mb-5 space-y-1">
-                  <h2 className="font-semibold text-sm">Eventdetaljer</h2>
-                  <p className="text-sm text-muted-foreground">Juster navn, dato og praktiske detaljer før eventet opprettes.</p>
+                  <h2 className="font-semibold text-sm">Event details</h2>
+                  <p className="text-sm text-muted-foreground">Adjust the name, date and practical details before the event is created.</p>
                 </div>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <Field name="title" label="Tittel *" required defaultValue={template.title} />
+                  <Field name="title" label="Title *" required defaultValue={template.title} />
                   <Field name="slug" label="Slug *" required placeholder={`${template.slug}-2`} />
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <Field name="date" label="Dato *" type="date" required />
+                  <Field name="date" label="Date *" type="date" required />
                   <Field name="start_time" label="Start" type="time" defaultValue={(template.start_time ?? '').slice(0, 5)} />
-                  <Field name="end_time" label="Slutt" type="time" defaultValue={(template.end_time ?? '').slice(0, 5)} />
+                  <Field name="end_time" label="End" type="time" defaultValue={(template.end_time ?? '').slice(0, 5)} />
                 </div>
                 <div className="mt-4">
-                  <Field name="venue_address" label="Sted / adresse" defaultValue={template.venue_address ?? ''} />
+                  <Field name="venue_address" label="Venue / address" defaultValue={template.venue_address ?? ''} />
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <Field name="capacity" label="Kapasitet" type="number" min={1} defaultValue={template.capacity?.toString() ?? ''} />
-                  <Field name="ticket_price" label="Billettpris (kr)" type="number" min={0} step={0.01}
+                  <Field name="capacity" label="Capacity" type="number" min={1} defaultValue={template.capacity?.toString() ?? ''} />
+                  <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01}
                     defaultValue={template.ticket_price ? String(template.ticket_price / 100) : ''} />
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">Valuta</label>
+                    <label className="text-xs font-medium text-muted-foreground">Currency</label>
                     <select name="currency" defaultValue={normalizeCurrency(template.currency)}
                       className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
                       <CurrencyOptions />
@@ -128,11 +128,11 @@ export default async function NewShowPage({
   return (
     <div>
       <AdminHeader
-        title="Nytt show"
-        description="Velg en mal eller start blankt"
+        title="New show"
+        description="Pick a template or start blank"
         actions={
           <Link href="/admin-app/shows" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            ← Tilbake
+            ← Back
           </Link>
         }
       />
@@ -141,24 +141,24 @@ export default async function NewShowPage({
         <div className="rounded-2xl border bg-card p-5 shadow-sm md:p-6">
           <div className="mb-5 space-y-1">
             <h2 className="font-semibold text-sm">Blank show</h2>
-            <p className="text-sm text-muted-foreground">Start fra bunnen av med de viktigste detaljene først.</p>
+            <p className="text-sm text-muted-foreground">Start from scratch with the essentials first.</p>
           </div>
           <ToastActionForm action={createShowAction} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field name="title" label="Tittel *" required />
-              <Field name="slug" label="Slug *" required placeholder="mitt-show-2026" />
+              <Field name="title" label="Title *" required />
+              <Field name="slug" label="Slug *" required placeholder="my-show-2026" />
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Field name="date" label="Dato *" type="date" required />
+              <Field name="date" label="Date *" type="date" required />
               <Field name="start_time" label="Start" type="time" />
-              <Field name="end_time" label="Slutt" type="time" />
+              <Field name="end_time" label="End" type="time" />
             </div>
-            <Field name="venue_address" label="Sted / adresse" />
+            <Field name="venue_address" label="Venue / address" />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Field name="capacity" label="Kapasitet" type="number" min={1} />
-              <Field name="ticket_price" label="Billettpris (kr)" type="number" min={0} step={0.01} placeholder="199" />
+              <Field name="capacity" label="Capacity" type="number" min={1} />
+              <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01} placeholder="199" />
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Valuta</label>
+                <label className="text-xs font-medium text-muted-foreground">Currency</label>
                 <select name="currency" defaultValue={clubCurrency}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
                   <CurrencyOptions />
@@ -167,7 +167,7 @@ export default async function NewShowPage({
             </div>
             <button type="submit"
               className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-              Opprett show
+              Create show
             </button>
           </ToastActionForm>
         </div>
@@ -176,8 +176,8 @@ export default async function NewShowPage({
         {(shows ?? []).length > 0 && (
           <div className="rounded-2xl border bg-card p-5 shadow-sm md:p-6">
             <div className="mb-5 space-y-1">
-              <h2 className="font-semibold text-sm">Klon fra eksisterende show</h2>
-              <p className="text-sm text-muted-foreground">Bruk en av de 5 siste malene som utgangspunkt for å spare tid.</p>
+              <h2 className="font-semibold text-sm">Clone an existing show</h2>
+              <p className="text-sm text-muted-foreground">Use one of the last 5 shows as a starting point to save time.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {(shows ?? []).map(s => (
@@ -204,10 +204,10 @@ export default async function NewShowPage({
                   <div className="space-y-1 p-4">
                     <p className="font-semibold text-sm transition-colors group-hover:text-primary">{s.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {s.start_time ? s.start_time.slice(0, 5) : 'Tid kommer'}
+                      {s.start_time ? s.start_time.slice(0, 5) : 'Time TBA'}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {s.venue_address ?? s.venue_name ?? 'Sted kommer'}
+                      {s.venue_address ?? s.venue_name ?? 'Venue TBA'}
                     </p>
                   </div>
                 </Link>

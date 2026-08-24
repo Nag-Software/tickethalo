@@ -13,7 +13,7 @@ import {
 } from '@/lib/stripe-connect'
 
 /**
- * Økonomisiden i klubbadmin. Alle handlingene henter klubben fra
+ * The finance page in club admin. Every action resolves the club from
  * innloggingen — en klubb-ID fra skjemaet ville latt hvem som helst styre en
  * annen klubbs Stripe-konto.
  */
@@ -35,7 +35,7 @@ export async function startClubOnboardingAction() {
 
 export async function openClubDashboardAction() {
   const club = await currentClub()
-  if (!club.stripe_account_id) throw new Error('Klubben har ingen Stripe-konto ennå.')
+  if (!club.stripe_account_id) throw new Error('The club does not have a Stripe account yet.')
 
   const url = await createDashboardLink(club.stripe_account_id)
   redirect(url)
@@ -43,16 +43,16 @@ export async function openClubDashboardAction() {
 
 export async function refreshClubStatusAction() {
   const club = await currentClub()
-  if (!club.stripe_account_id) throw new Error('Klubben har ingen Stripe-konto ennå.')
+  if (!club.stripe_account_id) throw new Error('The club does not have a Stripe account yet.')
 
   await syncAccountStatus(club.stripe_account_id)
-  revalidatePath('/admin-app/okonomi')
+  revalidatePath('/admin-app/finances')
 }
 
 /**
- * Selgeropplysningene står på billetten kunden får. De hører hjemme her og
- * ikke på klubbprofilen, fordi de er en forutsetning for å kunne selge —
- * ikke noe publikum ser på klubbsiden.
+ * The seller details appear on the ticket the customer gets. They belong here
+ * and not on the club profile, because they are a precondition for selling —
+ * not something the audience sees on the club page.
  */
 export async function saveSellerDetailsAction(formData: FormData) {
   const clubId = await getDefaultClubIdForAdmin()
@@ -67,7 +67,7 @@ export async function saveSellerDetailsAction(formData: FormData) {
 
   const orgNumber = text('org_number')?.replace(/\s/g, '') ?? null
   if (orgNumber && !/^\d{9}$/.test(orgNumber)) {
-    throw new Error('Organisasjonsnummeret må være ni siffer.')
+    throw new Error('The company registration number must be nine digits.')
   }
 
   const supportEmail = text('support_email')
@@ -84,7 +84,7 @@ export async function saveSellerDetailsAction(formData: FormData) {
     })
     .eq('id', clubId)
 
-  if (error) throw new Error('Kunne ikke lagre selgeropplysningene.')
+  if (error) throw new Error('Could not save the seller details.')
 
-  revalidatePath('/admin-app/okonomi')
+  revalidatePath('/admin-app/finances')
 }

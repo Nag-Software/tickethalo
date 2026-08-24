@@ -48,7 +48,7 @@ export async function rejectArtistAction(formData: FormData) {
 
 export async function updateArtistProfile(formData: FormData) {
   const artistId = formData.get('artist_id') as string
-  if (!artistId) throw new Error('Mangler artist_id')
+  if (!artistId) throw new Error('artist_id is missing')
   const db = createAdminClient()
 
   const socialLinksRaw = formData.get('social_links') as string | null

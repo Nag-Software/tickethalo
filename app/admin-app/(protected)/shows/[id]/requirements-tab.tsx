@@ -99,29 +99,29 @@ const WIZARD_INITIAL: WizardState = {
 const SCORE_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
 
 const ENERGY_OPTIONS: { value: RequirementEnergy; label: string; icon: string }[] = [
-  { value: 'any', label: 'Alle', icon: '∞' },
-  { value: 'high', label: 'Høy', icon: '⚡' },
-  { value: 'low', label: 'Lav', icon: '🌊' },
-  { value: 'uncertain', label: 'Ukjent', icon: '?' },
+  { value: 'any', label: 'Any', icon: '∞' },
+  { value: 'high', label: 'High', icon: '⚡' },
+  { value: 'low', label: 'Low', icon: '🌊' },
+  { value: 'uncertain', label: 'Unknown', icon: '?' },
 ]
 
 const GENDER_OPTIONS: { value: RequirementGender; label: string; icon: string }[] = [
-  { value: 'any', label: 'Alle', icon: '⚡' },
-  { value: 'male', label: 'Mann', icon: '♂' },
-  { value: 'female', label: 'Dame', icon: '♀' },
+  { value: 'any', label: 'Any', icon: '⚡' },
+  { value: 'male', label: 'Male', icon: '♂' },
+  { value: 'female', label: 'Female', icon: '♀' },
 ]
 
 const ENERGY_LABELS: Record<RequirementEnergy, string> = {
-  any: 'Alle energinivåer',
-  high: 'Høy energi',
-  low: 'Lav energi',
-  uncertain: 'Ukjent energi',
+  any: 'All energy levels',
+  high: 'High energy',
+  low: 'Low energy',
+  uncertain: 'Unknown energy',
 }
 
 const GENDER_LABELS: Record<RequirementGender, string> = {
-  any: 'Alle kjønn',
-  male: 'Mann',
-  female: 'Dame',
+  any: 'All genders',
+  male: 'Male',
+  female: 'Female',
 }
 
 const COMPENSATION_TYPE_OPTIONS: Array<{
@@ -130,9 +130,9 @@ const COMPENSATION_TYPE_OPTIONS: Array<{
   hint: string
   accent: string
 }> = [
-  { value: 'fixed', label: 'Fast beløp', hint: 'Sett et konkret honorar per komiker.', accent: 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20' },
-  { value: 'percent', label: 'Prosent', hint: 'Fordel en andel av totalen mellom komikerne.', accent: 'bg-sky-500/10 text-sky-700 ring-sky-500/20' },
-  { value: '', label: 'Sett senere', hint: 'La plassen stå uten honorar inntil videre.', accent: 'bg-muted text-muted-foreground ring-border' },
+  { value: 'fixed', label: 'Fixed amount', hint: 'Set a specific fee per comedian.', accent: 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20' },
+  { value: 'percent', label: 'Percentage', hint: 'Share a cut of the total between the comedians.', accent: 'bg-sky-500/10 text-sky-700 ring-sky-500/20' },
+  { value: '', label: 'Set later', hint: 'Leave the spot without a fee for now.', accent: 'bg-muted text-muted-foreground ring-border' },
 ]
 
 const REQUIREMENT_DRAFTS_STORAGE_PREFIX = 'show-requirement-drafts:'
@@ -152,8 +152,8 @@ function formatEditableNumber(value: number | null) {
 }
 
 function formatCurrency(minorAmount: number | null, currency: string) {
-  if (minorAmount == null) return 'Ikke satt'
-  return new Intl.NumberFormat('nb-NO', {
+  if (minorAmount == null) return 'Not set'
+  return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
@@ -161,7 +161,7 @@ function formatCurrency(minorAmount: number | null, currency: string) {
 }
 
 function formatPercent(value: number) {
-  return new Intl.NumberFormat('nb-NO', {
+  return new Intl.NumberFormat('en-GB', {
     minimumFractionDigits: value % 1 === 0 ? 0 : 1,
     maximumFractionDigits: 2,
   }).format(value)
@@ -262,7 +262,7 @@ function blockingCompensationIssue(
   if (nextState.compensation_type === 'fixed') {
     const amount = toPlainNumber(nextState.compensation_amount)
     if (amount != null && amount < 0) {
-      return 'Beløpet må være 0 eller høyere.'
+      return 'The amount must be 0 or higher.'
     }
     return null
   }
@@ -270,12 +270,12 @@ function blockingCompensationIssue(
   if (nextState.compensation_type === 'percent') {
     const percent = toPlainNumber(nextState.compensation_percent)
     if (percent != null && (percent < 0 || percent > 100)) {
-      return 'Prosent må være mellom 0 og 100.'
+      return 'Percentage must be between 0 and 100.'
     }
 
     const projectedTotal = totalPercentAllocation(ids, states, { id, state: nextState })
     if (projectedTotal > 100.0001) {
-      return 'Total prosent kan ikke overstige 100%.'
+      return 'Total percentage cannot exceed 100%.'
     }
   }
 
@@ -294,15 +294,15 @@ function compensationIssue(
   }
 
   if (state.compensation_type === '') {
-    return { tone: 'warning', message: 'Velg honorarmodell' }
+    return { tone: 'warning', message: 'Pick a fee model' }
   }
 
   if (state.compensation_type === 'fixed' && toPlainNumber(state.compensation_amount) == null) {
-    return { tone: 'warning', message: 'Mangler fast beløp' }
+    return { tone: 'warning', message: 'Fixed amount missing' }
   }
 
   if (state.compensation_type === 'percent' && toPlainNumber(state.compensation_percent) == null) {
-    return { tone: 'warning', message: 'Mangler prosent' }
+    return { tone: 'warning', message: 'Percentage missing' }
   }
 
   return null
@@ -311,15 +311,15 @@ function compensationIssue(
 function compensationSummary(state: ReqState, currency: string) {
   if (state.compensation_type === 'fixed') {
     const amount = toPlainNumber(state.compensation_amount)
-    return amount == null ? 'Fast beløp mangler' : formatCurrency(Math.round(amount * 100), currency)
+    return amount == null ? 'Fixed amount missing' : formatCurrency(Math.round(amount * 100), currency)
   }
 
   if (state.compensation_type === 'percent') {
     const percent = toPlainNumber(state.compensation_percent)
-    return percent == null ? 'Prosent mangler' : `${formatPercent(percent)} %`
+    return percent == null ? 'Percentage missing' : `${formatPercent(percent)}%`
   }
 
-  return 'Ikke satt'
+  return 'Not set'
 }
 
 function moveRequirementId(ids: string[], draggedId: string, targetId: string, edge: DragEdge) {
@@ -442,7 +442,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
             next.delete(id)
             return next
           })
-          toast.error((err as Error)?.message ?? 'Lagring feilet')
+          toast.error((err as Error)?.message ?? 'Saving failed')
         })
     },
     [showId]
@@ -524,7 +524,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
       } catch (err: unknown) {
         updateLineupPositions(previousOrderedIds)
         setOrderedIds(previousOrderedIds)
-        toast.error((err as Error)?.message ?? 'Kunne ikke lagre ny rekkefølge')
+        toast.error((err as Error)?.message ?? 'Could not save the new order')
       }
     })
   }
@@ -584,10 +584,10 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
       try {
         await addRequirementAction(fd)
         setWizard(WIZARD_INITIAL)
-        toast.success('Krav lagt til')
+        toast.success('Requirement added')
         router.refresh()
       } catch (err: unknown) {
-        toast.error((err as Error)?.message ?? 'Feil ved lagring')
+        toast.error((err as Error)?.message ?? 'Saving failed')
       }
     })
   }
@@ -607,10 +607,10 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
       try {
         await addRequirementAction(fd)
         setWizard(WIZARD_INITIAL)
-        toast.success('Krav lagt til')
+        toast.success('Requirement added')
         router.refresh()
       } catch (err: unknown) {
-        toast.error((err as Error)?.message ?? 'Feil ved lagring')
+        toast.error((err as Error)?.message ?? 'Saving failed')
       }
     })
   }
@@ -644,12 +644,12 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
   }).length
 
   const bookingBlockers: string[] = []
-  if (orderedRequirements.length === 0) bookingBlockers.push('Legg til minst én lineup-plass')
-  if (missingRoleName > 0) bookingBlockers.push(`${missingRoleName} plass${missingRoleName > 1 ? 'er' : ''} mangler rollenavn`)
-  if (missingCompType > 0) bookingBlockers.push(`${missingCompType} plass${missingCompType > 1 ? 'er' : ''} mangler honorarmodell`)
-  if (missingAmount > 0) bookingBlockers.push(`${missingAmount} plass${missingAmount > 1 ? 'er' : ''} mangler beløp/prosent`)
-  if (blockingIssueCount > 0) bookingBlockers.push(`${blockingIssueCount} plass${blockingIssueCount > 1 ? 'er' : ''} har ugyldige verdier`)
-  if (totalPercent > 100) bookingBlockers.push(`Prosentfordeling er ${Math.round(totalPercent * 10) / 10} % (maks 100 %)`)
+  if (orderedRequirements.length === 0) bookingBlockers.push('Add at least one lineup spot')
+  if (missingRoleName > 0) bookingBlockers.push(`${missingRoleName} spot${missingRoleName > 1 ? 's are' : ' is'} missing a role name`)
+  if (missingCompType > 0) bookingBlockers.push(`${missingCompType} spot${missingCompType > 1 ? 's are' : ' is'} missing a fee model`)
+  if (missingAmount > 0) bookingBlockers.push(`${missingAmount} spot${missingAmount > 1 ? 's are' : ' is'} missing an amount or percentage`)
+  if (blockingIssueCount > 0) bookingBlockers.push(`${blockingIssueCount} spot${blockingIssueCount > 1 ? 's have' : ' has'} invalid values`)
+  if (totalPercent > 100) bookingBlockers.push(`Percentage allocation is ${Math.round(totalPercent * 10) / 10}% (max 100%)`)
   const canStartBooking = bookingBlockers.length === 0
 
   return (
@@ -693,7 +693,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                 <div className="flex items-center gap-2 border-b bg-muted/20 px-2 py-1.5">
                   <button
                     type="button"
-                    aria-label={`Flytt lineup-plass ${index + 1}`}
+                    aria-label={`Move lineup spot ${index + 1}`}
                     className="inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-muted active:cursor-grabbing"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
@@ -715,7 +715,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     {issue && <StatusPill tone={issue.tone}>{issue.message}</StatusPill>}
                     {saving && (
                       <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary animate-pulse">
-                        Lagrer…
+                        Saving…
                       </span>
                     )}
                     {isReordering && (
@@ -730,7 +730,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                           variant="ghost"
                           size="icon-sm"
                           className="h-7 w-7 rounded-md text-muted-foreground"
-                          aria-label="Handlinger"
+                          aria-label="Actions"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                         </Button>
@@ -751,16 +751,16 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                             startAdding(async () => {
                               try {
                                 await addRequirementAction(fd)
-                                toast.success('Lineup-plass duplisert')
+                                toast.success('Lineup spot duplicated')
                                 router.refresh()
                               } catch (err: unknown) {
-                                toast.error((err as Error)?.message ?? 'Feil ved duplisering')
+                                toast.error((err as Error)?.message ?? 'Duplication failed')
                               }
                             })
                           }}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                          Dupliser
+                          Duplicate
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <ToastActionForm action={deleteRequirementAction}>
@@ -772,7 +772,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                           >
                             <button type="submit" className="w-full">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                              Slett
+                              Delete
                             </button>
                           </DropdownMenuItem>
                         </ToastActionForm>
@@ -793,8 +793,8 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectLabel>Velg minimumsscore</SelectLabel>
-                        <SelectItem value="__none">Ingen krav</SelectItem>
+                          <SelectLabel>Select minimum score</SelectLabel>
+                        <SelectItem value="__none">No requirement</SelectItem>
                         {SCORE_OPTIONS.map((score) => (
                           <SelectItem key={score} value={score}>≥ {score}</SelectItem>
                         ))}
@@ -803,7 +803,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     </Select>
                   </FieldCell>
 
-                  <FieldCell label="Energi">
+                  <FieldCell label="Energy">
                     <Select
                       value={state.energy_level}
                       onValueChange={(value) => updateField(req.id, 'energy_level', value)}
@@ -813,7 +813,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectLabel>Velg energinivå</SelectLabel>
+                          <SelectLabel>Select energy level</SelectLabel>
                         {ENERGY_OPTIONS.map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
@@ -822,7 +822,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     </Select>
                   </FieldCell>
 
-                  <FieldCell label="Kjønn">
+                  <FieldCell label="Gender">
                     <Select
                       value={state.required_gender}
                       onValueChange={(value) => updateField(req.id, 'required_gender', value)}
@@ -832,7 +832,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectLabel>Velg kjønn</SelectLabel>
+                          <SelectLabel>Select gender</SelectLabel>
                         {GENDER_OPTIONS.map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
@@ -841,26 +841,26 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     </Select>
                   </FieldCell>
 
-                  <FieldCell label="Honorar">
+                  <FieldCell label="Fee">
                     <Select
                       value={state.compensation_type || '__unset'}
                       onValueChange={(value) => updateField(req.id, 'compensation_type', value === '__unset' ? '' : value)}
                     >
                       <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
-                        <SelectValue placeholder="Ikke satt" />
+                        <SelectValue placeholder="Not set" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectLabel>Velg honorarmodell</SelectLabel>
-                          <SelectItem value="__unset">Ikke satt</SelectItem>
-                          <SelectItem value="fixed">Fast beløp</SelectItem>
-                          <SelectItem value="percent">Prosent</SelectItem>
+                          <SelectLabel>Select fee model</SelectLabel>
+                          <SelectItem value="__unset">Not set</SelectItem>
+                          <SelectItem value="fixed">Fixed amount</SelectItem>
+                          <SelectItem value="percent">Percentage</SelectItem>
                         </SelectGroup>
                       </SelectContent>
                     </Select>
                   </FieldCell>
 
-                  <FieldCell label={state.compensation_type === 'percent' ? 'Prosent' : 'Beløp'}>
+                  <FieldCell label={state.compensation_type === 'percent' ? 'Percentage' : 'Amount'}>
                     {state.compensation_type === '' ? (
                       <span className="block px-1.5 text-sm text-muted-foreground">—</span>
                     ) : (
@@ -902,7 +902,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
             className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-transparent py-5 text-sm font-medium text-muted-foreground transition-all hover:border-foreground/30 hover:bg-muted/20 hover:text-foreground"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50 group-hover:opacity-100 transition-opacity"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            Legg til ny lineup-plass
+            Add new lineup spot
           </button>
         ) : (
           <AddWizard
@@ -920,7 +920,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
       {requirements.length > 0 && ['draft', 'booking'].includes(showStatus) && (
         <ToastActionForm
           action={startBookingAction}
-          successMessage="Booking startet! Tilbud sendes til matchende artister."
+          successMessage="Booking started! Offers go out to matching artists."
           className={cn(
             'rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3',
             canStartBooking
@@ -930,10 +930,10 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
         >
           <input type="hidden" name="show_id" value={showId} />
           <div className="min-w-0 flex-1">
-            <div className="font-semibold text-sm">Klar til å starte booking?</div>
+            <div className="font-semibold text-sm">Ready to start booking?</div>
             {canStartBooking ? (
               <div className="text-xs text-muted-foreground mt-0.5">
-                Sender tilbud automatisk til artister som matcher kravene.
+                Sends offers automatically to artists that match the requirements.
               </div>
             ) : (
               <ul className="mt-1.5 space-y-0.5">
@@ -1049,13 +1049,13 @@ function AddWizard({
   // Breadcrumb trail of already-answered steps
   const trail = [
     wizard.step > 1 && wizard.role_name,
-    wizard.step > 2 && (wizard.min_score ? `score ≥ ${wizard.min_score}` : 'alle scorer'),
+    wizard.step > 2 && (wizard.min_score ? `score ≥ ${wizard.min_score}` : 'any score'),
     wizard.step > 3 && ENERGY_LABELS[wizard.energy_level],
     wizard.step > 4 && (wizard.compensation_type === 'fixed'
-      ? 'fast beløp'
+      ? 'fixed amount'
       : wizard.compensation_type === 'percent'
-        ? 'prosent'
-        : 'honorar senere'),
+        ? 'percentage'
+        : 'fee later'),
   ].filter(Boolean) as string[]
 
   return (
@@ -1072,7 +1072,7 @@ function AddWizard({
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1 mt-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Ny plass — steg {wizard.step}/{TOTAL_STEPS}
+              New spot — step {wizard.step}/{TOTAL_STEPS}
             </p>
             {trail.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -1105,18 +1105,18 @@ function AddWizard({
         {wizard.step === 1 && (
           <div className="space-y-5">
             <div>
-              <h3 className="text-base font-semibold mb-1">Hvilken rolle?</h3>
-              <p className="text-sm text-muted-foreground">Velg én av de fire faste rollene i systemet.</p>
+              <h3 className="text-base font-semibold mb-1">Which role?</h3>
+              <p className="text-sm text-muted-foreground">Pick one of the four fixed roles in the system.</p>
             </div>
             <Select
               value={wizard.role_name || '__unset'}
               onValueChange={(value) => setWizard((prev) => ({ ...prev, role_name: value === '__unset' ? '' : value }))}
             >
               <SelectTrigger className="text-base h-11 w-full">
-                <SelectValue placeholder="Velg rolle" />
+                <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__unset">Velg rolle</SelectItem>
+                <SelectItem value="__unset">Select role</SelectItem>
                 {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
                   <SelectItem key={role} value={role}>{role}</SelectItem>
                 ))}
@@ -1124,7 +1124,7 @@ function AddWizard({
             </Select>
             <div className="flex justify-end pt-1">
               <Button onClick={next} disabled={!wizard.role_name.trim()} size="sm">
-                Neste →
+                Next →
               </Button>
             </div>
           </div>
@@ -1135,7 +1135,7 @@ function AddWizard({
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">Minimum score?</h3>
-              <p className="text-sm text-muted-foreground">Admin-score for artist (1–10)</p>
+              <p className="text-sm text-muted-foreground">Admin score for the artist (1–10)</p>
             </div>
             <Select
               value={wizard.min_score || '__none'}
@@ -1145,10 +1145,10 @@ function AddWizard({
               }}
             >
               <SelectTrigger className="w-full h-10">
-                <SelectValue placeholder="Velg min. score" />
+                <SelectValue placeholder="Select min. score" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none">Ingen krav</SelectItem>
+                <SelectItem value="__none">No requirement</SelectItem>
                 {SCORE_OPTIONS.map((s) => (
                   <SelectItem key={s} value={s}>≥ {s}</SelectItem>
                 ))}
@@ -1156,7 +1156,7 @@ function AddWizard({
             </Select>
             <div className="flex justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={back}>
-                ← Tilbake
+                ← Back
               </Button>
             </div>
           </div>
@@ -1166,8 +1166,8 @@ function AddWizard({
         {wizard.step === 3 && (
           <div className="space-y-5">
             <div>
-              <h3 className="text-base font-semibold mb-1">Energinivå?</h3>
-              <p className="text-sm text-muted-foreground">Artistens sceneuttrykk</p>
+              <h3 className="text-base font-semibold mb-1">Energy level?</h3>
+              <p className="text-sm text-muted-foreground">The artist&apos;s stage presence</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {ENERGY_OPTIONS.map((opt) => (
@@ -1191,7 +1191,7 @@ function AddWizard({
             </div>
             <div className="flex justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={back}>
-                ← Tilbake
+                ← Back
               </Button>
             </div>
           </div>
@@ -1201,8 +1201,8 @@ function AddWizard({
         {wizard.step === 4 && (
           <div className="space-y-5">
             <div>
-              <h3 className="text-base font-semibold mb-1">Hvordan skal komikeren betales?</h3>
-              <p className="text-sm text-muted-foreground">Velg fast honorar, prosent av totalen, eller la det stå åpent.</p>
+              <h3 className="text-base font-semibold mb-1">How is the comedian paid?</h3>
+              <p className="text-sm text-muted-foreground">Pick a fixed fee, a percentage of the total, or leave it open.</p>
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               {COMPENSATION_TYPE_OPTIONS.map((option) => (
@@ -1227,7 +1227,7 @@ function AddWizard({
             </div>
             <div className="flex justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={back}>
-                ← Tilbake
+                ← Back
               </Button>
             </div>
           </div>
@@ -1238,12 +1238,12 @@ function AddWizard({
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">
-                {wizard.compensation_type === 'percent' ? 'Hvor stor prosentandel?' : 'Hva er fast honorar?'}
+                {wizard.compensation_type === 'percent' ? 'How large a percentage?' : 'What is the fixed fee?'}
               </h3>
               <p className="text-sm text-muted-foreground">
                 {wizard.compensation_type === 'percent'
-                  ? 'Summen av prosentene kan være under 100%, men aldri over.'
-                  : `Beløpet lagres i ${showCurrency} for denne lineup-plassen.`}
+                  ? 'The percentages can add up to less than 100%, but never more.'
+                  : `The amount is stored in ${showCurrency} for this lineup spot.`}
               </p>
             </div>
 
@@ -1262,7 +1262,7 @@ function AddWizard({
                     next()
                   }
                 }}
-                placeholder={wizard.compensation_type === 'percent' ? 'f.eks. 25' : 'f.eks. 3500'}
+                placeholder={wizard.compensation_type === 'percent' ? 'e.g. 25' : 'e.g. 3500'}
                 className="h-11 pr-14 text-base"
               />
               <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm font-medium text-muted-foreground">
@@ -1276,17 +1276,17 @@ function AddWizard({
                 percentOverflow ? 'border-destructive/20 bg-destructive/5 text-destructive' : 'border-border bg-muted/20 text-muted-foreground'
               )}>
                 {percentOverflow
-                  ? `Denne fordelingen ville gitt ${formatPercent(projectedPercentTotal)}%. Det er for høyt.`
-                  : `${formatPercent(projectedPercentTotal)}% blir fordelt totalt hvis du lagrer denne plassen.`}
+                  ? `This allocation would come to ${formatPercent(projectedPercentTotal)}%. That is too high.`
+                  : `${formatPercent(projectedPercentTotal)}% will be allocated in total if you save this spot.`}
               </div>
             )}
 
             <div className="flex items-center justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={back}>
-                ← Tilbake
+                ← Back
               </Button>
               <Button onClick={next} disabled={compensationValueMissing || percentOverflow} size="sm">
-                Neste →
+                Next →
               </Button>
             </div>
           </div>
@@ -1296,8 +1296,8 @@ function AddWizard({
         {wizard.step === 6 && (
           <div className="space-y-5">
             <div>
-              <h3 className="text-base font-semibold mb-1">Kjønnskrav?</h3>
-              <p className="text-sm text-muted-foreground">Filtrer på artistens kjønn hvis det er relevant for plassen.</p>
+              <h3 className="text-base font-semibold mb-1">Gender requirement?</h3>
+              <p className="text-sm text-muted-foreground">Filter on the artist&apos;s gender if it matters for this spot.</p>
             </div>
             <div className="grid grid-cols-3 gap-2">
               {GENDER_OPTIONS.map((opt) => (
@@ -1321,26 +1321,26 @@ function AddWizard({
 
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span className="text-muted-foreground">Rolle: <strong className="text-foreground">{wizard.role_name}</strong></span>
+                <span className="text-muted-foreground">Role: <strong className="text-foreground">{wizard.role_name}</strong></span>
                 <span className="text-muted-foreground">Score: <strong className="text-foreground">{wizard.min_score ? `≥ ${wizard.min_score}` : '—'}</strong></span>
-                <span className="text-muted-foreground">Energi: <strong className="text-foreground">{ENERGY_LABELS[wizard.energy_level]}</strong></span>
-                <span className="text-muted-foreground">Honorar: <strong className="text-foreground">{compensationSummary(wizard, showCurrency)}</strong></span>
-                <span className="text-muted-foreground">Kjønn: <strong className="text-foreground">{GENDER_LABELS[wizard.required_gender]}</strong></span>
+                <span className="text-muted-foreground">Energy: <strong className="text-foreground">{ENERGY_LABELS[wizard.energy_level]}</strong></span>
+                <span className="text-muted-foreground">Fee: <strong className="text-foreground">{compensationSummary(wizard, showCurrency)}</strong></span>
+                <span className="text-muted-foreground">Gender: <strong className="text-foreground">{GENDER_LABELS[wizard.required_gender]}</strong></span>
               </div>
             </div>
 
             {percentOverflow && (
               <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                Total prosent ville blitt {formatPercent(projectedPercentTotal)}%. Det må være 100% eller lavere.
+                The total would be {formatPercent(projectedPercentTotal)}%. It has to be 100% or lower.
               </div>
             )}
 
             <div className="flex items-center justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={back}>
-                ← Tilbake
+                ← Back
               </Button>
               <Button onClick={onSubmit} disabled={isSubmitting || percentOverflow} size="sm">
-                {isSubmitting ? 'Legger til…' : 'Legg til ✓'}
+                {isSubmitting ? 'Adding…' : 'Add ✓'}
               </Button>
             </div>
           </div>

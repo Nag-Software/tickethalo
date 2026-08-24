@@ -70,21 +70,21 @@ export function ScannerClient({
         const result = await checkInByCode(showId, normalized)
 
         if ('notFound' in result) {
-          showScanResult({ tone: 'error', title: 'Ikke funnet', subtitle: `Ukjent kode: ${normalized}` })
+          showScanResult({ tone: 'error', title: 'Not found', subtitle: `Unknown code: ${normalized}` })
         } else if ('alreadyUsed' in result) {
           const time = result.checkedInAt
-            ? new Date(result.checkedInAt).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })
+            ? new Date(result.checkedInAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
             : ''
           showScanResult({
             tone: 'already',
-            title: 'Allerede sjekket inn',
-            subtitle: time ? `Sjekket inn kl. ${time}` : '',
+            title: 'Already checked in',
+            subtitle: time ? `Checked in at ${time}` : '',
           })
         } else if ('invalid' in result) {
-          showScanResult({ tone: 'error', title: 'Ugyldig billett', subtitle: result.status })
+          showScanResult({ tone: 'error', title: 'Invalid ticket', subtitle: result.status })
         } else if ('ok' in result) {
           const name = result.buyerName ?? result.buyerEmail ?? normalized
-          showScanResult({ tone: 'success', title: '✓ Slipp inn!', subtitle: name })
+          showScanResult({ tone: 'success', title: '✓ Let them in!', subtitle: name })
           setTickets(prev =>
             prev.map(t =>
               t.ticket_code === normalized
@@ -130,11 +130,11 @@ export function ScannerClient({
       controlsRef.current = controls
       setIsScanning(true)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Ukjent feil'
+      const msg = err instanceof Error ? err.message : 'Unknown error'
       if (/Permission|NotAllowed|NotFound/i.test(msg)) {
-        setCameraError('Kameratilgang ble nektet. Åpne nettleserinnstillingene og tillat kameratilgang, deretter last siden på nytt.')
+        setCameraError('Camera access was denied. Open your browser settings, allow camera access and reload the page.')
       } else {
-        setCameraError(`Kameraet kunne ikke startes. ${msg}`)
+        setCameraError(`The camera could not be started. ${msg}`)
       }
     }
   }, [processCode])
@@ -230,7 +230,7 @@ export function ScannerClient({
           href="/admin-app/scanner"
           className="text-zinc-400 hover:text-white transition-colors text-sm active:text-zinc-300"
         >
-          ← Velg show
+          ← Pick show
         </Link>
         <div className="text-center min-w-0 flex-1 mx-3">
           <div className="text-sm font-bold truncate">{showTitle}</div>
@@ -238,7 +238,7 @@ export function ScannerClient({
         </div>
         <div className="text-right shrink-0">
           <div className="text-lg font-bold tabular-nums text-emerald-400 leading-none">{checkedIn}</div>
-          <div className="text-[10px] text-zinc-600">/ {total} inn</div>
+          <div className="text-[10px] text-zinc-600">/ {total} in</div>
         </div>
       </header>
 
@@ -262,7 +262,7 @@ export function ScannerClient({
               : 'text-zinc-500 hover:text-zinc-300'
           }`}
         >
-          👥 Gjesteliste
+          👥 Guest list
           {checkedIn > 0 && (
             <span className="ml-1.5 inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
               {checkedIn}
@@ -332,7 +332,7 @@ export function ScannerClient({
                   <div className="text-base mt-2 text-white/80 text-center px-6 max-w-xs">{scanResult.subtitle}</div>
                 )}
                 {scanResult.tone !== 'success' && (
-                  <div className="mt-5 text-xs text-white/50">Trykk for å lukke</div>
+                  <div className="mt-5 text-xs text-white/50">Tap to dismiss</div>
                 )}
               </div>
             )}
@@ -353,7 +353,7 @@ export function ScannerClient({
                   onClick={startCamera}
                   className="px-5 py-2.5 rounded-xl bg-white text-black text-sm font-bold hover:bg-zinc-100 active:bg-zinc-200 transition-colors"
                 >
-                  Prøv igjen
+                  Try again
                 </button>
               </div>
             )}
@@ -366,7 +366,7 @@ export function ScannerClient({
                 type="text"
                 value={manualCode}
                 onChange={e => setManualCode(e.target.value.toUpperCase())}
-                placeholder="Skriv inn billettkode…"
+                placeholder="Enter ticket code…"
                 className="flex-1 bg-zinc-800 text-white placeholder-zinc-600 rounded-xl px-4 py-3.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-white/25 border border-zinc-700"
                 autoCapitalize="characters"
                 autoCorrect="off"
@@ -377,7 +377,7 @@ export function ScannerClient({
                 disabled={!manualCode.trim() || isProcessing}
                 className="px-5 py-3.5 rounded-xl bg-white text-black text-sm font-bold disabled:opacity-30 hover:bg-zinc-100 active:bg-zinc-200 transition-colors shrink-0"
               >
-                Sjekk
+                Check
               </button>
             </form>
 
@@ -385,7 +385,7 @@ export function ScannerClient({
             {total > 0 && (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-zinc-500">
-                  <span>{checkedIn} sjekket inn av {total}</span>
+                  <span>{checkedIn} of {total} checked in</span>
                   <span>{pct}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
@@ -410,14 +410,14 @@ export function ScannerClient({
               type="search"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Søk navn, e-post eller billettkode…"
+              placeholder="Search name, email or ticket code…"
               className="flex-1 bg-zinc-800 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-white/25 border border-zinc-700"
             />
             <button
               onClick={refreshList}
               disabled={isRefreshing}
               className="px-3.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white text-lg font-medium transition-colors disabled:opacity-40 shrink-0"
-              title="Oppdater liste fra serveren"
+              title="Refresh list from the server"
             >
               {isRefreshing
                 ? <span className="inline-block size-4 border border-zinc-400 border-t-transparent rounded-full animate-spin align-middle" />
@@ -428,9 +428,9 @@ export function ScannerClient({
           {/* Stats row */}
           <div className="grid grid-cols-3 bg-zinc-900 border-b border-zinc-800 shrink-0">
             {[
-              { label: 'Totalt', value: total, color: 'text-white' },
-              { label: 'Sjekket inn', value: checkedIn, color: 'text-emerald-400' },
-              { label: 'Ikke møtt ennå', value: total - checkedIn, color: 'text-zinc-400' },
+              { label: 'Total', value: total, color: 'text-white' },
+              { label: 'Checked in', value: checkedIn, color: 'text-emerald-400' },
+              { label: 'Not arrived yet', value: total - checkedIn, color: 'text-zinc-400' },
             ].map(s => (
               <div key={s.label} className="text-center py-3">
                 <div className={`text-2xl font-black tabular-nums leading-none ${s.color}`}>{s.value}</div>
@@ -464,14 +464,14 @@ export function ScannerClient({
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold truncate leading-tight">
-                    {ticket.buyer_name ?? ticket.buyer_email ?? 'Ukjent gjest'}
+                    {ticket.buyer_name ?? ticket.buyer_email ?? 'Unknown guest'}
                   </div>
                   <div className="text-[11px] text-zinc-500 truncate mt-0.5">
                     <span className="font-mono">{ticket.ticket_code}</span>
                     {ticket.checked_in_at && (
                       <span className="ml-2 text-emerald-600 font-sans">
-                        · kl.{' '}
-                        {new Date(ticket.checked_in_at).toLocaleTimeString('nb-NO', {
+                        · at{' '}
+                        {new Date(ticket.checked_in_at).toLocaleTimeString('en-GB', {
                           hour: '2-digit',
                           minute: '2-digit',
                         })}
@@ -489,7 +489,7 @@ export function ScannerClient({
                     onClick={() => handleUncheck(ticket)}
                     className="shrink-0 text-xs px-3 py-2 rounded-lg bg-zinc-800 text-zinc-500 hover:text-white hover:bg-zinc-700 active:bg-zinc-600 transition-colors border border-zinc-700"
                   >
-                    Angre
+                    Undo
                   </button>
                 ) : ticket.status === 'valid' ? (
                   <button
@@ -497,7 +497,7 @@ export function ScannerClient({
                     disabled={isProcessing}
                     className="shrink-0 text-xs px-3 py-2 rounded-lg bg-emerald-900 text-emerald-300 hover:bg-emerald-800 active:bg-emerald-700 transition-colors disabled:opacity-40 border border-emerald-800"
                   >
-                    Inn ✓
+                    In ✓
                   </button>
                 ) : (
                   <span className="shrink-0 text-xs text-zinc-600 capitalize">{ticket.status}</span>
@@ -507,7 +507,7 @@ export function ScannerClient({
 
             {filteredTickets.length === 0 && (
               <div className="text-center py-16 text-zinc-600 text-sm">
-                {searchQuery ? 'Ingen treff for søket' : 'Ingen billetter registrert ennå'}
+                {searchQuery ? 'No matches for that search' : 'No tickets registered yet'}
               </div>
             )}
           </div>

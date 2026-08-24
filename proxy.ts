@@ -44,6 +44,10 @@ function isTimeoutError(error: unknown) {
 const SECTION_INDEXES: Record<string, string> = {
   '/admin-app': '/admin-app/shows',
   '/admin-app/artist-economy': '/admin-app/shows',
+  // Renamed when the club portal moved to English. Kept so links people
+  // already have keep landing on the right page.
+  '/admin-app/min-klubb': '/admin-app/my-club',
+  '/admin-app/okonomi': '/admin-app/finances',
   '/superadmin': '/superadmin/clubs',
   '/artist-app/settings': '/artist-app/profile',
   '/artist-app/booking-offers': '/artist-app/bookings',

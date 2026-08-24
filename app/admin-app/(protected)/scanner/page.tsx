@@ -21,10 +21,10 @@ export default async function ScannerPickShowPage() {
   const { data: shows } = await query
 
   const STATUS_LABEL: Record<string, string> = {
-    published: 'Publisert',
-    fullbooked: 'Lineup klar',
-    completed: 'Gjennomført',
-    booking: 'Booker',
+    published: 'Published',
+    fullbooked: 'Lineup ready',
+    completed: 'Completed',
+    booking: 'Booking',
   }
   const STATUS_COLOR: Record<string, string> = {
     published: 'bg-emerald-900 text-emerald-300',
@@ -37,8 +37,8 @@ export default async function ScannerPickShowPage() {
     <div className="min-h-dvh bg-zinc-950 text-white p-4">
       <div className="max-w-md mx-auto pt-4">
         <div className="mb-6">
-          <h1 className="text-xl font-bold">🎫 Billett-scanner</h1>
-          <p className="text-sm text-zinc-400 mt-1">Velg et show for å åpne dörscanderen</p>
+          <h1 className="text-xl font-bold">🎫 Ticket scanner</h1>
+          <p className="text-sm text-zinc-400 mt-1">Pick a show to open the door scanner</p>
         </div>
 
         <div className="space-y-2">
@@ -62,14 +62,14 @@ export default async function ScannerPickShowPage() {
 
           {!(shows ?? []).length && (
             <div className="text-center py-16 text-zinc-600 text-sm">
-              Ingen aktive shows funnet
+              No active shows found
             </div>
           )}
         </div>
 
         <div className="mt-8 text-center">
           <Link href="/admin-app" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
-            ← Tilbake til admin
+            ← Back to admin
           </Link>
         </div>
       </div>

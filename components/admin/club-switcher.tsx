@@ -49,7 +49,7 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
               <Image src="/icon.svg" alt="" width={32} height={32} className="rounded-full" />
             </div>
             <div className="flex flex-col gap-0.5 leading-none">
-              <span className="font-semibold">Ingen klubber</span>
+              <span className="font-semibold">No clubs</span>
               <span className="text-xs text-muted-foreground">superadmin</span>
             </div>
           </SidebarMenuButton>
@@ -77,7 +77,7 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{selectedClub.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {selectedClub.city ?? 'Velg klubb'}
+                  {selectedClub.city ?? 'Select club'}
                 </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
@@ -89,7 +89,7 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Velg klubb</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Select club</DropdownMenuLabel>
             {clubs.map((club) => (
               <DropdownMenuItem key={club.id} asChild>
                 <Link href={`/admin-app/select-club?club=${club.id}&next=${encodeURIComponent(nextPath)}`} className="flex items-center gap-2 p-2">
@@ -102,7 +102,7 @@ export function ClubSwitcher({ clubs, selectedClubId }: ClubSwitcherProps) {
                   </div>
                   <div className="grid flex-1 text-left leading-tight">
                     <span className="truncate text-sm font-medium">{club.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">{club.city ?? 'Uten by'}</span>
+                    <span className="truncate text-xs text-muted-foreground">{club.city ?? 'No city'}</span>
                   </div>
                   <Check className={cn('size-4', selectedClubId === club.id ? 'opacity-100' : 'opacity-0')} />
                 </Link>

@@ -2,30 +2,30 @@ import { AdminHeader } from '@/components/admin/admin-header'
 
 const integrations = [
   {
-    group: 'Betalinger',
+    group: 'Payments',
     items: [
-      { name: 'Stripe', key: 'STRIPE_SECRET_KEY', envVar: process.env.STRIPE_SECRET_KEY, desc: 'Betalingsbehandler' },
-      { name: 'Stripe Webhook Secret', key: 'STRIPE_WEBHOOK_SECRET', envVar: process.env.STRIPE_WEBHOOK_SECRET, desc: 'Webhook signering' },
+      { name: 'Stripe', key: 'STRIPE_SECRET_KEY', envVar: process.env.STRIPE_SECRET_KEY, desc: 'Payment processor' },
+      { name: 'Stripe Webhook Secret', key: 'STRIPE_WEBHOOK_SECRET', envVar: process.env.STRIPE_WEBHOOK_SECRET, desc: 'Webhook signing' },
     ],
   },
   {
     group: 'Database',
     items: [
       { name: 'Supabase URL', key: 'NEXT_PUBLIC_SUPABASE_URL', envVar: process.env.NEXT_PUBLIC_SUPABASE_URL, desc: 'Database URL' },
-      { name: 'Supabase Publishable Key', key: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', envVar: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, desc: 'Anon/publishable nøkkel' },
-      { name: 'Supabase Service Role Key', key: 'SUPABASE_SERVICE_ROLE_KEY', envVar: process.env.SUPABASE_SERVICE_ROLE_KEY, desc: 'Admin-nøkkel (skjult)' },
+      { name: 'Supabase Publishable Key', key: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', envVar: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, desc: 'Anon/publishable key' },
+      { name: 'Supabase Service Role Key', key: 'SUPABASE_SERVICE_ROLE_KEY', envVar: process.env.SUPABASE_SERVICE_ROLE_KEY, desc: 'Admin key (hidden)' },
     ],
   },
   {
     group: 'AI',
     items: [
-      { name: 'OpenAI API Key', key: 'OPENAI_API_KEY', envVar: process.env.OPENAI_API_KEY, desc: 'Plakatgenerering' },
+      { name: 'OpenAI API Key', key: 'OPENAI_API_KEY', envVar: process.env.OPENAI_API_KEY, desc: 'Poster generation' },
     ],
   },
   {
-    group: 'E-post',
+    group: 'Email',
     items: [
-      { name: 'Resend API Key', key: 'RESEND_API_KEY', envVar: process.env.RESEND_API_KEY, desc: 'E-postleverandør' },
+      { name: 'Resend API Key', key: 'RESEND_API_KEY', envVar: process.env.RESEND_API_KEY, desc: 'Email provider' },
     ],
   },
 ]
@@ -39,7 +39,7 @@ function maskValue(val: string | undefined): string {
 export default function SettingsPage() {
   return (
     <div>
-      <AdminHeader title="Settings" description="Systemkonfigurasjon og integrasjoner" />
+      <AdminHeader title="Settings" description="System configuration and integrations" />
       <div className="p-6 space-y-8">
         {integrations.map((group) => (
           <section key={group.group}>
@@ -59,7 +59,7 @@ export default function SettingsPage() {
                       </span>
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        {ok ? 'OK' : 'Mangler'}
+                        {ok ? 'OK' : 'Missing'}
                       </span>
                     </div>
                   </div>

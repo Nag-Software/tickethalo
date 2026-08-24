@@ -43,12 +43,12 @@ export function YouTubePlayerCard({
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition hover:text-foreground"
           >
-            Åpne på YouTube <ArrowUpRight className="size-4" />
+            Open on YouTube <ArrowUpRight className="size-4" />
           </Link>
         </>
       ) : (
         <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-          Ingen gyldig YouTube-video registrert ennå.
+          No valid YouTube video registered yet.
         </div>
       )}
     </section>
