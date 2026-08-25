@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { checkInByCode, uncheckIn, getTicketsForShow, type TicketRow } from '../actions'
+import { extractTicketCode, formatTicketCode } from '@/lib/tickets'
 
 type ScanResult = {
   tone: 'success' | 'already' | 'error'
@@ -55,7 +56,9 @@ export function ScannerClient({
   const processCode = useCallback(
     async (code: string) => {
       if (processingRef.current) return
-      const normalized = code.trim().toUpperCase()
+      // QR-koden inneholder en verifiseringslenke; koden hentes ut av den.
+      // Den er heksadesimal og skal ikke gjøres om til store bokstaver.
+      const normalized = extractTicketCode(code)
       if (!normalized) return
 
       // Debounce: ignore same code within 3 s
@@ -78,16 +81,16 @@ export function ScannerClient({
           showScanResult({
             tone: 'already',
             title: 'Already checked in',
-            subtitle: time ? `Checked in at ${time}` : '',
+            subtitle: [result.holderName, time && `Checked in at ${time}`].filter(Boolean).join(' · '),
           })
         } else if ('invalid' in result) {
           showScanResult({ tone: 'error', title: 'Invalid ticket', subtitle: result.status })
         } else if ('ok' in result) {
-          const name = result.buyerName ?? result.buyerEmail ?? normalized
+          const name = result.holderName ?? result.buyerName ?? result.buyerEmail ?? result.ticketCode
           showScanResult({ tone: 'success', title: '✓ Let them in!', subtitle: name })
           setTickets(prev =>
             prev.map(t =>
-              t.ticket_code === normalized
+              t.id === result.ticketId
                 ? { ...t, status: 'used', checked_in_at: new Date().toISOString() }
                 : t
             )
@@ -203,6 +206,7 @@ export function ScannerClient({
       const q = searchQuery.toLowerCase()
       return (
         t.ticket_code.toLowerCase().includes(q) ||
+        (t.holder_name ?? '').toLowerCase().includes(q) ||
         (t.buyer_name ?? '').toLowerCase().includes(q) ||
         (t.buyer_email ?? '').toLowerCase().includes(q)
       )
@@ -362,12 +366,17 @@ export function ScannerClient({
           {/* Manual input + progress */}
           <div className="p-4 space-y-4 bg-zinc-900">
             <form onSubmit={handleManualSubmit} className="flex gap-2">
+              {/* Koden er åtte tegn og vises som XXXX-XXXX. Feltet setter
+                  bindestreken selv, så den som taster slipper å tenke på den —
+                  og serveren stripper den uansett. */}
               <input
                 type="text"
                 value={manualCode}
-                onChange={e => setManualCode(e.target.value.toUpperCase())}
-                placeholder="Enter ticket code…"
-                className="flex-1 bg-zinc-800 text-white placeholder-zinc-600 rounded-xl px-4 py-3.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-white/25 border border-zinc-700"
+                onChange={e => setManualCode(formatTicketCode(extractTicketCode(e.target.value.toUpperCase())))}
+                placeholder="A1B2-C3D4"
+                maxLength={40}
+                inputMode="text"
+                className="flex-1 bg-zinc-800 text-white placeholder-zinc-600 rounded-xl px-4 py-3.5 text-base font-mono tracking-[0.14em] focus:outline-none focus:ring-2 focus:ring-white/25 border border-zinc-700"
                 autoCapitalize="characters"
                 autoCorrect="off"
                 spellCheck={false}
@@ -464,10 +473,10 @@ export function ScannerClient({
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold truncate leading-tight">
-                    {ticket.buyer_name ?? ticket.buyer_email ?? 'Unknown guest'}
+                    {ticket.holder_name ?? ticket.buyer_name ?? ticket.buyer_email ?? 'Unknown guest'}
                   </div>
                   <div className="text-[11px] text-zinc-500 truncate mt-0.5">
-                    <span className="font-mono">{ticket.ticket_code}</span>
+                    <span className="font-mono tracking-wider">{formatTicketCode(ticket.ticket_code)}</span>
                     {ticket.checked_in_at && (
                       <span className="ml-2 text-emerald-600 font-sans">
                         · at{' '}
@@ -478,7 +487,12 @@ export function ScannerClient({
                       </span>
                     )}
                   </div>
-                  {ticket.buyer_name && ticket.buyer_email && (
+                  {/* Kjøperen vises når billetten gjelder en annen — det er
+                      slik en gruppe på fire finner hverandre i lista. */}
+                  {ticket.holder_name && ticket.buyer_name && ticket.holder_name !== ticket.buyer_name && (
+                    <div className="text-[10px] text-zinc-600 truncate">Bought by {ticket.buyer_name}</div>
+                  )}
+                  {!ticket.holder_name && ticket.buyer_name && ticket.buyer_email && (
                     <div className="text-[10px] text-zinc-600 truncate">{ticket.buyer_email}</div>
                   )}
                 </div>

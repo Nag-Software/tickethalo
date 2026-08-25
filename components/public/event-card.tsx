@@ -1,9 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { Ticket } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ToastActionForm } from '@/components/toast-action-form'
-import { startCheckoutAction } from '@/app/events/actions'
+import { TicketOrder } from '@/components/public/ticket-order'
 import type { PublicShow } from '@/lib/public-events'
 import { formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-events'
 import { formatDayLabel } from '@/lib/event-filters'
@@ -153,31 +151,26 @@ export function EventCard({
             </span>
           )}
 
-          <ToastActionForm action={startCheckoutAction} className="relative z-10 ml-auto">
-            <input type="hidden" name="show_id" value={show.id} />
-            <input type="hidden" name="slug" value={show.slug ?? show.id} />
-            <button
-              type="submit"
-              disabled={soldOut}
-              className={cn(
-                // h-11 = a 44px touch target on mobile, the minimum for a primary
-                // action driven by a thumb. From sm up it is a mouse pointer and the
-                // cards sit four or five across — there the original height is right.
-                'inline-flex h-11 items-center gap-2 px-4 text-[15px] font-semibold transition-colors',
-                'sm:h-9 sm:gap-1.5 sm:text-[13px]',
-                'bg-[var(--ev-text)] text-[var(--ev-bg)]',
-                'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
-                'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]'
-              )}
-              style={{ borderRadius: 'var(--ev-r-chip)' }}
-            >
-              <Ticket className="size-4 sm:size-3.5" aria-hidden />
-              {soldOut ? 'Sold out' : 'Buy'}
-              {/* Without this a screen reader just reads "Buy" twenty times in a row. */}
-              <span className="sr-only"> ticket for {show.title}</span>
-            </button>
-          </ToastActionForm>
+          <TicketOrder
+            showId={show.id}
+            slug={show.slug ?? show.id}
+            price={formatTicketPrice(show)}
+            soldOut={soldOut}
+            remaining={remainingTickets(show)}
+            triggerLabel="Buy"
+            triggerClassName={cn(
+              'relative z-10 ml-auto',
+              // h-11 = a 44px touch target on mobile, the minimum for a primary
+              // action driven by a thumb. From sm up it is a mouse pointer and the
+              // cards sit four or five across — there the original height is right.
+              'inline-flex h-11 items-center gap-2 px-4 text-[15px] font-semibold transition-colors',
+              'sm:h-9 sm:gap-1.5 sm:text-[13px]',
+              'bg-[var(--ev-text)] text-[var(--ev-bg)]',
+              'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
+              'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
+              'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]',
+            )}
+          />
         </div>
       </div>
     </article>

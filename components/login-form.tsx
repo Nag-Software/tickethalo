@@ -32,6 +32,7 @@ export function LoginForm({
   signupHref = '/artist-app/signup',
   signupLabel = 'Sign up here',
   signupPrompt = 'New here?',
+  signupSlot,
   submitLabel = 'Sign in',
   submitClassName,
   nextPath,
@@ -48,6 +49,8 @@ export function LoginForm({
   signupHref?: string
   signupLabel?: string
   signupPrompt?: string
+  /** Rendered instead of the signup link — the club portal opens a dialog here. */
+  signupSlot?: React.ReactNode
   submitLabel?: string
   /** Extra classes on the submit button — the club portal signs in on a violet CTA. */
   submitClassName?: string
@@ -156,12 +159,14 @@ export function LoginForm({
                     isPortal && 'pt-1 text-[13px] text-[var(--ev-muted)]',
                   )}>
                     {signupPrompt}{' '}
-                    <Link href={signupHref} className={cn(
-                      isPoster && 'font-bold underline decoration-2 underline-offset-4 hover:text-[#b83224]',
-                      isPortal && 'font-medium text-[var(--ev-accent)] underline underline-offset-4',
-                    )}>
-                      {signupLabel}
-                    </Link>
+                    {signupSlot ?? (
+                      <Link href={signupHref} className={cn(
+                        isPoster && 'font-bold underline decoration-2 underline-offset-4 hover:text-[#b83224]',
+                        isPortal && 'font-medium text-[var(--ev-accent)] underline underline-offset-4',
+                      )}>
+                        {signupLabel}
+                      </Link>
+                    )}
                   </FieldDescription>
                 )}
               </Field>

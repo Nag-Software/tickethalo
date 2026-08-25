@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/settle-fees", "schedule": "0 5 * * *" },
     { "path": "/api/cron/release-payouts", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/artist-fees", "schedule": "0 8 * * *" },
     { "path": "/api/cron/generate-settlements", "schedule": "0 7 1 * *" }
   ]
 }

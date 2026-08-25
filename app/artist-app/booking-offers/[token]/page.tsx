@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, CalendarDays, Clock, MapPin } from 'lucide-react'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
+import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, Panel, portalButton } from '@/components/artist/portal-ui'
 import { OfferButtons } from '@/components/artist/offer-buttons'
 
@@ -20,14 +21,29 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   const { data: offer } = await db.from('booking_offers').select('*').eq('token', token).single()
   if (!offer || offer.artist_id !== artist.id) notFound()
 
-  const { data: show } = await db
-    .from('shows')
-    .select('title, date, start_time, venue_name, venue_address')
-    .eq('id', offer.show_id)
-    .single()
+  const [{ data: show }, { data: req }] = await Promise.all([
+    db
+      .from('shows')
+      .select('title, date, start_time, venue_name, venue_address')
+      .eq('id', offer.show_id)
+      .single(),
+    db
+      .from('show_requirements')
+      .select('compensation_type, compensation_amount, compensation_percent')
+      .eq('id', offer.show_requirement_id)
+      .single(),
+  ])
 
   const isOpen = offer.status === 'sent'
   const venue = [show?.venue_name, show?.venue_address].filter(Boolean).join(', ')
+
+  /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
+     som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet. */
+  const feeLabel = offer.fee_amount != null
+    ? formatMoney(offer.fee_amount, offer.currency)
+    : req
+      ? requirementFeeLabel(req, offer.currency || 'NOK')
+      : 'Not set'
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
@@ -49,9 +65,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
         </div>
 
         {/* Honoraret er tallet svaret henger på — det får stå alene. */}
-        <p className="text-[2.25rem] font-semibold leading-none tabular-nums">
-          {formatMoney(offer.fee_amount, offer.currency)}
-        </p>
+        <p className="text-[2.25rem] font-semibold leading-none tabular-nums">{feeLabel}</p>
 
         <div className="flex flex-col gap-2.5 text-[14px]">
           <Detail icon={<CalendarDays className="size-4" />}>

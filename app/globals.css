@@ -101,6 +101,9 @@
   --ev-faint: rgba(46, 12, 1, 0.6);
   --ev-accent: #b23004;
   --ev-accent-fill: #ff5b24;
+  /* Merket i økonomigrafen. Egen token fordi mørk modus trenger et dypere
+     steg av samme kulør for å holde lysbåndet mot kortflaten. */
+  --chart-earnings: #ff5b24;
   --ev-accent-ink: #fff4ec;
   --ev-poster-ground: #2e0c01;
   /* Lilla brukes kun av de to knappene i forsidens hero. Den står utenfor
@@ -137,6 +140,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --chart-earnings: #f04e18;
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

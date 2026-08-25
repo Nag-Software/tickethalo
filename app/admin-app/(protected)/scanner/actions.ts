@@ -3,34 +3,70 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { assertShowAccess } from '@/lib/club-auth'
+import { ticketCodeCandidates } from '@/lib/tickets'
 
 export type CheckInResult =
   | { notFound: true }
-  | { alreadyUsed: true; checkedInAt: string | null }
+  | { alreadyUsed: true; checkedInAt: string | null; holderName: string | null }
   | { invalid: true; status: string }
-  | { ok: true; ticketId: string; buyerName: string | null; buyerEmail: string | null }
+  | {
+    ok: true
+    ticketId: string
+    ticketCode: string
+    /** Navnet billetten gjelder — det som skal sies høyt i døra. */
+    holderName: string | null
+    buyerName: string | null
+    buyerEmail: string | null
+  }
 
+/**
+ * Sjekker inn én billett.
+ *
+ * Innsjekkingen er én betinget oppdatering, ikke les-så-skriv: to telefoner
+ * som skanner samme billett i samme sekund ville begge sett `valid` og begge
+ * sluppet folk inn. Her er det bare den som faktisk endret raden fra `valid`
+ * som får «ok» — den andre får «allerede brukt».
+ */
 export async function checkInByCode(showId: string, rawCode: string): Promise<CheckInResult> {
   await assertShowAccess(showId)
-  const code = rawCode.trim().toUpperCase()
-  if (!code) return { notFound: true }
+  const candidates = ticketCodeCandidates(rawCode)
+  if (candidates.length === 0) return { notFound: true }
 
   const db = createAdminClient()
+
+  // Eksakt match mot små/store varianter av koden — se `ticketCodeCandidates`
+  // for hvorfor det ikke er et `ilike`.
   const { data: ticket } = await db
     .from('tickets')
-    .select('id, ticket_code, status, checked_in_at, order_id, show_id')
+    .select('id, ticket_code, status, checked_in_at, order_id, show_id, holder_name')
     .eq('show_id', showId)
-    .eq('ticket_code', code)
+    .in('ticket_code', candidates)
     .maybeSingle()
 
   if (!ticket) return { notFound: true }
-  if (ticket.status === 'used') return { alreadyUsed: true, checkedInAt: ticket.checked_in_at }
+  if (ticket.status === 'used') {
+    return { alreadyUsed: true, checkedInAt: ticket.checked_in_at, holderName: ticket.holder_name }
+  }
   if (ticket.status !== 'valid') return { invalid: true, status: ticket.status }
 
-  await db
+  const { data: claimed } = await db
     .from('tickets')
     .update({ status: 'used', checked_in_at: new Date().toISOString() })
     .eq('id', ticket.id)
+    .eq('status', 'valid')
+    .select('id, checked_in_at')
+    .maybeSingle()
+
+  if (!claimed) {
+    // Noen andre rakk den mellom lesingen og skrivingen.
+    const { data: current } = await db
+      .from('tickets')
+      .select('checked_in_at')
+      .eq('id', ticket.id)
+      .maybeSingle()
+
+    return { alreadyUsed: true, checkedInAt: current?.checked_in_at ?? null, holderName: ticket.holder_name }
+  }
 
   const { data: order } = await db
     .from('orders')
@@ -43,6 +79,8 @@ export async function checkInByCode(showId: string, rawCode: string): Promise<Ch
   return {
     ok: true,
     ticketId: ticket.id,
+    ticketCode: ticket.ticket_code,
+    holderName: ticket.holder_name,
     buyerName: order?.buyer_name ?? null,
     buyerEmail: order?.buyer_email ?? null,
   }
@@ -67,6 +105,8 @@ export type TicketRow = {
   ticket_code: string
   status: 'valid' | 'used' | 'refunded' | 'cancelled'
   checked_in_at: string | null
+  /** Navnet billetten gjelder. Null på billetter kjøpt før migrasjon 036. */
+  holder_name: string | null
   buyer_name: string | null
   buyer_email: string | null
 }
@@ -76,7 +116,7 @@ export async function getTicketsForShow(showId: string): Promise<TicketRow[]> {
   const db = createAdminClient()
   const { data: tickets } = await db
     .from('tickets')
-    .select('id, ticket_code, status, checked_in_at, order_id')
+    .select('id, ticket_code, status, checked_in_at, order_id, holder_name')
     .eq('show_id', showId)
     .order('created_at')
     .limit(2000)
@@ -96,6 +136,7 @@ export async function getTicketsForShow(showId: string): Promise<TicketRow[]> {
     ticket_code: t.ticket_code,
     status: t.status as TicketRow['status'],
     checked_in_at: t.checked_in_at,
+    holder_name: t.holder_name,
     buyer_name: orderMap[t.order_id]?.buyer_name ?? null,
     buyer_email: orderMap[t.order_id]?.buyer_email ?? null,
   }))

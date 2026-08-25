@@ -1,5 +1,11 @@
-import { AlertTriangle, ArrowUpRight, Check, ExternalLink, RefreshCw, X } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/admin-header'
+import { EarningsChart } from '@/components/admin/earnings-chart'
+import { ToastActionForm } from '@/components/toast-action-form'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import {
@@ -7,8 +13,9 @@ import {
   type ConnectClub,
   describeClubReadiness,
   getAccountBalance,
-  isClubPayoutReady,
 } from '@/lib/stripe-connect'
+import { getClubArtistFees } from '@/lib/artist-fees'
+import { getFinanceSummary } from '@/lib/finances'
 import { releasableAmount } from '@/lib/payouts'
 import {
   openClubDashboardAction,
@@ -21,22 +28,30 @@ import {
  * The club's finance page.
  *
  * The club sells the ticket and owns the money from the moment of payment — it
- * sits in the club's own Stripe account, not with Tickethalo. This page is
- * where the club connects that account, sees what has been earned and when it
- * is paid out.
+ * sits in the club's own Stripe account, not with Tickethalo. The page leads
+ * with what was earned, and keeps the setup out of the way once it is done.
  */
 export default async function FinancesPage() {
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
 
   const { data } = await db.from('clubs').select(CLUB_CONNECT_FIELDS).eq('id', clubId).single()
-  if (!data) throw new Error('Club not found.')
+  if (!data) throw new Error('Could not find the club.')
 
   const club = data as unknown as ConnectClub
   const readiness = describeClubReadiness(club)
-  const ready = isClubPayoutReady(club)
+  const missing = readiness.filter((item) => !item.done)
+  // Utledet fra sjekklista i stedet for `isClubPayoutReady`: den er et
+  // typepredikat, og ville smalnet `club` til `never` i else-grenene her.
+  const ready = missing.length === 0
 
-  const [balance, upcoming, { data: payouts }, { data: settlements }] = await Promise.all([
+  // Stripe krever kontakt-e-post for merchant-konfigurasjonen, så kontoen kan
+  // ikke opprettes uten. Resten av lista kan fylles ut underveis.
+  const canOnboard = Boolean(club.support_email?.trim())
+
+  const [summary, artistFees, balance, upcoming, { data: payouts }, { data: settlements }] = await Promise.all([
+    getFinanceSummary(clubId),
+    getClubArtistFees(clubId),
     club.stripe_account_id && club.payouts_enabled
       ? getAccountBalance(club.stripe_account_id).catch(() => null)
       : Promise.resolve(null),
@@ -54,14 +69,16 @@ export default async function FinancesPage() {
       .select('id, amount, currency, status, created_at, paid_at')
       .eq('club_id', clubId)
       .order('created_at', { ascending: false })
-      .limit(12),
+      .limit(6),
     db
       .from('club_settlements')
-      .select('id, period_start, period_end, gross_amount, commission_amount, refunded_amount, net_amount, currency, document_number')
+      .select('id, period_start, gross_amount, commission_amount, refunded_amount, net_amount, currency')
       .eq('club_id', clubId)
       .order('period_start', { ascending: false })
-      .limit(12),
+      .limit(6),
   ])
+
+  const feesTotal = artistFees.reduce((total, show) => total + show.total, 0)
 
   const money = (value: number | null | undefined, currency = club.currency) =>
     value === null || value === undefined
@@ -76,227 +93,332 @@ export default async function FinancesPage() {
     <div>
       <AdminHeader
         title="Finances"
-        description={`The club sells the tickets. Tickethalo takes ${(club.platform_fee_bps / 100).toFixed(0)}% in booking commission.`}
+        description={`The club sells the tickets. Tickethalo takes ${club.platform_fee_bps / 100}% in booking commission.`}
       />
 
-      <div className="flex max-w-3xl flex-col gap-8 px-6 py-10 md:py-12">
-        {/* ── Readiness ──────────────────────────────────────── */}
-        <section className="rounded-lg border p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-base font-semibold">Payout account</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Ticket money goes straight into the club&apos;s own Stripe account. Tickethalo only
-                takes the commission and never touches the rest.
-              </p>
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
+        {/* ── Earnings + setup ─────────────────────────────── */}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex flex-col gap-4">
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Your earnings</CardTitle>
+                <CardDescription>
+                  Your share of ticket sales, after commission — last six months.
+                </CardDescription>
+                <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end text-right">
+                  {/* Ett tall å lede med. Proporsjonale sifre: `tabular-nums`
+                      gjør store tall luftige. */}
+                  <div className="text-2xl font-semibold leading-none">{money(summary.periodNet)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {summary.periodTickets} {summary.periodTickets === 1 ? 'ticket' : 'tickets'}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <EarningsChart months={summary.months} currency={club.currency} />
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Stat label="Available in Stripe" value={money(balance?.available, balance?.currency)} />
+              <Stat label="In transit" value={money(balance?.pending, balance?.currency)} />
+              <Stat
+                label="Ready for payout"
+                value={money(upcoming)}
+                hint={`Released ${club.payout_hold_days} ${club.payout_hold_days === 1 ? 'day' : 'days'} after the show`}
+              />
             </div>
-            {ready ? (
-              <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                Ready to sell
-              </span>
-            ) : (
-              <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
-                Not ready
-              </span>
-            )}
           </div>
 
-          <ul className="mt-4 flex flex-col gap-1.5">
-            {readiness.map((item) => (
-              <li key={item.key} className="flex items-center gap-2 text-sm">
-                {item.done ? (
-                  <Check className="size-4 shrink-0 text-emerald-600" aria-hidden />
-                ) : (
-                  <X className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          {/* ── Setup guide ────────────────────────────────── */}
+          <Card size="sm" className="h-fit">
+            <CardHeader>
+              <CardTitle>{ready ? 'Ready to sell' : 'Finish the setup'}</CardTitle>
+              <CardDescription>
+                {ready
+                  ? 'Ticket money goes straight into the club’s own Stripe account. Tickethalo only takes the commission.'
+                  : `${readiness.length - missing.length} of ${readiness.length} done. Shows cannot go on sale until the rest is in place.`}
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="flex flex-col gap-4">
+              {/* Er alt på plass, sier overskriften det allerede. En liste med
+                  fem grønne haker og en «fortsett oppsettet»-knapp ville bare
+                  antydet at det gjenstår noe. */}
+              {!ready && (
+                <ul className="flex flex-col gap-2">
+                  {missing.map((item) => (
+                    <li key={item.key} className="flex items-start gap-2 text-sm">
+                      <span
+                        aria-hidden
+                        className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--ev-accent-fill)]"
+                      />
+                      {item.label}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="flex flex-col gap-2">
+                {!ready && (
+                  <ToastActionForm action={startClubOnboardingAction}>
+                    <Button
+                      type="submit"
+                      // Stripe krever kontakt-e-post for merchant-konfigurasjonen.
+                      // Bedre å stenge knappen med en forklaring under enn å la
+                      // kallet feile etter at brukeren har trykket.
+                      disabled={!canOnboard}
+                      className="w-full"
+                    >
+                      {club.stripe_account_id ? 'Continue setup' : 'Connect Stripe'}
+                      <ArrowUpRight data-icon="inline-end" />
+                    </Button>
+                  </ToastActionForm>
                 )}
-                <span className={item.done ? 'text-muted-foreground' : 'font-medium'}>{item.label}</span>
-              </li>
-            ))}
-          </ul>
 
-          {!ready && (
-            <p className="mt-4 flex items-start gap-2 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>
-                Shows cannot be published for sale until this is in place. Without a finished
-                account there is no seller to receive the money on behalf of, and the ticket cannot
-                name the organiser.
-              </span>
-            </p>
-          )}
+                {!canOnboard && (
+                  <p className="text-xs text-muted-foreground">
+                    Add a contact email under <strong>Seller details</strong> first — Stripe needs
+                    it to create the account.
+                  </p>
+                )}
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            <form action={startClubOnboardingAction}>
-              <button
-                type="submit"
-                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-3.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-              >
-                {club.stripe_account_id ? 'Continue setup' : 'Connect Stripe account'}
-                <ArrowUpRight className="size-3.5" aria-hidden />
-              </button>
-            </form>
+                {club.stripe_account_id && (
+                  <div className="flex gap-2">
+                    {club.charges_enabled && (
+                      <ToastActionForm action={openClubDashboardAction} className="flex-1">
+                        <Button
+                          type="submit"
+                          variant={ready ? 'default' : 'outline'}
+                          size="sm"
+                          className="w-full"
+                        >
+                          Open Stripe
+                          <ExternalLink data-icon="inline-end" />
+                        </Button>
+                      </ToastActionForm>
+                    )}
+                    <ToastActionForm
+                      action={refreshClubStatusAction}
+                      successMessage="The account is ready to sell."
+                      className="flex-1"
+                    >
+                      <Button type="submit" variant="ghost" size="sm" className="w-full">
+                        <RefreshCw data-icon="inline-start" />
+                        Refresh
+                      </Button>
+                    </ToastActionForm>
+                  </div>
+                )}
+              </div>
 
-            {club.stripe_account_id && (
-              <>
-                <form action={openClubDashboardAction}>
-                  <button
-                    type="submit"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md border px-3.5 text-sm font-medium transition-colors hover:bg-muted"
-                  >
-                    Open Stripe
-                    <ExternalLink className="size-3.5" aria-hidden />
-                  </button>
-                </form>
-                <form action={refreshClubStatusAction}>
-                  <button
-                    type="submit"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    <RefreshCw className="size-3.5" aria-hidden />
-                    Refresh status
-                  </button>
-                </form>
-              </>
+              {club.charges_enabled && (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  One setting lives in Stripe: turn on receipt emails under{' '}
+                  <em>Customer emails</em>. The customer then gets a payment receipt in the
+                  club&apos;s name. We send the ticket either way.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── Artist fees ──────────────────────────────────── */}
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Artist fees</CardTitle>
+            <CardDescription>
+              What the club owes the lineup for shows that have been played. Open a show to see who
+              gets what.
+            </CardDescription>
+            {feesTotal > 0 && (
+              <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end text-right">
+                <div className="text-2xl font-semibold leading-none">{money(feesTotal)}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {artistFees.length} {artistFees.length === 1 ? 'show' : 'shows'}
+                </div>
+              </div>
             )}
-          </div>
+          </CardHeader>
+          <CardContent>
+            {artistFees.length === 0 ? (
+              <Empty>Fees appear here once a booked show has been played.</Empty>
+            ) : (
+              <div className="flex flex-col divide-y">
+                {/* `details` framfor en klient-komponent: siden er server-rendret,
+                    og å utvide en rad trenger ingen tilstand vi må sende ned. */}
+                {artistFees.map((show) => (
+                  <details key={show.showId} className="group">
+                    <summary className="flex cursor-pointer list-none items-center gap-3 py-2.5 text-sm marker:hidden hover:text-foreground/80">
+                      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                      <span className="w-24 shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {new Date(show.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{show.title}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {show.lines.length} {show.lines.length === 1 ? 'comedian' : 'comedians'}
+                      </span>
+                      <span className="w-24 shrink-0 text-right font-semibold tabular-nums">
+                        {money(show.total, show.currency)}
+                      </span>
+                    </summary>
 
-          {club.stripe_account_id && (
-            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-              One setting lives in Stripe and cannot be changed from here: turn on receipt emails
-              under <em>Customer emails → Successful payments</em>. The customer then gets a payment
-              receipt in the club&apos;s name. We send the ticket with the QR code either way.
-            </p>
-          )}
-        </section>
+                    <div className="pb-3 pl-[2.1rem]">
+                      <p className="text-xs text-muted-foreground">
+                        {money(show.net, show.currency)} net ticket sales
+                      </p>
 
-        {/* ── Money ──────────────────────────────────────────── */}
-        <section className="grid gap-4 sm:grid-cols-3">
-          <Stat label="Available in Stripe" value={money(balance?.available, balance?.currency)} />
-          <Stat label="In transit" value={money(balance?.pending, balance?.currency)} />
-          <Stat
-            label="Ready for payout"
-            value={money(upcoming)}
-            hint={`Released ${club.payout_hold_days} ${club.payout_hold_days === 1 ? 'day' : 'days'} after the show`}
-          />
-        </section>
+                      <ul className="mt-1.5 flex flex-col">
+                        {show.lines.map((line, index) => (
+                          <li
+                            key={`${show.showId}-${line.artistId}-${index}`}
+                            className="flex items-baseline justify-between gap-4 py-1 text-sm"
+                          >
+                            <span className="min-w-0 truncate">
+                              {line.name}
+                              <span className="text-xs text-muted-foreground">
+                                {' · '}
+                                {line.agreement}
+                                {line.capped && ' (capped)'}
+                                {' · '}
+                                {line.accountNumber ?? 'no account number'}
+                              </span>
+                            </span>
+                            <span className="flex shrink-0 items-baseline gap-3">
+                              <span className="w-24 text-right font-medium tabular-nums">
+                                {money(line.amount, show.currency)}
+                              </span>
+                              {/* Bare de som faktisk skal ha penger kan vente på
+                                  et fakturagrunnlag — null kroner sendes ikke. */}
+                              <span className="w-24 text-right text-xs text-muted-foreground">
+                                {line.amount <= 0 ? '' : line.notified ? 'Asked to invoice' : 'Not sent yet'}
+                              </span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
 
-        {/* ── Seller details ─────────────────────────────────── */}
-        <section className="rounded-lg border p-5">
-          <h2 className="text-base font-semibold">Seller details</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            This appears as the seller on the ticket the customer gets, and in the terms of sale.
-            The club is the seller and organiser — Tickethalo handles the ticketing.
-          </p>
-
-          <form action={saveSellerDetailsAction} className="mt-4 flex flex-col gap-4">
-            <Field
-              name="legal_name"
-              label="Legal name"
-              defaultValue={club.legal_name ?? ''}
-              placeholder="Comedy Club Ltd"
-            />
-            <Field
-              name="org_number"
-              label="Company registration number"
-              defaultValue={club.org_number ?? ''}
-              placeholder="999 999 999"
-              hint="Nine digits."
-            />
-            <Field
-              name="support_email"
-              label="Contact for ticket buyers"
-              type="email"
-              defaultValue={club.support_email ?? ''}
-              placeholder="tickets@comedyclub.com"
-              hint="The club owns the customer relationship and answers questions about the event."
-            />
-            <div>
-              <button
-                type="submit"
-                className="inline-flex h-9 items-center rounded-md bg-foreground px-3.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-              >
-                Save
-              </button>
-            </div>
-          </form>
-        </section>
-
-        {/* ── Payouts ────────────────────────────────────────── */}
-        <section className="rounded-lg border">
-          <div className="border-b px-5 py-4">
-            <h2 className="text-base font-semibold">Payouts</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              The money is held until the show has taken place, so a cancellation can be refunded.
-            </p>
-          </div>
-          {payouts?.length ? (
-            <table className="w-full text-sm">
-              <tbody>
-                {payouts.map((payout) => (
-                  <tr key={payout.id} className="border-b last:border-0">
-                    <td className="px-5 py-3 font-medium">{money(payout.amount, payout.currency)}</td>
-                    <td className="px-5 py-3 text-xs text-muted-foreground">
-                      {payout.status === 'paid' ? 'Paid out' : payout.status === 'failed' ? 'Failed' : 'In transit'}
-                    </td>
-                    <td className="px-5 py-3 text-right text-xs text-muted-foreground">
-                      {new Date(payout.paid_at ?? payout.created_at).toLocaleDateString('en-GB', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="px-5 py-8 text-center text-sm text-muted-foreground">No payouts yet.</p>
-          )}
-        </section>
-
-        {/* ── Settlement ─────────────────────────────────────── */}
-        <section className="rounded-lg border">
-          <div className="border-b px-5 py-4">
-            <h2 className="text-base font-semibold">Settlement</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Gross ticket sales, less booking commission and refunds. The commission is exempt from
-              VAT as intermediation of admission to a cultural event.
-            </p>
-          </div>
-          {settlements?.length ? (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
-                  <th className="px-5 py-2.5 text-left font-medium">Period</th>
-                  <th className="px-5 py-2.5 text-left font-medium">Gross</th>
-                  <th className="px-5 py-2.5 text-left font-medium">Commission</th>
-                  <th className="px-5 py-2.5 text-left font-medium">Refunded</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Paid out</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settlements.map((row) => (
-                  <tr key={row.id} className="border-b last:border-0">
-                    <td className="px-5 py-3">
-                      {new Date(row.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-                      {row.document_number && (
-                        <div className="text-xs text-muted-foreground">{row.document_number}</div>
+                      {show.overCommitted && (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                          The agreed fixed fees are higher than the show earned — the club covers the
+                          difference.
+                        </p>
                       )}
-                    </td>
-                    <td className="px-5 py-3">{money(row.gross_amount, row.currency)}</td>
-                    <td className="px-5 py-3 text-muted-foreground">−{money(row.commission_amount, row.currency)}</td>
-                    <td className="px-5 py-3 text-muted-foreground">−{money(row.refunded_amount, row.currency)}</td>
-                    <td className="px-5 py-3 text-right font-medium">{money(row.net_amount, row.currency)}</td>
-                  </tr>
+                    </div>
+                  </details>
                 ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-              The first settlement is created at the end of the month.
-            </p>
-          )}
-        </section>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Seller details ───────────────────────────────── */}
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Seller details</CardTitle>
+            <CardDescription>
+              Shown as the seller on the ticket. The club is the seller and organiser — Tickethalo
+              handles the ticketing.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ToastActionForm action={saveSellerDetailsAction} successMessage="Seller details saved.">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <SellerField
+                  name="legal_name"
+                  label="Legal name"
+                  defaultValue={club.legal_name ?? ''}
+                  placeholder="Comedy Club Ltd"
+                />
+                <SellerField
+                  name="org_number"
+                  label="Registration number"
+                  defaultValue={club.org_number ?? ''}
+                  placeholder="999 999 999"
+                  inputMode="numeric"
+                />
+                <SellerField
+                  name="support_email"
+                  label="Contact for ticket buyers"
+                  type="email"
+                  defaultValue={club.support_email ?? ''}
+                  placeholder="tickets@comedyclub.com"
+                />
+              </div>
+              <div className="mt-4">
+                <Button type="submit" size="sm">Save</Button>
+              </div>
+            </ToastActionForm>
+          </CardContent>
+        </Card>
+
+        {/* ── Payouts and settlement ───────────────────────── */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>Payouts</CardTitle>
+              <CardDescription>
+                Held until the show has taken place, so a cancellation can be refunded.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {payouts?.length ? (
+                <ul className="flex flex-col divide-y">
+                  {payouts.map((payout) => (
+                    <li key={payout.id} className="flex items-center justify-between gap-4 py-2.5 text-sm first:pt-0 last:pb-0">
+                      <span className="font-medium tabular-nums">{money(payout.amount, payout.currency)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {payout.status === 'paid' ? 'Paid' : payout.status === 'failed' ? 'Failed' : 'On the way'}
+                        {' · '}
+                        {new Date(payout.paid_at ?? payout.created_at).toLocaleDateString('en-GB', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Empty>No payouts yet.</Empty>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>Settlement</CardTitle>
+              <CardDescription>
+                Gross ticket sales, less commission and refunds. The commission is exempt from VAT
+                as intermediation of admission to a cultural event.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {settlements?.length ? (
+                <ul className="flex flex-col divide-y">
+                  {settlements.map((row) => (
+                    <li key={row.id} className="flex items-center justify-between gap-4 py-2.5 text-sm first:pt-0 last:pb-0">
+                      <span>
+                        {new Date(row.period_start).toLocaleDateString('en-GB', {
+                          month: 'long',
+                          year: 'numeric',
+                        })}
+                      </span>
+                      <span className="text-right">
+                        <span className="font-medium tabular-nums">{money(row.net_amount, row.currency)}</span>
+                        <span className="block text-xs text-muted-foreground tabular-nums">
+                          {money(row.gross_amount, row.currency)} gross
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Empty>The first settlement is created at the end of the month.</Empty>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
@@ -304,40 +426,46 @@ export default async function FinancesPage() {
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
-    </div>
+    <Card size="sm" className="gap-1 py-4">
+      <CardContent>
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="mt-1 text-lg font-semibold">{value}</div>
+        {hint && <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>}
+      </CardContent>
+    </Card>
   )
 }
 
-function Field({
+function SellerField({
   name,
   label,
   defaultValue,
   placeholder,
-  hint,
   type = 'text',
+  inputMode,
 }: {
   name: string
   label: string
   defaultValue: string
   placeholder?: string
-  hint?: string
   type?: string
+  inputMode?: 'numeric'
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium">{label}</span>
-      <input
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={name}>{label}</Label>
+      <Input
+        id={name}
         name={name}
         type={type}
+        inputMode={inputMode}
         defaultValue={defaultValue}
         placeholder={placeholder}
-        className="h-9 rounded-md border bg-background px-3 text-sm"
       />
-      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-    </label>
+    </div>
   )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>
 }

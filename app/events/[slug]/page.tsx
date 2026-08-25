@@ -2,9 +2,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { ArrowLeft, Ticket } from 'lucide-react'
-import { ToastActionForm } from '@/components/toast-action-form'
-import { startCheckoutAction } from '../actions'
+import { ArrowLeft } from 'lucide-react'
+import { TicketOrder } from '@/components/public/ticket-order'
 import {
   formatShowDate,
   formatShowTime,
@@ -75,25 +74,14 @@ export default async function EventDetailPage({ params }: Props) {
     : 'Payment opens in secure checkout.'
 
   const buyButton = (full?: boolean) => (
-    <ToastActionForm action={startCheckoutAction} className={full ? 'w-full' : undefined}>
-      <input type="hidden" name="show_id" value={show.id} />
-      <input type="hidden" name="slug" value={show.slug} />
-      <button
-        type="submit"
-        disabled={soldOut}
-        className={cn(
-          'inline-flex h-12 items-center justify-center gap-2 px-7 text-[16px] font-semibold transition-colors lg:text-[14px]',
-          full && 'w-full',
-          'bg-[var(--ev-text)] text-[var(--ev-bg)]',
-          'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
-          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
-          'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]'
-        )}
-        style={{ borderRadius: 'var(--ev-r-chip)' }}
-      >
-        <Ticket className="size-4" /> {soldOut ? 'Sold out' : 'Buy ticket'}
-      </button>
-    </ToastActionForm>
+    <TicketOrder
+      showId={show.id}
+      slug={show.slug}
+      price={price}
+      soldOut={soldOut}
+      remaining={remaining}
+      full={full}
+    />
   )
 
   return (

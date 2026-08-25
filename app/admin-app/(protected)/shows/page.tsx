@@ -153,7 +153,7 @@ export default async function ShowsPage({
         actions={
           <Link
             href="/admin-app/shows/new"
-            className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-[var(--ev-accent-fill)] text-primary-foreground text-md font-semibold hover:bg-primary/90 transition-colors"
           >
             + New show
           </Link>
@@ -195,7 +195,7 @@ function UpcomingShowsGrid({ rows }: { rows: EnrichedShowRow[] }) {
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <Link
         href="/admin-app/shows/new"
-        className="flex min-h-40 max-h-60 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed bg-muted/40 p-8 text-center transition hover:-translate-y-0.5 hover:bg-muted/60"
+        className="hidden flex min-h-40 max-h-60 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed bg-muted/40 p-8 text-center transition hover:-translate-y-0.5 hover:bg-muted/60"
       >
         <span className="text-5xl font-light leading-none text-muted-foreground">+</span>
         <span className="space-y-1.5">

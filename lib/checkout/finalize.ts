@@ -7,6 +7,8 @@ type FinalizeCheckoutResult = {
   result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show' | 'missing_show' | 'unpaid' | 'failed'
   orderId?: string | null
   ticketCode?: string | null
+  /** Alle billettkodene i ordren. Én per plass i bestillingen. */
+  ticketCodes?: string[]
   emailSent?: boolean
   emailError?: string
   /** Settes når betalingen er bokført, slik at gebyr-oppgjøret kan kjøres. */
@@ -89,6 +91,14 @@ export async function finalizeCheckoutSession(
   const buyerEmail = session.customer_details?.email ?? session.customer_email ?? ''
   const buyerName = session.customer_details?.name ?? ''
 
+  // Antall og navn ble lagt på sesjonen da den ble opprettet — se
+  // `createCheckoutSession`. Uten dem er det én navnløs billett, som før.
+  const quantity = Math.max(1, Number(session.metadata?.quantity ?? 1) || 1)
+  const holderNames = Array.from(
+    { length: quantity },
+    (_, index) => session.metadata?.[`ticket_name_${index + 1}`]?.trim() || '',
+  )
+
   const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : null
   const accountId = options?.accountId ?? session.metadata?.connected_account_id ?? null
   const charge = await readChargeFacts(paymentIntentId, accountId)
@@ -109,6 +119,8 @@ export async function finalizeCheckoutSession(
       p_application_fee_id: charge.applicationFeeId,
       p_platform_fee_amount: charge.applicationFeeAmount,
       p_payment_method_type: charge.paymentMethodType,
+      p_quantity: quantity,
+      p_ticket_names: holderNames,
     })
     .single()
 
@@ -125,6 +137,7 @@ export async function finalizeCheckoutSession(
       result: completion.result,
       orderId: completion.order_id,
       ticketCode: completion.ticket_code,
+      ticketCodes: completion.ticket_codes ?? [],
       emailSent: false,
       chargeId: charge.chargeId,
     }
@@ -133,7 +146,13 @@ export async function finalizeCheckoutSession(
   let emailSent = false
   let emailError: string | undefined
 
-  if (buyerEmail && completion.ticket_code) {
+  const ticketCodes = completion.ticket_codes?.length
+    ? completion.ticket_codes
+    : completion.ticket_code
+      ? [completion.ticket_code]
+      : []
+
+  if (buyerEmail && ticketCodes.length > 0) {
     const { data: show } = await admin
       .from('shows')
       .select('title, date, start_time, venue_name, venue_address, club_id')
@@ -150,6 +169,16 @@ export async function finalizeCheckoutSession(
           .maybeSingle()
       : { data: null }
 
+    // Navnene leses fra billettene selv, ikke fra metadataen: der er de
+    // allerede falt tilbake på kjøperens navn der kjøperen ikke oppga noe.
+    const { data: ticketRows } = await admin
+      .from('tickets')
+      .select('ticket_code, holder_name')
+      .in('ticket_code', ticketCodes)
+
+    const holderByCode = new Map((ticketRows ?? []).map((row) => [row.ticket_code, row.holder_name]))
+    const origin = resolveAppOrigin(session)
+
     const emailResult = await sendTicketPurchaseEmail({
       email: buyerEmail,
       buyer_name: buyerName,
@@ -158,8 +187,11 @@ export async function finalizeCheckoutSession(
       show_time: show?.start_time?.slice(0, 5),
       venue_name: show?.venue_name ?? show?.venue_address ?? '',
       venue_address: show?.venue_name ? show.venue_address : null,
-      ticket_code: completion.ticket_code,
-      verification_url: buildTicketVerificationUrl(resolveAppOrigin(session), completion.ticket_code),
+      tickets: ticketCodes.map((code) => ({
+        code,
+        holderName: holderByCode.get(code) ?? null,
+        verificationUrl: buildTicketVerificationUrl(origin, code),
+      })),
       seller: club,
     })
 
@@ -170,6 +202,7 @@ export async function finalizeCheckoutSession(
     result: completion.result,
     orderId: completion.order_id,
     ticketCode: completion.ticket_code,
+    ticketCodes,
     emailSent,
     emailError,
     chargeId: charge.chargeId,

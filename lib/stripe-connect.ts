@@ -48,7 +48,7 @@ const CLUB_MCC = '7922'
 // ─────────────────────────────────────────────────────────────
 
 export type ReadinessItem = {
-  key: 'stripe_account' | 'charges' | 'payouts' | 'legal_name' | 'org_number'
+  key: 'stripe_account' | 'charges' | 'payouts' | 'legal_name' | 'org_number' | 'support_email'
   label: string
   done: boolean
 }
@@ -56,7 +56,7 @@ export type ReadinessItem = {
 /** Feltene klarheten faktisk avhenger av — så kallere slipper å hente alt. */
 export type ClubReadiness = Pick<
   ConnectClub,
-  'stripe_account_id' | 'charges_enabled' | 'payouts_enabled' | 'legal_name' | 'org_number'
+  'stripe_account_id' | 'charges_enabled' | 'payouts_enabled' | 'legal_name' | 'org_number' | 'support_email'
 >
 
 /**
@@ -99,51 +99,121 @@ function accountOrigin() {
   return 'http://localhost:3000'
 }
 
-function businessProfile(club: ConnectClub): Stripe.AccountCreateParams.BusinessProfile {
+/**
+ * Klubbsiden, men bare når den faktisk kan nås utenfra.
+ *
+ * Stripe avviser `business_profile.url` som ikke er offentlig — i utvikling
+ * er origin `http://localhost:3000`, og da må feltet utelates. Onboardingen
+ * spør klubben om nettadressen selv når den mangler.
+ */
+function publicClubUrl(club: ConnectClub): string | null {
   const origin = accountOrigin().replace(/\/$/, '')
-  return {
-    // Navnet og supportinfoen her er det kunden ser på Stripes
-    // betalingskvittering. Står de tomt, framstår Tickethalo som selger.
-    name: club.legal_name ?? club.name,
-    url: `${origin}/clubs/${club.slug}`,
-    mcc: CLUB_MCC,
-    ...(club.support_email ? { support_email: club.support_email } : {}),
-    support_url: `${origin}/clubs/${club.slug}`,
+
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    return null
   }
+
+  if (parsed.protocol !== 'https:') return null
+  if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(parsed.hostname)) return null
+  if (/\.local$/i.test(parsed.hostname)) return null
+
+  return `${origin}/clubs/${club.slug}`
 }
 
+
 /**
- * Oppretter Express-kontoen første gang, og returnerer den eksisterende ellers.
+ * Oppretter kontoen første gang, og returnerer den eksisterende ellers.
  * Idempotent på klubb-id, slik at et dobbeltklikk ikke gir to kontoer.
+ *
+ * Kontoen opprettes med Accounts v2 (`/v2/core/accounts`). Stripe har stengt
+ * v1-oppretting for nye Connect-integrasjoner. `merchant`-konfigurasjonen er
+ * den som gjør klubben til merchant of record — nettopp det direct charges
+ * krever, og det formidler-strukturen bygger på.
  */
 export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<string> {
   if (club.stripe_account_id) return club.stripe_account_id
 
-  const account = await stripe.accounts.create(
+  const contactEmail = club.support_email?.trim()
+  if (!contactEmail) {
+    // Stripe krever kontakt-e-post for merchant-konfigurasjonen, og adressen
+    // er uansett klubbens kontaktpunkt mot billettkjøperen.
+    throw new Error('Fyll inn kontakt for billettkjøpere før du kobler Stripe-kontoen.')
+  }
+
+  const clubUrl = publicClubUrl(club)
+
+  const account = await stripe.v2.core.accounts.create(
     {
-      type: 'express',
-      country: 'NO',
-      // `business_type` settes ikke: en klubb kan være AS, forening eller
-      // enkeltpersonforetak, og Stripes onboarding spør om det selv.
-      default_currency: club.currency.toLowerCase(),
-      business_profile: businessProfile(club),
-      capabilities: {
-        card_payments: { requested: true },
-        transfers: { requested: true },
+      display_name: club.legal_name ?? club.name,
+      contact_email: contactEmail,
+      // Express-dashbordet gir klubben en enkel oversikt over egne utbetalinger
+      // uten at de trenger et fullt Stripe-oppsett.
+      dashboard: 'express',
+      identity: {
+        country: 'no',
+        // `entity_type` settes ikke: en klubb kan være AS, forening eller
+        // enkeltpersonforetak, og onboardingen spør om det selv.
       },
-      settings: {
-        // Pengene holdes på klubbens konto til etter showet.
-        payouts: { schedule: { interval: 'manual' } },
+      configuration: {
+        merchant: {
+          mcc: CLUB_MCC,
+          // `stripe_balance.payouts` bes ikke om: den følger med
+          // merchant-konfigurasjonen, og leses tilbake i syncAccountStatus.
+          capabilities: {
+            card_payments: { requested: true },
+          },
+          support: {
+            email: contactEmail,
+            ...(clubUrl ? { url: clubUrl } : {}),
+          },
+        },
+      },
+      defaults: {
+        currency: club.currency.toLowerCase(),
+        // Stripe krever `application` på begge når dashbordet er `express`.
+        // Det betyr at Tickethalo betaler Stripes gebyrer og hefter for tap —
+        // se kommentaren i lib/stripe-fees.ts om hva det gjør med oppgjøret.
+        responsibilities: {
+          fees_collector: 'application',
+          losses_collector: 'application',
+        },
       },
       metadata: { club_id: club.id, club_slug: club.slug },
     },
-    { idempotencyKey: `club-account-${club.id}` },
+    { idempotencyKey: `club-account-v2-${club.id}` },
   )
 
   const db = createAdminClient()
   await db.from('clubs').update({ stripe_account_id: account.id }).eq('id', club.id)
 
+  await holdPayouts(account.id)
+
   return account.id
+}
+
+/**
+ * Utbetaling settes til manuell, slik at pengene blir stående på klubbens
+ * konto til showet er avholdt. Uten dette kan et avlyst show etterlate en tom
+ * konto med refusjonskrav.
+ *
+ * Utbetalingsplanen finnes ikke i v2-oppretting ennå. v2-konto-ID-er er
+ * gyldige på v1-kontoendepunktene, så den settes der.
+ */
+async function holdPayouts(accountId: string) {
+  try {
+    await stripe.accounts.update(accountId, {
+      settings: { payouts: { schedule: { interval: 'manual' } } },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(
+      `[Connect] Could not set manual payout schedule on ${accountId}: ${message}. ` +
+        'Funds may be paid out before the show — set the schedule manually in Stripe.',
+    )
+  }
 }
 
 /** Onboarding-lenke (KYC + bankkonto). Lenken er kortlivet og må hentes på nytt. */
@@ -151,35 +221,58 @@ export async function createOnboardingLink(club: ConnectClub, returnPath = '/adm
   const accountId = await getOrCreateConnectedAccount(club)
   const origin = accountOrigin().replace(/\/$/, '')
 
-  const link = await stripe.accountLinks.create({
+  const link = await stripe.v2.core.accountLinks.create({
     account: accountId,
-    type: 'account_onboarding',
-    refresh_url: `${origin}${returnPath}?onboarding=refresh`,
-    return_url: `${origin}${returnPath}?onboarding=done`,
+    use_case: {
+      type: 'account_onboarding',
+      account_onboarding: {
+        configurations: ['merchant'],
+        refresh_url: `${origin}${returnPath}?onboarding=refresh`,
+        return_url: `${origin}${returnPath}?onboarding=done`,
+      },
+    },
   })
 
   return link.url
 }
 
-/** Lenke inn i klubbens eget Express-dashboard (saldo, utbetalinger, kvitteringer). */
+/**
+ * Lenke inn i klubbens eget Express-dashboard (saldo, utbetalinger,
+ * kvitteringsinnstilling). Stripe avviser lenken før onboardingen er
+ * fullført, så feilen oversettes til noe klubben kan handle på.
+ */
 export async function createDashboardLink(accountId: string) {
-  const link = await stripe.accounts.createLoginLink(accountId)
-  return link.url
+  try {
+    const link = await stripe.accounts.createLoginLink(accountId)
+    return link.url
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('has not completed onboarding')) {
+      throw new Error('Stripe-dashbordet åpnes først når onboardingen er fullført.')
+    }
+    throw error
+  }
 }
 
 /**
  * Speiler Stripes syn på kontoen inn i `clubs`. Kalles fra `account.updated`
  * og fra økonomisiden, slik at guards kan lese databasen i stedet for å
  * spørre Stripe på hver checkout.
+ *
+ * v2 svarer med null for det meste med mindre feltene bes om eksplisitt —
+ * derav `include`.
  */
 export async function syncAccountStatus(accountId: string) {
-  const account = await stripe.accounts.retrieve(accountId)
+  const account = await stripe.v2.core.accounts.retrieve(accountId, {
+    include: ['configuration.merchant', 'requirements'],
+  })
+
+  const capabilities = account.configuration?.merchant?.capabilities
+  const chargesEnabled = capabilities?.card_payments?.status === 'active'
+  const payoutsEnabled = capabilities?.stripe_balance?.payouts?.status === 'active'
+  const complete = chargesEnabled && payoutsEnabled
+
   const db = createAdminClient()
-
-  const chargesEnabled = account.charges_enabled === true
-  const payoutsEnabled = account.payouts_enabled === true
-  const complete = chargesEnabled && payoutsEnabled && account.details_submitted === true
-
   const { data } = await db
     .from('clubs')
     .update({

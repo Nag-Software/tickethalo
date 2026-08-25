@@ -1,35 +1,20 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { formatTicketCode } from '@/lib/tickets'
 import { AdminHeader } from '@/components/admin/admin-header'
-import { ToastActionForm } from '@/components/toast-action-form'
 import { DeleteButton } from '@/components/admin/delete-button'
-import {
-  deleteMarketingDesignAction,
-  deleteShowAction,
-  generatePosterAction,
-  selectMarketingDesignAction,
-  updateShowDetailsAction,
-  uploadMarketingDesignAction,
-} from '../actions'
+import { deleteShowAction, updateShowDetailsAction } from '../actions'
 import { buildBookingSpots } from '@/lib/booking-spots'
 import { OverviewTab } from './overview-tab'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
-import { MarketingTemplateUploadButton } from './marketing-template-upload-button'
-import { PosterGenerateButton } from './poster-generate-button'
+import { MarketingTab } from './marketing/marketing-tab'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender, ShowMarketingDesign } from '@/types/database'
+import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
-
-function formatFileSize(bytes: number | null) {
-  if (!bytes) return null
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 export default async function ShowDetailPage({
   params,
@@ -43,9 +28,7 @@ export default async function ShowDetailPage({
   await assertShowAccess(id)
   const db = createAdminClient()
   const shouldLoadTickets = tab === 'tickets'
-  const shouldLoadMarketingTasks = tab === 'marketing'
-  const shouldLoadMarketingDesigns = tab === 'marketing'
-  const shouldLoadRelatedArtists = tab === 'overview' || tab === 'lineup' || tab === 'marketing'
+  const shouldLoadRelatedArtists = tab === 'overview' || tab === 'lineup'
   // The overview's booking card offers and adds artists straight from a row.
   const shouldLoadSelectableArtists = tab === 'lineup' || tab === 'overview'
 
@@ -55,8 +38,6 @@ export default async function ShowDetailPage({
     { data: offers },
     { data: lineup },
     { data: tickets },
-    { data: marketingTasks },
-    { data: marketingDesigns },
     { count: soldTicketCount },
   ] = await Promise.all([
     db.from('shows').select('*').eq('id', id).single(),
@@ -64,14 +45,8 @@ export default async function ShowDetailPage({
     db.from('booking_offers').select('*').eq('show_id', id).order('created_at', { ascending: false }),
     db.from('confirmed_spots').select('*').eq('show_id', id),
     shouldLoadTickets
-      ? db.from('tickets').select('id, ticket_code, status, customer_id').eq('show_id', id).limit(500)
-      : Promise.resolve({ data: [] as Array<{ id: string; ticket_code: string; status: string; customer_id: string | null }> }),
-    shouldLoadMarketingTasks
-      ? db.from('marketing_tasks').select('*').eq('show_id', id).order('created_at')
-      : Promise.resolve({ data: [] as Array<{ id: string; show_id: string; task_key: string; label: string | null; is_completed: boolean; created_at: string }> }),
-    shouldLoadMarketingDesigns
-      ? db.from('show_marketing_designs').select('*').eq('show_id', id).order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] as ShowMarketingDesign[] }),
+      ? db.from('tickets').select('id, ticket_code, status, customer_id, holder_name').eq('show_id', id).limit(500)
+      : Promise.resolve({ data: [] as Array<{ id: string; ticket_code: string; status: string; customer_id: string | null; holder_name: string | null }> }),
     // The overview card shows ticket sales, but never the rows — a count is enough.
     tab === 'overview'
       ? db.from('tickets').select('id', { count: 'exact', head: true }).eq('show_id', id).in('status', ['valid', 'used'])
@@ -195,7 +170,6 @@ export default async function ShowDetailPage({
     : []
 
   const showLocation = show.venue_address ?? show.venue_name
-  const selectedMarketingDesign = (marketingDesigns ?? []).find((design) => design.id === show.selected_marketing_design_id) ?? (marketingDesigns ?? [])[0] ?? null
 
   return (
     <div>
@@ -333,110 +307,7 @@ export default async function ShowDetailPage({
         )}
 
         {/* ══════════════════ MARKETING ══════════════════ */}
-        {tab === 'marketing' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-7 items-start">
-              <div className="rounded-xl border bg-card p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-semibold text-sm">Lineup poster</h2>
-                    {selectedMarketingDesign && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">Using {selectedMarketingDesign.label || selectedMarketingDesign.file_name}</p>
-                    )}
-                  </div>
-                  <PosterGenerateButton showId={show.id} posterUrl={show.poster_url} action={generatePosterAction}>
-                    {show.poster_url ? 'Regenerate' : 'Generate'}
-                  </PosterGenerateButton>
-                </div>
-                {show.poster_url ? (
-                  <div className="space-y-2">
-                    <div className="relative mx-auto aspect-[2/3] w-full max-w-[520px] overflow-hidden rounded-lg border bg-muted/20">
-                      <Image src={show.poster_url} alt={`Poster for ${show.title}`} fill sizes="(max-width: 768px) 92vw, 520px" className="object-contain" />
-                    </div>
-                    <a href={show.poster_url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline block">
-                      Open in new tab
-                    </a>
-                  </div>
-                ) : (
-                  <div className="mx-auto flex aspect-[2/3] w-full max-w-[520px] items-center justify-center rounded-lg border border-dashed bg-muted/30 text-sm text-muted-foreground">
-                    {show.status === 'draft' ? 'The poster is generated once the lineup is confirmed.' : 'No poster generated yet.'}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-xl border bg-card p-5 min-h-[640px] flex flex-col gap-4">
-                <div className="space-y-1">
-                  <h2 className="font-semibold text-sm">Poster templates</h2>
-                  <p className="text-xs text-muted-foreground">The design the AI works from.</p>
-                </div>
-
-                <div className="flex-1 space-y-3">
-                  {(marketingDesigns ?? []).length > 0 ? (
-                    (marketingDesigns ?? []).map((design) => {
-                      const isSelected = design.id === selectedMarketingDesign?.id
-                      const fileSize = formatFileSize(design.file_size)
-
-                      return (
-                        <div key={design.id} className={`rounded-lg border p-2 transition-colors ${isSelected ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/30'}`}>
-                          <ToastActionForm action={selectMarketingDesignAction} successMessage="Template selected.">
-                            <input type="hidden" name="show_id" value={show.id} />
-                            <input type="hidden" name="design_id" value={design.id} />
-                            <button type="submit" className="block w-full text-left">
-                              <div className="flex items-center justify-between gap-2 pb-2">
-                                <div className="min-w-0">
-                                  <p className="truncate text-xs font-semibold">{design.label || design.file_name}</p>
-                                  <p className="text-[11px] text-muted-foreground uppercase">{design.file_type}{fileSize ? ` · ${fileSize}` : ''}</p>
-                                </div>
-                                {isSelected && (
-                                  <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Selected</span>
-                                )}
-                              </div>
-                              <div className="relative aspect-[3/4] overflow-hidden rounded-md border bg-muted/20">
-                                <Image src={design.file_url} alt={design.label || design.file_name} fill sizes="260px" className="object-contain" />
-                              </div>
-                            </button>
-                          </ToastActionForm>
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <a href={design.file_url} target="_blank" rel="noreferrer" className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">
-                              Open file
-                            </a>
-                            <ToastActionForm action={deleteMarketingDesignAction} successMessage="Template deleted.">
-                              <input type="hidden" name="show_id" value={show.id} />
-                              <input type="hidden" name="design_id" value={design.id} />
-                              <button type="submit" className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
-                                Delete
-                              </button>
-                            </ToastActionForm>
-                          </div>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="flex aspect-[3/4] items-center justify-center rounded-lg border border-dashed bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-                      No templates added.
-                    </div>
-                  )}
-                </div>
-
-                <MarketingTemplateUploadButton showId={show.id} action={uploadMarketingDesignAction} />
-              </div>
-            </div>
-
-            {(marketingTasks ?? []).length > 0 && (
-              <div className="rounded-xl border bg-card divide-y">
-                <div className="px-4 py-2.5 font-semibold text-sm border-b bg-muted/20">Checklist</div>
-                {(marketingTasks ?? []).map((task) => (
-                  <div key={task.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className={`size-5 rounded border-2 shrink-0 flex items-center justify-center text-[10px] ${task.is_completed ? 'bg-primary border-primary text-primary-foreground' : 'border-input'}`}>
-                      {task.is_completed && '✓'}
-                    </div>
-                    <span className={`text-sm ${task.is_completed ? 'line-through text-muted-foreground' : ''}`}>{task.label ?? task.task_key}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {tab === 'marketing' && <MarketingTab showId={id} />}
 
         {/* ══════════════════ TICKETS ══════════════════ */}
         {tab === 'tickets' && (
@@ -457,6 +328,7 @@ export default async function ShowDetailPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/30 border-b text-xs text-muted-foreground">
+                  <th className="text-left px-4 py-2.5 font-medium">Guest</th>
                   <th className="text-left px-4 py-2.5 font-medium">Ticket code</th>
                   <th className="text-left px-4 py-2.5 font-medium">Status</th>
                 </tr>
@@ -464,7 +336,10 @@ export default async function ShowDetailPage({
               <tbody>
                 {(tickets ?? []).map((t) => (
                   <tr key={t.id} className="border-b last:border-0">
-                    <td className="px-4 py-3 font-mono text-xs">{t.ticket_code}</td>
+                    <td className="px-4 py-3">
+                      {t.holder_name ?? <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs tracking-wider">{formatTicketCode(t.ticket_code)}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[t.status] ?? ''}`}>{t.status}</span>
                     </td>

@@ -47,6 +47,15 @@ export default async function ArtistProfilePage() {
                 <Field label="Phone">
                   <input name="phone" type="tel" defaultValue={artist.phone ?? ''} className={inputClass} />
                 </Field>
+                <Field label="Account number" hint="Where your fee is paid after a show.">
+                  <input
+                    name="bank_account_number"
+                    defaultValue={artist.bank_account_number ?? ''}
+                    inputMode="numeric"
+                    placeholder="1234.56.78901"
+                    className={inputClass}
+                  />
+                </Field>
                 <Field label="Profile Picture">
                   <input
                     name="profile_image_file"

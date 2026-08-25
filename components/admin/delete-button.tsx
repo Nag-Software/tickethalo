@@ -11,6 +11,7 @@ export function DeleteButton({
   label = 'Delete',
   confirmMessage,
   tone = 'muted',
+  iconOnly = false,
 }: {
   action: (formData: FormData) => Promise<void>
   id: string
@@ -19,6 +20,8 @@ export function DeleteButton({
   confirmMessage: string
   /** 'danger' keeps the button red at all times, not only on hover. */
   tone?: 'muted' | 'danger'
+  /** Drops the visible label. `label` still names the button for screen readers. */
+  iconOnly?: boolean
 }) {
   const formRef = useRef<HTMLFormElement>(null)
 
@@ -39,7 +42,7 @@ export function DeleteButton({
         )}
       >
         <Trash2 className="size-3.5" />
-        {label}
+        {!iconOnly && label}
       </button>
     </form>
   )

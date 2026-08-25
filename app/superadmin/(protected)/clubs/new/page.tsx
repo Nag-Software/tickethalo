@@ -7,7 +7,14 @@ import { Label } from '@/components/ui/label'
 
 export const metadata = { title: 'Ny klubb — Superadmin' }
 
-export default function NewClubPage() {
+export default async function NewClubPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ name?: string }>
+}) {
+  // Fylles ut når du kommer hit fra en betasøknad i /superadmin/beta-requests.
+  const { name } = await searchParams
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b px-6 py-4 flex items-center gap-3">
@@ -23,7 +30,7 @@ export default function NewClubPage() {
         <form action={createClubAction} className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="name">Klubbnavn *</Label>
-            <Input id="name" name="name" placeholder="Oslo Comedy Club" required />
+            <Input id="name" name="name" placeholder="Oslo Comedy Club" defaultValue={name ?? ''} required />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="city">By</Label>

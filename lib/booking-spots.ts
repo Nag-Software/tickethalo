@@ -33,13 +33,17 @@ export type BookingSpot = {
   state: 'booked' | 'pending' | 'open'
 }
 
-type RequirementInput = {
-  id: string
-  role_name: string
-  quantity: number
+/** The fee fields of a requirement — the only part a fee label reads. */
+export type RequirementFeeInput = {
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
+}
+
+type RequirementInput = RequirementFeeInput & {
+  id: string
+  role_name: string
+  quantity: number
 }
 
 type SpotInput = {
@@ -64,7 +68,7 @@ function formatPercent(value: number) {
 }
 
 /** The fee as set on the lineup spot — same sources the lineup tab reads. */
-export function requirementFeeLabel(requirement: RequirementInput, currency: string) {
+export function requirementFeeLabel(requirement: RequirementFeeInput, currency: string) {
   if (requirement.compensation_type === 'percent') {
     const percent = requirement.compensation_percent
     if (percent == null) return 'Not set'

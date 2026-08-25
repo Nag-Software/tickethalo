@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
+import { requirementFeeLabel } from '@/lib/booking-spots'
 import { cn } from '@/lib/utils'
 import { BookingOfferStatusToast } from '../booking-offers/status-toast'
 import { OfferButtons } from '@/components/artist/offer-buttons'
@@ -39,6 +40,23 @@ export default async function ConfirmedBookingsPage({
     ? await db.from('shows').select('id, title, date, start_time, venue_name, status').in('id', showIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
+
+  /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
+     som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet. */
+  const requirementIds = [...new Set((offers ?? []).flatMap((offer) => offer.show_requirement_id ?? []))]
+  const { data: requirements } = requirementIds.length > 0
+    ? await db
+        .from('show_requirements')
+        .select('id, compensation_type, compensation_amount, compensation_percent')
+        .in('id', requirementIds)
+    : { data: [] }
+  const requirementMap = new Map((requirements ?? []).map((req) => [req.id, req]))
+  const offerFee = (offer: { fee_amount: number | null; currency: string; show_requirement_id: string | null }) => {
+    if (offer.fee_amount != null) return formatMoney(offer.fee_amount, offer.currency)
+    const req = offer.show_requirement_id ? requirementMap.get(offer.show_requirement_id) : null
+    return req ? requirementFeeLabel(req, offer.currency || 'NOK') : 'Not set'
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   const activeOffers = (offers ?? []).filter((offer) => {
     const show = showMap.get(offer.show_id)
@@ -91,7 +109,7 @@ export default async function ConfirmedBookingsPage({
                       <Chip tone={active ? 'accent' : 'neutral'}>
                         {OFFER_STATUS_LABELS[offer.status] ?? offer.status.replaceAll('_', ' ')}
                       </Chip>
-                      <Chip>{formatMoney(offer.fee_amount, offer.currency)}</Chip>
+                      <Chip>{offerFee(offer)}</Chip>
                     </div>
                   </div>
 

@@ -4,6 +4,8 @@ import { toFile, type Uploadable } from 'openai'
 import sharp from 'sharp'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOpenAI } from '@/lib/openai'
+import { palettePromptLine } from '@/lib/marketing/palette'
+import type { MarketingPalette } from '@/types/database'
 
 type PosterArtistInput = string | {
   name: string
@@ -48,6 +50,8 @@ export async function generateShowPoster(showId: string, opts: {
   venue: string
   artists: PosterArtistInput[]
   designTemplate?: PosterDesignTemplate | null
+  /** Klubbens merkevarefarger. Uten mal styrer de paletten helt. */
+  palette?: MarketingPalette | null
   throwOnError?: boolean
 }): Promise<string | null> {
   const admin = createAdminClient()
@@ -126,7 +130,7 @@ export async function generateShowPoster(showId: string, opts: {
       posterPlan ? `- Concept: ${posterPlan.concept}` : null,
       posterPlan ? `- Composition: ${posterPlan.composition}` : null,
       posterPlan ? `- Photo treatment: ${posterPlan.photoTreatment}` : null,
-      posterPlan ? `- Palette: ${posterPlan.palette}` : null,
+      posterPlan ? `- Palette: ${opts.palette ? palettePromptLine(opts.palette) : posterPlan.palette}` : null,
       posterPlan ? `- Typography: ${posterPlan.typography}` : null,
       posterPlan ? `- Texture/detail: ${posterPlan.texture}` : null,
       ``,
@@ -136,6 +140,12 @@ export async function generateShowPoster(showId: string, opts: {
       designReference ? `- Replace only editable event text. Keep existing logo text and brand text unchanged.` : `- Title "${opts.title}" must be the dominant readable text, with a strong silhouette and high contrast.`,
       designReference ? `- Keep date, time, venue, title, and artist names legible within the template's existing text areas.` : `- Include date, time, and venue clearly. They must remain legible at phone-screen size.`,
       designReference ? null : `- Include a small footer exactly as: "BILLETTER · TICKETHALO".`,
+      opts.palette && !designReference
+        ? `- Use this exact brand palette: ${palettePromptLine(opts.palette)}. The poster must read as belonging to this venue's brand, not as a generic colour scheme.`
+        : null,
+      opts.palette && designReference
+        ? `- The club's brand palette is ${palettePromptLine(opts.palette)}. Use it only for text you replace where the template has no colour of its own. Never recolour the template's existing artwork.`
+        : null,
       `- Keep faces crisp, undistorted, and recognizable. Authenticity is more important than stylization, humor, or visual novelty.`,
       `- The visible artist name next to or above each portrait must match the face according to the labeled IDENTITY MAP. Never swap names between faces.`,
       `- Do not copy the IDENTITY MAP layout, numbers, grid, or reference labels into the final poster; use it only to map each name to the correct face.`,

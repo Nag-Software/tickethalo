@@ -1,18 +1,14 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight } from 'lucide-react'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 import { LoginForm } from '@/components/login-form'
 import { BookerPreview } from '@/components/public/booker-preview'
+import { BetaAccessDialog } from '@/components/public/beta-access-dialog'
 import { createClient } from '@/lib/supabase/server'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 
 export const metadata = { title: 'Comedy club portal — Tickethalo' }
-
-/** Clubs cannot self-register yet — the portal is invite only during the beta. */
-const BETA_HREF = 'mailto:hei@tickethalo.com?subject=Beta%20access%20-%20comedy%20club%20portal'
 
 /** The violet CTA from the design. The orange accent stays the page's accent colour. */
 const VIOLET_CTA =
@@ -80,12 +76,14 @@ export default async function AdminLoginPage({
 
           <p className="mt-8 text-[15px] font-medium">All for the price of a regular ticket service.</p>
 
-          <Link
-            href={BETA_HREF}
+          {/* Clubs cannot self-register during the beta. All three «Request beta
+              access» triggers on this page open the same dialog, and the request
+              is worked through in /superadmin/beta-requests. */}
+          <BetaAccessDialog
+            source="login-hero"
+            withArrow
             className="mt-5 inline-flex items-center gap-1.5 text-[14px] font-medium text-[var(--ev-accent)] underline underline-offset-4"
-          >
-            Request beta access <ArrowRight className="size-4" aria-hidden />
-          </Link>
+          />
         </div>
 
         <div className="w-full lg:justify-self-end">
@@ -95,9 +93,13 @@ export default async function AdminLoginPage({
             description="Sign in with your club account"
             action={`${adminPrefix}/login/submit`}
             errorMessage={errorMessage}
-            signupHref={BETA_HREF}
             signupPrompt="New club?"
-            signupLabel="Request beta access"
+            signupSlot={
+              <BetaAccessDialog
+                source="login-form"
+                className="font-medium text-[var(--ev-accent)] underline underline-offset-4"
+              />
+            }
             submitClassName={VIOLET_CTA}
             theme="portal"
           />
@@ -147,12 +149,10 @@ export default async function AdminLoginPage({
             </strong>
           </p>
 
-          <Link
-            href={BETA_HREF}
+          <BetaAccessDialog
+            source="login-booker"
             className={`mt-8 inline-flex h-11 items-center rounded-full px-7 text-[13px] font-semibold transition-colors ${VIOLET_CTA}`}
-          >
-            Request beta access
-          </Link>
+          />
         </div>
       </section>
 

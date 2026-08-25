@@ -8,6 +8,9 @@ import { InteractiveLineup, type LineupArtist } from '@/components/admin/interac
  * role, artist and fee are set from the row itself, so the show's own page
  * never has to send the booker off to a separate lineup screen. The status
  * stays read-only; it follows from the booking, not from a menu.
+ *
+ * Drawn compact: the page header already carries the title, date and status,
+ * and the poster lives on the Marketing tab.
  */
 export function InteractiveBookingCard({
   show,
@@ -25,6 +28,7 @@ export function InteractiveBookingCard({
     <ShowBookingCard
       show={show}
       linked={false}
+      compact
       lineup={
         <InteractiveLineup
           showId={show.id}

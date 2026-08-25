@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
+import { formatTicketCode } from '@/lib/tickets'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 
@@ -155,7 +156,19 @@ export default async function CheckoutSuccessPage({
                   value={session.customer_details?.email ?? session.customer_email ?? 'Not available'}
                 />
               )}
-              {completion?.ticketCode && <Row label="Ticket code" value={completion.ticketCode} mono />}
+              {/* Flere billetter i én ordre får hver sin kode — e-posten
+                  bærer QR-ene, men koden skal være synlig her også. */}
+              {(completion?.ticketCodes?.length ?? 0) > 1 ? (
+                <Row
+                  label={`Ticket codes (${completion!.ticketCodes!.length})`}
+                  value={completion!.ticketCodes!.map(formatTicketCode).join(', ')}
+                  mono
+                />
+              ) : (
+                completion?.ticketCode && (
+                  <Row label="Ticket code" value={formatTicketCode(completion.ticketCode)} mono />
+                )
+              )}
               {outcome.tone !== 'success' && session_id && <Row label="Reference" value={session_id} mono />}
             </dl>
           )}

@@ -10,6 +10,7 @@ import {
   isClubPayoutReady,
 } from '@/lib/stripe-connect'
 import { CheckoutError, isMissingStripeResource, toCheckoutError } from '@/lib/checkout/errors'
+import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 
 type ShowForCheckout = {
   id: string
@@ -19,6 +20,12 @@ type ShowForCheckout = {
   ticket_price: number | null
   currency: string
   stripe_price_id: string | null
+}
+
+export type TicketOrderInput = {
+  quantity: number
+  /** Navn per billett, i samme rekkefølge. Kortere enn `quantity` er lov. */
+  holderNames: string[]
 }
 
 /**
@@ -31,8 +38,13 @@ type ShowForCheckout = {
  *
  * Always throws `CheckoutError` — the caller turns the code into a message.
  */
-export async function createCheckoutSession(showId: string, requestUrl: string) {
+export async function createCheckoutSession(
+  showId: string,
+  requestUrl: string,
+  order: TicketOrderInput = { quantity: 1, holderNames: [] },
+) {
   const admin = createAdminClient()
+  const quantity = Math.min(Math.max(1, Math.floor(order.quantity || 1)), MAX_TICKETS_PER_ORDER)
 
   const { data: show, error } = await admin
     .from('shows')
@@ -65,8 +77,10 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
       .eq('show_id', showId)
       .in('status', ['valid', 'used'])
 
-    if ((soldCount ?? 0) >= show.capacity) {
-      throw new CheckoutError('sold_out', { detail: `sold=${soldCount}/${show.capacity}` })
+    // Hele bestillingen må få plass — den samme regelen som oppgjøret
+    // håndhever når betalingen kommer tilbake (migrasjon 036).
+    if ((soldCount ?? 0) + quantity > show.capacity) {
+      throw new CheckoutError('sold_out', { detail: `sold=${soldCount}/${show.capacity} wanted=${quantity}` })
     }
   }
 
@@ -76,7 +90,7 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
 
   let session: Stripe.Checkout.Session
   try {
-    session = await createSession(show, club, priceId, origin)
+    session = await createSession(show, club, priceId, origin, quantity, order.holderNames)
   } catch (sessionError) {
     // Pris-ID-er hører til én Stripe-konto. Etter overgangen til Connect ligger
     // gamle ID-er på plattformkontoen og er ukjente for klubbens konto — samme
@@ -87,7 +101,7 @@ export async function createCheckoutSession(showId: string, requestUrl: string) 
 
     console.warn(`[Checkout] Price ${priceId} for show ${show.id} is unknown to ${account} — creating a replacement`)
     try {
-      session = await createSession(show, club, await createPrice(show, account), origin)
+      session = await createSession(show, club, await createPrice(show, account), origin, quantity, order.holderNames)
     } catch (retryError) {
       throw toCheckoutError(retryError)
     }
@@ -138,13 +152,21 @@ async function createPrice(show: ShowForCheckout, account: string) {
   }
 }
 
-function createSession(show: ShowForCheckout, club: ConnectClub, priceId: string, origin: string) {
-  const commission = commissionFor(show.ticket_price!, club)
+function createSession(
+  show: ShowForCheckout,
+  club: ConnectClub,
+  priceId: string,
+  origin: string,
+  quantity: number,
+  holderNames: string[],
+) {
+  // Provisjonen er per billett, så den skal ganges opp med antallet.
+  const commission = commissionFor(show.ticket_price!, club) * quantity
 
   return stripe.checkout.sessions.create(
     {
       mode: 'payment',
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity }],
       // `s` lar suksesssiden finne fram til riktig Connect-konto. Sesjonen
       // finnes bare på klubbens konto, så uten den kan den ikke hentes.
       success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&s=${show.id}`,
@@ -157,6 +179,10 @@ function createSession(show: ShowForCheckout, club: ConnectClub, priceId: string
         app_origin: origin,
         club_id: club.id,
         connected_account_id: club.stripe_account_id ?? '',
+        quantity: String(quantity),
+        // Ett navn per nøkkel framfor én JSON-streng: Stripe tåler 50 nøkler
+        // à 500 tegn, men en samlet streng ville sprengt grensen på lange navn.
+        ...ticketNameMetadata(holderNames, quantity),
       },
       payment_intent_data: {
         // Formidlingsprovisjonen. Resten blir stående på klubbens konto.
@@ -171,4 +197,16 @@ function createSession(show: ShowForCheckout, club: ConnectClub, priceId: string
     },
     { stripeAccount: club.stripe_account_id! },
   )
+}
+
+/** `ticket_name_1` … `ticket_name_n`, tomme navn utelatt. */
+function ticketNameMetadata(holderNames: string[], quantity: number) {
+  const entries: Record<string, string> = {}
+
+  for (let index = 0; index < quantity; index += 1) {
+    const name = holderNames[index]?.trim().slice(0, 120)
+    if (name) entries[`ticket_name_${index + 1}`] = name
+  }
+
+  return entries
 }

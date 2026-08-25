@@ -3,6 +3,7 @@ import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
+import { requirementFeeLabel } from '@/lib/booking-spots'
 import { createClient } from '@/lib/supabase/server'
 import { Chip, DataRow, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
 
@@ -26,6 +27,22 @@ export default async function ArtistDashboardPage() {
     ? await db.from('shows').select('id, title, date, start_time, venue_name').in('id', relevantShowIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
+
+  /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
+     som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet. */
+  const requirementIds = [...new Set(offers.flatMap((offer) => offer.show_requirement_id ?? []))]
+  const { data: requirements } = requirementIds.length > 0
+    ? await db
+        .from('show_requirements')
+        .select('id, compensation_type, compensation_amount, compensation_percent')
+        .in('id', requirementIds)
+    : { data: [] }
+  const requirementMap = new Map((requirements ?? []).map((req) => [req.id, req]))
+  const offerFee = (offer: { fee_amount: number | null; currency: string; show_requirement_id: string | null }) => {
+    if (offer.fee_amount != null) return formatMoney(offer.fee_amount, offer.currency)
+    const req = offer.show_requirement_id ? requirementMap.get(offer.show_requirement_id) : null
+    return req ? requirementFeeLabel(req, offer.currency || 'NOK') : 'Not set'
+  }
 
   const nextSpot = spots
     .filter((spot) => {
@@ -135,7 +152,7 @@ export default async function ArtistDashboardPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-[14px] font-medium tabular-nums">
-                      {formatMoney(offer.fee_amount, offer.currency)}
+                      {offerFee(offer)}
                     </span>
                     <Link
                       href={`/artist-app/booking-offers/${offer.token}`}

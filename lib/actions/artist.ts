@@ -122,7 +122,9 @@ export async function approveArtist(
       status: 'approved',
       admin_score: opts.admin_score,
       admin_energy_level: opts.admin_energy_level,
-      admin_notes: opts.admin_notes ?? null,
+      // Notatene er admins egne. Godkjenning uten et nytt notat skal la det
+      // gamle stå — ikke tømme feltet.
+      ...(opts.admin_notes === undefined ? {} : { admin_notes: opts.admin_notes }),
     })
     .eq('id', artistId)
     .select('email, full_name, admin_score')

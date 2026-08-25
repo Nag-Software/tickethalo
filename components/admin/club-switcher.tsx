@@ -26,7 +26,7 @@ type ClubSwitcherProps = {
 
 function getNextPath(pathname: string) {
   if (pathname === '/admin-app' || pathname === '/admin-app/') return '/admin-app/shows'
-  if (pathname === '/admin-app/shows' || pathname === '/admin-app/orders' || pathname === '/admin-app/artists' || pathname === '/admin-app/settings' || pathname === '/admin-app/scanner') {
+  if (pathname === '/admin-app/shows' || pathname === '/admin-app/orders' || pathname === '/admin-app/artists' || pathname === '/admin-app/discover' || pathname === '/admin-app/settings' || pathname === '/admin-app/scanner') {
     return pathname
   }
   if (pathname.startsWith('/admin-app/scanner/')) return '/admin-app/scanner'

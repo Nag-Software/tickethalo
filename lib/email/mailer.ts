@@ -1,35 +1,33 @@
 import { resend, FROM_EMAIL, fromWithName } from '@/lib/resend'
 import QRCode from 'qrcode'
+import { formatTicketCode } from '@/lib/tickets'
+import {
+  artistApprovedTemplate,
+  artistFeeTemplate,
+  artistRegisteredTemplate,
+  bookingConfirmedTemplate,
+  bookingOfferTemplate,
+  escapeHtml,
+  offerDeclinedTemplate,
+  spotAvailableTemplate,
+  spotFilledTemplate,
+  type EmailTemplate,
+  type OfferTemplateInput,
+} from './templates'
 
 type EmailResult = { success: boolean; resendId?: string; error?: string }
 
-function escapeHtml(value: string | null | undefined) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
 // ─────────────────────────────────────────────────────────────
-// Artist registered
+// Komikerpostene — malene ligger i ./templates
 // ─────────────────────────────────────────────────────────────
-export async function sendArtistRegisteredEmail(opts: {
-  email: string
-  full_name: string
-}): Promise<EmailResult> {
-  const subject = 'Velkommen — din søknad er mottatt'
+async function sendArtistEmail(to: string, template: EmailTemplate): Promise<EmailResult> {
   try {
     const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
-      to: opts.email,
-      subject,
-      html: `
-        <h2>Hei ${opts.full_name}!</h2>
-        <p>Vi har mottatt din registrering og går gjennom den snart.</p>
-        <p>Du vil motta en e-post når du er godkjent.</p>
-      `,
+      to,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
     })
     if (error) throw new Error(error.message)
     return { success: true, resendId: data?.id }
@@ -39,168 +37,87 @@ export async function sendArtistRegisteredEmail(opts: {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Artist approved
-// ─────────────────────────────────────────────────────────────
+export async function sendArtistRegisteredEmail(opts: {
+  email: string
+  full_name: string
+}): Promise<EmailResult> {
+  return sendArtistEmail(opts.email, artistRegisteredTemplate(opts))
+}
+
 export async function sendArtistApprovedEmail(opts: {
   email: string
   full_name: string
   portal_url: string
 }): Promise<EmailResult> {
-  const subject = 'Du er godkjent som artist!'
-  try {
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: opts.email,
-      subject,
-      html: `
-        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55">
-          <h2>Gratulerer, ${opts.full_name}!</h2>
-          <p>Du er nå godkjent som artist. Logg inn på artistportalen og velg opptil tre datoer du faktisk er tilgjengelig for.</p>
-          <p>Booking-teamet bruker datoene sammen med score og energinivå når show matcher automatisk.</p>
-          <p><a href="${opts.portal_url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px">Velg ledige datoer</a></p>
-        </div>
-      `,
-    })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
-  }
+  return sendArtistEmail(opts.email, artistApprovedTemplate(opts))
 }
 
-// ─────────────────────────────────────────────────────────────
-// Booking offer
-// ─────────────────────────────────────────────────────────────
-export async function sendBookingOfferEmail(opts: {
+export async function sendBookingOfferEmail(opts: OfferTemplateInput & {
   email: string
-  full_name: string
-  show_title: string
-  show_date: string
   token: string
-  response_url: string
 }): Promise<EmailResult> {
-  const subject = `Bookingtilbud: ${opts.show_title}`
-  try {
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: opts.email,
-      subject,
-      html: `
-        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55">
-          <h2>Hei ${opts.full_name}!</h2>
-          <p>Du har mottatt et bookingtilbud for <strong>${opts.show_title}</strong> den ${opts.show_date}.</p>
-          <p style="margin:22px 0">
-            <a href="${opts.response_url}?response=accept" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px">Ja, jeg kan</a>
-            <a href="${opts.response_url}?response=decline" style="display:inline-block;border:1px solid #d4d4d8;color:#18181b;text-decoration:none;padding:9px 14px;border-radius:8px">Nei, denne passer ikke</a>
-          </p>
-          <div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:14px;margin:18px 0;color:#78350f">
-            <p style="margin:0 0 8px"><strong>Viktig:</strong> Godkjenn kun datoer som passer. Du vil fortsatt få tilbud i fremtiden selv om disse ikke passer.</p>
-            <p style="margin:0">Hvis du derimot velger ja på en line-up og etterpå dropper, blir profilen din flagget og systemet vil nedprioritere å gi deg tilbud om nye spots når de blir ledige.</p>
-          </div>
-          <p>Tilbudet er gyldig i 7 dager. Første artist som godkjenner mens plassen er ledig får spotten.</p>
-        </div>
-      `,
-    })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
-  }
+  return sendArtistEmail(opts.email, bookingOfferTemplate(opts))
 }
 
-// ─────────────────────────────────────────────────────────────
-// Booking confirmed
-// ─────────────────────────────────────────────────────────────
+export async function sendSpotAvailableEmail(opts: OfferTemplateInput & {
+  email: string
+  token: string
+}): Promise<EmailResult> {
+  return sendArtistEmail(opts.email, spotAvailableTemplate(opts))
+}
+
 export async function sendBookingConfirmedEmail(opts: {
   email: string
   full_name: string
   show_title: string
   show_date: string
+  show_time?: string | null
+  venue?: string | null
+  fee_label?: string | null
+  portal_url?: string | null
 }): Promise<EmailResult> {
-  const subject = `Booking bekreftet: ${opts.show_title}`
-  try {
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: opts.email,
-      subject,
-      html: `
-        <h2>Din booking er bekreftet!</h2>
-        <p>Hei ${opts.full_name}, du er booket til <strong>${opts.show_title}</strong> den ${opts.show_date}.</p>
-        <p>Logg inn på artistportalen for detaljer.</p>
-      `,
-    })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
-  }
+  return sendArtistEmail(opts.email, bookingConfirmedTemplate(opts))
 }
 
-// ─────────────────────────────────────────────────────────────
-// Spot available (reopened by admin removal)
-// ─────────────────────────────────────────────────────────────
-export async function sendSpotAvailableEmail(opts: {
+export async function sendOfferDeclinedEmail(opts: {
   email: string
   full_name: string
   show_title: string
   show_date: string
-  token: string
-  response_url: string
+  portal_url?: string | null
 }): Promise<EmailResult> {
-  const subject = `Ledig spot: ${opts.show_title}`
-  try {
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: opts.email,
-      subject,
-      html: `
-        <div style="font-family:Inter,Arial,sans-serif;color:#18181b;line-height:1.55">
-          <h2>Hei ${opts.full_name}!</h2>
-          <p>Vi har fått en ledig spot på <strong>${opts.show_title}</strong> den ${opts.show_date}.</p>
-          <p style="margin:22px 0">
-            <a href="${opts.response_url}?response=accept" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px">Ja, jeg er interessert</a>
-            <a href="${opts.response_url}?response=decline" style="display:inline-block;border:1px solid #d4d4d8;color:#18181b;text-decoration:none;padding:9px 14px;border-radius:8px">Nei, denne passer ikke</a>
-          </p>
-          <p>Tilbudet er gyldig i 7 dager. Første artist som godkjenner mens plassen er ledig får spotten.</p>
-        </div>
-      `,
-    })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
-  }
+  return sendArtistEmail(opts.email, offerDeclinedTemplate(opts))
 }
 
-// ─────────────────────────────────────────────────────────────
-// Spot filled by other artist
-// ─────────────────────────────────────────────────────────────
 export async function sendSpotFilledEmail(opts: {
   email: string
   full_name: string
+  show_title?: string | null
 }): Promise<EmailResult> {
-  const subject = 'Beklager — plassen er allerede fylt'
-  try {
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: opts.email,
-      subject,
-      html: `
-        <p>Hei ${opts.full_name},</p>
-        <p>Dessverre ble plassen fylt av en annen artist før du svarte. Vi holder deg oppdatert om nye muligheter.</p>
-      `,
-    })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
-  }
+  return sendArtistEmail(opts.email, spotFilledTemplate(opts))
+}
+
+/**
+ * Fakturagrunnlaget etter showet — beløpet komikeren skal fakturere klubben.
+ * Regnestykket ligger i `lib/artist-fees.ts`.
+ */
+export async function sendArtistFeeEmail(opts: {
+  email: string
+  full_name: string
+  show_title: string
+  show_date: string
+  venue?: string | null
+  amount: number
+  currency: string
+  bank_account_number?: string | null
+  fee_basis: 'fixed' | 'percent' | 'none'
+  percent?: number | null
+  club_name?: string | null
+  club_legal_name?: string | null
+  club_org_number?: string | null
+  club_invoice_email?: string | null
+}): Promise<EmailResult> {
+  return sendArtistEmail(opts.email, artistFeeTemplate(opts))
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -218,6 +135,21 @@ export type TicketSeller = {
   support_email?: string | null
 }
 
+export type PurchasedTicket = {
+  code: string
+  /** Navnet billetten gjelder. Null viser kjøperens eget navn. */
+  holderName?: string | null
+  /** Adressen QR-koden peker på. Én per billett. */
+  verificationUrl: string
+}
+
+/**
+ * Billettene i én ordre.
+ *
+ * Én e-post med én QR per billett, framfor én e-post per billett: kjøpte du
+ * fire, skal du ikke lete i fire tråder i døra. Hver QR er sin egen
+ * vedlegg-CID, fordi e-postklienter ikke deler bilder mellom blokker.
+ */
 export async function sendTicketPurchaseEmail(opts: {
   email: string
   buyer_name: string
@@ -226,22 +158,32 @@ export async function sendTicketPurchaseEmail(opts: {
   show_time?: string | null
   venue_name: string
   venue_address?: string | null
-  ticket_code: string
-  verification_url: string
+  tickets: PurchasedTicket[]
   seller?: TicketSeller | null
 }): Promise<EmailResult> {
-  const subject = `Din billett til ${opts.show_title}`
+  const tickets = opts.tickets.filter((ticket) => ticket.code)
+  if (tickets.length === 0) return { success: false, error: 'no tickets to send' }
+
+  const many = tickets.length > 1
+  const subject = many
+    ? `Billettene dine til ${opts.show_title} (${tickets.length})`
+    : `Din billett til ${opts.show_title}`
+
   try {
-    const qrImage = await QRCode.toBuffer(opts.verification_url, {
-      type: 'png',
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 360,
-      color: {
-        dark: '#111827',
-        light: '#ffffff',
-      },
-    })
+    const attachments = await Promise.all(
+      tickets.map(async (ticket, index) => ({
+        filename: `tickethalo-ticket-${index + 1}.png`,
+        content: await QRCode.toBuffer(ticket.verificationUrl, {
+          type: 'png',
+          errorCorrectionLevel: 'M',
+          margin: 2,
+          width: 360,
+          color: { dark: '#111827', light: '#ffffff' },
+        }),
+        contentType: 'image/png',
+        contentId: `ticket-qr-${index + 1}`,
+      })),
+    )
 
     const displayName = escapeHtml(opts.buyer_name || opts.email)
     const showTitle = escapeHtml(opts.show_title || 'Tickethalo')
@@ -249,7 +191,6 @@ export async function sendTicketPurchaseEmail(opts: {
     const showTime = escapeHtml(opts.show_time || 'Tid kommer')
     const venueName = escapeHtml(opts.venue_name || 'Sted kommer')
     const venueAddress = escapeHtml(opts.venue_address)
-    const ticketCode = escapeHtml(opts.ticket_code)
 
     const seller = opts.seller ?? null
     const sellerName = seller?.legal_name?.trim() || seller?.name?.trim() || null
@@ -274,65 +215,77 @@ export async function sendTicketPurchaseEmail(opts: {
                 </div>`
       : ''
 
+    const ticketBlocks = tickets
+      .map((ticket, index) => {
+        const holder = escapeHtml(ticket.holderName?.trim() || opts.buyer_name || '')
+        const label = many ? `Billett ${index + 1} av ${tickets.length}` : 'Billett'
+        return `
+                <div style="margin-top:${index === 0 ? '26' : '14'}px;border:1px solid #e4e4e7;border-radius:14px;padding:18px">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td style="vertical-align:middle">
+                        <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">${escapeHtml(label)}</div>
+                        ${holder ? `<div style="font-size:19px;font-weight:800;color:#18181b;margin-top:4px">${holder}</div>` : ''}
+                        <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:20px;font-weight:700;letter-spacing:0.12em;color:#18181b;margin-top:8px;word-break:break-all">${escapeHtml(formatTicketCode(ticket.code))}</div>
+                      </td>
+                      <td style="width:150px;text-align:center;vertical-align:middle">
+                        <img src="cid:ticket-qr-${index + 1}" width="132" height="132" alt="QR-kode for billett" style="display:block;border:0;width:132px;height:132px;margin:0 auto" />
+                      </td>
+                    </tr>
+                  </table>
+                </div>`
+      })
+      .join('')
+
+    const ticketText = tickets
+      .map((ticket, index) => {
+        const holder = ticket.holderName?.trim() || opts.buyer_name || ''
+        const label = many ? `Billett ${index + 1} av ${tickets.length}` : 'Billett'
+        return `${label}${holder ? ` — ${holder}` : ''}\nBillettkode: ${formatTicketCode(ticket.code)}\nQR-verifisering: ${ticket.verificationUrl}`
+      })
+      .join('\n\n')
+
     const { data, error } = await resend.emails.send({
       from: sellerName ? fromWithName(sellerName) : FROM_EMAIL,
       to: opts.email,
       subject,
-      attachments: [
-        {
-          filename: 'tickethalo-ticket-qr.png',
-          content: qrImage,
-          contentType: 'image/png',
-          contentId: 'ticket-qr',
-        },
-      ],
-      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. Dette er billetten din til ${opts.show_title}.\n\nDato: ${opts.show_date}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\nBillettkode: ${opts.ticket_code}\n\nVis QR-koden eller billettkoden i døren. QR-verifisering: ${opts.verification_url}\n${sellerText}`,
+      attachments,
+      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${opts.show_date}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
       html: `
         <div style="margin:0;background:#f4f4f5;padding:32px 12px;font-family:Inter,Arial,sans-serif;color:#18181b">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">
             <tr>
               <td style="background:#111827;color:#ffffff;padding:28px 30px">
                 <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#a7f3d0;font-weight:700">Tickethalo</div>
-                <h1 style="margin:10px 0 0;font-size:30px;line-height:1.1;font-weight:800">Din billett er klar</h1>
-                <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hei ${displayName}, betalingen er godkjent. Vis QR-koden i døren.</p>
+                <h1 style="margin:10px 0 0;font-size:30px;line-height:1.1;font-weight:800">${many ? `Billettene dine er klare` : 'Din billett er klar'}</h1>
+                <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hei ${displayName}, betalingen er godkjent. Vis ${many ? 'QR-kodene' : 'QR-koden'} i døren.</p>
               </td>
             </tr>
             <tr>
               <td style="padding:30px">
+                <div style="font-size:13px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Arrangement</div>
+                <h2 style="margin:8px 0 20px;font-size:26px;line-height:1.2;color:#18181b">${showTitle}</h2>
+
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
-                    <td style="vertical-align:top;padding-right:24px">
-                      <div style="font-size:13px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Arrangement</div>
-                      <h2 style="margin:8px 0 20px;font-size:26px;line-height:1.2;color:#18181b">${showTitle}</h2>
-                      <div style="margin-bottom:14px">
-                        <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Dato</div>
-                        <div style="font-size:17px;font-weight:700;color:#18181b">${showDate}</div>
-                      </div>
-                      <div style="margin-bottom:14px">
-                        <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Tid</div>
-                        <div style="font-size:17px;font-weight:700;color:#18181b">${showTime}</div>
-                      </div>
-                      <div style="margin-bottom:18px">
-                        <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Sted</div>
-                        <div style="font-size:17px;font-weight:700;color:#18181b">${venueName}</div>
-                        ${venueAddress ? `<div style="font-size:14px;color:#52525b;margin-top:2px">${venueAddress}</div>` : ''}
-                      </div>
+                    <td style="vertical-align:top;padding-right:18px">
+                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Dato</div>
+                      <div style="font-size:17px;font-weight:700;color:#18181b">${showDate}</div>
                     </td>
-                    <td style="width:190px;vertical-align:top;text-align:center">
-                      <div style="display:inline-block;border:1px solid #e4e4e7;border-radius:14px;padding:12px;background:#ffffff">
-                        <img src="cid:ticket-qr" width="166" height="166" alt="QR-kode for billett" style="display:block;border:0;width:166px;height:166px" />
-                      </div>
-                      <div style="font-size:11px;color:#71717a;margin-top:10px;line-height:1.4">Scan for å bekrefte billetten</div>
+                    <td style="vertical-align:top;padding-right:18px">
+                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Tid</div>
+                      <div style="font-size:17px;font-weight:700;color:#18181b">${showTime}</div>
+                    </td>
+                    <td style="vertical-align:top">
+                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Sted</div>
+                      <div style="font-size:17px;font-weight:700;color:#18181b">${venueName}</div>
+                      ${venueAddress ? `<div style="font-size:14px;color:#52525b;margin-top:2px">${venueAddress}</div>` : ''}
                     </td>
                   </tr>
                 </table>
+${ticketBlocks}
 
-                <div style="margin-top:26px;border:1px dashed #a1a1aa;border-radius:14px;background:#fafafa;padding:18px;text-align:center">
-                  <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Billettkode</div>
-                  <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:24px;line-height:1.2;font-weight:800;letter-spacing:0.08em;color:#111827;margin-top:6px;word-break:break-all">${ticketCode}</div>
-                </div>
-
-                <p style="margin:22px 0 0;color:#52525b;font-size:14px;line-height:1.6">QR-koden og billettkoden er personlige. Ta med denne e-posten til inngangen, så scanner vi billetten og bekrefter at den er gyldig.</p>
+                <p style="margin:22px 0 0;color:#52525b;font-size:14px;line-height:1.6">${many ? 'Hver billett har sin egen QR-kode og gjelder én person.' : 'QR-koden og billettkoden er personlige.'} Ta med denne e-posten til inngangen, så scanner vi ${many ? 'billettene' : 'billetten'} og bekrefter at ${many ? 'de' : 'den'} er gyldig${many ? 'e' : ''}.</p>
 ${sellerHtml}
               </td>
             </tr>

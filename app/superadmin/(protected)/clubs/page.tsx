@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Building2, Plus } from 'lucide-react'
+import { Building2, Inbox, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isClubPayoutReady } from '@/lib/stripe-connect'
 
@@ -12,7 +12,7 @@ export default async function ClubsPage() {
 
   const { data: clubs } = await db
     .from('clubs')
-    .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, legal_name, org_number')
+    .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, legal_name, org_number, support_email')
     .order('name')
 
   const clubIds = (clubs ?? []).map((c) => c.id)
@@ -29,6 +29,13 @@ export default async function ClubsPage() {
         .select('club_id')
         .in('club_id', clubIds)
     : { data: [] }
+
+  // Antall ubehandlede betasøknader. Vises som et merke på lenken, slik at
+  // søknadene ikke blir liggende i en fane ingen åpner.
+  const { count: pendingBetaRequests } = await db
+    .from('club_beta_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'new')
 
   const memberMap = new Map<string, number>()
   const showMap = new Map<string, number>()
@@ -48,6 +55,17 @@ export default async function ClubsPage() {
           <span className="text-sm text-muted-foreground">Tickethalo superadmin</span>
         </div>
         <div className="flex items-center gap-3">
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/superadmin/beta-requests">
+              <Inbox className="size-4" />
+              Betasøknader
+              {(pendingBetaRequests ?? 0) > 0 && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+                  {pendingBetaRequests}
+                </span>
+              )}
+            </Link>
+          </Button>
           <form action="/superadmin/logout" method="post">
             <button type="submit" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               Logg ut

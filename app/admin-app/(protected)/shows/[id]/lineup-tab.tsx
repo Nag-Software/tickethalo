@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Info } from 'lucide-react'
+import { Info, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import {
+  deleteRequirementAction,
   removeSpotAndReopenAction,
   moveSpotAction,
   movePendingOfferAction,
@@ -187,6 +188,8 @@ export function LineupTab({
   )
   const sentOfferCount = allOffers.filter(o => o.status === 'sent').length
   const shouldAutoRefresh = showStatus === 'booking' && (!allSlotsFilled || sentOfferCount > 0)
+  // Etter showet er lineupen en protokoll, ikke en plan. Da slettes ingenting.
+  const isPastShow = showStatus === 'completed' || showStatus === 'cancelled'
   const emptyEnergyPromptReqKey = requirements.flatMap((req) => {
     const reqSpots = activeSpots.filter(s => s.show_requirement_id === req.id)
     const reqPending = allOffers.filter(o => o.show_requirement_id === req.id && o.status === 'sent')
@@ -246,6 +249,37 @@ export function LineupTab({
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [isPending, router, shouldAutoRefresh])
+
+  /**
+   * Sletter hele spoten — kravet og radene under det.
+   *
+   * Til forskjell fra «Remove», som frigjør plassen og starter en ny
+   * tilbudsrunde, skal plassen her bort. Står det noen på den, bekreftes det
+   * først: bookingene deres avlyses med kravet.
+   */
+  function handleDeleteRequirement(reqId: string, roleName: string, occupied: number) {
+    if (
+      occupied > 0 &&
+      !window.confirm(
+        `Delete the ${roleName} spot? ${occupied} booking${occupied === 1 ? '' : 's'} on it will be cancelled.`,
+      )
+    ) {
+      return
+    }
+
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      fd.set('req_id', reqId)
+      try {
+        await deleteRequirementAction(fd)
+        toast.success('Spot deleted from the lineup.')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
 
   function handleRemoveSpot(spotId: string) {
     startTransition(async () => {
@@ -569,6 +603,20 @@ export function LineupTab({
                 >
                   <Info className="size-3.5" />
                 </button>
+                {/* Også når spoten er full: det er nettopp da den ellers ikke
+                    er til å bli kvitt. */}
+                {!isPastShow && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRequirement(req.id, req.role_name, reqSpots.length + reqPending.length)}
+                    disabled={isPending}
+                    className="inline-flex size-7 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    aria-label={`Delete the ${req.role_name} spot`}
+                    title="Delete spot"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 

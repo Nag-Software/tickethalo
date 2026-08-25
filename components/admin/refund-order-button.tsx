@@ -1,28 +1,34 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Undo2 } from 'lucide-react'
+import { ToastActionForm } from '@/components/toast-action-form'
 
 /**
- * A refund is not reversible and hits the club's Stripe balance directly, so
- * the reason is chosen deliberately and the action is confirmed. The reason is
- * stored on the order and separates a cancellation from a one-off refund in
- * the settlement.
+ * Refusjon er ikke reversibel og går rett på klubbens Stripe-saldo, så
+ * årsaken velges bevisst og handlingen bekreftes. Årsaken havner på ordren
+ * og skiller avlysning fra enkeltrefusjon i avregningen.
+ *
+ * Utfallet kommer som toast fra `ToastActionForm` — en refusjon som feiler
+ * halvveis må sies med ord, ikke som en feilside.
  */
 export function RefundOrderButton({
   action,
   orderId,
   amountLabel,
 }: {
-  action: (formData: FormData) => Promise<void>
+  action: (formData: FormData) => Promise<unknown>
   orderId: string
   amountLabel: string
 }) {
-  const formRef = useRef<HTMLFormElement>(null)
   const [reason, setReason] = useState('customer_request')
 
   return (
-    <form ref={formRef} action={action} className="flex items-center gap-1.5">
+    <ToastActionForm
+      action={action}
+      successMessage={`Refunded ${amountLabel} to the buyer.`}
+      className="flex items-center gap-1.5"
+    >
       <input type="hidden" name="order_id" value={orderId} />
       <select
         name="reason"
@@ -37,20 +43,22 @@ export function RefundOrderButton({
         <option value="other">Other</option>
       </select>
       <button
-        type="button"
-        onClick={() => {
+        type="submit"
+        // Bekreftelsen ligger på klikket, ikke på en ref: `ToastActionForm`
+        // setter sin egen ref på skjemaet, så en utenfra ville vært null.
+        onClick={(event) => {
           const confirmed = window.confirm(
             `Refund ${amountLabel} to the buyer?\n\n` +
-              'The customer gets the full amount back, and Tickethalo reverses the booking commission. ' +
-              'This cannot be undone.',
+              'The customer gets the full amount back and Tickethalo returns its agency ' +
+              'commission. This cannot be undone.',
           )
-          if (confirmed) formRef.current?.requestSubmit()
+          if (!confirmed) event.preventDefault()
         }}
         className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
       >
-        <Undo2 className="size-3.5" />
+        <Undo2 className="size-3.5" aria-hidden />
         Refund
       </button>
-    </form>
+    </ToastActionForm>
   )
 }

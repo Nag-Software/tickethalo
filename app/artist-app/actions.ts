@@ -32,6 +32,7 @@ export async function updateArtistProfileAction(formData: FormData) {
     full_name: textValue(formData.get('full_name')) ?? artist.full_name,
     stage_name: textValue(formData.get('stage_name')) ?? null,
     phone: textValue(formData.get('phone')) ?? null,
+    bank_account_number: textValue(formData.get('bank_account_number')) ?? null,
     profile_image_url: profileImageUrl,
     bio: textValue(formData.get('bio')) ?? null,
     city: textValue(formData.get('city')) ?? null,

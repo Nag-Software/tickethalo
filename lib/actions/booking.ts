@@ -5,15 +5,97 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
   sendBookingOfferEmail,
   sendBookingConfirmedEmail,
+  sendOfferDeclinedEmail,
   sendSpotFilledEmail,
   sendSpotAvailableEmail,
 } from '@/lib/email/mailer'
 import { generateShowPoster } from '@/lib/actions/ai'
+import { resolvePalette } from '@/lib/marketing/palette'
 import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
+import { requirementFeeLabel } from '@/lib/booking-spots'
+import type { RequirementCompensationType } from '@/types/database'
 import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
 import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
 
 const ACTIVE_BOOKING_STATUSES = ['booking'] as const
+
+/**
+ * Honoraret, rollen og stedet slik komikeren skal lese tilbudet.
+ *
+ * Et fast honorar kopieres til `booking_offers.fee_amount` når tilbudet
+ * opprettes — uten det står tilbudssiden igjen med «ikke satt» selv om
+ * bookeren har satt honoraret på lineup-plassen. Prosentavtaler har ikke
+ * noe beløp, og leses fra lineup-plassen både i mailen og på siden.
+ */
+type OfferShow = {
+  start_time: string | null
+  venue_name: string | null
+  venue_address: string | null
+  currency: string | null
+}
+
+type OfferRequirement = {
+  role_name: string
+  compensation_type: RequirementCompensationType | null
+  compensation_amount: number | null
+  compensation_percent: number | null
+}
+
+/** Sju dager, men aldri lenger enn til showet. */
+const OFFER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Når et tilbud går ut.
+ *
+ * Sto det bare «om sju dager», kunne en komiker takke ja til et show som
+ * allerede var spilt — og et tilbud på et show om to dager ville stå åpent
+ * lenge etter at plassen måtte vært fylt.
+ */
+function offerExpiry(showDate: string | null | undefined) {
+  const window = Date.now() + OFFER_WINDOW_MS
+  const showEnd = showDate ? Date.parse(`${showDate}T23:59:59Z`) : Number.NaN
+
+  return new Date(Number.isNaN(showEnd) ? window : Math.min(window, showEnd)).toISOString()
+}
+
+/**
+ * Merker tilbud som har gått ut.
+ *
+ * Utløpet ble før bare vurdert når komikeren selv åpnet lenken, så et tilbud
+ * ingen svarte på ble stående `sent` for alltid. Automatikken teller de
+ * åpne tilbudene når den avgjør hvor mange nye den kan sende — to ubesvarte
+ * e-poster kunne dermed stoppe bookingen av en plass permanent.
+ */
+export async function expireStaleOffers(showId?: string) {
+  const admin = createAdminClient()
+  let query = admin
+    .from('booking_offers')
+    .update({ status: 'expired', responded_at: new Date().toISOString() })
+    .eq('status', 'sent')
+    .lt('expires_at', new Date().toISOString())
+
+  if (showId) query = query.eq('show_id', showId)
+
+  const { data, error } = await query.select('id')
+  if (error) {
+    console.error(`[Booking] Could not expire stale offers: ${error.message}`)
+    return 0
+  }
+
+  return data?.length ?? 0
+}
+
+function offerDetails(show: OfferShow, requirement: OfferRequirement) {
+  const currency = show.currency || 'NOK'
+  return {
+    currency,
+    feeAmount: requirement.compensation_type === 'fixed' ? requirement.compensation_amount : null,
+    fee_label: requirementFeeLabel(requirement, currency),
+    role_name: requirement.role_name,
+    show_time: show.start_time?.slice(0, 5) ?? null,
+    venue: [show.venue_name, show.venue_address].filter(Boolean).join(', ') || null,
+  }
+}
 
 // ─── Scoring config ───────────────────────────────────────────────────────────
 
@@ -200,7 +282,7 @@ export async function bookShow(showId: string) {
 
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, status')
+    .select('id, title, date, start_time, venue_name, venue_address, currency, status')
     .eq('id', showId)
     .single()
   if (showError || !show) throw new Error('Show not found')
@@ -216,6 +298,10 @@ export async function bookShow(showId: string) {
     .order('created_at')
   if (reqError) throw new Error(reqError.message)
   if (!requirements?.length) return { offersCreated, candidatesMatched }
+
+  // Må skje før tilbudene telles: et utløpt tilbud som fortsatt står `sent`
+  // spiser en plass i kvoten under, og da sendes det aldri et nytt.
+  await expireStaleOffers(showId)
 
   const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
     loadScoringConfig(admin),
@@ -390,6 +476,7 @@ export async function bookShow(showId: string) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   for (const { artistId, req } of assignments) {
     const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
+    const details = offerDetails(show, req)
     const { data: offer, error: offerError } = await admin
       .from('booking_offers')
       .insert({
@@ -398,7 +485,9 @@ export async function bookShow(showId: string) {
         show_requirement_id: req.id,
         status: 'sent',
         sent_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at: offerExpiry(show.date),
+        fee_amount: details.feeAmount,
+        currency: details.currency,
       })
       .select('token')
       .single()
@@ -411,6 +500,10 @@ export async function bookShow(showId: string) {
       full_name: artist.full_name,
       show_title: show.title,
       show_date: show.date,
+      show_time: details.show_time,
+      venue: details.venue,
+      role_name: details.role_name,
+      fee_label: details.fee_label,
       token: offer.token,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,
     })
@@ -492,7 +585,7 @@ export async function automateFullbookedShow(showId: string, options: { force?: 
 
   const { data: show } = await admin
     .from('shows')
-    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, club_id')
+    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, auto_poster_enabled, marketing_palette, club_id')
     .eq('id', showId)
     .single()
 
@@ -533,25 +626,25 @@ export async function automateFullbookedShow(showId: string, options: { force?: 
 
   let posterUrl = show.poster_url ?? null
 
-  if (!posterUrl) {
-    const { data: selectedDesign } = show.selected_marketing_design_id
+  // AI-plakaten lages ikke lenger av seg selv. De fleste klubber har sin egen
+  // plakat, og en generert plakat som overrasker dem på publiseringstidspunktet
+  // er verre enn ingen plakat. `auto_poster_enabled` er av som standard, og
+  // klubben skrur den på per show i markedsføringsfanen om den vil ha den.
+  if (!posterUrl && show.auto_poster_enabled) {
+    const { data: clubBrand } = show.club_id
+      ? await admin.from('clubs').select('brand_color').eq('id', show.club_id).maybeSingle()
+      : { data: null }
+    const clubBrandColor = clubBrand?.brand_color ?? null
+
+    // Malen kan ligge i klubbens bibliotek og ikke på showet, så oppslaget går
+    // på id alene — tilhørigheten ble sjekket da malen ble valgt.
+    const { data: posterDesign } = show.selected_marketing_design_id
       ? await admin
         .from('show_marketing_designs')
         .select('label, file_url, file_path, file_name, mime_type, file_type')
         .eq('id', show.selected_marketing_design_id)
-        .eq('show_id', showId)
         .maybeSingle()
       : { data: null }
-    const { data: fallbackDesign } = selectedDesign
-      ? { data: null }
-      : await admin
-        .from('show_marketing_designs')
-        .select('label, file_url, file_path, file_name, mime_type, file_type')
-        .eq('show_id', showId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    const posterDesign = selectedDesign ?? fallbackDesign
 
     posterUrl = await generateShowPoster(showId, {
       title: show.title,
@@ -576,6 +669,7 @@ export async function automateFullbookedShow(showId: string, options: { force?: 
           mimeType: posterDesign.mime_type,
         }
         : null,
+      palette: resolvePalette(show.marketing_palette, clubBrandColor),
     })
   }
 
@@ -583,10 +677,13 @@ export async function automateFullbookedShow(showId: string, options: { force?: 
   const publishedAt = show.published_at ?? new Date().toISOString()
 
   // Publish show and set poster. Transitions from any pre-published status.
+  const posterWasGenerated = Boolean(posterUrl) && posterUrl !== show.poster_url
+
   await admin.from('shows').update({
     status: 'published',
     published_at: publishedAt,
     ...(posterUrl ? { poster_url: posterUrl } : {}),
+    ...(posterWasGenerated ? { poster_source: 'ai' as const } : {}),
   }).eq('id', showId).in('status', ['draft', 'booking', 'fullbooked'])
 
   // If already published, still keep poster in sync without touching status/published_at
@@ -601,7 +698,7 @@ export async function automateFullbookedShow(showId: string, options: { force?: 
     await admin.from('marketing_tasks').upsert([
       { show_id: showId, task_key: 'publish_event_page', label: 'Publiser event-side', is_completed: true },
       { show_id: showId, task_key: 'activate_ticket_sales', label: 'Aktiver billettsalg', is_completed: false },
-      { show_id: showId, task_key: 'upload_poster', label: 'Last opp plakat', is_completed: Boolean(posterUrl) },
+      { show_id: showId, task_key: 'upload_poster', label: 'Plakat på plass', is_completed: Boolean(posterUrl) },
       { show_id: showId, task_key: 'create_facebook_event', label: 'Opprett Facebook-event', is_completed: false },
       { show_id: showId, task_key: 'share_facebook_groups', label: 'Del i Facebook-grupper', is_completed: false },
       { show_id: showId, task_key: 'send_calendar_partners', label: 'Send til kalenderpartnere', is_completed: false },
@@ -635,17 +732,31 @@ export async function acceptBookingOffer(token: string) {
   }
 
   if (accepted.should_notify && accepted.result === 'accepted') {
-    const [{ data: artist }, { data: show }] = await Promise.all([
+    const [{ data: artist }, { data: show }, { data: requirement }] = await Promise.all([
       admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
-      admin.from('shows').select('title, date').eq('id', accepted.show_id).single(),
+      admin
+        .from('shows')
+        .select('title, date, start_time, venue_name, venue_address, currency')
+        .eq('id', accepted.show_id)
+        .single(),
+      admin
+        .from('show_requirements')
+        .select('role_name, compensation_type, compensation_amount, compensation_percent')
+        .eq('id', accepted.show_requirement_id)
+        .single(),
     ])
 
     if (artist) {
+      const details = show && requirement ? offerDetails(show, requirement) : null
       await sendBookingConfirmedEmail({
         email: artist.email,
         full_name: artist.full_name,
         show_title: show?.title ?? '',
         show_date: show?.date ?? '',
+        show_time: details?.show_time,
+        venue: details?.venue,
+        fee_label: details?.fee_label,
+        portal_url: `${publicAppUrl()}/artist-app/bookings`,
       })
     }
   }
@@ -804,7 +915,7 @@ export async function createManualBookingOffer(formData: FormData) {
       show_requirement_id: requirementId,
       status: 'sent',
       sent_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: offerExpiry(show.date),
       ...(feeRaw ? { fee_amount: Math.round(parseFloat(feeRaw) * 100), currency: 'NOK' } : {}),
     })
     .select('token')
@@ -849,10 +960,29 @@ export async function declineBookingOffer(token: string) {
     .update({ status: 'declined', responded_at: new Date().toISOString() })
     .eq('token', token)
     .eq('status', 'sent')
-    .select('show_id')
+    .select('show_id, artist_id')
     .maybeSingle()
 
   if (error) throw new Error(error.message)
+
+  // Et nei skal kvitteres like tydelig som et ja — ellers sitter komikeren
+  // igjen uten spor av at svaret kom fram.
+  if (offer) {
+    const [{ data: artist }, { data: show }] = await Promise.all([
+      admin.from('artists').select('email, full_name').eq('id', offer.artist_id).single(),
+      admin.from('shows').select('title, date').eq('id', offer.show_id).single(),
+    ])
+
+    if (artist) {
+      await sendOfferDeclinedEmail({
+        email: artist.email,
+        full_name: artist.full_name,
+        show_title: show?.title ?? '',
+        show_date: show?.date ?? '',
+        portal_url: `${publicAppUrl()}/artist-app/available-dates`,
+      })
+    }
+  }
 
   // Motoren kjøres for å fylle plassen som nettopp ble ledig. Den ser
   // avslaget via booking_offers-statusen og tilbyr ikke showet til den
@@ -876,7 +1006,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const admin = createAdminClient()
 
   const [{ data: show }, { data: requirement }] = await Promise.all([
-    admin.from('shows').select('id, title, date, status').eq('id', showId).single(),
+    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status').eq('id', showId).single(),
     admin.from('show_requirements').select('*').eq('id', requirementId).single(),
   ])
 
@@ -890,6 +1020,10 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
     .in('status', ['confirmed', 'completed', 'paid'])
 
   if ((filled ?? 0) >= requirement.quantity) return
+
+  // Må skje før tilbudene telles: et utløpt tilbud som fortsatt står `sent`
+  // spiser en plass i kvoten under, og da sendes det aldri et nytt.
+  await expireStaleOffers(showId)
 
   const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
     loadScoringConfig(admin),
@@ -926,6 +1060,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const details = offerDetails(show, requirement)
   for (const artist of candidates) {
     const { data: offer, error } = await admin
       .from('booking_offers')
@@ -935,7 +1070,9 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
         show_requirement_id: requirementId,
         status: 'sent',
         sent_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at: offerExpiry(show.date),
+        fee_amount: details.feeAmount,
+        currency: details.currency,
       })
       .select('token')
       .single()
@@ -947,6 +1084,10 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
       full_name: artist.full_name,
       show_title: show.title,
       show_date: show.date,
+      show_time: details.show_time,
+      venue: details.venue,
+      role_name: details.role_name,
+      fee_label: details.fee_label,
       token: offer.token,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,
     })
@@ -969,8 +1110,13 @@ export async function sendManualBookingOffer(
   const admin = createAdminClient()
 
   const [{ data: show }, { data: requirement }, { data: artist }] = await Promise.all([
-    admin.from('shows').select('id, title, date, status').eq('id', showId).single(),
-    admin.from('show_requirements').select('id, role_name, quantity').eq('id', requirementId).eq('show_id', showId).single(),
+    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status').eq('id', showId).single(),
+    admin
+      .from('show_requirements')
+      .select('id, role_name, quantity, compensation_type, compensation_amount, compensation_percent')
+      .eq('id', requirementId)
+      .eq('show_id', showId)
+      .single(),
     admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
   ])
 
@@ -1001,6 +1147,7 @@ export async function sendManualBookingOffer(
   if (existingSpot) throw new Error('Denne komikeren er allerede i lineupen.')
   if (existingOffer) throw new Error('Denne komikeren har allerede et tilbud som venter på svar.')
 
+  const details = offerDetails(show, requirement)
   const { data: offer, error } = await admin
     .from('booking_offers')
     .insert({
@@ -1009,7 +1156,9 @@ export async function sendManualBookingOffer(
       show_requirement_id: requirementId,
       status: 'sent',
       sent_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: offerExpiry(show.date),
+      fee_amount: details.feeAmount,
+      currency: details.currency,
     })
     .select('token')
     .single()
@@ -1026,6 +1175,10 @@ export async function sendManualBookingOffer(
     full_name: artist.full_name,
     show_title: show.title,
     show_date: show.date,
+    show_time: details.show_time,
+    venue: details.venue,
+    role_name: details.role_name,
+    fee_label: details.fee_label,
     token: offer.token,
     response_url: `${baseUrl}/booking-offer/${offer.token}`,
   })

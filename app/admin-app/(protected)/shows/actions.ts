@@ -5,32 +5,19 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createShow, updateShowStatus } from '@/lib/actions/shows'
 import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendManualBookingOffer, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
-import { generateShowPoster } from '@/lib/actions/ai'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
 import { normalizeCurrency } from '@/lib/currencies'
 import { assertClubCanSell } from '@/lib/stripe-connect'
-import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
+import { MARKETING_DESIGN_BUCKET, sanitizeStorageFileName } from '@/lib/marketing/storage'
+import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
 export type ManualSpotActionState = {
   status: 'idle' | 'success' | 'error'
   message: string | null
   submittedAt: number | null
 }
-
-const MARKETING_DESIGN_BUCKET = 'show-marketing-designs'
-const MAX_MARKETING_DESIGN_BYTES = 50 * 1024 * 1024
-const MARKETING_DESIGN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'heic', 'heif'])
-const MARKETING_DESIGN_IMAGE_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/gif',
-  'image/avif',
-  'image/heic',
-  'image/heif',
-])
 
 function manualSpotState(status: ManualSpotActionState['status'], message: string): ManualSpotActionState {
   return { status, message, submittedAt: Date.now() }
@@ -39,37 +26,6 @@ function manualSpotState(status: ManualSpotActionState['status'], message: strin
 function optionalText(value: FormDataEntryValue | null) {
   const text = String(value ?? '').trim()
   return text.length > 0 ? text : null
-}
-
-function sanitizeStorageFileName(value: string) {
-  const fallback = 'design-file'
-  const normalized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-
-  return normalized || fallback
-}
-
-function fileExtension(fileName: string) {
-  return fileName.split('.').pop()?.toLowerCase() ?? ''
-}
-
-function marketingDesignFileType(file: File): MarketingDesignFileType | null {
-  const extension = fileExtension(file.name)
-  const mimeType = file.type.toLowerCase()
-
-  if (MARKETING_DESIGN_IMAGE_EXTENSIONS.has(extension) || MARKETING_DESIGN_IMAGE_MIME_TYPES.has(mimeType)) {
-    return 'image'
-  }
-
-  return null
-}
-
-function marketingDesignMimeType(file: File) {
-  if (file.type) return file.type
-  return 'application/octet-stream'
 }
 
 function optionalInteger(value: FormDataEntryValue | null) {
@@ -89,6 +45,28 @@ function optionalDecimal(value: FormDataEntryValue | null) {
 
 function optionalCompensationType(value: FormDataEntryValue | null): RequirementCompensationType | null {
   return value === 'fixed' || value === 'percent' ? value : null
+}
+
+/**
+ * Taket for hvor mye av billettinntekten lineupen kan love bort.
+ *
+ * Det er klubbens `artist_share_bps` — den samme potten honorar-kjøringen
+ * fordeler etter showet (migrasjon 035/036). Sto grensen på 100 % her, kunne
+ * en booker avtale mer enn det som faktisk blir utbetalt, og prosentene ble
+ * skalert ned uten at noen hadde sagt det.
+ */
+async function artistSharePercent(showId: string) {
+  const db = createAdminClient()
+  const { data: show } = await db.from('shows').select('club_id').eq('id', showId).maybeSingle()
+  if (!show?.club_id) return 100
+
+  const { data: club } = await db
+    .from('clubs')
+    .select('artist_share_bps')
+    .eq('id', show.club_id)
+    .maybeSingle()
+
+  return (club?.artist_share_bps ?? 10000) / 100
 }
 
 async function ensurePercentAllocationWithinLimit(
@@ -122,8 +100,9 @@ async function ensurePercentAllocationWithinLimit(
     return sum + Number(requirement.compensation_percent ?? 0)
   }, 0)
 
-  if (currentTotal + nextPercent > 100.0001) {
-    throw new Error('Total percentage for the lineup cannot exceed 100%.')
+  const limit = await artistSharePercent(showId)
+  if (currentTotal + nextPercent > limit + 0.0001) {
+    throw new Error(`Total percentage for the lineup cannot exceed ${limit}% of ticket sales.`)
   }
 }
 
@@ -233,23 +212,48 @@ async function excludeArtistFromAutomaticBooking(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Kopierer markedsføringsfilene fra showet som klones.
+ *
+ * Bare filer som ligger *på* showet kopieres. Malene i klubbens bibliotek er
+ * felles allerede, så de skal deles — ikke dupliseres. Peker det klonede
+ * showet på en biblioteksmal, arver det nye showet samme peker.
+ */
 async function cloneMarketingDesigns(
   db: ReturnType<typeof createAdminClient>,
   templateShowId: string,
   newShowId: string,
 ) {
-  const [{ data: templateShow }, { data: templateDesigns }] = await Promise.all([
+  const [{ data: templateShow }, { data: newShow }, { data: templateDesigns }] = await Promise.all([
     db.from('shows').select('selected_marketing_design_id').eq('id', templateShowId).single(),
+    db.from('shows').select('club_id').eq('id', newShowId).single(),
     db
       .from('show_marketing_designs')
-      .select('id, label, file_url, file_path, file_name, mime_type, file_type, file_size')
+      .select('id, label, file_url, file_path, file_name, mime_type, file_type, file_size, kind, slot_count, width, height')
       .eq('show_id', templateShowId)
       .order('created_at'),
   ])
 
-  if (!templateDesigns?.length) return
+  const clubId = newShow?.club_id ?? null
 
-  let selectedMarketingDesignId: string | null = null
+  const selectedId = templateShow?.selected_marketing_design_id ?? null
+  const selectedIsShowScoped = (templateDesigns ?? []).some((design) => design.id === selectedId)
+
+  // Biblioteksmalen kopieres ikke — den arves som den er.
+  let selectedMarketingDesignId: string | null =
+    selectedId && !selectedIsShowScoped ? selectedId : null
+
+  if (!templateDesigns?.length) {
+    if (selectedMarketingDesignId) {
+      const { error } = await db
+        .from('shows')
+        .update({ selected_marketing_design_id: selectedMarketingDesignId })
+        .eq('id', newShowId)
+
+      if (error) throw new Error(error.message)
+    }
+    return
+  }
 
   for (const design of templateDesigns) {
     const safeName = sanitizeStorageFileName(design.file_name)
@@ -271,6 +275,7 @@ async function cloneMarketingDesigns(
       .from('show_marketing_designs')
       .insert({
         show_id: newShowId,
+        club_id: clubId,
         label: design.label,
         file_url: fileUrl,
         file_path: filePath,
@@ -278,13 +283,17 @@ async function cloneMarketingDesigns(
         mime_type: design.mime_type,
         file_type: design.file_type as MarketingDesignFileType,
         file_size: design.file_size,
+        kind: design.kind as MarketingDesignKind,
+        slot_count: design.slot_count,
+        width: design.width,
+        height: design.height,
       })
       .select('id')
       .single()
 
     if (error) throw new Error(error.message)
 
-    if (design.id === templateShow?.selected_marketing_design_id) {
+    if (design.id === selectedId) {
       selectedMarketingDesignId = clonedDesign.id
     }
   }
@@ -407,138 +416,6 @@ export async function cloneShowAction(formData: FormData) {
   redirect(`/admin-app/shows/${show.id}?tab=lineup`)
 }
 
-export async function uploadMarketingDesignAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const designFile = formData.get('design_file')
-
-  if (!showId) throw new Error('Show is missing.')
-  await assertShowAccess(showId)
-  if (!(designFile instanceof File) || designFile.size === 0) {
-    throw new Error('Pick an image file first.')
-  }
-
-  if (designFile.size > MAX_MARKETING_DESIGN_BYTES) {
-    throw new Error('The design file can be at most 50 MB.')
-  }
-
-  const fileType = marketingDesignFileType(designFile)
-  if (!fileType) {
-    throw new Error('The design must be PNG, JPG, WebP, GIF, AVIF or HEIC/HEIF.')
-  }
-
-  const db = createAdminClient()
-  const safeName = sanitizeStorageFileName(designFile.name)
-  const filePath = `${showId}/${crypto.randomUUID()}-${safeName}`
-  const mimeType = marketingDesignMimeType(designFile)
-
-  const { error: uploadError } = await db.storage
-    .from(MARKETING_DESIGN_BUCKET)
-    .upload(filePath, designFile, { contentType: mimeType, upsert: false })
-
-  if (uploadError) throw new Error('The design file could not be uploaded right now.')
-
-  const { data: urlData } = db.storage.from(MARKETING_DESIGN_BUCKET).getPublicUrl(filePath)
-  const { data: design, error: insertError } = await db
-    .from('show_marketing_designs')
-    .insert({
-      show_id: showId,
-      label: optionalText(formData.get('label')),
-      file_url: urlData.publicUrl,
-      file_path: filePath,
-      file_name: designFile.name,
-      mime_type: mimeType,
-      file_type: fileType,
-      file_size: designFile.size,
-    })
-    .select('id')
-    .single()
-
-  if (insertError) {
-    await db.storage.from(MARKETING_DESIGN_BUCKET).remove([filePath])
-    throw new Error(insertError.message)
-  }
-
-  const { data: show } = await db
-    .from('shows')
-    .select('selected_marketing_design_id')
-    .eq('id', showId)
-    .single()
-
-  if (!show?.selected_marketing_design_id) {
-    const { error } = await db
-      .from('shows')
-      .update({ selected_marketing_design_id: design.id })
-      .eq('id', showId)
-
-    if (error) throw new Error(error.message)
-  }
-
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
-export async function selectMarketingDesignAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const designId = optionalText(formData.get('design_id'))
-  const db = createAdminClient()
-
-  if (!showId) throw new Error('Show is missing.')
-  await assertShowAccess(showId)
-
-  if (designId) {
-    const { data: design, error } = await db
-      .from('show_marketing_designs')
-      .select('id')
-      .eq('id', designId)
-      .eq('show_id', showId)
-      .single()
-
-    if (error || !design) throw new Error('That design template does not exist on this show.')
-  }
-
-  const { error } = await db
-    .from('shows')
-    .update({ selected_marketing_design_id: designId })
-    .eq('id', showId)
-
-  if (error) throw new Error(error.message)
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
-export async function deleteMarketingDesignAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const designId = formData.get('design_id') as string
-  const db = createAdminClient()
-
-  if (!showId || !designId) throw new Error('Show or design is missing.')
-  await assertShowAccess(showId)
-
-  const { data: design, error } = await db
-    .from('show_marketing_designs')
-    .select('file_path')
-    .eq('id', designId)
-    .eq('show_id', showId)
-    .single()
-
-  if (error || !design) throw new Error('That design template does not exist on this show.')
-
-  await db
-    .from('shows')
-    .update({ selected_marketing_design_id: null })
-    .eq('id', showId)
-    .eq('selected_marketing_design_id', designId)
-
-  const { error: deleteError } = await db
-    .from('show_marketing_designs')
-    .delete()
-    .eq('id', designId)
-    .eq('show_id', showId)
-
-  if (deleteError) throw new Error(deleteError.message)
-
-  await db.storage.from(MARKETING_DESIGN_BUCKET).remove([design.file_path])
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
 export async function addRequirementAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
@@ -577,7 +454,10 @@ export async function startBookingAction(formData: FormData) {
   const percentTotal = reqs
     .filter((r) => r.compensation_type === 'percent')
     .reduce((sum, r) => sum + (r.compensation_percent ?? 0), 0)
-  if (percentTotal > 100) throw new Error(`Percentage allocation exceeds 100% (${percentTotal}%).`)
+  const percentLimit = await artistSharePercent(showId)
+  if (percentTotal > percentLimit) {
+    throw new Error(`Percentage allocation exceeds ${percentLimit}% of ticket sales (${percentTotal}%).`)
+  }
 
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).eq('status', 'draft')
   scheduleShowAutomation(showId, 'manual-start')
@@ -796,6 +676,72 @@ export async function deleteRequirementAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
+/**
+ * Sletter én plass i lineupen — raden, ikke hele kravet.
+ *
+ * Et krav med `quantity: 3` er tre rader i kortet. Å slette kravet ville tatt
+ * alle tre, så flere enn én plass igjen betyr at antallet telles ned. Er dette
+ * den siste plassen, forsvinner kravet.
+ *
+ * Står det noen på plassen, avlyses bookingen først: den bekreftede spoten
+ * settes til `cancelled`, et tilbud som er ute trekkes. Til forskjell fra
+ * `removeSpotAndReopenAction` sendes det ikke nye tilbud etterpå — plassen
+ * skal bort, ikke fylles på nytt.
+ */
+export async function deleteSpotAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  const reqId = formData.get('req_id') as string
+  const spotId = (formData.get('spot_id') as string) || null
+  const offerId = (formData.get('offer_id') as string) || null
+
+  await assertRequirementAccess(showId, reqId)
+  const db = createAdminClient()
+
+  if (spotId) {
+    await assertSpotAccess(showId, spotId)
+    await db
+      .from('confirmed_spots')
+      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+      .eq('id', spotId)
+      .eq('show_id', showId)
+  }
+
+  if (offerId) {
+    await assertOfferAccess(showId, offerId)
+    await db
+      .from('booking_offers')
+      .update({ status: 'cancelled', responded_at: new Date().toISOString() })
+      .eq('id', offerId)
+      .eq('show_id', showId)
+  }
+
+  const { data: requirement, error: requirementError } = await db
+    .from('show_requirements')
+    .select('quantity')
+    .eq('id', reqId)
+    .eq('show_id', showId)
+    .single()
+
+  if (requirementError) throw new Error(requirementError.message)
+
+  if ((requirement?.quantity ?? 1) > 1) {
+    const { error } = await db
+      .from('show_requirements')
+      .update({ quantity: requirement.quantity - 1 })
+      .eq('id', reqId)
+      .eq('show_id', showId)
+
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await db.from('show_requirements').delete().eq('id', reqId)
+    if (error) throw new Error(error.message)
+    await normalizeRequirementPositions(showId)
+  }
+
+  scheduleFullbookedAutomation(showId, 'delete-spot')
+  revalidatePath(`/admin-app/shows/${showId}`)
+}
+
 export async function bookShowAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
@@ -826,6 +772,9 @@ export async function updateShowStatusAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const status = formData.get('status') as ShowStatus
   await assertShowAccess(showId)
+  // Samme guard som publisering: `published` er det som åpner billettsalget,
+  // uansett hvilken vei showet kommer dit.
+  if (status === 'published') await assertClubCanSell(showId)
   await updateShowStatus(showId, status)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
@@ -1198,117 +1147,14 @@ export async function updateSpotAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
-export async function generatePosterAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-
-  if (!showId) throw new Error('Show id is missing for poster generation.')
-  await assertShowAccess(showId)
-
-  const posterUrl = await generatePosterForShow(showId)
-  revalidatePath(`/admin-app/shows/${showId}`)
-  revalidatePath('/admin-app/marketing')
-
-  return { posterUrl }
-}
-
-async function generatePosterForShow(showId: string) {
-  const db = createAdminClient()
-
-  const [{ data: show }, { data: spots }] = await Promise.all([
-    db.from('shows').select('title, date, start_time, venue_name, venue_address, selected_marketing_design_id').eq('id', showId).single(),
-    db.from('confirmed_spots').select('artist_id, show_requirement_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
-  ])
-
-  const spotRows = spots ?? []
-  const artistIds = [...new Set(spotRows.map(spot => spot.artist_id))]
-  const requirementIds = [...new Set(spotRows.map(spot => spot.show_requirement_id))]
-  const [{ data: artists }, { data: requirements }] = await Promise.all([
-    artistIds.length > 0
-      ? db.from('artists').select('id, full_name, stage_name, profile_image_url').in('id', artistIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; profile_image_url: string | null }> }),
-    requirementIds.length > 0
-      ? db.from('show_requirements').select('id, role_name').in('id', requirementIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; role_name: string }> }),
-  ])
-  const artistById = new Map((artists ?? []).map(artist => [artist.id, artist]))
-  const requirementById = new Map((requirements ?? []).map(requirement => [requirement.id, requirement.role_name]))
-
-  if (!show) throw new Error('Show not found')
-
-  const { data: selectedDesign } = show.selected_marketing_design_id
-    ? await db
-      .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, file_type')
-      .eq('id', show.selected_marketing_design_id)
-      .eq('show_id', showId)
-      .maybeSingle()
-    : { data: null }
-  const { data: fallbackDesign } = selectedDesign
-    ? { data: null }
-    : await db
-      .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, file_type')
-      .eq('show_id', showId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  const posterDesign = selectedDesign ?? fallbackDesign
-
-  const posterUrl = await generateShowPoster(showId, {
-    title: show.title,
-    date: show.date,
-    startTime: show.start_time,
-    venue: show.venue_address ?? show.venue_name ?? '',
-    artists: spotRows.flatMap(spot => {
-      const artist = artistById.get(spot.artist_id)
-      if (!artist) return []
-      return [{
-        name: artist.stage_name ?? artist.full_name,
-        profile_image_url: artist.profile_image_url,
-        role_name: requirementById.get(spot.show_requirement_id) ?? null,
-      }]
-    }),
-    designTemplate: posterDesign
-      ? {
-        label: posterDesign.label,
-        fileUrl: posterDesign.file_url,
-        filePath: posterDesign.file_path,
-        fileName: posterDesign.file_name,
-        mimeType: posterDesign.mime_type,
-      }
-      : null,
-    throwOnError: true,
-  })
-
-  if (!posterUrl) throw new Error('Could not generate the poster right now.')
-
-  const { error: taskError } = await db.from('marketing_tasks').upsert({
-    show_id: showId,
-    task_key: 'upload_poster',
-    label: 'Lineup poster generated',
-    is_completed: true,
-  }, { onConflict: 'show_id,task_key', ignoreDuplicates: false })
-  if (taskError) console.warn('[Poster] Marketing task update failed:', taskError)
-
-  return posterUrl
-}
-
-export async function completeMarketingTask(formData: FormData) {
-  const taskId = formData.get('task_id') as string
-  const showId = formData.get('show_id') as string
-  const isCompleted = formData.get('is_completed') === 'true'
-  await assertShowAccess(showId)
-  const db = createAdminClient()
-  await db.from('marketing_tasks').update({ is_completed: !isCompleted }).eq('id', taskId).eq('show_id', showId)
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
 /**
  * Confirm the show lineup:
  * 1. Verify all requirement slots are filled
- * 2. Generate lineup poster from artist profile images
- * 3. Create marketing tasks
- * 4. Redirect to marketing tab
+ * 2. Create marketing tasks and publish
+ * 3. Redirect to marketing tab
+ *
+ * Plakaten lages ikke her. Den er markedsføringsfanens jobb, og den lages bare
+ * automatisk når showet har `auto_poster_enabled`.
  */
 export async function confirmLineupAction(formData: FormData) {
   const showId = formData.get('show_id') as string

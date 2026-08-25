@@ -69,6 +69,7 @@ export function ShowBookingCard({
   deleteAction,
   linked = true,
   lineup,
+  compact = false,
 }: {
   show: BookingCardShow
   /** Omit on the show's own page — the header already carries a delete button. */
@@ -77,6 +78,12 @@ export function ShowBookingCard({
   linked?: boolean
   /** Replaces the read-only spot list — see `InteractiveBookingCard`. */
   lineup?: React.ReactNode
+  /**
+   * Drops the date/title header and the poster, leaving booking status and
+   * ticket sales. Used on the show's own page, where the page header carries
+   * the title and the Marketing tab carries the poster.
+   */
+  compact?: boolean
 }) {
   const date = new Date(show.date)
   const day = date.getDate()
@@ -98,56 +105,60 @@ export function ShowBookingCard({
         linked && 'hover:-translate-y-0.5 hover:shadow-md',
       )}
     >
-      <header className="flex items-start gap-4 p-5">
-        <Wrapper href={showDetailHref} className="shrink-0 text-center">
-          <span className="flex size-14 flex-col items-center justify-center rounded-xl bg-[var(--ev-accent-fill)] leading-none text-white">
-            <span className="text-2xl font-black tabular-nums">{day}</span>
-            <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.16em]">{month}</span>
-          </span>
-          <span className="mt-1.5 block text-[11px] font-medium tabular-nums text-muted-foreground">{year}</span>
-        </Wrapper>
-
-        <div className="min-w-0 flex-1">
-          <Wrapper
-            href={showDetailHref}
-            className={cn('line-clamp-2 text-xl font-bold leading-tight tracking-tight', linked && 'hover:underline')}
-          >
-            {show.title}
-          </Wrapper>
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Calendar className="size-3.5 shrink-0" />
-            {formattedDate}
-          </p>
-        </div>
-
-        <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium', SHOW_STATUS_CHIP[show.status])}>
-          {SHOW_STATUS_LABELS[show.status]}
-        </span>
-      </header>
-
-      <Wrapper href={showDetailHref} className="block border-y bg-muted/50">
-        {show.posterUrl ? (
-          <div className="relative aspect-[16/9] w-full bg-zinc-950">
-            <Image
-              src={show.posterUrl}
-              alt={show.title}
-              fill
-              sizes="(max-width: 1024px) 100vw, (max-width: 1536px) 50vw, 33vw"
-              className="object-contain"
-            />
-          </div>
-        ) : (<></>)
-      }
-        {/*} : (
-          <div className="flex aspect-[11/4] w-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
-            <span className="text-3xl font-light leading-none">+</span>
-            <span className="max-w-[16rem] text-xs font-medium leading-5 text-balance">
-              Add poster, or design one with templates based on your brand
+      {!compact && (
+        <>
+        <header className="flex items-start gap-4 p-5">
+          <Wrapper href={showDetailHref} className="shrink-0 text-center">
+            <span className="flex size-14 flex-col items-center justify-center rounded-xl bg-[var(--ev-accent-fill)] leading-none text-white">
+              <span className="text-2xl font-black tabular-nums">{day}</span>
+              <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.16em]">{month}</span>
             </span>
-          </div> 
-        )}
-        */}
-      </Wrapper>
+            <span className="mt-1.5 block text-[11px] font-medium tabular-nums text-muted-foreground">{year}</span>
+          </Wrapper>
+
+          <div className="min-w-0 flex-1">
+            <Wrapper
+              href={showDetailHref}
+              className={cn('line-clamp-2 text-xl font-bold leading-tight tracking-tight', linked && 'hover:underline')}
+            >
+              {show.title}
+            </Wrapper>
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Calendar className="size-3.5 shrink-0" />
+              {formattedDate}
+            </p>
+          </div>
+
+          <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium', SHOW_STATUS_CHIP[show.status])}>
+            {SHOW_STATUS_LABELS[show.status]}
+          </span>
+        </header>
+
+        <Wrapper href={showDetailHref} className="block border-y bg-muted/50">
+          {show.posterUrl ? (
+            <div className="relative aspect-[16/9] w-full bg-zinc-950">
+              <Image
+                src={show.posterUrl}
+                alt={show.title}
+                fill
+                sizes="(max-width: 1024px) 100vw, (max-width: 1536px) 50vw, 33vw"
+                className="object-contain"
+              />
+            </div>
+          ) : (<></>)
+        }
+          {/*} : (
+            <div className="flex aspect-[11/4] w-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+              <span className="text-3xl font-light leading-none">+</span>
+              <span className="max-w-[16rem] text-xs font-medium leading-5 text-balance">
+                Add poster, or design one with templates based on your brand
+              </span>
+            </div> 
+          )}
+          */}
+        </Wrapper>
+        </>
+      )}
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <section className="@container overflow-hidden rounded-xl border">

@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
+import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import {
   type CheckoutErrorCode,
   checkoutErrorMessage,
@@ -21,6 +22,17 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
 
   if (!showId) return failure('show_not_found', 'missing show_id in form data', { slug })
 
+  // Antall og navn kommer fra bestillingsskjemaet. Kortet i lista sender
+  // ingen av delene, og får da én billett uten navn — som før.
+  const quantity = Math.min(
+    Math.max(1, Number(formData.get('quantity') ?? 1) || 1),
+    MAX_TICKETS_PER_ORDER,
+  )
+  const holderNames = formData
+    .getAll('holder_name')
+    .slice(0, quantity)
+    .map((value) => String(value).trim().slice(0, 120))
+
   const headerStore = await headers()
   const host = headerStore.get('host') ?? 'localhost:3000'
   const protocol = headerStore.get('x-forwarded-proto') ?? 'http'
@@ -34,7 +46,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
 
   let checkoutUrl: string
   try {
-    const session = await createCheckoutSession(showId, sourceUrl)
+    const session = await createCheckoutSession(showId, sourceUrl, { quantity, holderNames })
     checkoutUrl = session.url
   } catch (error) {
     // Next redacts messages from thrown errors in production, so expected

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { automateFullbookedShow } from '@/lib/actions/booking'
+import { automateFullbookedShow, expireStaleOffers } from '@/lib/actions/booking'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -10,6 +10,10 @@ export async function GET(request: Request) {
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  // Rydder tilbud som har gått ut, slik at lineupen ikke viser «Offer sent»
+  // for e-poster ingen kommer til å svare på.
+  const expired = await expireStaleOffers()
 
   const admin = createAdminClient()
   const today = new Date().toISOString().slice(0, 10)
@@ -36,7 +40,9 @@ export async function GET(request: Request) {
     (r) => r.status === 'fulfilled' && r.value.fullbooked
   ).length
 
-  console.log(`[cron/publish-fullbooked] Processed ${shows?.length ?? 0} shows, published ${published}`)
+  console.log(
+    `[cron/publish-fullbooked] Processed ${shows?.length ?? 0} shows, published ${published}, expired ${expired} offers`,
+  )
 
-  return NextResponse.json({ processed: shows?.length ?? 0, published })
+  return NextResponse.json({ processed: shows?.length ?? 0, published, expired })
 }

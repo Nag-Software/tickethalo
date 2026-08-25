@@ -3,13 +3,12 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, ChevronDown, Plus, Search, Send, Trash2, UserPlus, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Plus, Search, Send, Trash2, UserPlus, UserRound, XCircle } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -21,7 +20,7 @@ import {
   addArtistToRequirementAction,
   addRequirementAction,
   cancelOfferAction,
-  deleteRequirementAction,
+  deleteSpotAction,
   removeSpotAndReopenAction,
   sendOfferToArtistAction,
   swapArtistAction,
@@ -139,7 +138,17 @@ export function InteractiveLineup({
               )
             }
             onDeleteSpot={() =>
-              run(() => deleteRequirementAction(fd({ req_id: spot.requirementId })), 'Spot removed from the lineup.')
+              run(
+                () =>
+                  deleteSpotAction(
+                    fd({
+                      req_id: spot.requirementId,
+                      spot_id: spot.spotId ?? '',
+                      offer_id: spot.offerId ?? '',
+                    }),
+                  ),
+                `Spot ${spot.position} deleted.`,
+              )
             }
             onPickArtist={(mode, artist) => {
               if (mode === 'offer') {
@@ -289,15 +298,6 @@ function SpotRow({
               {currentRole === option.value && <Check className="ml-auto size-3.5" />}
             </DropdownMenuItem>
           ))}
-          {isOpen && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={onDeleteSpot}>
-                <Trash2 className="size-4" />
-                Remove spot
-              </DropdownMenuItem>
-            </>
-          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -308,6 +308,7 @@ function SpotRow({
           disabled={readOnly || busy}
           onPickArtist={onPickArtist}
           onRemoveArtist={onRemoveArtist}
+          onDeleteSpot={onDeleteSpot}
         />
         <FeeCell spot={spot} currency={currency} disabled={readOnly || busy} onFee={onFee} />
       </div>
@@ -325,19 +326,26 @@ function ArtistCell({
   disabled,
   onPickArtist,
   onRemoveArtist,
+  onDeleteSpot,
 }: {
   spot: BookingSpot
   artists: LineupArtist[]
   disabled: boolean
   onPickArtist: (mode: ArtistPickerMode, artist: LineupArtist) => void
   onRemoveArtist: () => void
+  onDeleteSpot: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [picker, setPicker] = useState<ArtistPickerMode | null>(null)
+  // Å slette en plass noen står på avlyser bookingen deres. Det bekreftes i
+  // menyen framfor med en nettleserdialog, som ellers er det eneste stedet i
+  // kortet noe spretter ut av siden.
+  const [confirming, setConfirming] = useState(false)
 
   function close() {
     setOpen(false)
     setPicker(null)
+    setConfirming(false)
   }
 
   return (
@@ -345,7 +353,10 @@ function ArtistCell({
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) setPicker(null)
+        if (!next) {
+          setPicker(null)
+          setConfirming(false)
+        }
       }}
     >
       <PopoverTrigger
@@ -363,7 +374,16 @@ function ArtistCell({
       </PopoverTrigger>
 
       <PopoverContent align="start" className="w-72 gap-0 p-1.5">
-        {picker ? (
+        {confirming ? (
+          <ConfirmDelete
+            spot={spot}
+            onCancel={() => setConfirming(false)}
+            onConfirm={() => {
+              onDeleteSpot()
+              close()
+            }}
+          />
+        ) : picker ? (
           <ArtistPicker
             title={picker === 'swap' ? 'Change artist' : picker === 'offer' ? 'Send request to' : 'Add manually'}
             roleName={spot.roleName}
@@ -428,10 +448,70 @@ function ArtistCell({
                 </MenuButton>
               </>
             )}
+
+            <MenuButton
+              icon={XCircle}
+              destructive
+              onClick={() => {
+                // En tom plass er ingenting å bekrefte bort.
+                if (spot.state === 'open') {
+                  onDeleteSpot()
+                  close()
+                  return
+                }
+                setConfirming(true)
+              }}
+            >
+              Delete spot
+              <MenuHint>
+                {spot.state === 'open'
+                  ? 'Takes the row out of the lineup'
+                  : spot.state === 'booked'
+                    ? 'Cancels the booking and takes the row out'
+                    : 'Withdraws the request and takes the row out'}
+              </MenuHint>
+            </MenuButton>
           </MenuList>
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+function ConfirmDelete({
+  spot,
+  onCancel,
+  onConfirm,
+}: {
+  spot: BookingSpot
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-1.5">
+      <p className="text-sm font-semibold">Delete spot {spot.position}?</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {spot.state === 'booked'
+          ? `${spot.artistName ?? 'The artist'} loses the booking, and the row is taken out of the lineup. No new request is sent.`
+          : `The request out to ${spot.artistName ?? 'the artist'} is withdrawn, and the row is taken out of the lineup.`}
+      </p>
+      <div className="mt-1 flex gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
+        >
+          Keep it
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="flex-1 rounded-xl bg-destructive px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-destructive/90"
+        >
+          Delete spot
+        </button>
+      </div>
+    </div>
   )
 }
 

@@ -3,6 +3,7 @@
 import { useState, useTransition, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { updateArtistProfile } from '@/app/admin-app/(protected)/artists/[id]/actions'
 import { ARTIST_ROLE_OPTIONS, formatArtistRoleSummary, normalizeArtistRoleList } from '@/lib/artist-roles'
 import { LANGUAGES, formatLanguageSummary, normalizeLanguages } from '@/lib/languages'
@@ -116,8 +117,11 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
   const cellClass = `cursor-pointer rounded px-1 -mx-1 py-0.5 hover:bg-muted/60 transition-colors ${isPending ? 'opacity-60' : ''}`
 
   return (
-    <section className="rounded-xl border bg-card p-5 space-y-4">
-      <h2 className="font-semibold text-sm">Submitted profile</h2>
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Submitted profile</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
       <div className="flex flex-col gap-4 sm:flex-row">
         {artist.profile_image_url && (
           <Image
@@ -165,9 +169,9 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
             }
           />
 
-          {/* E-post */}
+          {/* Email */}
           <EditableFieldRow
-            label="E-post"
+            label="Email"
             isEditing={editing === 'email'}
             display={<span className={cellClass} onClick={() => setEditing('email')}>{values.email || '—'}</span>}
             input={
@@ -231,7 +235,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
                   })}
                 </div>
                 <button type="button" onClick={() => setEditing(null)} className="text-xs text-muted-foreground hover:text-foreground">
-                  Ferdig
+                  Done
                 </button>
               </div>
             }
@@ -268,7 +272,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
                   })}
                 </div>
                 <button type="button" onClick={() => setEditing(null)} className="text-xs text-muted-foreground hover:text-foreground">
-                  Ferdig
+                  Done
                 </button>
               </div>
             }
@@ -309,7 +313,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
               onClick={() => setEditing('social_links')}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              Rediger
+              Edit
             </button>
           )}
         </div>
@@ -356,7 +360,7 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
                 onClick={() => setEditing(null)}
                 className="text-xs border rounded px-2 py-1 hover:bg-muted"
               >
-                Ferdig
+                Done
               </button>
             </div>
           </div>
@@ -380,10 +384,9 @@ export function EditableArtistProfile({ artist }: { artist: Artist }) {
         )}
       </div>
 
-      {isPending && (
-        <p className="text-xs text-muted-foreground animate-pulse">Saving…</p>
-      )}
-    </section>
+        {isPending && <p className="text-xs text-muted-foreground animate-pulse">Saving…</p>}
+      </CardContent>
+    </Card>
   )
 }
 

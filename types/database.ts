@@ -26,6 +26,21 @@ export type MarketingTaskKey =
   | 'send_calendar_partners'
   | 'schedule_email'
 export type MarketingDesignFileType = 'image'
+export type MarketingDesignKind = 'template' | 'poster'
+export type PosterSource = 'ai' | 'upload'
+export type MarketingExportFormat =
+  | 'facebook_event'
+  | 'social_post'
+  | 'social_story'
+  | 'print_a4'
+  | 'print_a3'
+
+/** Merkevarefargene et show markedsføres i. Hex (#rrggbb). */
+export type MarketingPalette = {
+  primary: string
+  secondary: string
+  accent: string
+}
 
 // ─────────────────────────────────────────────────────────────
 // Row types
@@ -67,6 +82,8 @@ export type Club = {
   commission_vat_bps: number
   /** Dager etter showdato før utbetaling frigis. */
   payout_hold_days: number
+  /** Komikernes samlede andel av klubbens netto på et show. 9000 = 90 %. */
+  artist_share_bps: number
   /** Tickethalo dekker Stripe-gebyret av sin provisjon. */
   absorb_stripe_fee: boolean
 
@@ -91,6 +108,22 @@ export type CitySubscriber = {
   city: string
   source: string | null
   created_at: string
+}
+
+/** Status på en betasøknad fra en klubb. Se migrasjon 036. */
+export type ClubBetaRequestStatus = 'new' | 'contacted' | 'approved' | 'declined'
+
+export type ClubBetaRequest = {
+  id: string
+  club_name: string
+  /** Alltid lowercase — unique-nøkkelen i databasen hviler på det. */
+  email: string
+  /** Hvilken knapp på /admin-app/login søknaden kom fra. */
+  source: string | null
+  status: ClubBetaRequestStatus
+  note: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type ClubMembership = {
@@ -127,6 +160,8 @@ export type Artist = {
   languages: string[] | null
   social_links: Record<string, string> | null
   gender: ArtistGender | null
+  /** Kontonummeret honoraret utbetales til. Ført av komikeren selv. */
+  bank_account_number: string | null
   status: ArtistStatus
   admin_score: number | null
   admin_energy_level: EnergyLevel | null
@@ -160,6 +195,12 @@ export type Show = {
   currency: string
   ticket_url: string | null
   poster_url: string | null
+  /** Hvor `poster_url` kom fra. Null = ingen plakat. */
+  poster_source: PosterSource | null
+  /** Av som standard — AI-plakaten lages bare når klubben skrur den på. */
+  auto_poster_enabled: boolean
+  /** Merkevarefargene plakaten og eksportene bruker. Null = arv fra klubben. */
+  marketing_palette: MarketingPalette | null
   selected_marketing_design_id: string | null
   status: ShowStatus
   stripe_product_id: string | null
@@ -173,7 +214,14 @@ export type Show = {
 
 export type ShowMarketingDesign = {
   id: string
-  show_id: string
+  /** Null = mal i klubbens bibliotek, ikke knyttet til ett show. */
+  show_id: string | null
+  club_id: string | null
+  kind: MarketingDesignKind
+  /** Antall bilderuter i malen. 0 = ukjent. */
+  slot_count: number
+  width: number | null
+  height: number | null
   label: string | null
   file_url: string
   file_path: string
@@ -181,6 +229,37 @@ export type ShowMarketingDesign = {
   mime_type: string
   file_type: MarketingDesignFileType
   file_size: number | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Én bilderute i den valgte malen, koblet til bookingen som skal fylle den.
+ * `image_url` overstyrer artistens profilbilde når klubben har lastet opp
+ * et bedre pressebilde til akkurat denne plakaten.
+ */
+export type ShowMarketingSlot = {
+  id: string
+  show_id: string
+  slot_index: number
+  role_label: string | null
+  artist_id: string | null
+  image_url: string | null
+  image_path: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ShowMarketingExport = {
+  id: string
+  show_id: string
+  format: MarketingExportFormat
+  file_url: string
+  file_path: string
+  width: number
+  height: number
+  /** Plakaten filen ble laget av. Ulik `shows.poster_url` = utdatert eksport. */
+  source_poster_url: string | null
   created_at: string
   updated_at: string
 }
@@ -226,6 +305,8 @@ export type ConfirmedSpot = {
   fee_amount: number | null
   currency: string
   status: ConfirmedSpotStatus
+  /** Satt når honorar-eposten gikk ut. Se `lib/artist-fees.ts`. */
+  fee_email_sent_at: string | null
   confirmed_at: string | null
   cancelled_at: string | null
   created_at: string
@@ -315,6 +396,8 @@ export type Ticket = {
   customer_id: string | null
   ticket_code: string
   status: TicketStatus
+  /** Navnet billetten gjelder. Null for billetter kjøpt før migrasjon 036. */
+  holder_name: string | null
   checked_in_at: string | null
   created_at: string
   updated_at: string
@@ -401,6 +484,7 @@ export type Database = {
           languages?: string[] | null
           gender?: ArtistGender | null
           social_links?: Record<string, string> | null
+          bank_account_number?: string | null
           status?: ArtistStatus
           admin_score?: number | null
           admin_energy_level?: EnergyLevel | null
@@ -412,6 +496,27 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Artist>
+        Relationships: []
+      }
+      club_artists: {
+        Row: {
+          id: string
+          club_id: string
+          artist_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          artist_id: string
+          created_at?: string
+        }
+        Update: Partial<{
+          id: string
+          club_id: string
+          artist_id: string
+          created_at: string
+        }>
         Relationships: []
       }
       artist_availability: {
@@ -442,6 +547,9 @@ export type Database = {
           currency?: string
           ticket_url?: string | null
           poster_url?: string | null
+          poster_source?: PosterSource | null
+          auto_poster_enabled?: boolean
+          marketing_palette?: MarketingPalette | null
           selected_marketing_design_id?: string | null
           status?: ShowStatus
           stripe_product_id?: string | null
@@ -459,7 +567,12 @@ export type Database = {
         Row: ShowMarketingDesign
         Insert: {
           id?: string
-          show_id: string
+          show_id?: string | null
+          club_id?: string | null
+          kind?: MarketingDesignKind
+          slot_count?: number
+          width?: number | null
+          height?: number | null
           label?: string | null
           file_url: string
           file_path: string
@@ -471,6 +584,39 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<ShowMarketingDesign>
+        Relationships: []
+      }
+      show_marketing_slots: {
+        Row: ShowMarketingSlot
+        Insert: {
+          id?: string
+          show_id: string
+          slot_index: number
+          role_label?: string | null
+          artist_id?: string | null
+          image_url?: string | null
+          image_path?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ShowMarketingSlot>
+        Relationships: []
+      }
+      show_marketing_exports: {
+        Row: ShowMarketingExport
+        Insert: {
+          id?: string
+          show_id: string
+          format: MarketingExportFormat
+          file_url: string
+          file_path: string
+          width: number
+          height: number
+          source_poster_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ShowMarketingExport>
         Relationships: []
       }
       show_requirements: {
@@ -681,6 +827,7 @@ export type Database = {
           platform_fee_bps?: number
           commission_vat_bps?: number
           payout_hold_days?: number
+          artist_share_bps?: number
           absorb_stripe_fee?: boolean
           created_at?: string
           updated_at?: string
@@ -765,6 +912,21 @@ export type Database = {
         Update: Partial<CitySubscriber>
         Relationships: []
       }
+      club_beta_requests: {
+        Row: ClubBetaRequest
+        Insert: {
+          id?: string
+          club_name: string
+          email: string
+          source?: string | null
+          status?: ClubBetaRequestStatus
+          note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ClubBetaRequest>
+        Relationships: []
+      }
     }
     Views: {
       /** Solgte billetter per show. Se migrasjon 031. */
@@ -772,6 +934,23 @@ export type Database = {
         Row: {
           show_id: string
           sold_tickets: number
+        }
+        Relationships: []
+      }
+      /** Komikerkatalogen bak «Discover comedians». Se migrasjon 035. */
+      artist_directory: {
+        Row: {
+          id: string
+          full_name: string
+          stage_name: string | null
+          profile_image_url: string | null
+          city: string | null
+          country: string | null
+          category: ArtistType[] | null
+          status: ArtistStatus
+          created_at: string
+          /** Bekreftede, spilte og utbetalte spots. */
+          bookings: number
         }
         Relationships: []
       }
@@ -805,11 +984,16 @@ export type Database = {
           p_application_fee_id?: string | null
           p_platform_fee_amount?: number | null
           p_payment_method_type?: string | null
+          /** Antall billetter i bestillingen. Se migrasjon 036. */
+          p_quantity?: number | null
+          /** Navn per billett, i samme rekkefølge. */
+          p_ticket_names?: string[] | null
         }
         Returns: {
           result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show'
           order_id: string
           ticket_code: string | null
+          ticket_codes: string[] | null
           duplicate: boolean
         }[]
       }

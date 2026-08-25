@@ -7,6 +7,7 @@ import { ClubSwitcher } from '@/components/admin/club-switcher'
 import {
   Building2,
   Users,
+  UserSearch,
   CalendarDays,
   ShoppingCart,
   Wallet,
@@ -28,6 +29,7 @@ import {
 const navItems = [
   { label: 'Shows', href: '/shows', icon: CalendarDays },
   { label: 'Comedians', href: '/artists', icon: Users },
+  { label: 'Discover comedians', href: '/discover', icon: UserSearch },
   { label: 'Orders', href: '/orders', icon: ShoppingCart },
   { label: 'Finances', href: '/finances', icon: Wallet },
   { label: 'My club', href: '/my-club', icon: Building2 },
@@ -84,7 +86,7 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
               return (
                 <SidebarMenuItem key={item.href + item.label}>
                   <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
-                    <Link href={href}>
+                    <Link href={href} className="!text-[15]">
                       <item.icon />
                       <span>{item.label}</span>
                     </Link>
