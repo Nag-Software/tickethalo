@@ -93,8 +93,10 @@ export function isClubPayoutReady<T extends ClubReadiness>(club: T | null | unde
 // ─────────────────────────────────────────────────────────────
 
 function accountOrigin() {
+  if (process.env.APP_URL) return process.env.APP_URL
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
+  // Her, i motsetning til e-postlenkene, er VERCEL_URL brukbar: brukeren står
+  // i nettleseren på samme deploy og sendes rett tilbake dit.
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   return 'http://localhost:3000'
 }

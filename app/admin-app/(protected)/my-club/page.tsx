@@ -4,6 +4,7 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { ClubProfileForm } from '@/components/admin/club-profile-form'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { appUrl } from '@/lib/app-url'
 
 export default async function MyClubPage() {
   const clubId = await getDefaultClubIdForAdmin()
@@ -27,9 +28,7 @@ export default async function MyClubPage() {
     throw new Error('Club profile not found.')
   }
 
-  // Same order the rest of the app uses when it builds absolute links
-  // (see lib/actions/booking.ts).
-  const origin = (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const origin = appUrl()
 
   return (
     <div>

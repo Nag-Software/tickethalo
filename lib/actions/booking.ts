@@ -16,6 +16,7 @@ import { requirementFeeLabel } from '@/lib/booking-spots'
 import type { RequirementCompensationType } from '@/types/database'
 import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
 import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
+import { appUrl } from '@/lib/app-url'
 
 const ACTIVE_BOOKING_STATUSES = ['booking'] as const
 
@@ -255,14 +256,7 @@ function selectFallbackCandidates(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function publicAppUrl() {
-  const origin =
-    process.env.APP_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ??
-    'http://localhost:3000'
-  return origin.replace(/\/$/, '')
-}
+const publicAppUrl = appUrl
 
 
 
@@ -325,9 +319,15 @@ export async function bookShow(showId: string) {
     // 'declined' må være med. Uten den faller en artist som nettopp takket
     // nei rett tilbake i kandidatlisten, og siden declineBookingOffer kjører
     // motoren med én gang, fikk de det samme showet tilbudt på nytt umiddelbart.
+    //
+    // 'expired' av nøyaktig samme grunn: expireStaleOffers() over her flipper
+    // utløpte `sent` til `expired` i samme pass, og uten statusen her ble
+    // artisten kandidat igjen sekunder senere og fikk showet tilbudt på nytt.
+    // Det stopper ikke bookingen av plassen — kvoten under teller bare `sent`.
+    //
     // Statusene her mates inn i `alreadyInvolved`, som både strictFilter og
     // selectFallbackCandidates sjekker.
-    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined']),
+    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined', 'expired']),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
@@ -1044,7 +1044,8 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
 
   const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
-    admin.from('booking_offers').select('artist_id').eq('show_id', showId).in('status', ['sent', 'declined']),
+    // Samme statussett som bookShow — se kommentaren der.
+    admin.from('booking_offers').select('artist_id').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined', 'expired']),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])

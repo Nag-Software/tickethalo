@@ -30,6 +30,7 @@ import {
   uploadShowPosterAction,
 } from './actions'
 import type { MarketingExportFormat, ShowStatus } from '@/types/database'
+import { appUrl } from '@/lib/app-url'
 
 /**
  * Markedsføringsfanen på et show.
@@ -47,9 +48,7 @@ const GENERATE_BLOCKED_HINT: Partial<Record<ShowStatus, string>> = {
   draft: 'Book the lineup first — the AI poster needs the confirmed artists.',
 }
 
-function appOrigin() {
-  return (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
-}
+const appOrigin = appUrl
 
 export async function MarketingTab({ showId }: { showId: string }) {
   const db = createAdminClient()

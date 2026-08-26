@@ -6,6 +6,7 @@ import { runAutomaticBookingForOpenShows } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import type { ArtistGender } from '@/types/database'
+import { appPath } from '@/lib/app-url'
 
 export interface RegisterArtistInput {
   email: string
@@ -133,7 +134,7 @@ export async function approveArtist(
   if (error || !artist) throw new Error(error?.message ?? 'Artist not found')
 
   if ((artist.admin_score ?? 0) > 6) {
-    const artistAppUrl = process.env.ARTIST_APP_URL ?? `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/artist-app`
+    const artistAppUrl = process.env.ARTIST_APP_URL ?? appPath('/artist-app')
     runAfterResponse(`approve-artist-${artistId}`, async () => {
       await sendArtistApprovedEmail({
         email: artist.email,

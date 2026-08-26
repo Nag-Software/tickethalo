@@ -10,6 +10,8 @@
  * Resend — nyttig når man vil se på en e-post før den sendes.
  */
 
+import { appPath } from '@/lib/app-url'
+
 export type EmailTemplate = { subject: string; html: string; text: string }
 
 export function escapeHtml(value: string | null | undefined) {
@@ -28,10 +30,10 @@ const INK = '#2e0c01'
 const MUTED = '#6d5147'
 const ACCENT = '#ff5b24'
 
-const PORTAL_BOOKINGS = 'https://tickethalo.com/artist-app/bookings'
-const PORTAL_DATES = 'https://tickethalo.com/artist-app/available-dates'
-const PORTAL_ECONOMY = 'https://tickethalo.com/artist-app/economy'
-const PORTAL_PROFILE = 'https://tickethalo.com/artist-app/profile'
+const PORTAL_BOOKINGS = appPath('/artist-app/bookings')
+const PORTAL_DATES = appPath('/artist-app/available-dates')
+const PORTAL_ECONOMY = appPath('/artist-app/economy')
+const PORTAL_PROFILE = appPath('/artist-app/profile')
 
 /**
  * Beløp i minste valutaenhet. Formateres som i portalen (`nb-NO`) selv om
