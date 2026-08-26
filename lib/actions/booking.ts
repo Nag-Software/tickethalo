@@ -256,7 +256,12 @@ function selectFallbackCandidates(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function publicAppUrl() {
-  return (process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const origin =
+    process.env.APP_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ??
+    'http://localhost:3000'
+  return origin.replace(/\/$/, '')
 }
 
 
@@ -473,7 +478,7 @@ export async function bookShow(showId: string) {
   candidatesMatched = assignments.length
   if (!assignments.length) return { offersCreated, candidatesMatched }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const baseUrl = publicAppUrl()
   for (const { artistId, req } of assignments) {
     const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
     const details = offerDetails(show, req)
@@ -1059,7 +1064,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
     candidates = selectFallbackCandidates(allArtists as ArtistRow[], requirement, alreadyInvolved, config.fallback_limit)
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const baseUrl = publicAppUrl()
   const details = offerDetails(show, requirement)
   for (const artist of candidates) {
     const { data: offer, error } = await admin
@@ -1169,7 +1174,7 @@ export async function sendManualBookingOffer(
   // av draft slik at svar fra komikeren behandles av bookingflyten.
   await admin.from('shows').update({ status: 'booking' }).eq('id', showId).eq('status', 'draft')
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const baseUrl = publicAppUrl()
   await sendBookingOfferEmail({
     email: artist.email,
     full_name: artist.full_name,
