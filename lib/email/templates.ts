@@ -32,8 +32,6 @@ const ACCENT = '#ff5b24'
 
 const PORTAL_BOOKINGS = appPath('/artist-app/bookings')
 const PORTAL_DATES = appPath('/artist-app/available-dates')
-const PORTAL_ECONOMY = appPath('/artist-app/economy')
-const PORTAL_PROFILE = appPath('/artist-app/profile')
 
 /**
  * Beløp i minste valutaenhet. Formateres som i portalen (`nb-NO`) selv om
@@ -41,7 +39,16 @@ const PORTAL_PROFILE = appPath('/artist-app/profile')
  * måte begge steder.
  */
 function money(amount: number, currency: string) {
-  return new Intl.NumberFormat('nb-NO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount / 100)
+  // Ører vises bare når det faktisk er noen. Et honorar på 143,28 kr må stå
+  // med ørene, ellers fakturerer komikeren 143 og beløpskontrollen slår ut på
+  // en differanse ingen har gjort. Runde beløp skrives fortsatt «2 500 kr».
+  const digits = amount % 100 === 0 ? 0 : 2
+  return new Intl.NumberFormat('nb-NO', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(amount / 100)
 }
 
 function button(href: string, label: string, tone: 'primary' | 'ghost' = 'primary') {
@@ -270,82 +277,46 @@ export function spotFilledTemplate(opts: { full_name: string; show_title?: strin
 
 
 /**
- * Honoraret etter showet — fakturagrunnlaget.
+ * Honoraret etter showet — én setning og en lenke.
  *
- * Komikeren fakturerer klubben; eposten er grunnlaget den fakturaen skrives
- * fra. Da må alt som skal stå på fakturaen være her: beløpet, hvem den
- * sendes til, og hvilket show den gjelder. Kontonummeret komikeren har ført
- * i portalen står med, fordi det er det klubben betaler til — mangler det,
- * sier eposten det rett ut i stedet for å la det oppdages ved forfall.
+ * Eposten bar tidligere hele fakturagrunnlaget: beløp, referanse, mottaker,
+ * org.nr, adresse og kontonummer i én tabell. Alt riktig, og det var
+ * problemet — den som skal skrive én faktura måtte lese ni rader for å finne
+ * de tre tallene som betyr noe.
+ *
+ * Nå står detaljene på `/fee/[token]`, som komikeren kan gå tilbake til, som
+ * viser hvor fakturaen står, og som ikke blir utdatert i innboksen når
+ * kontonummeret endres. Beløpet blir igjen i eposten, fordi det er det eneste
+ * spørsmålet noen har når de åpner den.
  */
 export function artistFeeTemplate(opts: {
   full_name: string
   show_title: string
   show_date: string
-  venue?: string | null
   /** Minste valutaenhet. */
   amount: number
   currency: string
-  bank_account_number?: string | null
-  fee_basis: 'fixed' | 'percent' | 'none'
-  percent?: number | null
-  club_name?: string | null
-  /** Klubbens fakturamottaker — juridisk navn, org.nr og epost. */
-  club_legal_name?: string | null
-  club_org_number?: string | null
-  club_invoice_email?: string | null
+  /** Siden med resten — beløp, referanse, hvem som faktureres. */
+  invoice_url: string
 }): EmailTemplate {
   const amount = money(opts.amount, opts.currency)
-  const basisLabel = opts.fee_basis === 'percent' && opts.percent != null
-    ? `${opts.percent}% of ticket sales`
-    : opts.fee_basis === 'fixed'
-      ? 'Agreed fixed fee'
-      : null
-  const billTo = opts.club_legal_name?.trim() || opts.club_name?.trim() || null
-  const reference = `${opts.show_title} — ${opts.show_date}`
-  const invoiceEmail = opts.club_invoice_email?.trim() || null
-
-  const textLines = [
-    `Hi ${opts.full_name}`,
-    '',
-    `${opts.show_title} on ${opts.show_date} is settled. Your fee is ${amount} — send an invoice for that amount and the club pays it.`,
-    '',
-    `Amount to invoice: ${amount}`,
-    basisLabel ? `Agreement: ${basisLabel}` : null,
-    `Reference: ${reference}`,
-    billTo ? `Invoice to: ${billTo}` : null,
-    opts.club_org_number ? `Registration number: ${opts.club_org_number}` : null,
-    invoiceEmail ? `Send the invoice to: ${invoiceEmail}` : null,
-    opts.bank_account_number
-      ? `Paid to your account: ${opts.bank_account_number}`
-      : 'No account number is registered on your profile — add it in the portal, and put it on the invoice.',
-    '',
-    `Your fees: ${PORTAL_ECONOMY}`,
-  ].filter((line) => line !== null)
 
   return {
-    subject: `Invoice us for ${opts.show_title}: ${amount}`,
-    text: textLines.join('\n'),
+    subject: `Your fee for ${opts.show_title}: ${amount}`,
+    text: [
+      `Hi ${opts.full_name}`,
+      '',
+      `${opts.show_title} on ${opts.show_date} is settled, and your fee is ${amount}.`,
+      '',
+      'Everything you need to invoice us — the amount, the reference and who to send it to — is here:',
+      opts.invoice_url,
+    ].join('\n'),
     html: shell({
       eyebrow: 'Show settled',
-      heading: `Invoice us for ${amount}`,
+      heading: `Your fee is ${amount}`,
       body:
-        paragraph(`Hi ${escapeHtml(opts.full_name)}, <strong>${escapeHtml(opts.show_title)}</strong> is settled and your fee is <strong>${escapeHtml(amount)}</strong>. Send an invoice for that amount${billTo ? ` to ${escapeHtml(billTo)}` : ''}, and it gets paid.`) +
-        details([
-          ['Amount to invoice', amount],
-          ['Agreement', basisLabel],
-          ['Reference', reference],
-          ['Venue', opts.venue],
-          ['Invoice to', billTo],
-          ['Registration number', opts.club_org_number],
-          ['Send the invoice to', invoiceEmail],
-          ['Paid to your account', opts.bank_account_number],
-        ]) +
-        (opts.bank_account_number
-          ? paragraph('Wrong account number? Change it in the portal — it is the account the club pays to.', true) +
-            button(PORTAL_ECONOMY, 'See your fees')
-          : note('No account number registered.', 'Put your account number on the invoice, and add it in the portal so the club has it on file.') +
-            button(PORTAL_PROFILE, 'Add account number')),
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, <strong>${escapeHtml(opts.show_title)}</strong> is settled. Everything you need to invoice us is on one page — the amount, the reference to put on the invoice, and who to send it to.`) +
+        button(opts.invoice_url, 'How to invoice us'),
     }),
   }
 }

@@ -98,24 +98,18 @@ export async function sendSpotFilledEmail(opts: {
 }
 
 /**
- * Fakturagrunnlaget etter showet — beløpet komikeren skal fakturere klubben.
- * Regnestykket ligger i `lib/artist-fees.ts`.
+ * Honorar-eposten etter showet: beløpet og en lenke til `/fee/[token]`, der
+ * resten står. Regnestykket ligger i `lib/artist-fees.ts`, siden og
+ * referansen i `lib/fee-invoices.ts`.
  */
 export async function sendArtistFeeEmail(opts: {
   email: string
   full_name: string
   show_title: string
   show_date: string
-  venue?: string | null
   amount: number
   currency: string
-  bank_account_number?: string | null
-  fee_basis: 'fixed' | 'percent' | 'none'
-  percent?: number | null
-  club_name?: string | null
-  club_legal_name?: string | null
-  club_org_number?: string | null
-  club_invoice_email?: string | null
+  invoice_url: string
 }): Promise<EmailResult> {
   return sendArtistEmail(opts.email, artistFeeTemplate(opts))
 }

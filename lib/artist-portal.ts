@@ -29,9 +29,14 @@ export function visibleArtistPath(pathname: string) {
 }
 
 export function formatMoney(amount: number | null | undefined, currency = 'NOK') {
+  // Ører vises når de finnes: et honorar på 143,28 kr er beløpet komikeren
+  // skal fakturere, og portalen må vise det samme som e-posten.
+  const value = amount ?? 0
+  const digits = value % 100 === 0 ? 0 : 2
   return new Intl.NumberFormat('nb-NO', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0,
-  }).format((amount ?? 0) / 100)
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value / 100)
 }

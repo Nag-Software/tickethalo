@@ -28,11 +28,36 @@ const PATH = '/admin-app/finances'
 type ActionError = { error: string } | undefined
 
 /**
+ * Feil som skyldes Tickethalos eget Stripe-oppsett, ikke klubbens.
+ *
+ * «Only Stripe Connect platforms can work with other accounts» betyr at
+ * API-nøkkelen appen kjører med tilhører en Stripe-konto som ikke er
+ * registrert som Connect-plattform — typisk en live-nøkkel der
+ * plattformprofilen ikke er fullført, eller en nøkkel fra feil konto. Det
+ * samme gjelder ugyldige nøkler og test/live-forveksling.
+ *
+ * Klubbadmin kan ikke gjøre noe med noen av dem, og Stripes egen tekst peker
+ * på en innstillingsside de ikke har tilgang til. Derfor får de vite at det er
+ * vår feil, mens loggen får hele meldingen.
+ */
+const PLATFORM_MISCONFIGURED =
+  /only stripe connect platforms|invalid api key|no such application|similar object exists in (live|test) mode/i
+
+/**
  * Feil fra Stripe og fra våre egne guards har allerede en lesbar melding.
  * Alt annet får en nøytral tekst — en rå intern feil hjelper ingen.
  */
 function toActionError(error: unknown, fallback: string): { error: string } {
   if (error instanceof Error && error.message) {
+    if (PLATFORM_MISCONFIGURED.test(error.message)) {
+      console.error(
+        `[Finances] Stripe-oppsettet på plattformen svarer ikke: ${error.message} — ` +
+          'sjekk at STRIPE_SECRET_KEY i dette miljøet tilhører Connect-plattformen ' +
+          '(live krever fullført plattformprofil på dashboard.stripe.com/account/applications/settings).',
+      )
+      return { error: 'Stripe-koblingen vår er ikke satt opp riktig. Dette er på oss — vi har fått beskjed.' }
+    }
+
     console.error(`[Finances] ${error.message}`)
     return { error: error.message }
   }
@@ -118,9 +143,18 @@ export async function saveSellerDetailsAction(formData: FormData): Promise<Actio
       return { error: 'The company registration number must be nine digits.' }
     }
 
+    const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
     const supportEmail = text('support_email')
-    if (supportEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(supportEmail)) {
+    if (supportEmail && !email.test(supportEmail)) {
       return { error: 'That does not look like an email address.' }
+    }
+
+    // Fakturaadressen går ut til komikerne i honorar-eposten. En skrivefeil
+    // her sender fakturaen ingen steder, og oppdages først når noen purrer.
+    const invoiceEmail = text('invoice_email')
+    if (invoiceEmail && !email.test(invoiceEmail)) {
+      return { error: 'That does not look like an invoicing email address.' }
     }
 
     const { error } = await db
@@ -129,6 +163,7 @@ export async function saveSellerDetailsAction(formData: FormData): Promise<Actio
         legal_name: text('legal_name'),
         org_number: orgNumber,
         support_email: supportEmail,
+        invoice_email: invoiceEmail,
       })
       .eq('id', clubId)
 

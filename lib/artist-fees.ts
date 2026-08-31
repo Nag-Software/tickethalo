@@ -1,7 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendArtistFeeEmail } from '@/lib/email/mailer'
 import { requirementFeeLabel } from '@/lib/booking-spots'
-import type { RequirementCompensationType } from '@/types/database'
+import { clubInvoiceRecipient, feeInvoiceUrl, issueFeeInvoice, syncFeeInvoiceAmount } from '@/lib/fee-invoices'
+import type { ArtistFeeInvoice } from '@/types/database'
+import type { ArtistFeeInvoiceStatus, RequirementCompensationType } from '@/types/database'
 
 /**
  * Honoraret komikerne skal ha etter at showet er spilt.
@@ -20,6 +22,11 @@ import type { RequirementCompensationType } from '@/types/database'
  * klubben har gjort uavhengig av hvor mange som kom. Er det taket sprenges
  * av, er det prosentandelene som skaleres — og selger showet så dårlig at de
  * faste alene overstiger potten, står klubben for mellomlegget.
+ *
+ * Utbetalingen skjer mot faktura, og fakturaen går til klubben. Derfor
+ * skriver kjøringen et fakturagrunnlag med referanse for hvert honorar før
+ * eposten sendes — se `lib/fee-invoices.ts`. Referansen er det klubben
+ * kontrollerer innkommende fakturaer mot; uten grunnlag går det ingen epost.
  */
 
 /** Honorarfeltene fra kravet spoten hører til. */
@@ -166,7 +173,7 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
 
   const { data: club } = await db
     .from('clubs')
-    .select('id, name, artist_share_bps, legal_name, org_number, support_email')
+    .select('id, name, artist_share_bps, legal_name, org_number, invoice_email, support_email')
     .eq('id', show.club_id)
     .single()
 
@@ -182,6 +189,15 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
   if (spots.length === 0) {
     await markCompleted(show)
     return { ...base, skipped: 'no booked spots' }
+  }
+
+  // Klubben er den komikeren fakturerer. Mangler fakturaadressen, går
+  // grunnlaget ut likevel — beløpet er riktig, og en komiker som vet hva
+  // han skal ha er bedre stilt enn en som venter på at klubben fyller ut et
+  // felt. Eposten sier hva som mangler, og advarselen her sier det til oss.
+  const recipient = clubInvoiceRecipient(club)
+  if (!recipient.email) {
+    console.warn(`[ArtistFees] ${show.id}: klubben ${club.name} har ingen fakturaadresse`)
   }
 
   const { data: requirements } = await db
@@ -220,6 +236,10 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
   let missingAccount = 0
 
   for (const fee of breakdown.fees) {
+    const spot = spots.find((row) => row.id === fee.spotId)
+    const arrangement = spot ? arrangements.get(spot.show_requirement_id) : undefined
+    const agreement = arrangement ? requirementFeeLabel(arrangement, show.currency) : null
+
     // Beløpet skrives uansett — komikerportalen skal vise det samme tallet
     // som eposten, også for spots som allerede er varslet.
     await db
@@ -227,7 +247,42 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
       .update({ fee_amount: fee.amount, currency: show.currency, status: 'completed' })
       .eq('id', fee.spotId)
 
-    if (alreadySent.has(fee.spotId)) continue
+    if (alreadySent.has(fee.spotId)) {
+      if (fee.amount <= 0) {
+        const existing = await syncFeeInvoiceAmount({
+          spotId: fee.spotId,
+          amount: fee.amount,
+          currency: show.currency,
+          agreement,
+        })
+
+        if (existing) {
+          console.warn(
+            `[ArtistFees] ${show.id}/${fee.spotId}: honoraret er falt til 0 etter at ${existing.reference} gikk ut`,
+          )
+        }
+        continue
+      }
+
+      // Grunnlaget mangler for honorarer som ble varslet før referansene
+      // fantes. Det lages her, slik at kravet blir mulig å kontrollere i det
+      // hele tatt — komikeren får referansen når klubben sender grunnlaget på
+      // nytt. Finnes raden alt, holder dette bare beløpet i takt med et salg
+      // som kan ha endret seg etter utsendelsen.
+      const artist = artists.get(fee.artistId)
+      await issueFeeInvoice({
+        spotId: fee.spotId,
+        showId: show.id,
+        artistId: fee.artistId,
+        clubId: club.id,
+        amount: fee.amount,
+        currency: show.currency,
+        agreement,
+        bankAccountNumber: artist?.bank_account_number ?? null,
+        artistEmail: artist?.email ?? null,
+      })
+      continue
+    }
 
     // Null kroner er ingen utbetaling å varsle om. Salget står i portalen
     // for den som lurer på hvorfor.
@@ -238,21 +293,34 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
 
     if (!artist.bank_account_number) missingAccount += 1
 
+    // Referansen først, eposten etterpå: en komiker skal aldri sitte med et
+    // beløp vi ikke har et grunnlag for. Får vi ikke skrevet raden, går
+    // eposten heller ikke ut — da tar kjøringen spoten i morgen.
+    const invoice = await issueFeeInvoice({
+      spotId: fee.spotId,
+      showId: show.id,
+      artistId: fee.artistId,
+      clubId: club.id,
+      amount: fee.amount,
+      currency: show.currency,
+      agreement,
+      bankAccountNumber: artist.bank_account_number,
+      artistEmail: artist.email,
+    })
+
+    if (!invoice) {
+      console.error(`[ArtistFees] ${show.id}/${fee.spotId}: kunne ikke opprette fakturagrunnlag`)
+      continue
+    }
+
     const result = await sendArtistFeeEmail({
       email: artist.email,
       full_name: artist.full_name,
       show_title: show.title,
       show_date: show.date,
-      venue: show.venue_name,
       amount: fee.amount,
       currency: show.currency,
-      bank_account_number: artist.bank_account_number,
-      fee_basis: fee.basis,
-      percent: fee.percent,
-      club_name: club.name,
-      club_legal_name: club.legal_name,
-      club_org_number: club.org_number,
-      club_invoice_email: club.support_email,
+      invoice_url: feeInvoiceUrl(invoice.token),
     })
 
     if (!result.success) {
@@ -335,6 +403,10 @@ export type ArtistFeeLine = {
   /** Fakturagrunnlaget er sendt til komikeren. */
   notified: boolean
   capped: boolean
+  /** Referansen fakturaen skal merkes med, når grunnlaget er sendt. */
+  reference: string | null
+  /** Hvor langt fakturaen er kommet. Se `lib/fee-invoices.ts`. */
+  invoiceStatus: ArtistFeeInvoiceStatus | null
 }
 
 export type ShowFeeSummary = {
@@ -382,7 +454,7 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
 
   const showIds = shows.map((show) => show.id)
 
-  const [{ data: spotRows }, { data: requirementRows }, { data: orderRows }] = await Promise.all([
+  const [{ data: spotRows }, { data: requirementRows }, { data: orderRows }, { data: invoiceRows }] = await Promise.all([
     db
       .from('confirmed_spots')
       .select('id, show_id, artist_id, show_requirement_id, fee_email_sent_at')
@@ -397,10 +469,15 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
       .select('show_id, club_net_amount')
       .in('show_id', showIds)
       .eq('status', 'paid'),
+    db
+      .from('artist_fee_invoices')
+      .select('spot_id, reference, status')
+      .in('show_id', showIds),
   ])
 
   const spots = spotRows ?? []
   const arrangements = new Map((requirementRows ?? []).map((row) => [row.id, row as FeeArrangement & { id: string }]))
+  const invoices = new Map((invoiceRows ?? []).map((row) => [row.spot_id, row]))
 
   const netByShow = new Map<string, number>()
   for (const order of orderRows ?? []) {
@@ -439,6 +516,7 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
       const spot = showSpots.find((row) => row.id === fee.spotId)
       const artist = artists.get(fee.artistId)
       const arrangement = spot ? arrangements.get(spot.show_requirement_id) : undefined
+      const invoice = invoices.get(fee.spotId)
 
       return {
         artistId: fee.artistId,
@@ -450,6 +528,8 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
         accountNumber: artist?.bank_account_number ?? null,
         notified: Boolean(spot?.fee_email_sent_at),
         capped: fee.capped,
+        reference: invoice?.reference ?? null,
+        invoiceStatus: (invoice?.status as ArtistFeeInvoiceStatus | undefined) ?? null,
       }
     })
 
@@ -465,4 +545,74 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
       overCommitted: breakdown.overCommitted,
     }
   })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sende grunnlaget på nytt
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Sender honorar-eposten om igjen.
+ *
+ * Klubben trykker på den når komikeren ikke har fått eposten, har mistet den
+ * eller har byttet adresse. Det er samme lenke og samme beløp — det er ikke et
+ * nytt krav, det er det samme kravet en gang til.
+ *
+ * Alt som kan ha endret seg står på siden lenken peker til, og leses når den
+ * åpnes. Derfor trenger denne funksjonen bare adressen å sende til, og den er
+ * komikerens nåværende: har hun byttet epost i profilen, er det den nye som
+ * skal få den. Grunnlaget beholder den gamle, fordi den forteller hvor det
+ * opprinnelig gikk.
+ */
+export async function resendFeeInvoiceEmail({ invoiceId, clubId }: { invoiceId: string; clubId: string }) {
+  const db = createAdminClient()
+
+  const { data: invoiceRow } = await db
+    .from('artist_fee_invoices')
+    .select('*')
+    .eq('id', invoiceId)
+    .eq('club_id', clubId)
+    .maybeSingle()
+
+  const invoice = invoiceRow as ArtistFeeInvoice | null
+  if (!invoice) throw new Error('Fant ikke fakturagrunnlaget.')
+
+  const [{ data: artist }, { data: show }] = await Promise.all([
+    db.from('artists').select('id, full_name, email').eq('id', invoice.artist_id).single(),
+    db.from('shows').select('id, title, date').eq('id', invoice.show_id).single(),
+  ])
+
+  if (!artist?.email) throw new Error('Komikeren har ingen e-postadresse.')
+  if (!show) throw new Error('Fant ikke showet.')
+
+  const result = await sendArtistFeeEmail({
+    email: artist.email,
+    full_name: artist.full_name,
+    show_title: show.title,
+    show_date: show.date,
+    amount: invoice.amount,
+    currency: invoice.currency,
+    invoice_url: feeInvoiceUrl(invoice.token),
+  })
+
+  if (!result.success) {
+    console.error(`[ArtistFees] resend ${invoice.reference}: ${result.error}`)
+    throw new Error('E-posten kunne ikke sendes. Prøv igjen om litt.')
+  }
+
+  const now = new Date().toISOString()
+  await db
+    .from('artist_fee_invoices')
+    .update({ last_sent_at: now, send_count: invoice.send_count + 1, updated_at: now })
+    .eq('id', invoice.id)
+
+  // Var førstegangsutsendelsen den som feilet, står spoten fortsatt uten
+  // stempel — og da ville kjøringen sendt den en gang til i natt.
+  await db
+    .from('confirmed_spots')
+    .update({ fee_email_sent_at: now })
+    .eq('id', invoice.spot_id)
+    .is('fee_email_sent_at', null)
+
+  return { reference: invoice.reference, email: artist.email, sendCount: invoice.send_count + 1 }
 }

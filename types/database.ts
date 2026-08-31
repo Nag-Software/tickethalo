@@ -68,6 +68,8 @@ export type Club = {
   legal_name: string | null
   org_number: string | null
   support_email: string | null
+  /** Adressen komikerne sender honorarfakturaen til. Se migrasjon 038. */
+  invoice_email: string | null
 
   // Stripe Connect. Betalingen opprettes på denne kontoen (direct charge).
   stripe_account_id: string | null
@@ -121,6 +123,46 @@ export type ClubBetaRequest = {
   /** Hvilken knapp på /admin-app/login søknaden kom fra. */
   source: string | null
   status: ClubBetaRequestStatus
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Hvor et fakturagrunnlag står. Se migrasjon 038. */
+export type ArtistFeeInvoiceStatus = 'issued' | 'received' | 'approved' | 'paid' | 'rejected'
+
+/**
+ * Fakturagrunnlaget som er sendt til en komiker — beløpet Tickethalo har bedt
+ * om, og sporet en innkommende faktura kontrolleres mot. Se `lib/fee-invoices.ts`.
+ */
+export type ArtistFeeInvoice = {
+  id: string
+  /** «TH-2608-K7QP3M». Må stå på fakturaen. */
+  reference: string
+  /** Hemmeligheten i lenken til /fee/[token]. Ikke ment å leses opp. */
+  token: string
+  spot_id: string
+  show_id: string
+  artist_id: string
+  club_id: string | null
+  /** Minste valutaenhet. Det eneste beløpet som skal betales på referansen. */
+  amount: number
+  currency: string
+  /** Avtalen slik den sto da beløpet ble regnet ut. */
+  agreement: string | null
+  /** Kontoen slik den sto da grunnlaget gikk ut — fasiten ved kontroll. */
+  bank_account_number: string | null
+  artist_email: string | null
+  status: ArtistFeeInvoiceStatus
+  issued_at: string
+  /** Sist grunnlaget gikk ut på epost. Null = bare førstegangsutsendelsen. */
+  last_sent_at: string | null
+  /** Antall utsendelser. Over 1 betyr at noen har purret. */
+  send_count: number
+  received_at: string | null
+  approved_at: string | null
+  paid_at: string | null
+  handled_by: string | null
   note: string | null
   created_at: string
   updated_at: string
@@ -819,6 +861,7 @@ export type Database = {
           legal_name?: string | null
           org_number?: string | null
           support_email?: string | null
+          invoice_email?: string | null
           stripe_account_id?: string | null
           charges_enabled?: boolean
           payouts_enabled?: boolean
@@ -925,6 +968,36 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<ClubBetaRequest>
+        Relationships: []
+      }
+      artist_fee_invoices: {
+        Row: ArtistFeeInvoice
+        Insert: {
+          id?: string
+          reference: string
+          token?: string
+          spot_id: string
+          show_id: string
+          artist_id: string
+          club_id?: string | null
+          amount: number
+          currency?: string
+          agreement?: string | null
+          bank_account_number?: string | null
+          artist_email?: string | null
+          status?: ArtistFeeInvoiceStatus
+          issued_at?: string
+          last_sent_at?: string | null
+          send_count?: number
+          received_at?: string | null
+          approved_at?: string | null
+          paid_at?: string | null
+          handled_by?: string | null
+          note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ArtistFeeInvoice>
         Relationships: []
       }
     }

@@ -1,5 +1,7 @@
-import { ArrowUpRight, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowUpRight, ChevronRight, ExternalLink, Receipt, RefreshCw } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/admin-header'
+import { InfoHint } from '@/components/admin/info-hint'
 import { EarningsChart } from '@/components/admin/earnings-chart'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { Button } from '@/components/ui/button'
@@ -17,12 +19,25 @@ import {
 import { getClubArtistFees } from '@/lib/artist-fees'
 import { getFinanceSummary } from '@/lib/finances'
 import { releasableAmount } from '@/lib/payouts'
+import type { ArtistFeeInvoiceStatus } from '@/types/database'
 import {
   openClubDashboardAction,
   refreshClubStatusAction,
   saveSellerDetailsAction,
   startClubOnboardingAction,
 } from './actions'
+
+/**
+ * Hvor honorarfakturaen står, sagt til klubben. Saksgangen er vår, men
+ * klubben skal kunne se om pengene faktisk har gått ut.
+ */
+const FEE_STATUS: Record<ArtistFeeInvoiceStatus, string> = {
+  issued: 'Asked to invoice',
+  received: 'Invoice received',
+  approved: 'Approved',
+  paid: 'Paid',
+  rejected: 'On hold',
+}
 
 /**
  * The club's finance page.
@@ -80,14 +95,19 @@ export default async function FinancesPage() {
 
   const feesTotal = artistFees.reduce((total, show) => total + show.total, 0)
 
-  const money = (value: number | null | undefined, currency = club.currency) =>
-    value === null || value === undefined
-      ? '—'
-      : new Intl.NumberFormat('en-GB', {
-        style: 'currency',
-        currency: currency.toUpperCase(),
-        maximumFractionDigits: 0,
-      }).format(value / 100)
+  // Ører vises bare når det er noen. Honorarene er prosenter av et
+  // billettsalg og lander sjelden på hele kroner; skjuler vi ørene, ser
+  // klubben et annet tall enn det komikeren er bedt om å fakturere.
+  const money = (value: number | null | undefined, currency = club.currency) => {
+    if (value === null || value === undefined) return '—'
+    const digits = value % 100 === 0 ? 0 : 2
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(value / 100)
+  }
 
   return (
     <div>
@@ -227,11 +247,20 @@ export default async function FinancesPage() {
         {/* ── Artist fees ──────────────────────────────────── */}
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Artist fees</CardTitle>
-            <CardDescription>
-              What the club owes the lineup for shows that have been played. Open a show to see who
-              gets what.
-            </CardDescription>
+            <CardTitle className="flex items-center gap-1.5">
+              Artist fees
+              <InfoHint label="How fees are paid">
+                <p>
+                  What the club owes the lineup for shows that have been played. Each comedian gets a
+                  reference and is told to invoice you against it.
+                </p>
+                <p>
+                  Check an invoice against its reference before paying — that is how you know it is a
+                  fee we actually asked for.
+                </p>
+              </InfoHint>
+            </CardTitle>
+            <CardDescription>Open a show to see who gets what.</CardDescription>
             {feesTotal > 0 && (
               <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end text-right">
                 <div className="text-2xl font-semibold leading-none">{money(feesTotal)}</div>
@@ -241,6 +270,14 @@ export default async function FinancesPage() {
               </div>
             )}
           </CardHeader>
+          <CardContent className="pb-0">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admin-app/finances/invoices">
+                <Receipt data-icon="inline-start" />
+                Check an invoice
+              </Link>
+            </Button>
+          </CardContent>
           <CardContent>
             {artistFees.length === 0 ? (
               <Empty>Fees appear here once a booked show has been played.</Empty>
@@ -283,6 +320,15 @@ export default async function FinancesPage() {
                                 {line.capped && ' (capped)'}
                                 {' · '}
                                 {line.accountNumber ?? 'no account number'}
+                                {/* Referansen står her fordi den er det klubben
+                                    kan gjenfinne kostnaden på — den samme
+                                    strengen som står på komikerens faktura. */}
+                                {line.reference && (
+                                  <>
+                                    {' · '}
+                                    <span className="font-mono">{line.reference}</span>
+                                  </>
+                                )}
                               </span>
                             </span>
                             <span className="flex shrink-0 items-baseline gap-3">
@@ -291,8 +337,12 @@ export default async function FinancesPage() {
                               </span>
                               {/* Bare de som faktisk skal ha penger kan vente på
                                   et fakturagrunnlag — null kroner sendes ikke. */}
-                              <span className="w-24 text-right text-xs text-muted-foreground">
-                                {line.amount <= 0 ? '' : line.notified ? 'Asked to invoice' : 'Not sent yet'}
+                              <span className="w-28 text-right text-xs text-muted-foreground">
+                                {line.amount <= 0
+                                  ? ''
+                                  : line.invoiceStatus
+                                    ? FEE_STATUS[line.invoiceStatus]
+                                    : line.notified ? 'Asked to invoice' : 'Not sent yet'}
                               </span>
                             </span>
                           </li>
@@ -344,6 +394,20 @@ export default async function FinancesPage() {
                   type="email"
                   defaultValue={club.support_email ?? ''}
                   placeholder="tickets@comedyclub.com"
+                />
+              </div>
+              {/* Fakturaadressen står her og ikke i sin egen boks: det er den
+                  samme identiteten. Men den er ikke en selgeropplysning
+                  billettkjøperen ser, så den får sin egen linje og sin egen
+                  forklaring. */}
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <SellerField
+                  name="invoice_email"
+                  label="Where comedians send invoices"
+                  type="email"
+                  defaultValue={club.invoice_email ?? ''}
+                  placeholder="accounts@comedyclub.com"
+                  hint="Goes in the settlement email we send the lineup. Falls back to the ticket-buyer contact."
                 />
               </div>
               <div className="mt-4">
@@ -443,6 +507,7 @@ function SellerField({
   placeholder,
   type = 'text',
   inputMode,
+  hint,
 }: {
   name: string
   label: string
@@ -450,6 +515,8 @@ function SellerField({
   placeholder?: string
   type?: string
   inputMode?: 'numeric'
+  /** One line under the field, for what the value is actually used for. */
+  hint?: string
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -462,6 +529,7 @@ function SellerField({
         defaultValue={defaultValue}
         placeholder={placeholder}
       />
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }

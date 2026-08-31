@@ -18,7 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 /** Feltene alt Connect-arbeid trenger. Hold listen i sync med `ConnectClub`. */
 export const CLUB_CONNECT_FIELDS =
-  'id, name, slug, currency, legal_name, org_number, support_email, ' +
+  'id, name, slug, currency, legal_name, org_number, support_email, invoice_email, ' +
   'stripe_account_id, charges_enabled, payouts_enabled, onboarding_completed_at, ' +
   'platform_fee_bps, commission_vat_bps, payout_hold_days, absorb_stripe_fee'
 
@@ -30,6 +30,8 @@ export type ConnectClub = {
   legal_name: string | null
   org_number: string | null
   support_email: string | null
+  /** Adressen komikerne sender honorarfakturaen til. Se `lib/fee-invoices.ts`. */
+  invoice_email: string | null
   stripe_account_id: string | null
   charges_enabled: boolean
   payouts_enabled: boolean
