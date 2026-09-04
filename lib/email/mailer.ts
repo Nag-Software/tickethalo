@@ -4,7 +4,6 @@ import { formatTicketCode } from '@/lib/tickets'
 import {
   artistApprovedTemplate,
   artistFeeTemplate,
-  artistRegisteredTemplate,
   bookingConfirmedTemplate,
   bookingOfferTemplate,
   escapeHtml,
@@ -35,13 +34,6 @@ async function sendArtistEmail(to: string, template: EmailTemplate): Promise<Ema
     const msg = err instanceof Error ? err.message : String(err)
     return { success: false, error: msg }
   }
-}
-
-export async function sendArtistRegisteredEmail(opts: {
-  email: string
-  full_name: string
-}): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, artistRegisteredTemplate(opts))
 }
 
 export async function sendArtistApprovedEmail(opts: {

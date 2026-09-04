@@ -26,12 +26,12 @@ import type { ArtistStatus } from '@/types/database'
  * fra plattformen fordi én klubb er ferdig med hen.
  */
 
-type ArtistFilter = 'all' | 'approved' | 'pending' | 'not_ready'
+type ArtistFilter = 'all' | 'approved' | 'suspended' | 'not_ready'
 
 const FILTERS: { value: ArtistFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'approved', label: 'Approved' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'suspended', label: 'Suspended' },
   { value: 'not_ready', label: 'Not ready' },
 ]
 
@@ -88,7 +88,9 @@ export default async function ArtistsPage({
     value: ArtistFilter,
   ) => {
     if (value === 'approved') return artist.status === 'approved'
-    if (value === 'pending') return artist.status === 'pending_review'
+    // Ingen godkjenningskø lenger — det som er verdt å skille ut er dem
+    // superadmin har tatt ut av plattformen.
+    if (value === 'suspended') return artist.status === 'inactive' || artist.status === 'rejected'
     if (value === 'not_ready') return blockers.length > 0
     return true
   }
@@ -115,7 +117,7 @@ export default async function ArtistsPage({
           <h2 className="text-3xl font-bold tracking-tight">Comedians</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {rows.length} {rows.length === 1 ? 'comedian' : 'comedians'}
-            {counts.pending > 0 && ` · ${counts.pending} pending review`}
+            {counts.suspended > 0 && ` · ${counts.suspended} suspended`}
           </p>
         </div>
 

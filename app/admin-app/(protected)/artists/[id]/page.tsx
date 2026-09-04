@@ -17,7 +17,7 @@ import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles
 import { READINESS_BLOCKER_LABELS, artistReadinessBlockers } from '@/lib/artist-readiness'
 import { disconnectArtistAction } from '../../discover/actions'
 import { ConnectArtistButton } from '@/components/admin/connect-artist-button'
-import { approveArtistAction, rejectArtistAction, saveClubArtistReviewAction, updateArtistStatusAction } from './actions'
+import { saveClubArtistReviewAction, updateArtistStatusAction } from './actions'
 
 /**
  * Komikerprofilen i klubbadmin.
@@ -166,59 +166,29 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Whether the comedian is approved on Tickethalo at all. It controls their own
-                  portal and their availability dates, so it is the same for every club — only a
-                  superadmin can change it.
+                  Comedians are approved automatically when they sign up. This is moderation, not
+                  an approval queue — suspending someone removes them from their own portal and
+                  from every club&apos;s booking, so only a superadmin can change it.
                 </p>
 
-                {!isSuperadmin ? (
-                  <p className="rounded-2xl bg-muted px-4 py-2.5 text-xs text-muted-foreground">
-                    Done with this comedian? Remove them from your club, or flag them below. Both
-                    stay with your club.
-                  </p>
-                ) : artist.status === 'pending_review' ? (
-                  <>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Approving emails the comedian their portal link, so they can set the dates
-                      they are available.
-                    </p>
-                    <div className="flex gap-2">
-                      <ToastActionForm
-                        action={approveArtistAction}
-                        successMessage="Comedian approved."
-                        className="flex-1"
-                      >
-                        <input type="hidden" name="artist_id" value={artist.id} />
-                        <Button type="submit" className="w-full">
-                          Approve
-                        </Button>
-                      </ToastActionForm>
-                      <ToastActionForm
-                        action={rejectArtistAction}
-                        successMessage="Comedian rejected."
-                        className="flex-1"
-                      >
-                        <input type="hidden" name="artist_id" value={artist.id} />
-                        <Button type="submit" variant="destructive" className="w-full">
-                          Reject
-                        </Button>
-                      </ToastActionForm>
-                    </div>
-                  </>
-                ) : (
+                {isSuperadmin ? (
                   <ToastActionForm action={updateArtistStatusAction} successMessage="Status updated." className="flex flex-col gap-2">
                     <input type="hidden" name="artist_id" value={artist.id} />
                     <Label htmlFor="artist-status">Status</Label>
                     <select id="artist-status" name="status" defaultValue={artist.status} className={SELECT_CLASS}>
-                      <option value="pending_review">Pending review</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="approved">Approved — active on Tickethalo</option>
+                      <option value="inactive">Inactive — paused, can be reinstated</option>
+                      <option value="rejected">Rejected — removed from the platform</option>
                     </select>
                     <Button type="submit" variant="outline" size="sm" className="w-fit">
                       Update status
                     </Button>
                   </ToastActionForm>
+                ) : (
+                  <p className="rounded-2xl bg-muted px-4 py-2.5 text-xs text-muted-foreground">
+                    Done with this comedian? Remove them from your club, or flag them below. Both
+                    stay with your club.
+                  </p>
                 )}
               </CardContent>
             </Card>

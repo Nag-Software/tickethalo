@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { saveClubArtistReview, type ClubArtistReview } from '@/lib/club-artist-profile'
-import { approveArtist } from '@/lib/actions/artist'
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import type { ArtistStatus, ArtistType, EnergyLevel } from '@/types/database'
 
@@ -73,12 +72,15 @@ export async function saveClubArtistReviewAction(formData: FormData) {
 }
 
 /**
- * Statusen på plattformen — forbeholdt superadmin.
+ * Moderering — forbeholdt superadmin.
  *
- * `approved` styrer komikerens tilgang til sin egen portal og retten til å
- * melde seg tilgjengelig. En enkelt klubb skal ikke kunne avvise noen for
- * alle andre; vil en klubb slutte å booke en komiker, fjerner de koblingen
- * eller flagger hen hos seg.
+ * Komikere godkjennes automatisk ved registrering; det finnes ingen kø.
+ * Statusen er derfor ikke en inngangsdør, men en nødbrems: superadmin kan
+ * sette noen til `inactive` eller `rejected` og dermed ta hen ut av
+ * plattformen — portalen, tilgjengelighetsdatoene og all booking.
+ *
+ * En enkelt klubb skal ikke kunne gjøre dette for alle andre. Vil en klubb
+ * slutte å booke noen, fjerner de koblingen eller flagger hen hos seg.
  */
 async function assertSuperadmin() {
   const access = await getClubAccess()
@@ -98,20 +100,6 @@ export async function updateArtistStatusAction(formData: FormData) {
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
 
-export async function approveArtistAction(formData: FormData) {
-  await assertSuperadmin()
-  const artistId = formData.get('artist_id') as string
-  await approveArtist(artistId)
-  revalidatePath(`/admin-app/artists/${artistId}`)
-}
-
-export async function rejectArtistAction(formData: FormData) {
-  await assertSuperadmin()
-  const artistId = formData.get('artist_id') as string
-  const db = createAdminClient()
-  await db.from('artists').update({ status: 'rejected' }).eq('id', artistId)
-  revalidatePath(`/admin-app/artists/${artistId}`)
-}
 
 export async function deleteArtistAction(formData: FormData) {
   const access = await assertAdmin()

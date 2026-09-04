@@ -117,20 +117,6 @@ function shell(opts: {
 // Malene
 // ─────────────────────────────────────────────────────────────
 
-export function artistRegisteredTemplate(opts: { full_name: string }): EmailTemplate {
-  return {
-    subject: 'Welcome — we have your application',
-    text: `Hi ${opts.full_name}\n\nWe have your registration and will review it shortly. You will get an email as soon as your profile is approved.`,
-    html: shell({
-      eyebrow: 'Application received',
-      heading: `Hi ${opts.full_name}!`,
-      body:
-        paragraph('We have your registration and will go through it shortly.') +
-        paragraph('You will get an email as soon as your profile is approved — then you can set the dates you are available.', true),
-    }),
-  }
-}
-
 export function artistApprovedTemplate(opts: { full_name: string; portal_url: string }): EmailTemplate {
   return {
     subject: 'You are approved as a comedian',

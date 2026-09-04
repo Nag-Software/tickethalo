@@ -1,11 +1,10 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendArtistRegisteredEmail } from '@/lib/email/mailer'
+import { sendArtistApprovedEmail } from '@/lib/email/mailer'
 import { runAutomaticBookingForOpenShows } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { canonicalRoleValues } from '@/lib/artist-roles'
-import { DEFAULT_ARTIST_SCORE, MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
 import type { ArtistGender } from '@/types/database'
 import { appPath } from '@/lib/app-url'
 
@@ -89,68 +88,34 @@ export async function registerArtist(input: RegisterArtistInput) {
       languages: input.languages?.length ? input.languages : null,
       gender: input.gender ?? null,
       social_links: input.social_links ?? null,
-      status: 'pending_review',
+      // Ingen kø. Alle slipper inn med én gang, og superadmin tar ut igjen
+      // dem som ikke skal være her — se `updateArtistStatusAction`.
+      status: 'approved',
     }).select('id').single()
     if (artistError || !artist) throw new Error(artistError?.message ?? 'Failed to create artist')
 
-    // 5. Send registration confirmation email
-    await sendArtistRegisteredEmail({ email: normalizedEmail, full_name: input.full_name })
+    // 5. Komikeren er inne og kan velge datoer med det samme, så e-posten
+    //    er portalenken — ikke en kvittering på en søknad ingen behandler.
+    const artistAppUrl = process.env.ARTIST_APP_URL ?? appPath('/artist-app')
+    runAfterResponse(`register-artist-${artist.id}`, async () => {
+      await sendArtistApprovedEmail({
+        email: normalizedEmail,
+        full_name: input.full_name,
+        portal_url: `${artistAppUrl.replace(/\/$/, '')}/available-dates`,
+      })
+
+      // En ny komiker kan passe et show som står ubesatt akkurat nå.
+      try {
+        await runAutomaticBookingForOpenShows()
+      } catch (bookingError) {
+        console.error('[BookingAutomation] Failed after artist registration:', bookingError)
+      }
+    })
 
     return { artistId: artist.id }
   } catch (err) {
     // Clean up auth user if later steps fail
     await admin.auth.admin.deleteUser(authUserId)
     throw err
-  }
-}
-
-/**
- * 6.3 Approve artist
- */
-export async function approveArtist(artistId: string) {
-  const { sendArtistApprovedEmail } = await import('@/lib/email/mailer')
-  const admin = createAdminClient()
-
-  // Bare statusen settes her.
-  //
-  // Score er systemsatt (migrasjon 041). Energi og notater er klubbens egen
-  // vurdering og ligger på `club_artists` (migrasjon 043) — en godkjenning
-  // på plattformnivå skal ikke skrive noe i noen klubbs vurdering.
-  const { data: artist, error } = await admin
-    .from('artists')
-    .update({ status: 'approved' })
-    .eq('id', artistId)
-    .select('email, full_name, admin_score')
-    .single()
-
-  if (error || !artist) throw new Error(error?.message ?? 'Artist not found')
-
-  // Raden skal ha en score fra default-en i migrasjon 041. Er den likevel
-  // tom, fylles den her — NULL leses som 0 og ville holdt komikeren under
-  // motorens terskel for alltid.
-  let score = artist.admin_score
-  if (score == null) {
-    score = DEFAULT_ARTIST_SCORE
-    await admin.from('artists').update({ admin_score: score }).eq('id', artistId)
-  }
-
-  // Samme terskel som bookingmotoren bruker (`strictFilter`). Sto det `> 6`
-  // her, ble en komiker på akkurat 6 bookbar uten å få beskjed om at
-  // søknaden gikk gjennom — og uten at motoren kjørte en ny runde.
-  if (score >= MIN_BOOKABLE_SCORE) {
-    const artistAppUrl = process.env.ARTIST_APP_URL ?? appPath('/artist-app')
-    runAfterResponse(`approve-artist-${artistId}`, async () => {
-      await sendArtistApprovedEmail({
-        email: artist.email,
-        full_name: artist.full_name,
-        portal_url: `${artistAppUrl.replace(/\/$/, '')}/available-dates`,
-      })
-
-      try {
-        await runAutomaticBookingForOpenShows()
-      } catch (bookingError) {
-        console.error('[BookingAutomation] Failed after artist approval:', bookingError)
-      }
-    })
   }
 }
