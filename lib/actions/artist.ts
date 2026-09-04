@@ -107,27 +107,18 @@ export async function registerArtist(input: RegisterArtistInput) {
 /**
  * 6.3 Approve artist
  */
-export async function approveArtist(
-  artistId: string,
-  opts: {
-    admin_energy_level: 'high' | 'medium' | 'low' | 'uncertain'
-    admin_notes?: string
-  }
-) {
+export async function approveArtist(artistId: string) {
   const { sendArtistApprovedEmail } = await import('@/lib/email/mailer')
   const admin = createAdminClient()
 
+  // Bare statusen settes her.
+  //
+  // Score er systemsatt (migrasjon 041). Energi og notater er klubbens egen
+  // vurdering og ligger på `club_artists` (migrasjon 043) — en godkjenning
+  // på plattformnivå skal ikke skrive noe i noen klubbs vurdering.
   const { data: artist, error } = await admin
     .from('artists')
-    .update({
-      status: 'approved',
-      // Score røres ikke her. Bookeren setter den ikke lenger, og en
-      // godkjenning skal ikke overskrive en verdi systemet har satt.
-      admin_energy_level: opts.admin_energy_level,
-      // Notatene er admins egne. Godkjenning uten et nytt notat skal la det
-      // gamle stå — ikke tømme feltet.
-      ...(opts.admin_notes === undefined ? {} : { admin_notes: opts.admin_notes }),
-    })
+    .update({ status: 'approved' })
     .eq('id', artistId)
     .select('email, full_name, admin_score')
     .single()

@@ -34,7 +34,6 @@ type Artist = {
   stage_name: string | null
   email: string
   profile_image_url: string | null
-  admin_energy_level: string | null
 }
 
 type SelectableArtist = {
@@ -42,7 +41,6 @@ type SelectableArtist = {
   full_name: string
   stage_name: string | null
   email: string
-  admin_energy_level: string | null
 }
 
 type Requirement = {

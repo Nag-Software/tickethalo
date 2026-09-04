@@ -13,9 +13,10 @@ import { generateShowPoster } from '@/lib/actions/ai'
 import { resolvePalette } from '@/lib/marketing/palette'
 import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
 import { requirementFeeLabel } from '@/lib/booking-spots'
-import type { RequirementCompensationType } from '@/types/database'
+import type { ArtistGender, ArtistType, EnergyLevel, RequirementCompensationType } from '@/types/database'
 import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
-import { assertArtistBookableForShow, clubArtistIds } from '@/lib/club-artists'
+import { assertArtistBookableForShow } from '@/lib/club-artists'
+import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
 import { appUrl } from '@/lib/app-url'
 
@@ -163,14 +164,21 @@ async function buildBusyMap(
   return busyMap
 }
 
+/**
+ * Kandidaten motoren regner på.
+ *
+ * `category` og `admin_energy_level` kommer fra `club_artists` og ikke fra
+ * `artists` — det er klubbens vurdering som avgjør om noen passer et krav.
+ * Se `withClubReview`.
+ */
 type ArtistRow = {
   id: string
   email: string
   full_name: string
   admin_score: number | null
-  admin_energy_level: string | null
-  gender: string | null
-  category: string[] | null
+  admin_energy_level: EnergyLevel | null
+  gender: ArtistGender | null
+  category: ArtistType[] | null
 }
 
 type RequirementRow = {
@@ -303,21 +311,22 @@ export async function bookShow(showId: string) {
   // spiser en plass i kvoten under, og da sendes det aldri et nytt.
   await expireStaleOffers(showId)
 
-  // Motoren tilbyr bare til klubbens egne komikere. Uten denne grensen sendte
-  // den tilbud til hvem som helst på Tickethalo — se `lib/club-artists`.
-  const bookableIds = await clubArtistIds(admin, show.club_id)
+  // Motoren tilbyr bare til klubbens egne komikere, og matcher på klubbens
+  // egen vurdering av dem — ikke komikerens beskrivelse av seg selv.
+  const reviews = await clubArtistReviews(admin, show.club_id)
+  const bookableIds = [...reviews.keys()]
   if (bookableIds.length === 0) return { offersCreated, candidatesMatched }
 
-  const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
+  const [config, { data: availableRows }, { data: artistRows }] = await Promise.all([
     loadScoringConfig(admin),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
-      .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
+      .select('id, email, full_name, admin_score, gender')
       .eq('status', 'approved')
-      .eq('is_flagged', false)
       .in('id', bookableIds),
   ])
-  if (!allArtists?.length) return { offersCreated, candidatesMatched }
+  const allArtists = withClubReview(artistRows ?? [], reviews)
+  if (!allArtists.length) return { offersCreated, candidatesMatched }
 
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
@@ -340,7 +349,7 @@ export async function bookShow(showId: string) {
   ])
 
   const excludedArtistIds = new Set((excludedArtists ?? []).map(row => row.artist_id))
-  const artistById = new Map((allArtists as ArtistRow[]).map(artist => [artist.id, artist]))
+  const artistById = new Map(allArtists.map(artist => [artist.id, artist]))
   const requirementById = new Map((requirements ?? []).map(req => [req.id, req]))
   const invalidPendingOfferIds = (existingOffers ?? []).flatMap((offer) => {
     if (offer.status !== 'sent' || !offer.show_requirement_id) return []
@@ -399,7 +408,7 @@ export async function bookShow(showId: string) {
     const maxNewOffers = Math.max(0, targetPendingOffers - currentPendingOffers)
     if (maxNewOffers <= 0) continue
 
-    const initialStrictCount = (allArtists as ArtistRow[]).filter(a => strictFilter(a, req, alreadyInvolved)).length
+    const initialStrictCount = allArtists.filter(a => strictFilter(a, req, alreadyInvolved)).length
     reqEntries.push({ req, slotsNeeded, currentPendingOffers, initialStrictCount, maxNewOffers })
   }
 
@@ -414,13 +423,13 @@ export async function bookShow(showId: string) {
     limit: number,
     fallbackLimit: number,
   ) {
-    let candidates = (allArtists as ArtistRow[])
+    let candidates = allArtists
       .filter(a => strictFilter(a, req, effectiveInvolved))
       .sort((a, b) => computeScore(b, req.role_name, config, availableSet, busyMap) - computeScore(a, req.role_name, config, availableSet, busyMap))
       .slice(0, limit)
 
     if (candidates.length === 0 && fallbackLimit > 0) {
-      candidates = selectFallbackCandidates(allArtists as ArtistRow[], req, effectiveInvolved, Math.min(limit, fallbackLimit))
+      candidates = selectFallbackCandidates(allArtists, req, effectiveInvolved, Math.min(limit, fallbackLimit))
     }
 
     return candidates
@@ -487,7 +496,7 @@ export async function bookShow(showId: string) {
 
   const baseUrl = publicAppUrl()
   for (const { artistId, req } of assignments) {
-    const artist = (allArtists as ArtistRow[]).find(a => a.id === artistId)!
+    const artist = allArtists.find(a => a.id === artistId)!
     const details = offerDetails(show, req)
     const { data: offer, error: offerError } = await admin
       .from('booking_offers')
@@ -992,20 +1001,22 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   // spiser en plass i kvoten under, og da sendes det aldri et nytt.
   await expireStaleOffers(showId)
 
-  // Samme grense som i bookShow: en gjenåpnet plass tilbys klubbens egne.
-  const bookableIds = await clubArtistIds(admin, show.club_id)
+  // Samme grense som i bookShow: en gjenåpnet plass tilbys klubbens egne,
+  // vurdert av klubben selv.
+  const reviews = await clubArtistReviews(admin, show.club_id)
+  const bookableIds = [...reviews.keys()]
   if (bookableIds.length === 0) return
 
-  const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
+  const [config, { data: availableRows }, { data: artistRows }] = await Promise.all([
     loadScoringConfig(admin),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
-      .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
+      .select('id, email, full_name, admin_score, gender')
       .eq('status', 'approved')
-      .eq('is_flagged', false)
       .in('id', bookableIds),
   ])
-  if (!allArtists?.length) return
+  const allArtists = withClubReview(artistRows ?? [], reviews)
+  if (!allArtists.length) return
 
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
@@ -1023,13 +1034,13 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   ])
 
   const slotsNeeded = requirement.quantity - (filled ?? 0)
-  let candidates = (allArtists as ArtistRow[])
+  let candidates = allArtists
     .filter(a => strictFilter(a, requirement, alreadyInvolved))
     .sort((a, b) => computeScore(b, requirement.role_name, config, availableSet, busyMap) - computeScore(a, requirement.role_name, config, availableSet, busyMap))
     .slice(0, slotsNeeded * config.offers_per_slot)
 
   if (candidates.length === 0) {
-    candidates = selectFallbackCandidates(allArtists as ArtistRow[], requirement, alreadyInvolved, config.fallback_limit)
+    candidates = selectFallbackCandidates(allArtists, requirement, alreadyInvolved, config.fallback_limit)
   }
 
   const baseUrl = publicAppUrl()

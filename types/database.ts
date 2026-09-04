@@ -173,6 +173,27 @@ export type ArtistFeeInvoice = {
   updated_at: string
 }
 
+/**
+ * Koblingen mellom klubb og komiker, og klubbens egen vurdering av hen.
+ *
+ * Roller, energi, notater og flagg ligger her og ikke på `artists`: det er
+ * klubbens mening, ikke et faktum om personen. To klubber har lov til å
+ * mene ulikt. Se migrasjon 043.
+ */
+export type ClubArtist = {
+  id: string
+  club_id: string
+  artist_id: string
+  created_at: string
+  /** Rollene *denne* klubben booker hen i. Komikerens egen: `Artist.category`. */
+  category: ArtistType[] | null
+  admin_energy_level: EnergyLevel | null
+  admin_notes: string | null
+  is_flagged: boolean
+  flag_reason: string | null
+  flagged_at: string | null
+}
+
 export type ClubMembership = {
   id: string
   club_id: string
@@ -546,24 +567,20 @@ export type Database = {
         Relationships: []
       }
       club_artists: {
-        Row: {
-          id: string
-          club_id: string
-          artist_id: string
-          created_at: string
-        }
+        Row: ClubArtist
         Insert: {
           id?: string
           club_id: string
           artist_id: string
           created_at?: string
+          category?: ArtistType[] | null
+          admin_energy_level?: EnergyLevel | null
+          admin_notes?: string | null
+          is_flagged?: boolean
+          flag_reason?: string | null
+          flagged_at?: string | null
         }
-        Update: Partial<{
-          id: string
-          club_id: string
-          artist_id: string
-          created_at: string
-        }>
+        Update: Partial<ClubArtist>
         Relationships: []
       }
       artist_availability: {

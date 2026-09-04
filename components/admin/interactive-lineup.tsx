@@ -33,7 +33,6 @@ export type LineupArtist = {
   id: string
   full_name: string
   stage_name: string | null
-  admin_energy_level: string | null
   category: string[] | null
 }
 

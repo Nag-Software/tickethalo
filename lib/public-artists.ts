@@ -11,8 +11,6 @@ export type PublicArtist = Pick<Artist,
   | 'city'
   | 'country'
   | 'languages'
-  | 'admin_score'
-  | 'admin_energy_level'
   | 'social_links'
 >
 
@@ -30,7 +28,9 @@ export type PublicArtistShow = Pick<Show,
   role_name: string | null
 }
 
-const PUBLIC_ARTIST_FIELDS = 'id, full_name, stage_name, profile_image_url, bio, category, city, country, languages, admin_score, admin_energy_level, social_links'
+// Score er intern (migrasjon 041), og energi er klubbens egen vurdering
+// (migrasjon 043). Ingen av dem hører hjemme på en offentlig side.
+const PUBLIC_ARTIST_FIELDS = 'id, full_name, stage_name, profile_image_url, bio, category, city, country, languages, social_links'
 
 export async function getPublicArtists(): Promise<PublicArtist[]> {
   const db = createAdminClient()

@@ -3,11 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getClubAccess } from '@/lib/club-auth'
+import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { saveClubArtistReview, type ClubArtistReview } from '@/lib/club-artist-profile'
 import { approveArtist } from '@/lib/actions/artist'
 import { canonicalRoleValues } from '@/lib/artist-roles'
-import { normalizeLanguages } from '@/lib/languages'
-import type { Artist, EnergyLevel, ArtistGender, ArtistStatus } from '@/types/database'
+import type { ArtistStatus, ArtistType, EnergyLevel } from '@/types/database'
 
 /**
  * Alt som eksporteres fra en `'use server'`-modul er et kallbart endepunkt, og
@@ -27,112 +27,92 @@ async function assertAdmin() {
 }
 
 /**
- * Vurderingen av komikeren — skriver bare feltene skjemaet sendte.
+ * Klubbens vurdering av komikeren.
  *
- * Siden har tre skjemaer mot denne handlingen (status, bookingprofil, flagg).
- * Skrev den alle feltene hver gang, ville et statusbytte tømt score, roller og
- * notater fordi de ikke sto i det skjemaet.
+ * Skriver til `club_artists`, ikke til `artists`: roller, energi, notater og
+ * flagg er denne klubbens mening (migrasjon 043). To klubber har lov til å
+ * mene ulikt om hvem som er headliner, og et flagg hos én skal ikke skjule
+ * komikeren for de andre.
+ *
+ * Skriver bare feltene skjemaet faktisk sendte — siden har to skjemaer mot
+ * denne handlingen (bookingprofil og flagg), og et flaggbytte skal ikke tømme
+ * roller og notater fordi de ikke sto i det skjemaet.
  */
-export async function saveArtistAdminReview(formData: FormData) {
+export async function saveClubArtistReviewAction(formData: FormData) {
   await assertAdmin()
+  const clubId = await getDefaultClubIdForAdmin()
   const artistId = formData.get('artist_id') as string
   const db = createAdminClient()
 
-  const update: Partial<Artist> = {}
-
-  // Score står bevisst ikke her. Den settes av systemet, ikke av bookeren,
-  // og siden dette er et kallbart endepunkt ville et felt her gitt en vei
-  // rundt det uansett hva skjemaet viser.
+  const patch: Partial<ClubArtistReview> = {}
 
   if (formData.has('admin_energy_level')) {
-    update.admin_energy_level = ((formData.get('admin_energy_level') as string) || null) as EnergyLevel | null
-  }
-
-  if (formData.has('gender')) {
-    update.gender = ((formData.get('gender') as string) || null) as ArtistGender | null
+    patch.admin_energy_level = ((formData.get('admin_energy_level') as string) || null) as EnergyLevel | null
   }
 
   // Flagget skiller «ingen roller valgt» fra «rollene ble ikke sendt» — uten
   // det kunne lista aldri tømmes igjen.
   if (formData.has('category') || formData.has('category_present')) {
-    const categoryValues = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
-    update.category = categoryValues.length > 0 ? categoryValues : null
+    const values = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
+    patch.category = values.length > 0 ? (values as ArtistType[]) : null
   }
 
   if (formData.has('admin_notes')) {
-    update.admin_notes = (formData.get('admin_notes') as string) || null
-  }
-
-  if (formData.has('status')) {
-    update.status = formData.get('status') as ArtistStatus
+    patch.admin_notes = (formData.get('admin_notes') as string) || null
   }
 
   if (formData.has('is_flagged')) {
-    update.is_flagged = formData.get('is_flagged') === 'true'
-    update.flag_reason = (formData.get('flag_reason') as string) || null
+    const flagged = formData.get('is_flagged') === 'true'
+    patch.is_flagged = flagged
+    patch.flag_reason = (formData.get('flag_reason') as string) || null
+    patch.flagged_at = flagged ? new Date().toISOString() : null
   }
 
-  if (Object.keys(update).length > 0) {
-    await db.from('artists').update(update).eq('id', artistId)
-  }
+  await saveClubArtistReview(db, clubId, artistId, patch)
+  revalidatePath(`/admin-app/artists/${artistId}`)
+}
 
+/**
+ * Statusen på plattformen — forbeholdt superadmin.
+ *
+ * `approved` styrer komikerens tilgang til sin egen portal og retten til å
+ * melde seg tilgjengelig. En enkelt klubb skal ikke kunne avvise noen for
+ * alle andre; vil en klubb slutte å booke en komiker, fjerner de koblingen
+ * eller flagger hen hos seg.
+ */
+async function assertSuperadmin() {
+  const access = await getClubAccess()
+  if (!access.isSuperadmin) {
+    throw new Error('Only a superadmin can change a comedian\'s platform status.')
+  }
+  return access
+}
+
+export async function updateArtistStatusAction(formData: FormData) {
+  await assertSuperadmin()
+  const artistId = formData.get('artist_id') as string
+  const status = formData.get('status') as ArtistStatus
+  const db = createAdminClient()
+
+  await db.from('artists').update({ status }).eq('id', artistId)
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
 
 export async function approveArtistAction(formData: FormData) {
-  await assertAdmin()
+  await assertSuperadmin()
   const artistId = formData.get('artist_id') as string
-  const energy = (((formData.get('admin_energy_level') as string) || 'uncertain') as EnergyLevel)
-  await approveArtist(artistId, { admin_energy_level: energy })
+  await approveArtist(artistId)
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
 
 export async function rejectArtistAction(formData: FormData) {
-  await assertAdmin()
+  await assertSuperadmin()
   const artistId = formData.get('artist_id') as string
   const db = createAdminClient()
   await db.from('artists').update({ status: 'rejected' }).eq('id', artistId)
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
 
-export async function updateArtistProfile(formData: FormData) {
-  await assertAdmin()
-  const artistId = formData.get('artist_id') as string
-  if (!artistId) throw new Error('artist_id is missing')
-  const db = createAdminClient()
-
-  const socialLinksRaw = formData.get('social_links') as string | null
-  let social_links: Record<string, string> | null = null
-  if (socialLinksRaw) {
-    try { social_links = JSON.parse(socialLinksRaw) } catch { social_links = null }
-  }
-  const categoryValues = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
-
-  const update: Partial<Artist> = {}
-  if (formData.has('full_name')) update.full_name = (formData.get('full_name') as string).trim()
-  if (formData.has('stage_name')) update.stage_name = (formData.get('stage_name') as string).trim() || null
-  if (formData.has('email')) update.email = (formData.get('email') as string).trim()
-  if (formData.has('phone')) update.phone = (formData.get('phone') as string).trim() || null
-  if (formData.has('category') || formData.has('category_present')) update.category = categoryValues.length > 0 ? categoryValues : null
-  if (formData.has('language') || formData.has('language_present')) {
-    const languages = normalizeLanguages(formData.getAll('language').map((value) => String(value)))
-    update.languages = languages.length > 0 ? languages : null
-  }
-  if (formData.has('bio')) update.bio = (formData.get('bio') as string).trim() || null
-  if (formData.has('gender')) update.gender = ((formData.get('gender') as string).trim() || null) as Artist['gender']
-  if (formData.has('social_links')) update.social_links = social_links
-
-  await db.from('artists').update(update).eq('id', artistId)
-  revalidatePath(`/admin-app/artists/${artistId}`)
-}
-
-/**
- * Sletter komikeren fra plattformen — ikke fra én klubb.
- *
- * Raden henger sammen med bookinger, tilbud og billetter hos alle klubbene
- * komikeren har spilt for, så den er forbeholdt superadmin. En klubb som er
- * ferdig med noen fjerner koblingen sin i stedet (`club_artists`).
- */
 export async function deleteArtistAction(formData: FormData) {
   const access = await assertAdmin()
   if (!access.isSuperadmin) throw new Error('Only a superadmin can delete a comedian from Tickethalo.')

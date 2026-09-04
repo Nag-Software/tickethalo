@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { canonicalRoleValues } from '@/lib/artist-roles'
 
 /**
  * Katalogen skriver bare én ting: koblingen mellom klubben og komikeren.
@@ -18,6 +19,12 @@ export async function connectArtistAction(formData: FormData): Promise<{ error?:
   const artistId = String(formData.get('artist_id') ?? '')
   if (!artistId) return { error: 'The comedian is missing.' }
 
+  // Rollene er klubbens egne, ikke komikerens beskrivelse av seg selv, så de
+  // settes her og ikke arves. Uten minst én rolle matcher komikeren ingen
+  // show-krav og ville blitt stående usynlig i booking.
+  const category = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
+  if (category.length === 0) return { error: 'Pick at least one role for the comedian.' }
+
   try {
     const clubId = await getDefaultClubIdForAdmin()
     const db = createAdminClient()
@@ -26,7 +33,7 @@ export async function connectArtistAction(formData: FormData): Promise<{ error?:
     // ansiktet på en handling som allerede har gjort det den skulle.
     const { error } = await db
       .from('club_artists')
-      .upsert({ club_id: clubId, artist_id: artistId }, { onConflict: 'club_id,artist_id' })
+      .upsert({ club_id: clubId, artist_id: artistId, category }, { onConflict: 'club_id,artist_id' })
 
     if (error) {
       console.error(`[Discover] Could not connect artist: ${error.message}`)

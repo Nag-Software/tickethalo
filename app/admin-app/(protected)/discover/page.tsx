@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { ChevronLeft, ChevronRight, MapPin, Search, X } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { DiscoverFilters, type DiscoverSort } from '@/components/admin/discover-filters'
-import { ToastActionForm } from '@/components/toast-action-form'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -12,7 +11,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { formatArtistRoleList } from '@/lib/artist-roles'
 import type { ArtistType } from '@/types/database'
-import { connectArtistAction } from './actions'
+import { ConnectArtistButton } from '@/components/admin/connect-artist-button'
 
 /**
  * Komikerkatalogen — hele Tickethalo, ikke bare klubbens egne.
@@ -243,12 +242,12 @@ function ArtistCard({ artist }: { artist: DirectoryArtist }) {
         )}
 
         <div className="mt-2 flex w-full flex-col gap-2">
-          <ToastActionForm action={connectArtistAction} successMessage={`${name} added to your club.`}>
-            <input type="hidden" name="artist_id" value={artist.id} />
-            <Button type="submit" className="text-xs sm:text-md w-full">
-              Connect to my club
-            </Button>
-          </ToastActionForm>
+          <ConnectArtistButton
+            artistId={artist.id}
+            artistName={name}
+            suggestedRoles={artist.category}
+            className="text-xs sm:text-md w-full"
+          />
 
           <Button variant="outline" className="text-xs sm:text-md w-full" asChild>
             <Link href={`/admin-app/artists/${artist.id}`}>View full profile</Link>

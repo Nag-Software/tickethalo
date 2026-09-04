@@ -12,7 +12,7 @@ import { LineupTab } from './lineup-tab'
 import { MarketingTab } from './marketing/marketing-tab'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
-import { clubArtistIds } from '@/lib/club-artists'
+import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
@@ -67,25 +67,28 @@ export default async function ShowDetailPage({
   // Må hentes før spørringen under, ikke filtreres etterpå: `limit(250)`
   // ville ellers kuttet listen blant *alle* godkjente komikere, og en klubbs
   // egne kunne falle utenfor kuttet før filteret rakk å se dem.
-  const roster = shouldLoadSelectableArtists ? await clubArtistIds(db, showClubId) : []
+  // Klubbens egen vurdering av komikerne — roller og energi som kandidat-
+  // matematikken under skal matche på, og flagg som gjelder bare her.
+  const reviews = shouldLoadSelectableArtists ? await clubArtistReviews(db, showClubId) : new Map()
+  const roster = [...reviews.keys()]
 
-  const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }] = await Promise.all([
+  const [{ data: artistRows }, { data: rosterArtists }, { data: bookingExclusions }] = await Promise.all([
     shouldLoadRelatedArtists && allArtistIds.length
-      ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_energy_level').in('id', allArtistIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_energy_level: string | null }> }),
+      ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url').in('id', allArtistIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null }> }),
     roster.length > 0
       ? db.from('artists')
-        .select('id, full_name, stage_name, email, admin_score, admin_energy_level, gender, category')
+        .select('id, full_name, stage_name, email, admin_score, gender')
         .eq('status', 'approved')
-        .eq('is_flagged', false)
         .in('id', roster)
         .order('full_name')
         .limit(250)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; admin_energy_level: string | null; gender: string | null; category: string[] | null }> }),
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; gender: string | null }> }),
     shouldLoadSelectableArtists
       ? db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', id)
       : Promise.resolve({ data: [] as Array<{ artist_id: string }> }),
   ])
+  const selectableArtists = withClubReview(rosterArtists ?? [], reviews)
   const artistMap = Object.fromEntries((artistRows ?? []).map(a => [a.id, a]))
 
   // Compute fill status per requirement
@@ -106,7 +109,7 @@ export default async function ShowDetailPage({
   // plakaten skal fortsatt kunne velges igjen — det var admin sitt eget grep,
   // ikke et nei. Har komikeren derimot takket nei, blir hen borte, så ingen
   // dytter hen inn i et show hen allerede har svart på.
-  const bookingCandidates = (selectableArtists ?? []).filter(artist =>
+  const bookingCandidates = selectableArtists.filter(artist =>
     !activeArtistIds.has(artist.id)
     && !activeOfferArtistIds.has(artist.id)
     && !declinedArtistIds.has(artist.id),
@@ -253,7 +256,6 @@ export default async function ShowDetailPage({
               id: artist.id,
               full_name: artist.full_name,
               stage_name: artist.stage_name,
-              admin_energy_level: artist.admin_energy_level,
               category: artist.category,
             }))}
             ticketsSold={ticketsSold}
@@ -324,11 +326,11 @@ export default async function ShowDetailPage({
                   status: o.status,
                   sent_at: o.sent_at ?? null,
                 }))}
-                artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_energy_level: string | null }>}
-                selectableArtists={(selectableArtists ?? [])
+                artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null }>}
+                selectableArtists={selectableArtists
                   .filter(a => !activeArtistIds.has(a.id) && !declinedArtistIds.has(a.id))
                   // Score blir igjen på serveren — motoren trenger den, bookeren skal ikke se den.
-                  .map(({ id, full_name, stage_name, email, admin_energy_level }) => ({ id, full_name, stage_name, email, admin_energy_level }))}
+                  .map(({ id, full_name, stage_name, email }) => ({ id, full_name, stage_name, email }))}
                 energyRelaxationSuggestions={energyRelaxationSuggestions}
                 allSlotsFilled={allSlotsFilled}
               />

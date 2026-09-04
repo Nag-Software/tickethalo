@@ -6,6 +6,7 @@ import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { RemoveFromClubButton } from '@/components/admin/remove-from-club-button'
 import { artistReadinessBlockers, READINESS_BLOCKER_LABELS } from '@/lib/artist-readiness'
+import { EMPTY_REVIEW, clubArtistReviews } from '@/lib/club-artist-profile'
 import { formatArtistRoleList } from '@/lib/artist-roles'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge } from '@/components/admin/artist-badges'
@@ -49,16 +50,14 @@ export default async function ArtistsPage({
   const db = createAdminClient()
   const clubId = await getDefaultClubIdForAdmin()
 
-  const { data: connections } = await db
-    .from('club_artists')
-    .select('artist_id')
-    .eq('club_id', clubId)
-
-  const rosterIds = (connections ?? []).map((row) => row.artist_id)
+  // Roller, energi og flagg er klubbens egen vurdering og ligger på
+  // koblingen, ikke på komikeren — se `lib/club-artist-profile`.
+  const reviews = await clubArtistReviews(db, clubId)
+  const rosterIds = [...reviews.keys()]
 
   let query = db
     .from('artists')
-    .select('id, full_name, stage_name, email, profile_image_url, status, admin_score, admin_energy_level, is_flagged, category')
+    .select('id, full_name, stage_name, email, profile_image_url, status')
     .in('id', rosterIds)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -76,10 +75,14 @@ export default async function ArtistsPage({
 
   // Blokkeringene leses av flere kolonner, så «ikke klar» avgjøres her og ikke
   // i spørringen. Tellingen bruker samme sett som tabellen viser.
-  const rows = (artists ?? []).map((artist) => ({
-    artist,
-    blockers: artistReadinessBlockers(artist),
-  }))
+  const rows = (artists ?? []).map((artist) => {
+    const review = reviews.get(artist.id) ?? EMPTY_REVIEW
+    return {
+      artist,
+      review,
+      blockers: artistReadinessBlockers({ status: artist.status, category: review.category }),
+    }
+  })
   const matchesFilter = (
     { artist, blockers }: { artist: { status: ArtistStatus }; blockers: unknown[] },
     value: ArtistFilter,
@@ -188,8 +191,8 @@ export default async function ArtistsPage({
                 </tr>
               </thead>
               <tbody>
-                {visible.map(({ artist, blockers }) => {
-                  const roles = formatArtistRoleList(artist.category)
+                {visible.map(({ artist, review, blockers }) => {
+                  const roles = formatArtistRoleList(review.category)
                   // «Ikke godkjent» står allerede i statuskolonnen. Her vises
                   // bare det som ellers ikke er synlig noe sted i tabellen.
                   const missing = blockers.filter((blocker) => blocker !== 'approval')
@@ -222,11 +225,11 @@ export default async function ArtistsPage({
                       </td>
                       <td className="px-5 py-3">
                         <ArtistStatusBadge status={artist.status} />
-                        {artist.is_flagged && <span className="ml-1"><FlaggedBadge /></span>}
+                        {review.is_flagged && <span className="ml-1"><FlaggedBadge /></span>}
                       </td>
                       <td className="px-5 py-3">
-                        {artist.admin_energy_level ? (
-                          <ArtistEnergyBadge level={artist.admin_energy_level} />
+                        {review.admin_energy_level ? (
+                          <ArtistEnergyBadge level={review.admin_energy_level} />
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
