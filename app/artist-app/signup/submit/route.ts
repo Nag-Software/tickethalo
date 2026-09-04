@@ -74,10 +74,11 @@ function country(value: FormDataEntryValue | null): CountryCode | undefined {
   return text && lookupCountry(text) ? (text as CountryCode) : undefined
 }
 
+const GENDER_VALUES: readonly ArtistGender[] = ['woman', 'man', 'non_binary', 'prefer_not_to_say']
+
 function gender(value: FormDataEntryValue | null): ArtistGender | undefined {
   const text = optionalString(value)
-  if (text === 'male' || text === 'female') return text
-  return undefined
+  return GENDER_VALUES.find((allowed) => allowed === text)
 }
 
 function socialLinks(formData: FormData): Record<string, string> | undefined {

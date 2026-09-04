@@ -15,6 +15,7 @@ import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import type { RequirementCompensationType } from '@/types/database'
 import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
+import { assertArtistBookableForShow, clubArtistIds } from '@/lib/club-artists'
 import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
 import { appUrl } from '@/lib/app-url'
 
@@ -281,7 +282,7 @@ export async function bookShow(showId: string) {
 
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, start_time, venue_name, venue_address, currency, status')
+    .select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id')
     .eq('id', showId)
     .single()
   if (showError || !show) throw new Error('Show not found')
@@ -302,13 +303,19 @@ export async function bookShow(showId: string) {
   // spiser en plass i kvoten under, og da sendes det aldri et nytt.
   await expireStaleOffers(showId)
 
+  // Motoren tilbyr bare til klubbens egne komikere. Uten denne grensen sendte
+  // den tilbud til hvem som helst på Tickethalo — se `lib/club-artists`.
+  const bookableIds = await clubArtistIds(admin, show.club_id)
+  if (bookableIds.length === 0) return { offersCreated, candidatesMatched }
+
   const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
     loadScoringConfig(admin),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
-      .eq('is_flagged', false),
+      .eq('is_flagged', false)
+      .in('id', bookableIds),
   ])
   if (!allArtists?.length) return { offersCreated, candidatesMatched }
 
@@ -895,51 +902,6 @@ export async function cancelConfirmedSpotForOffer(offerId: string) {
     .in('status', ['confirmed', 'completed', 'paid'])
 }
 
-export async function createManualBookingOffer(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const artistId = formData.get('artist_id') as string
-  const requirementId = formData.get('requirement_id') as string
-  const feeRaw = formData.get('fee_amount') as string
-
-  if (!showId || !artistId || !requirementId) throw new Error('Manglende felt')
-
-  const admin = createAdminClient()
-
-  const [{ data: show }, { data: artist }] = await Promise.all([
-    admin.from('shows').select('id, title, date').eq('id', showId).single(),
-    admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
-  ])
-
-  if (!show || !artist) throw new Error('Show eller artist ikke funnet')
-
-  const { data: offer, error } = await admin
-    .from('booking_offers')
-    .insert({
-      show_id: showId,
-      artist_id: artistId,
-      show_requirement_id: requirementId,
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      expires_at: offerExpiry(show.date),
-      ...(feeRaw ? { fee_amount: Math.round(parseFloat(feeRaw) * 100), currency: 'NOK' } : {}),
-    })
-    .select('token')
-    .single()
-
-  if (error || !offer) throw new Error(error?.message ?? 'Kunne ikke opprette tilbud')
-
-  await sendBookingOfferEmail({
-    email: artist.email,
-    full_name: artist.full_name,
-    show_title: show.title,
-    show_date: show.date,
-    token: offer.token,
-    response_url: `${publicAppUrl()}/booking-offer/${offer.token}`,
-  })
-
-  revalidatePath('/admin-app/bookings')
-}
-
 export async function cancelBookingOffer(formData: FormData) {
   const offerId = formData.get('offer_id') as string
   if (!offerId) throw new Error('Mangler offer_id')
@@ -1011,7 +973,7 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const admin = createAdminClient()
 
   const [{ data: show }, { data: requirement }] = await Promise.all([
-    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status').eq('id', showId).single(),
+    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id').eq('id', showId).single(),
     admin.from('show_requirements').select('*').eq('id', requirementId).single(),
   ])
 
@@ -1030,13 +992,18 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   // spiser en plass i kvoten under, og da sendes det aldri et nytt.
   await expireStaleOffers(showId)
 
+  // Samme grense som i bookShow: en gjenåpnet plass tilbys klubbens egne.
+  const bookableIds = await clubArtistIds(admin, show.club_id)
+  if (bookableIds.length === 0) return
+
   const [config, { data: availableRows }, { data: allArtists }] = await Promise.all([
     loadScoringConfig(admin),
     admin.from('artist_availability').select('artist_id').eq('available_date', show.date),
     admin.from('artists')
       .select('id, email, full_name, admin_score, admin_energy_level, gender, category')
       .eq('status', 'approved')
-      .eq('is_flagged', false),
+      .eq('is_flagged', false)
+      .in('id', bookableIds),
   ])
   if (!allArtists?.length) return
 
@@ -1129,6 +1096,8 @@ export async function sendManualBookingOffer(
   if (!show) throw new Error('Showet finnes ikke.')
   if (!requirement) throw new Error('Denne lineup-plassen tilhører ikke showet.')
   if (!artist) throw new Error('Komikeren finnes ikke.')
+
+  await assertArtistBookableForShow(admin, showId, artistId)
 
   const [{ count: filled }, { data: existingSpot }, { data: existingOffer }] = await Promise.all([
     admin.from('confirmed_spots')

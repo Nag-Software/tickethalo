@@ -11,6 +11,16 @@ import { normalizeArtistRoleList } from '@/lib/artist-roles'
  */
 export const MIN_BOOKABLE_SCORE = 6
 
+/**
+ * Scoren en godkjent komiker får uten at noen setter den.
+ *
+ * Bookeren verken setter eller ser score lenger, men motoren er fortsatt
+ * bygget på den — så alle må ha en verdi over terskelen. Ligger den på NULL,
+ * leses den som 0 og komikeren får aldri tilbud. Samme tall står som default
+ * på kolonnen i migrasjon 041.
+ */
+export const DEFAULT_ARTIST_SCORE = 7
+
 export type ArtistReadinessInput = {
   status?: string | null
   admin_score?: number | null
@@ -24,7 +34,10 @@ const BLOCKER_ORDER: ReadinessBlocker[] = ['approval', 'score', 'role']
 
 export const READINESS_BLOCKER_LABELS: Record<ReadinessBlocker, string> = {
   approval: 'Not approved',
-  score: 'Score missing',
+  // Setter ingen score lenger, så tallet nevnes ikke. Blokkeringen blir
+  // stående fordi motorens sperre gjør det: faller scoren under terskelen,
+  // skal det fortsatt stå hvorfor komikeren ikke dukker opp i booking.
+  score: 'Below booking threshold',
   role: 'Role missing',
 }
 

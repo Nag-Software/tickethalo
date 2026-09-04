@@ -2,8 +2,13 @@
 
 export type Role = 'superadmin' | 'owner' | 'admin' | 'staff' | 'artist'
 export type ArtistStatus = 'pending_review' | 'approved' | 'rejected' | 'inactive' | 'flagged'
-export type ArtistGender = 'male' | 'female'
-export type RequirementGender = 'male' | 'female' | 'any'
+export type ArtistGender = 'woman' | 'man' | 'non_binary' | 'prefer_not_to_say'
+/**
+ * Kravet et show stiller. `prefer_not_to_say` finnes bevisst ikke her: det er
+ * et ikke-svar, ikke en gruppe man kan booke etter. De komikerne matcher
+ * derfor bare krav satt til `any` — se `matchesHardRequirements`.
+ */
+export type RequirementGender = 'any' | 'woman' | 'man' | 'non_binary'
 export type EnergyLevel = 'high' | 'medium' | 'low' | 'uncertain'
 export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
 export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'completed' | 'cancelled'

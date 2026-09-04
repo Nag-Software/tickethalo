@@ -40,10 +40,9 @@ export async function saveArtistAdminReview(formData: FormData) {
 
   const update: Partial<Artist> = {}
 
-  if (formData.has('admin_score')) {
-    const score = formData.get('admin_score')
-    update.admin_score = score ? Number(score) : null
-  }
+  // Score står bevisst ikke her. Den settes av systemet, ikke av bookeren,
+  // og siden dette er et kallbart endepunkt ville et felt her gitt en vei
+  // rundt det uansett hva skjemaet viser.
 
   if (formData.has('admin_energy_level')) {
     update.admin_energy_level = ((formData.get('admin_energy_level') as string) || null) as EnergyLevel | null
@@ -83,9 +82,8 @@ export async function saveArtistAdminReview(formData: FormData) {
 export async function approveArtistAction(formData: FormData) {
   await assertAdmin()
   const artistId = formData.get('artist_id') as string
-  const score = Number(formData.get('admin_score') ?? 0)
   const energy = (((formData.get('admin_energy_level') as string) || 'uncertain') as EnergyLevel)
-  await approveArtist(artistId, { admin_score: score, admin_energy_level: energy })
+  await approveArtist(artistId, { admin_energy_level: energy })
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
 

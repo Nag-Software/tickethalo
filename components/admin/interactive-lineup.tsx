@@ -28,11 +28,11 @@ import {
   updateSpotRoleAction,
 } from '@/app/admin-app/(protected)/shows/actions'
 
+/** Score ligger bevisst ikke her: bookeren skal ikke se den. */
 export type LineupArtist = {
   id: string
   full_name: string
   stage_name: string | null
-  admin_score: number | null
   admin_energy_level: string | null
   category: string[] | null
 }
@@ -614,9 +614,6 @@ function ArtistPicker({
               className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{artistLabel(artist)}</span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                {artist.admin_score == null ? 'no score' : `score ${artist.admin_score}`}
-              </span>
             </button>
           ))
         )}

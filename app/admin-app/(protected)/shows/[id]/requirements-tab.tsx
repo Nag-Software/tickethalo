@@ -105,10 +105,13 @@ const ENERGY_OPTIONS: { value: RequirementEnergy; label: string; icon: string }[
   { value: 'uncertain', label: 'Unknown', icon: '?' },
 ]
 
+// `prefer_not_to_say` står ikke her — se `RequirementGender`. Et show kan
+// ikke etterspørre et ikke-svar.
 const GENDER_OPTIONS: { value: RequirementGender; label: string; icon: string }[] = [
   { value: 'any', label: 'Any', icon: '⚡' },
-  { value: 'male', label: 'Male', icon: '♂' },
-  { value: 'female', label: 'Female', icon: '♀' },
+  { value: 'woman', label: 'Woman', icon: '♀' },
+  { value: 'man', label: 'Man', icon: '♂' },
+  { value: 'non_binary', label: 'Non-binary', icon: '⚧' },
 ]
 
 const ENERGY_LABELS: Record<RequirementEnergy, string> = {
@@ -120,8 +123,9 @@ const ENERGY_LABELS: Record<RequirementEnergy, string> = {
 
 const GENDER_LABELS: Record<RequirementGender, string> = {
   any: 'All genders',
-  male: 'Male',
-  female: 'Female',
+  woman: 'Women',
+  man: 'Men',
+  non_binary: 'Non-binary',
 }
 
 const COMPENSATION_TYPE_OPTIONS: Array<{
@@ -1299,7 +1303,9 @@ function AddWizard({
               <h3 className="text-base font-semibold mb-1">Gender requirement?</h3>
               <p className="text-sm text-muted-foreground">Filter on the artist&apos;s gender if it matters for this spot.</p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            {/* To kolonner, som energisteget: fire valg går opp i 2×2, og
+                «Non-binary» får plass uten å brekke knappen. */}
+            <div className="grid grid-cols-2 gap-2">
               {GENDER_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}

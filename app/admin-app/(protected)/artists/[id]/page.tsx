@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles'
-import { MIN_BOOKABLE_SCORE, READINESS_BLOCKER_LABELS, artistReadinessBlockers } from '@/lib/artist-readiness'
+import { READINESS_BLOCKER_LABELS, artistReadinessBlockers } from '@/lib/artist-readiness'
 import { connectArtistAction, disconnectArtistAction } from '../../discover/actions'
 import { approveArtistAction, rejectArtistAction, saveArtistAdminReview } from './actions'
 
@@ -49,7 +49,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
 
   const inClub = Boolean(connection)
   const blockers = artistReadinessBlockers(artist)
-  const scoreOptions = Array.from({ length: 10 }, (_, index) => index + 1)
   const normalizedCategories = normalizeArtistRoleList(artist.category ?? [])
   const name = artist.stage_name?.trim() || artist.full_name
   const place = [artist.city, artist.country].filter(Boolean).join(', ')
@@ -104,11 +103,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <ArtistStatusBadge status={artist.status} />
                 {artist.admin_energy_level && <ArtistEnergyBadge level={artist.admin_energy_level} />}
-                {artist.admin_score != null && (
-                  <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    Score {artist.admin_score}
-                  </span>
-                )}
                 {artist.is_flagged && <FlaggedBadge />}
               </div>
             </div>
@@ -176,7 +170,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                         className="flex-1"
                       >
                         <input type="hidden" name="artist_id" value={artist.id} />
-                        <input type="hidden" name="admin_score" value={artist.admin_score ?? 7} />
                         <input
                           type="hidden"
                           name="admin_energy_level"
@@ -237,8 +230,10 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                     name="gender"
                     current={artist.gender ?? ''}
                     chips={[
-                      { value: 'male', label: 'Male' },
-                      { value: 'female', label: 'Female' },
+                      { value: 'woman', label: 'Woman' },
+                      { value: 'man', label: 'Man' },
+                      { value: 'non_binary', label: 'Non-binary' },
+                      { value: 'prefer_not_to_say', label: 'Prefer not to say' },
                     ]}
                   />
 
@@ -251,35 +246,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                       { value: 'low', label: 'Low' },
                     ]}
                   />
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <Label>Score</Label>
-                      <span className="text-[11px] text-muted-foreground">
-                        {MIN_BOOKABLE_SCORE}+ can be booked
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {scoreOptions.map((value) => (
-                        <label key={value} className="cursor-pointer">
-                          <input
-                            type="radio"
-                            name="admin_score"
-                            value={value}
-                            defaultChecked={artist.admin_score === value}
-                            className="peer sr-only"
-                          />
-                          <span
-                            className={`flex size-8 select-none items-center justify-center rounded-full border text-xs font-semibold transition-colors hover:bg-muted peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground ${
-                              value < MIN_BOOKABLE_SCORE ? 'text-muted-foreground' : ''
-                            }`}
-                          >
-                            {value}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
 
                   <div className="flex flex-col gap-2">
                     <Label>Roles</Label>

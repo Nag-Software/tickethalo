@@ -5,6 +5,7 @@ import { sendArtistRegisteredEmail } from '@/lib/email/mailer'
 import { runAutomaticBookingForOpenShows } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { DEFAULT_ARTIST_SCORE, MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
 import type { ArtistGender } from '@/types/database'
 import { appPath } from '@/lib/app-url'
 
@@ -109,7 +110,6 @@ export async function registerArtist(input: RegisterArtistInput) {
 export async function approveArtist(
   artistId: string,
   opts: {
-    admin_score: number
     admin_energy_level: 'high' | 'medium' | 'low' | 'uncertain'
     admin_notes?: string
   }
@@ -121,7 +121,8 @@ export async function approveArtist(
     .from('artists')
     .update({
       status: 'approved',
-      admin_score: opts.admin_score,
+      // Score røres ikke her. Bookeren setter den ikke lenger, og en
+      // godkjenning skal ikke overskrive en verdi systemet har satt.
       admin_energy_level: opts.admin_energy_level,
       // Notatene er admins egne. Godkjenning uten et nytt notat skal la det
       // gamle stå — ikke tømme feltet.
@@ -133,7 +134,19 @@ export async function approveArtist(
 
   if (error || !artist) throw new Error(error?.message ?? 'Artist not found')
 
-  if ((artist.admin_score ?? 0) > 6) {
+  // Raden skal ha en score fra default-en i migrasjon 041. Er den likevel
+  // tom, fylles den her — NULL leses som 0 og ville holdt komikeren under
+  // motorens terskel for alltid.
+  let score = artist.admin_score
+  if (score == null) {
+    score = DEFAULT_ARTIST_SCORE
+    await admin.from('artists').update({ admin_score: score }).eq('id', artistId)
+  }
+
+  // Samme terskel som bookingmotoren bruker (`strictFilter`). Sto det `> 6`
+  // her, ble en komiker på akkurat 6 bookbar uten å få beskjed om at
+  // søknaden gikk gjennom — og uten at motoren kjørte en ny runde.
+  if (score >= MIN_BOOKABLE_SCORE) {
     const artistAppUrl = process.env.ARTIST_APP_URL ?? appPath('/artist-app')
     runAfterResponse(`approve-artist-${artistId}`, async () => {
       await sendArtistApprovedEmail({

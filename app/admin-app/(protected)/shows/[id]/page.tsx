@@ -12,6 +12,7 @@ import { LineupTab } from './lineup-tab'
 import { MarketingTab } from './marketing/marketing-tab'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
+import { clubArtistIds } from '@/lib/club-artists'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
@@ -25,7 +26,7 @@ export default async function ShowDetailPage({
 }) {
   const { id } = await params
   const { tab = 'overview' } = await searchParams
-  await assertShowAccess(id)
+  const { club_id: showClubId } = await assertShowAccess(id)
   const db = createAdminClient()
   const shouldLoadTickets = tab === 'tickets'
   const shouldLoadRelatedArtists = tab === 'overview' || tab === 'lineup'
@@ -60,15 +61,24 @@ export default async function ShowDetailPage({
   const lineupArtistIds = [...new Set((lineup ?? []).map(s => s.artist_id))]
   const allArtistIds = [...new Set([...offerArtistIds, ...lineupArtistIds])]
 
+  // Klubben kan bare booke komikere den har knyttet til seg. Uten denne
+  // grensen listet plukkerne alle godkjente komikere på Tickethalo.
+  //
+  // Må hentes før spørringen under, ikke filtreres etterpå: `limit(250)`
+  // ville ellers kuttet listen blant *alle* godkjente komikere, og en klubbs
+  // egne kunne falle utenfor kuttet før filteret rakk å se dem.
+  const roster = shouldLoadSelectableArtists ? await clubArtistIds(db, showClubId) : []
+
   const [{ data: artistRows }, { data: selectableArtists }, { data: bookingExclusions }] = await Promise.all([
     shouldLoadRelatedArtists && allArtistIds.length
-      ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_score, admin_energy_level').in('id', allArtistIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }> }),
-    shouldLoadSelectableArtists
+      ? db.from('artists').select('id, full_name, stage_name, email, profile_image_url, admin_energy_level').in('id', allArtistIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_energy_level: string | null }> }),
+    roster.length > 0
       ? db.from('artists')
         .select('id, full_name, stage_name, email, admin_score, admin_energy_level, gender, category')
         .eq('status', 'approved')
         .eq('is_flagged', false)
+        .in('id', roster)
         .order('full_name')
         .limit(250)
       : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; admin_energy_level: string | null; gender: string | null; category: string[] | null }> }),
@@ -88,16 +98,32 @@ export default async function ShowDetailPage({
   const allSlotsFilled = reqFillStatus.length > 0 && reqFillStatus.every(r => r.isFull)
   const activeArtistIds = new Set(activeLineup.map(spot => spot.artist_id))
   const activeOfferArtistIds = new Set((offers ?? []).filter(o => ['sent', 'accepted'].includes(o.status)).map(o => o.artist_id))
+  const declinedArtistIds = new Set((offers ?? []).filter(o => o.status === 'declined').map(o => o.artist_id))
+  const expiredArtistIds = new Set((offers ?? []).filter(o => o.status === 'expired').map(o => o.artist_id))
   const excludedArtistIds = new Set((bookingExclusions ?? []).map(row => row.artist_id))
-  const unavailableArtistIds = new Set([...activeArtistIds, ...activeOfferArtistIds, ...excludedArtistIds])
-  const bookingCandidates = (selectableArtists ?? []).filter(artist => !unavailableArtistIds.has(artist.id))
+
+  // Den manuelle lista i booking-kortet. En komiker admin selv har tatt av
+  // plakaten skal fortsatt kunne velges igjen — det var admin sitt eget grep,
+  // ikke et nei. Har komikeren derimot takket nei, blir hen borte, så ingen
+  // dytter hen inn i et show hen allerede har svart på.
+  const bookingCandidates = (selectableArtists ?? []).filter(artist =>
+    !activeArtistIds.has(artist.id)
+    && !activeOfferArtistIds.has(artist.id)
+    && !declinedArtistIds.has(artist.id),
+  )
+
+  // Automatikken har et strengere sett: den skal verken plage dem admin har
+  // fjernet, eller dem som lot tilbudet gå ut på tid.
+  const automationCandidates = bookingCandidates.filter(artist =>
+    !excludedArtistIds.has(artist.id) && !expiredArtistIds.has(artist.id),
+  )
   const energyRelaxationSuggestions = Object.fromEntries(
     (requirements ?? []).flatMap((requirement) => {
       const status = reqFillStatus.find((row) => row.id === requirement.id)
       if (!status || status.isFull || status.pendingOffers > 0 || requirement.energy_level === 'any') return []
 
       const minScore = Math.max(requirement.min_score ?? 6, 6)
-      const baseMatches = bookingCandidates.filter((artist) => {
+      const baseMatches = automationCandidates.filter((artist) => {
         if (!artistMatchesRole(requirement.role_name, artist)) return false
         if ((artist.admin_score ?? 0) < minScore) return false
         if (requirement.required_gender && requirement.required_gender !== 'any' && artist.gender !== requirement.required_gender) return false
@@ -227,7 +253,6 @@ export default async function ShowDetailPage({
               id: artist.id,
               full_name: artist.full_name,
               stage_name: artist.stage_name,
-              admin_score: artist.admin_score,
               admin_energy_level: artist.admin_energy_level,
               category: artist.category,
             }))}
@@ -299,8 +324,11 @@ export default async function ShowDetailPage({
                   status: o.status,
                   sent_at: o.sent_at ?? null,
                 }))}
-                artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_score: number | null; admin_energy_level: string | null }>}
-                selectableArtists={(selectableArtists ?? []).filter(a => !activeArtistIds.has(a.id) && !excludedArtistIds.has(a.id))}
+                artistMap={artistMap as Record<string, { id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null; admin_energy_level: string | null }>}
+                selectableArtists={(selectableArtists ?? [])
+                  .filter(a => !activeArtistIds.has(a.id) && !declinedArtistIds.has(a.id))
+                  // Score blir igjen på serveren — motoren trenger den, bookeren skal ikke se den.
+                  .map(({ id, full_name, stage_name, email, admin_energy_level }) => ({ id, full_name, stage_name, email, admin_energy_level }))}
                 energyRelaxationSuggestions={energyRelaxationSuggestions}
                 allSlotsFilled={allSlotsFilled}
               />

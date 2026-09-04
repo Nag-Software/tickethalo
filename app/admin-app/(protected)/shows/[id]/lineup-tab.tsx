@@ -34,7 +34,6 @@ type Artist = {
   stage_name: string | null
   email: string
   profile_image_url: string | null
-  admin_score: number | null
   admin_energy_level: string | null
 }
 
@@ -43,7 +42,6 @@ type SelectableArtist = {
   full_name: string
   stage_name: string | null
   email: string
-  admin_score: number | null
   admin_energy_level: string | null
 }
 
@@ -99,8 +97,9 @@ const ENERGY_LABELS: Record<RequirementEnergy, string> = {
 
 const GENDER_LABELS: Record<RequirementGender, string> = {
   any: 'Any',
-  male: 'Male',
-  female: 'Female',
+  woman: 'Women',
+  man: 'Men',
+  non_binary: 'Non-binary',
 }
 
 function formatEditableNumber(value: number | null) {
@@ -671,9 +670,6 @@ export function LineupTab({
                         >
                           {artist?.full_name ?? '—'}
                         </Link>
-                        {artist?.admin_score != null && (
-                          <span className="text-xs text-muted-foreground shrink-0">⭐ {artist.admin_score}</span>
-                        )}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">{artist?.email}</div>
                     </div>
@@ -736,7 +732,7 @@ export function LineupTab({
                           .filter(a => a.id !== spot.artist_id)
                           .map(a => (
                             <option key={a.id} value={a.id}>
-                              {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
+                              {a.stage_name ?? a.full_name}
                             </option>
                           ))}
                       </select>
@@ -795,9 +791,6 @@ export function LineupTab({
                           >
                             {artist?.full_name ?? '—'}
                           </Link>
-                          {artist?.admin_score != null && (
-                            <span className="text-xs text-muted-foreground/60 shrink-0">⭐ {artist.admin_score}</span>
-                          )}
                         </div>
                         <div className="text-xs text-muted-foreground/60 truncate">{artist?.email}</div>
                       </div>
@@ -923,7 +916,7 @@ export function LineupTab({
                     <option value="">Select comedian…</option>
                     {offerableArtists.map(a => (
                       <option key={a.id} value={a.id}>
-                        {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
+                        {a.stage_name ?? a.full_name}
                       </option>
                     ))}
                   </select>
@@ -959,7 +952,7 @@ export function LineupTab({
                   <option value="">Select comedian…</option>
                   {selectableArtists.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.stage_name ?? a.full_name}{a.admin_score != null ? ` · ⭐${a.admin_score}` : ''}
+                      {a.stage_name ?? a.full_name}
                     </option>
                   ))}
                 </select>

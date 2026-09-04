@@ -22,6 +22,7 @@ import { LanguageField } from "@/components/artist/language-field"
 import { defaultLanguagesForCountry, lookupCountry } from "@/lib/geo"
 import type { LanguageCode } from "@/lib/languages"
 import { Label } from "../ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const requiredFields = [
   { id: "full_name", label: "Name" },
@@ -39,8 +40,17 @@ type RequiredFieldId = (typeof requiredFields)[number]["id"]
 
 const focusRing = 'outline-none ring-1 ring-inset ring-[var(--ev-line)] transition-[box-shadow] focus-visible:ring-2 focus-visible:ring-[var(--ev-accent-fill)]'
 const fieldClassName = `h-11 rounded-xl border-0 bg-[var(--ev-bg)] text-[14px] shadow-none ${focusRing}`
-const selectClassName = `h-11 w-full appearance-none rounded-xl bg-[var(--ev-bg)] px-3.5 text-[14px] ${focusRing}`
+const selectClassName = `h-11 w-full appearance-none rounded-xl border-0 bg-[var(--ev-bg)] px-3.5 text-[14px] ${focusRing}`
+
 const textareaClassName = `min-h-28 w-full rounded-xl bg-[var(--ev-bg)] px-3.5 py-3 text-[14px] leading-relaxed placeholder:text-[var(--ev-faint)] ${focusRing}`
+
+/** Samme verdier som `ArtistGender` — se migrasjon 042. */
+const GENDER_OPTIONS = [
+  { value: "woman", label: "Woman" },
+  { value: "man", label: "Man" },
+  { value: "non_binary", label: "Non-binary" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+] as const
 
 export function ArtistSignupForm({
   className,
@@ -208,18 +218,24 @@ export function ArtistSignupForm({
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label htmlFor="gender" className="text-[13px] font-medium">Gender</label>
-                <select
-                  id="gender"
+                {/* Radix-rooten tar `name` og `required` og legger igjen et
+                    skjult native-felt, så skjemaet postes som før. */}
+                <Select
                   name="gender"
                   required
-                  defaultValue=""
-                  onChange={(event) => updateTextField("gender", event.target.value)}
-                  className={selectClassName}
+                  onValueChange={(value) => updateTextField("gender", value)}
                 >
-                  <option value="" disabled>Select Gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                </select>
+                  <SelectTrigger id="gender" className={selectClassName}>
+                    <SelectValue placeholder="Select Gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GENDER_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <LabeledInput icon={Video} id="youtube" name="youtube" label="YouTube Video" type="url" placeholder="https://youtube.com/watch?v=..." onValue={(value) => updateTextField("youtube", value)} required />

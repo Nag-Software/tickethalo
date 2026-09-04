@@ -7,6 +7,7 @@ import { createShow, updateShowStatus } from '@/lib/actions/shows'
 import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendManualBookingOffer, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { assertArtistBookableForShow } from '@/lib/club-artists'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
 import { normalizeCurrency } from '@/lib/currencies'
 import { assertClubCanSell } from '@/lib/stripe-connect'
@@ -208,6 +209,27 @@ async function excludeArtistFromAutomaticBooking(
   const { error } = await db
     .from('show_artist_booking_exclusions')
     .upsert({ show_id: showId, artist_id: artistId, reason }, { onConflict: 'show_id,artist_id' })
+
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Opphever eksklusjonen igjen.
+ *
+ * Eksklusjonsraden betyr «admin tok denne artisten av showet». Velger admin
+ * artisten på nytt, er det grepet angret — da skal ikke et gammelt spor stå
+ * og holde automatikken unna samme person.
+ */
+async function clearArtistBookingExclusion(
+  db: ReturnType<typeof createAdminClient>,
+  showId: string,
+  artistId: string,
+) {
+  const { error } = await db
+    .from('show_artist_booking_exclusions')
+    .delete()
+    .eq('show_id', showId)
+    .eq('artist_id', artistId)
 
   if (error) throw new Error(error.message)
 }
@@ -868,6 +890,17 @@ export async function removeSpotAndReopenAction(formData: FormData) {
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
     .eq('id', spotId)
 
+  // Tilbudet som ga plassen står fortsatt som `accepted`. Blir det stående,
+  // teller artisten som opptatt på showet og forsvinner ut av den manuelle
+  // lista. Eksklusjonsraden under holder automatikken unna — dette handler
+  // bare om hva admin selv kan plukke fra igjen.
+  await db
+    .from('booking_offers')
+    .update({ status: 'cancelled', responded_at: new Date().toISOString() })
+    .eq('show_id', showId)
+    .eq('artist_id', spot.artist_id)
+    .in('status', ['sent', 'accepted'])
+
   await excludeArtistFromAutomaticBooking(db, showId, spot.artist_id, 'admin_removed_spot')
 
   // Send new offers with "Ledig spot" email in background
@@ -965,6 +998,7 @@ export async function swapArtistAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertSpotAccess(showId, spotId)
   const db = createAdminClient()
+  await assertArtistBookableForShow(db, showId, newArtistId)
 
   const { data: oldSpot } = await db
     .from('confirmed_spots')
@@ -1003,6 +1037,8 @@ export async function swapArtistAction(formData: FormData) {
     })
 
   if (error) throw new Error(error.message)
+
+  await clearArtistBookingExclusion(db, showId, newArtistId)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -1013,6 +1049,7 @@ export async function addArtistToRequirementAction(formData: FormData) {
   const currency = (formData.get('currency') as string | null) ?? 'NOK'
   const requirement = await assertRequirementAccess(showId, requirementId)
   const db = createAdminClient()
+  await assertArtistBookableForShow(db, showId, artistId)
 
   const { data: existingSpot } = await db
     .from('confirmed_spots')
@@ -1055,6 +1092,8 @@ export async function addArtistToRequirementAction(formData: FormData) {
     .eq('show_requirement_id', requirementId)
     .eq('status', 'sent')
 
+  await clearArtistBookingExclusion(db, showId, artistId)
+
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['draft'])
   scheduleFullbookedAutomation(showId, 'add-artist-spot')
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -1068,6 +1107,10 @@ export async function sendOfferToArtistAction(formData: FormData) {
 
   if (!artistId) throw new Error('Pick a comedian to send the offer to.')
 
+  // `sendManualBookingOffer` sjekker det samme, men da er tilbudet halvveis
+  // laget. Her stopper vi før noe skrives.
+  await assertArtistBookableForShow(createAdminClient(), showId, artistId)
+  await clearArtistBookingExclusion(createAdminClient(), showId, artistId)
   await sendManualBookingOffer(showId, artistId, requirementId)
   revalidatePath(`/admin-app/shows/${showId}`)
   revalidatePath('/admin-app/bookings')
@@ -1086,6 +1129,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
   }
 
   const requirement = await assertRequirementAccess(showId, requirementId)
+  await assertArtistBookableForShow(db, showId, artistId)
 
   const { data: existingSpot } = await db
     .from('confirmed_spots')
@@ -1117,6 +1161,8 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
   })
 
   if (error) return manualSpotState('error', error.message)
+
+  await clearArtistBookingExclusion(db, showId, artistId)
 
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['draft'])
   scheduleFullbookedAutomation(showId, 'manual-spot')
