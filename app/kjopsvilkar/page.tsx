@@ -6,7 +6,7 @@ export const metadata = {
   description: 'Who you buy your ticket from, and what applies if a show is cancelled.',
 }
 
-const UPDATED = '21 August 2026'
+const UPDATED = '5 September 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 /**
@@ -76,6 +76,28 @@ export default function TermsOfPurchasePage() {
         </p>
         <p>
           The organiser may still choose to refund or exchange a ticket. Ask the organiser directly.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="One-off payment — no subscription">
+        <p>
+          A ticket purchase is a <strong>single, one-off payment</strong> for the tickets in that
+          order. Tickethalo does not sell subscriptions, memberships or season passes, and no part
+          of the purchase starts a recurring charge.
+        </p>
+        <p>
+          There is therefore <strong>no minimum term and no binding period</strong>, and nothing to
+          give notice on or cancel: the agreement is fulfilled when the ticket is delivered and the
+          show has taken place. No payment agreement or payment method is stored for later use, and
+          no further amount can be charged without you approving a new payment. Every purchase
+          requires a new, separately approved payment.
+        </p>
+        <p>
+          If we later introduce a recurring payment — a season pass or a membership — it will be
+          offered as a separate product that you have to approve on its own. The price, the term,
+          how the price or the agreement may be changed, and how you cancel would then be stated
+          here before you commit to it, and an existing ticket purchase would never be converted
+          into a recurring payment.
         </p>
       </LegalSection>
 

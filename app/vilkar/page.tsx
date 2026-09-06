@@ -6,7 +6,7 @@ export const metadata = {
   description: 'What Tickethalo does, and what the comedy club does.',
 }
 
-const UPDATED = '21 August 2026'
+const UPDATED = '5 September 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 /**
@@ -74,6 +74,31 @@ export default function PlatformTermsPage() {
           The commission is payment for intermediating admission to the organiser&rsquo;s event. It
           is not a subscription, a platform fee or a licence fee, and there is no separate charge
           for using the platform.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Term, changes and ending the agreement">
+        <p>
+          The agreement between Tickethalo and an organiser is <strong>open-ended with no minimum
+          term and no binding period</strong>. There is no subscription and no fixed recurring
+          charge: the only amount Tickethalo receives is the commission on tickets actually sold, so
+          an organiser that sells nothing pays nothing.
+        </p>
+        <p>
+          An organiser may <strong>stop using Tickethalo at any time, with no notice period and no
+          termination fee</strong>, by writing to{' '}
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="underline underline-offset-2">
+            {SUPPORT_EMAIL}
+          </a>
+          . Shows already on sale must still be staged or refunded, and the ticket revenue for those
+          shows is settled as normal. Tickethalo may end the agreement on the same terms, and with
+          immediate effect if the platform is used unlawfully.
+        </p>
+        <p>
+          A change to the commission or to these terms is notified to the organiser by email at
+          least <strong>30 days</strong> before it takes effect, and applies only to tickets sold
+          after that date. An organiser who does not accept the change may end the agreement before
+          it takes effect.
         </p>
       </LegalSection>
 

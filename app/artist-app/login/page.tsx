@@ -30,19 +30,18 @@ export default async function ArtistLoginPage({
     >
       <PublicHeader tone="light" />
 
-      <section className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-10 px-4 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] lg:gap-16">
+      <section className="mx-auto grid w-full max-w-4xl flex-1 items-center gap-10 px-4 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] lg:gap-16">
         <div>
           <p className="text-[13px] text-[var(--ev-accent-fill)] font-medium">SIGN IN</p>
           <h1 className="mt-2 text-balance text-[2.25rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
             Get better gigs
           </h1>
-          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[var(--ev-muted)]">
-            Get bookingrequests, answer offers and keep your profile up to date.
-          </p>
 
-          <ul className="mt-8 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)]">
-            {['Upcomming gigs', 'Active bookingrequests', 'Profile management'].map((item) => (
-              <li key={item} className="py-3 text-[15px] font-medium">{item}</li>
+          <ul className="mt-8 flex flex-col">
+            {['Register a profile', 'Get noticed by bookers', 'Recieve offers for paid gigs'].map((item, index) => (
+              <li key={item} className="py-3 text-[15px] font-medium flex flex-row items-center gap-2">
+                <div className="size-6 rounded-full bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)] pt-[0.5px] flex items-center justify-center">{index + 1}</div>{item}
+              </li>
             ))}
           </ul>
 

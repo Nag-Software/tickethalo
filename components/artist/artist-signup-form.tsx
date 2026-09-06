@@ -252,7 +252,7 @@ export function ArtistSignupForm({
                 name="bio"
                 rows={4}
                 className={textareaClassName}
-                placeholder="Tell us briefly about your stage experience, style and type of show."
+                placeholder="Tell us briefly about stage experience, career highlights and style. This will be used in marketing when you are booked for a spot."
               />
             </div>
           </section>
