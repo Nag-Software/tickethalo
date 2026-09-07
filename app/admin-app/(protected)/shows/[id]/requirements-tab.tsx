@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { ChevronDown, Copy, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -23,13 +24,6 @@ import {
 } from '@/components/ui/select'
 import { ToastActionForm } from '@/components/toast-action-form'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
   addRequirementAction,
   reorderRequirementsAction,
   updateRequirementAction,
@@ -37,6 +31,8 @@ import {
   startBookingAction,
 } from '../actions'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
+import { RoleIcon } from '@/components/admin/show-booking-card'
+import { LineupCallout, SpotIconButton, SpotNumber, spotCardClass } from './lineup-ui'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -95,6 +91,9 @@ const WIZARD_INITIAL: WizardState = {
   compensation_amount: '',
   compensation_percent: '',
 }
+
+/** Rammen rundt hver kriteriekontroll — samme høyde og radius i alle fire rutene. */
+const FIELD_CONTROL_CLASS = 'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-none'
 
 const SCORE_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
 
@@ -350,6 +349,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
   const [wizard, setWizard] = React.useState<WizardState>(WIZARD_INITIAL)
   const [isAdding, startAdding] = React.useTransition()
   const [isReordering, startReordering] = React.useTransition()
+  const [isDeleting, startDeleting] = React.useTransition()
 
   const sortedRequirements = [...requirements].sort(
     (left, right) => left.lineup_position - right.lineup_position || left.role_name.localeCompare(right.role_name)
@@ -569,6 +569,51 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     saveOrder(nextOrderedIds, previousOrderedIds)
   }
 
+  // ── Spot actions ────────────────────────────────────────────────────────────
+
+  /** Samme plass én gang til — rolle, kriterier og honorar følger med. */
+  function duplicateRequirement(state: ReqState) {
+    const fd = new FormData()
+    fd.set('show_id', showId)
+    fd.set('role_name', state.role_name)
+    fd.set('quantity', '1')
+    fd.set('min_score', state.min_score)
+    fd.set('energy_level', state.energy_level)
+    fd.set('required_gender', state.required_gender)
+    fd.set('compensation_type', state.compensation_type)
+    fd.set('compensation_amount', state.compensation_amount)
+    fd.set('compensation_percent', state.compensation_percent)
+
+    startAdding(async () => {
+      try {
+        await addRequirementAction(fd)
+        toast.success('Lineup spot duplicated')
+        router.refresh()
+      } catch (err: unknown) {
+        toast.error((err as Error)?.message ?? 'Duplication failed')
+      }
+    })
+  }
+
+  /** Sletting ligger på én knapp nå, så plassen bekreftes før den forsvinner. */
+  function handleDeleteRequirement(reqId: string, roleName: string) {
+    if (!window.confirm(`Delete the ${roleName} spot?`)) return
+
+    const fd = new FormData()
+    fd.set('show_id', showId)
+    fd.set('req_id', reqId)
+
+    startDeleting(async () => {
+      try {
+        await deleteRequirementAction(fd)
+        toast.success('Lineup spot deleted')
+        router.refresh()
+      } catch (err: unknown) {
+        toast.error((err as Error)?.message ?? 'Deleting failed')
+      }
+    })
+  }
+
   // ── Wizard submit ───────────────────────────────────────────────────────────
 
   function submitDefault() {
@@ -577,7 +622,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     fd.set('show_id', showId)
     fd.set('role_name', "Stand-up")
     fd.set('quantity', '1')
-    fd.set('min_score', "any")
+    fd.set('min_score', '')
     fd.set('energy_level', "any")
     fd.set('required_gender', "any")
     fd.set('compensation_type', "")
@@ -660,12 +705,13 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     <div className="max-w-4xl space-y-4">
       {/* ── Existing requirements ─────────────────────────────────────────── */}
       {orderedRequirements.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {orderedRequirements.map((req, index) => {
             const state = reqStates[req.id] ?? stateFromRequirement(req)
             const saving = savingIds.has(req.id)
             const issue = compensationIssue(orderedIds, reqStates, req.id, state)
             const activeDropTarget = dropTarget?.id === req.id ? dropTarget.edge : null
+            const isPercent = state.compensation_type === 'percent'
 
             return (
               <div
@@ -679,7 +725,8 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                   setDropTarget(null)
                 }}
                 className={cn(
-                  'relative overflow-hidden rounded-xl border bg-card transition-all',
+                  spotCardClass,
+                  'relative transition-all',
                   draggingId === req.id && 'scale-[0.995] opacity-70',
                   isReordering && 'duration-150'
                 )}
@@ -687,140 +734,86 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                 {activeDropTarget && (
                   <div
                     className={cn(
-                      'pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-primary',
-                      activeDropTarget === 'top' ? 'top-0' : 'bottom-0'
+                      'pointer-events-none absolute inset-x-4 z-10 h-0.5 rounded-full bg-[var(--ev-accent-fill)]',
+                      activeDropTarget === 'top' ? '-top-2' : '-bottom-2'
                     )}
                   />
                 )}
 
                 {/* ── Header row ── */}
-                <div className="flex items-center gap-2 border-b bg-muted/20 px-2 py-1.5">
-                  <button
-                    type="button"
-                    aria-label={`Move lineup spot ${index + 1}`}
-                    className="inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-muted active:cursor-grabbing"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
-                  </button>
-                  <span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-secondary border border-border px-1.5 text-[11px] font-semibold tabular-nums text-secondary-foreground">
-                    {index + 1}
-                  </span>
-                  <select
-                    value={state.role_name}
-                    onChange={(e) => updateField(req.id, 'role_name', e.target.value)}
-                    onBlur={() => flushAutosave(req.id)}
-                    className="h-7 min-w-0 flex-1 rounded-md border-transparent bg-transparent px-1.5 text-sm font-semibold shadow-none outline-none focus:border focus:border-border focus:bg-background"
-                  >
-                    {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
-                  <div className="ml-auto flex shrink-0 items-center gap-1">
-                    {issue && <StatusPill tone={issue.tone}>{issue.message}</StatusPill>}
-                    {saving && (
-                      <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary animate-pulse">
-                        Saving…
-                      </span>
-                    )}
-                    {isReordering && (
-                      <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                        …
-                      </span>
-                    )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-7 w-7 rounded-md text-muted-foreground"
-                          aria-label="Actions"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-36">
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            const fd = new FormData()
-                            fd.set('show_id', showId)
-                            fd.set('role_name', state.role_name)
-                            fd.set('quantity', '1')
-                            fd.set('min_score', state.min_score)
-                            fd.set('energy_level', state.energy_level)
-                            fd.set('required_gender', state.required_gender)
-                            fd.set('compensation_type', state.compensation_type)
-                            fd.set('compensation_amount', state.compensation_amount)
-                            fd.set('compensation_percent', state.compensation_percent)
-                            startAdding(async () => {
-                              try {
-                                await addRequirementAction(fd)
-                                toast.success('Lineup spot duplicated')
-                                router.refresh()
-                              } catch (err: unknown) {
-                                toast.error((err as Error)?.message ?? 'Duplication failed')
-                              }
-                            })
-                          }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <ToastActionForm action={deleteRequirementAction}>
-                          <input type="hidden" name="show_id" value={showId} />
-                          <input type="hidden" name="req_id" value={req.id} />
-                          <DropdownMenuItem
-                            asChild
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <button type="submit" className="w-full">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                              Delete
-                            </button>
-                          </DropdownMenuItem>
-                        </ToastActionForm>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                <div className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
+                  <SpotNumber
+                    position={index + 1}
+                    title={canEdit ? 'Drag to reorder' : undefined}
+                    className={canEdit ? 'cursor-grab active:cursor-grabbing' : undefined}
+                  />
+
+                  <RoleIcon roleName={state.role_name} className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
+
+                  <div className="relative min-w-0">
+                    <select
+                      value={state.role_name}
+                      onChange={(e) => updateField(req.id, 'role_name', e.target.value)}
+                      onBlur={() => flushAutosave(req.id)}
+                      aria-label="Role"
+                      className="w-full min-w-0 appearance-none rounded-lg bg-transparent py-1 pl-1.5 pr-7 text-base font-bold outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
+                    >
+                      {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+
+                  {issue && <StatusPill tone={issue.tone}>{issue.message}</StatusPill>}
+                  {saving && (
+                    <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary animate-pulse">
+                      Saving…
+                    </span>
+                  )}
+                  {isReordering && (
+                    <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      …
+                    </span>
+                  )}
+
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
+                    <SpotIconButton
+                      onClick={() => duplicateRequirement(state)}
+                      disabled={isAdding}
+                      aria-label={`Duplicate the ${state.role_name} spot`}
+                      title="Duplicate spot"
+                    >
+                      <Copy className="size-4" />
+                    </SpotIconButton>
+                    <SpotIconButton
+                      tone="danger"
+                      onClick={() => handleDeleteRequirement(req.id, state.role_name)}
+                      disabled={isDeleting}
+                      aria-label={`Delete the ${state.role_name} spot`}
+                      title="Delete spot"
+                    >
+                      <Trash2 className="size-4" />
+                    </SpotIconButton>
                   </div>
                 </div>
 
-                {/* ── Field table ── */}
-                <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 md:grid-cols-5 md:divide-y-0">
-                  <FieldCell label="Score">
-                    <Select
-                      value={state.min_score || '__none'}
-                      onValueChange={(value) => updateField(req.id, 'min_score', value === '__none' ? '' : value)}
-                    >
-                      <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Select minimum score</SelectLabel>
-                        <SelectItem value="__none">No requirement</SelectItem>
-                        {SCORE_OPTIONS.map((score) => (
-                          <SelectItem key={score} value={score}>≥ {score}</SelectItem>
-                        ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FieldCell>
-
+                {/* ── Criteria ── */}
+                <div className="mb-4 ml-4 mr-4 grid grid-cols-2 divide-x divide-y border-l sm:mb-5 sm:ml-[3.6rem] sm:mr-5 sm:grid-cols-4 sm:divide-y-0">
                   <FieldCell label="Energy">
                     <Select
                       value={state.energy_level}
                       onValueChange={(value) => updateField(req.id, 'energy_level', value)}
                     >
-                      <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
+                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           <SelectLabel>Select energy level</SelectLabel>
-                        {ENERGY_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
+                          {ENERGY_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
                         </SelectGroup>
                       </SelectContent>
                     </Select>
@@ -831,15 +824,15 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       value={state.required_gender}
                       onValueChange={(value) => updateField(req.id, 'required_gender', value)}
                     >
-                      <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
+                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           <SelectLabel>Select gender</SelectLabel>
-                        {GENDER_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
+                          {GENDER_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
                         </SelectGroup>
                       </SelectContent>
                     </Select>
@@ -850,7 +843,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       value={state.compensation_type || '__unset'}
                       onValueChange={(value) => updateField(req.id, 'compensation_type', value === '__unset' ? '' : value)}
                     >
-                      <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-transparent px-1.5 text-sm shadow-none focus-visible:border-border focus-visible:bg-background">
+                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
                         <SelectValue placeholder="Not set" />
                       </SelectTrigger>
                       <SelectContent>
@@ -864,27 +857,27 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     </Select>
                   </FieldCell>
 
-                  <FieldCell label={state.compensation_type === 'percent' ? 'Percentage' : 'Amount'}>
+                  <FieldCell label={isPercent ? 'Percentage' : 'Amount'}>
                     {state.compensation_type === '' ? (
-                      <span className="block px-1.5 text-sm text-muted-foreground">—</span>
+                      <span className={cn(FIELD_CONTROL_CLASS, 'flex items-center text-muted-foreground')}>—</span>
                     ) : (
                       <div className="relative">
                         <Input
                           type="number"
                           min={0}
-                          step={state.compensation_type === 'percent' ? '0.5' : '100'}
-                          value={state.compensation_type === 'percent' ? state.compensation_percent : state.compensation_amount}
+                          step={isPercent ? '0.5' : '100'}
+                          value={isPercent ? state.compensation_percent : state.compensation_amount}
                           onChange={(event) => updateField(
                             req.id,
-                            state.compensation_type === 'percent' ? 'compensation_percent' : 'compensation_amount',
+                            isPercent ? 'compensation_percent' : 'compensation_amount',
                             event.target.value
                           )}
                           onBlur={() => flushAutosave(req.id)}
-                          placeholder={state.compensation_type === 'percent' ? '25' : '3500'}
-                          className="h-7 rounded-md border-transparent bg-transparent px-1.5 pr-9 text-sm shadow-none focus-visible:border-border focus-visible:bg-background"
+                          placeholder={isPercent ? '25' : '3500'}
+                          className={cn(FIELD_CONTROL_CLASS, 'pr-9')}
                         />
-                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] font-medium text-muted-foreground">
-                          {state.compensation_type === 'percent' ? '%' : showCurrency}
+                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-muted-foreground">
+                          {isPercent ? '%' : showCurrency}
                         </span>
                       </div>
                     )}
@@ -901,11 +894,11 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
         wizard.step === 0 ? (
           <button
             type="button"
-            //onClick={() => setWizard({ ...WIZARD_INITIAL, step: 1, lineup_position: orderedRequirements.length + 1 })}
-            onClick={() => submitDefault()} 
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-transparent py-5 text-sm font-medium text-muted-foreground transition-all hover:border-foreground/30 hover:bg-muted/20 hover:text-foreground"
+            onClick={() => submitDefault()}
+            disabled={isAdding}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-transparent py-5 text-sm font-medium text-muted-foreground transition-all hover:border-foreground/30 hover:bg-muted/20 hover:text-foreground disabled:opacity-50"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50 group-hover:opacity-100 transition-opacity"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            <Plus className="size-4 opacity-60" />
             Add new lineup spot
           </button>
         ) : (
@@ -925,34 +918,31 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
         <ToastActionForm
           action={startBookingAction}
           successMessage="Booking started! Offers go out to matching artists."
-          className={cn(
-            'rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3',
-            canStartBooking
-              ? 'ring-1 ring-primary/20 bg-primary/5'
-              : 'ring-1 ring-amber-400/40 bg-amber-50/40 dark:bg-amber-950/20'
-          )}
         >
           <input type="hidden" name="show_id" value={showId} />
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold text-sm">Ready to start booking?</div>
+          <LineupCallout
+            title="Ready to start booking?"
+            action={
+              <Button type="submit" className="rounded-xl px-5" disabled={!canStartBooking}>
+                Start booking →
+              </Button>
+            }
+          >
             {canStartBooking ? (
-              <div className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-sm text-muted-foreground">
                 Sends offers automatically to artists that match the requirements.
-              </div>
+              </p>
             ) : (
-              <ul className="mt-1.5 space-y-0.5">
+              <ul className="space-y-0.5">
                 {bookingBlockers.map((reason) => (
                   <li key={reason} className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636-2.87L13.637 3.59a1.914 1.914 0 0 0-3.274 0z"/><path d="M12 17.01l.01-.011"/></svg>
+                    <TriangleAlert className="size-3 shrink-0" />
                     {reason}
                   </li>
                 ))}
               </ul>
             )}
-          </div>
-          <Button type="submit" size="sm" className="shrink-0" disabled={!canStartBooking}>
-            Start booking →
-          </Button>
+          </LineupCallout>
         </ToastActionForm>
       )}
     </div>
@@ -985,10 +975,11 @@ function StatusPill({ tone, children }: { tone: CompensationIssue['tone']; child
   )
 }
 
+/** Én kriterierute i kortet: etiketten over, kontrollen i sin egen ramme. */
 function FieldCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 px-2 py-1.5">
-      <Label className="block text-[9px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</Label>
+    <div className="min-w-0 px-3 py-2.5 sm:px-4">
+      <Label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</Label>
       {children}
     </div>
   )

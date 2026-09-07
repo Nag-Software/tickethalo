@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Info, Trash2 } from 'lucide-react'
+import { Copy, MoreVertical, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -13,7 +13,11 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { shouldBypassImageOptimization } from '@/lib/utils'
+import { RoleIcon } from '@/components/admin/show-booking-card'
+import { LineupCallout, SpotIconButton, SpotNumber, spotCardClass } from './lineup-ui'
+import { cn } from '@/lib/utils'
 import {
+  addRequirementAction,
   deleteRequirementAction,
   removeSpotAndReopenAction,
   moveSpotAction,
@@ -78,10 +82,19 @@ type DragItem =
   | { type: 'offer'; id: string }
 
 const STATUS_COLORS: Record<string, string> = {
-  confirmed: 'bg-emerald-100 text-emerald-700',
-  completed: 'bg-sky-100 text-sky-700',
-  paid: 'bg-purple-100 text-purple-700',
+  confirmed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
+  completed: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400',
+  paid: 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400',
 }
+
+const STATUS_LABELS: Record<string, string> = {
+  confirmed: 'Confirmed',
+  completed: 'Completed',
+  paid: 'Paid',
+}
+
+/** Pillen som bærer status, både på bekreftede plasser og tilbud som venter. */
+const STATUS_PILL_CLASS = 'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium'
 
 const LINEUP_REFRESH_INTERVAL_MS = 4000
 const EMPTY_STATE_ENERGY_PROMPT_DELAY_MS = 300000
@@ -107,19 +120,38 @@ function formatEditableNumber(value: number | null) {
 
 function formatRequirementCurrency(minorAmount: number | null, currency: string) {
   if (minorAmount == null) return 'Not set'
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(minorAmount / 100)
+
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(minorAmount / 100)
+  } catch {
+    // `Intl` kaster på en kode den ikke kjenner. Honoraret på en bekreftet
+    // plass har sin egen valuta fra da tilbudet gikk ut, og et skjevt felt der
+    // skal ikke ta ned hele lineupen.
+    return `${Math.round(minorAmount / 100)} ${currency}`
+  }
+}
+
+/** Honoraret slik det står på plassen — prosenten eller kronebeløpet. */
+function requirementFee(requirement: Requirement, currency: string) {
+  if (requirement.compensation_type === 'fixed') {
+    return formatRequirementCurrency(requirement.compensation_amount, currency)
+  }
+
+  if (requirement.compensation_type === 'percent') {
+    return requirement.compensation_percent == null
+      ? 'Not set'
+      : `${formatEditableNumber(requirement.compensation_percent)}%`
+  }
+
+  return 'Not set'
 }
 
 function requirementSummary(requirement: Requirement, currency: string) {
-  const fee = requirement.compensation_type === 'fixed'
-    ? formatRequirementCurrency(requirement.compensation_amount, currency)
-    : requirement.compensation_type === 'percent'
-      ? requirement.compensation_percent == null ? 'Not set' : `${formatEditableNumber(requirement.compensation_percent)}%`
-      : 'Not set'
+  const fee = requirementFee(requirement, currency)
 
   return [
     `Score ${requirement.min_score ?? 'any'}`,
@@ -271,6 +303,30 @@ export function LineupTab({
       try {
         await deleteRequirementAction(fd)
         toast.success('Spot deleted from the lineup.')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  /** Samme plass én gang til — rolle, kriterier og honorar følger med. */
+  function handleDuplicateRequirement(req: Requirement) {
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      fd.set('role_name', req.role_name)
+      fd.set('quantity', String(req.quantity))
+      fd.set('min_score', req.min_score == null ? '' : String(req.min_score))
+      fd.set('energy_level', req.energy_level)
+      fd.set('required_gender', req.required_gender)
+      fd.set('compensation_type', req.compensation_type ?? '')
+      // Beløpet ligger i minor units her, og handlingen ganger opp igjen.
+      fd.set('compensation_amount', req.compensation_amount == null ? '' : String(req.compensation_amount / 100))
+      fd.set('compensation_percent', req.compensation_percent == null ? '' : String(req.compensation_percent))
+      try {
+        await addRequirementAction(fd)
+        toast.success('Lineup spot duplicated.')
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
@@ -513,7 +569,7 @@ export function LineupTab({
 
   return (
     <div className="space-y-5">
-      {requirements.map(req => {
+      {requirements.map((req, index) => {
         const reqSpots = activeSpots.filter(s => s.show_requirement_id === req.id)
         const reqPending = allOffers.filter(
           o => o.show_requirement_id === req.id && o.status === 'sent'
@@ -536,89 +592,119 @@ export function LineupTab({
         return (
           <div
             key={req.id}
-            className={`rounded-xl border bg-card overflow-hidden transition-all ${isDragOver ? 'ring-2 ring-primary border-primary' : ''}`}
+            className={cn(
+              spotCardClass,
+              'overflow-hidden transition-all',
+              isDragOver && 'ring-2 ring-[var(--ev-accent-fill)]'
+            )}
             onDragOver={e => handleDragOver(e, req.id)}
             onDragLeave={handleDragLeave}
             onDrop={e => handleDrop(e, req.id)}
           >
             {/* Card header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/20">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <div className={`size-2 rounded-full shrink-0 ${isLocked ? 'bg-emerald-500' : reqPending.length > 0 ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
-                <span className="font-semibold text-sm">{req.role_name}</span>
-                {isLocked && (
-                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Locked</span>
-                )}
-                {!isLocked && reqPending.length > 0 && (
-                  <span className="text-xs text-amber-600 font-medium">
-                    {reqPending.length} awaiting reply
-                  </span>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {!isLocked && (
-                  <>
-                    <button
+            <div className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
+              <SpotNumber position={index + 1} />
+              <RoleIcon roleName={req.role_name} className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
+              <span className="truncate text-base font-bold">{req.role_name}</span>
+
+              {isLocked && (
+                <span className={`${STATUS_PILL_CLASS} bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400`}>
+                  Locked
+                </span>
+              )}
+
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {/* Bookerens håndgrep på plassen. De bor i menyen, så hodet
+                    holder seg til de to knappene lineupen tegnes med. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SpotIconButton disabled={isPending} aria-label={`Actions for the ${req.role_name} spot`}>
+                      <MoreVertical className="size-4" />
+                    </SpotIconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {!isLocked && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setOpenOfferReqId(req.id)
+                            setOpenAddReqId(null)
+                            setOpenMoveReqId(null)
+                            setOpenInfoReqId(null)
+                            setOfferArtistId('')
+                          }}
+                        >
+                          Send offer…
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setOpenAddReqId(req.id)
+                            setOpenOfferReqId(null)
+                            setOpenMoveReqId(null)
+                            setOpenInfoReqId(null)
+                            setAddArtistId('')
+                          }}
+                        >
+                          Add comedian…
+                        </DropdownMenuItem>
+                        {movableOffers.length > 0 && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setOpenMoveReqId(req.id)
+                              setOpenOfferReqId(null)
+                              setOpenAddReqId(null)
+                              setOpenInfoReqId(null)
+                              setMoveOfferId('')
+                            }}
+                          >
+                            Move an offer here…
+                          </DropdownMenuItem>
+                        )}
+                      </>
+                    )}
+                    <DropdownMenuItem
                       onClick={() => {
-                        setOpenOfferReqId(openOfferReqId === req.id ? null : req.id)
+                        setOpenInfoReqId(isInfoOpen ? null : req.id)
                         setOpenAddReqId(null)
-                        setOpenMoveReqId(null)
-                        setOpenInfoReqId(null)
-                        setOfferArtistId('')
-                      }}
-                      disabled={isPending}
-                      className="text-xs font-medium px-2.5 py-1 rounded-md border hover:bg-muted transition-colors disabled:opacity-50"
-                    >
-                      + Send offer
-                    </button>
-                    <button
-                      onClick={() => {
-                        setOpenAddReqId(openAddReqId === req.id ? null : req.id)
                         setOpenOfferReqId(null)
                         setOpenMoveReqId(null)
-                        setOpenInfoReqId(null)
-                        setAddArtistId('')
                       }}
-                      disabled={isPending}
-                      className="text-xs font-medium px-2.5 py-1 rounded-md border hover:bg-muted transition-colors disabled:opacity-50"
                     >
-                      + Add
-                    </button>
-                  </>
+                      {isInfoOpen ? 'Hide requirements' : 'Show requirements'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Etter showet er lineupen en protokoll: ingen nye plasser. */}
+                {!isPastShow && (
+                  <SpotIconButton
+                    onClick={() => handleDuplicateRequirement(req)}
+                    disabled={isPending}
+                    aria-label={`Duplicate the ${req.role_name} spot`}
+                    title="Duplicate spot"
+                  >
+                    <Copy className="size-4" />
+                  </SpotIconButton>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenInfoReqId(isInfoOpen ? null : req.id)
-                    setOpenAddReqId(null)
-                    setOpenOfferReqId(null)
-                    setOpenMoveReqId(null)
-                  }}
-                  className="inline-flex size-7 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Show requirement info"
-                  title="Requirement info"
-                >
-                  <Info className="size-3.5" />
-                </button>
+
                 {/* Også når spoten er full: det er nettopp da den ellers ikke
                     er til å bli kvitt. */}
                 {!isPastShow && (
-                  <button
-                    type="button"
+                  <SpotIconButton
+                    tone="danger"
                     onClick={() => handleDeleteRequirement(req.id, req.role_name, reqSpots.length + reqPending.length)}
                     disabled={isPending}
-                    className="inline-flex size-7 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                     aria-label={`Delete the ${req.role_name} spot`}
                     title="Delete spot"
                   >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                    <Trash2 className="size-4" />
+                  </SpotIconButton>
                 )}
               </div>
             </div>
 
             {isInfoOpen && (
-              <div className="border-b bg-muted/10 px-4 py-2.5">
+              <div className="border-t bg-muted/10 px-4 py-2.5 sm:px-5">
                 <div className="flex flex-wrap gap-1.5">
                   {summaryItems.map((item) => (
                     <span key={item} className="rounded-md bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-border">
@@ -641,60 +727,65 @@ export function LineupTab({
                     draggable={!isSwapping && !isPending}
                     onDragStart={e => handleSpotDragStart(e, spot.id)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-3 px-4 py-3 border-l-2 border-l-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/10 transition-opacity ${isDraggingThis ? 'opacity-30' : ''} ${!isSwapping && !isPending ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    className={cn(
+                      'flex items-center gap-3 border-t px-4 py-3 transition-opacity sm:gap-4 sm:px-5',
+                      isDraggingThis && 'opacity-30',
+                      !isSwapping && !isPending && 'cursor-grab active:cursor-grabbing'
+                    )}
                   >
                     {/* Avatar */}
                     {artist?.profile_image_url ? (
                       <Image
                         src={artist.profile_image_url}
                         alt=""
-                        width={36}
-                        height={36}
+                        width={40}
+                        height={40}
                         unoptimized={shouldBypassImageOptimization(artist.profile_image_url)}
-                        className="size-9 rounded-full object-cover shrink-0"
+                        className="size-10 shrink-0 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="size-9 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center text-sm font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--ev-accent-fill)]/10 text-sm font-bold text-[var(--ev-accent)]">
                         {(artist?.full_name ?? '?').charAt(0)}
                       </div>
                     )}
 
                     {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/admin-app/artists/${spot.artist_id}`}
-                          className="font-semibold text-sm truncate hover:underline underline-offset-2"
-                        >
-                          {artist?.full_name ?? '—'}
-                        </Link>
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/admin-app/artists/${spot.artist_id}`}
+                        className="block truncate text-sm font-semibold underline-offset-2 hover:underline"
+                      >
+                        {artist?.full_name ?? '—'}
+                      </Link>
+                      <div className="truncate text-xs text-muted-foreground">{artist?.email}</div>
+                    </div>
+
+                    {/* Fee */}
+                    <div className="hidden w-28 shrink-0 border-l pl-4 sm:block">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Fee</div>
+                      <div className="truncate text-sm font-semibold tabular-nums">
+                        {spot.fee_amount != null
+                          ? formatRequirementCurrency(spot.fee_amount, spot.currency ?? showCurrency)
+                          : requirementFee(req, showCurrency)}
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">{artist?.email}</div>
                     </div>
 
                     {/* Status */}
-                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[spot.status] ?? 'bg-muted text-muted-foreground'}`}>
-                      {spot.status}
+                    <span className={`${STATUS_PILL_CLASS} ${STATUS_COLORS[spot.status] ?? 'bg-muted text-muted-foreground'}`}>
+                      {STATUS_LABELS[spot.status] ?? spot.status}
                     </span>
 
-                    {/* Fee */}
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums min-w-[60px] text-right">
-                      {spot.fee_amount ? `${spot.fee_amount / 100} ${spot.currency ?? showCurrency}` : '—'}
-                    </span>
+                    <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:block" />
 
                     {/* 3-dot menu */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
-                          className="shrink-0 rounded p-1.5 hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
+                          className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
                           disabled={isPending}
                           aria-label="Actions"
                         >
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                            <circle cx="8" cy="3" r="1.5" />
-                            <circle cx="8" cy="8" r="1.5" />
-                            <circle cx="8" cy="13" r="1.5" />
-                          </svg>
+                          <MoreVertical className="size-4" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
@@ -718,7 +809,7 @@ export function LineupTab({
 
                   {/* Inline swap panel */}
                   {isSwapping && (
-                    <div className="border-t bg-muted/10 px-4 py-3 flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 border-t bg-muted/10 px-4 py-3 sm:px-5">
                       <select
                         value={swapArtistId}
                         onChange={e => setSwapArtistId(e.target.value)}
@@ -755,7 +846,7 @@ export function LineupTab({
 
             {/* Pending offers (only shown when not locked) */}
             {!isLocked && reqPending.length > 0 && (
-              <div className="divide-y">
+              <div>
                 {reqPending.map(offer => {
                   const artist = artistMap[offer.artist_id]
                   const isDraggingThis = dragItem?.type === 'offer' && dragItem.id === offer.id
@@ -765,51 +856,58 @@ export function LineupTab({
                       draggable={!isPending}
                       onDragStart={e => handleOfferDragStart(e, offer.id)}
                       onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-3 px-4 py-2.5 border-l-2 border-l-amber-400 bg-amber-50/30 dark:bg-amber-950/10 transition-opacity ${isDraggingThis ? 'opacity-30' : ''} ${!isPending ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                      className={cn(
+                        'flex items-center gap-3 border-t px-4 py-3 transition-opacity sm:gap-4 sm:px-5',
+                        isDraggingThis && 'opacity-30',
+                        !isPending && 'cursor-grab active:cursor-grabbing'
+                      )}
                     >
                       {artist?.profile_image_url ? (
                         <Image
                           src={artist.profile_image_url}
                           alt=""
-                          width={36}
-                          height={36}
+                          width={40}
+                          height={40}
                           unoptimized={shouldBypassImageOptimization(artist.profile_image_url)}
-                          className="size-9 rounded-full object-cover shrink-0 opacity-70"
+                          className="size-10 shrink-0 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="size-9 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center text-sm font-bold text-amber-600 dark:text-amber-300 shrink-0">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--ev-accent-fill)]/10 text-sm font-bold text-[var(--ev-accent)]">
                           {(artist?.full_name ?? '?').charAt(0)}
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={`/admin-app/artists/${offer.artist_id}`}
-                            className="text-sm truncate text-muted-foreground hover:underline underline-offset-2"
-                          >
-                            {artist?.full_name ?? '—'}
-                          </Link>
-                        </div>
-                        <div className="text-xs text-muted-foreground/60 truncate">{artist?.email}</div>
+
+                      <div className="min-w-0 flex-1">
+                        <Link
+                          href={`/admin-app/artists/${offer.artist_id}`}
+                          className="block truncate text-sm font-semibold underline-offset-2 hover:underline"
+                        >
+                          {artist?.full_name ?? '—'}
+                        </Link>
+                        <div className="truncate text-xs text-muted-foreground">{artist?.email}</div>
                       </div>
-                      <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+
+                      <div className="hidden w-28 shrink-0 border-l pl-4 sm:block">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Fee</div>
+                        <div className="truncate text-sm font-semibold tabular-nums">{requirementFee(req, showCurrency)}</div>
+                      </div>
+
+                      <span className={`${STATUS_PILL_CLASS} bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400`}>
                         Awaiting reply
                       </span>
-                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+
+                      <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:block">
                         {offer.sent_at ? new Date(offer.sent_at).toLocaleDateString('en-GB') : '—'}
                       </span>
+
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
-                            className="shrink-0 rounded p-1.5 hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
+                            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
                             disabled={isPending}
                             aria-label="Actions"
                           >
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                              <circle cx="8" cy="3" r="1.5" />
-                              <circle cx="8" cy="8" r="1.5" />
-                              <circle cx="8" cy="13" r="1.5" />
-                            </svg>
+                            <MoreVertical className="size-4" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-40">
@@ -833,7 +931,7 @@ export function LineupTab({
             {/* Empty state */}
             {reqSpots.length === 0 && reqPending.length === 0 && (
               shouldShowEnergyPrompt ? (
-                <div className="border-l-2 border-l-amber-400 bg-amber-50/40 px-4 py-4 dark:bg-amber-950/10">
+                <div className="border-t bg-amber-50/40 px-4 py-4 dark:bg-amber-950/10 sm:px-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
@@ -856,7 +954,7 @@ export function LineupTab({
                   </div>
                 </div>
               ) : (
-                <p className="px-4 py-5 text-sm text-muted-foreground">
+                <p className="px-4 pb-4 text-sm text-muted-foreground sm:pl-[4.25rem] sm:pr-5">
                   {showStatus === 'draft'
                     ? 'Start booking to send offers to artists.'
                     : 'No active offers or confirmed artists yet.'}
@@ -866,7 +964,7 @@ export function LineupTab({
 
             {/* Move pending offer panel */}
             {openMoveReqId === req.id && !isLocked && (
-              <div className="border-t bg-muted/10 px-4 py-3 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 border-t bg-muted/10 px-4 py-3 sm:px-5">
                 <select
                   value={moveOfferId}
                   onChange={e => setMoveOfferId(e.target.value)}
@@ -903,7 +1001,7 @@ export function LineupTab({
 
             {/* Send offer panel */}
             {openOfferReqId === req.id && !isLocked && (
-              <div className="border-t bg-muted/10 px-4 py-3 space-y-2">
+              <div className="space-y-2 border-t bg-muted/10 px-4 py-3 sm:px-5">
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={offerArtistId}
@@ -940,7 +1038,7 @@ export function LineupTab({
 
             {/* Add artist panel */}
             {openAddReqId === req.id && !isLocked && (
-              <div className="border-t bg-muted/10 px-4 py-3 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 border-t bg-muted/10 px-4 py-3 sm:px-5">
                 <select
                   value={addArtistId}
                   onChange={e => setAddArtistId(e.target.value)}
@@ -975,7 +1073,7 @@ export function LineupTab({
 
       {/* Unassigned offers */}
       {unassignedOffers.length > 0 && (
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <div className={cn(spotCardClass, 'overflow-hidden')}>
           <div className="px-4 py-3 border-b bg-muted/20 flex items-center gap-2">
             <span className="font-semibold text-sm">Other offers</span>
             <span className="text-xs text-muted-foreground">Not linked to a requirement</span>
@@ -1001,11 +1099,11 @@ export function LineupTab({
 
       {/* Empty state */}
       {requirements.length === 0 && (
-        <div className="rounded-xl border border-dashed p-12 text-center text-muted-foreground text-sm">
+        <div className="rounded-2xl border border-dashed p-12 text-center text-sm text-muted-foreground">
           No requirements defined yet.
           <div className="mt-3">
             <Link
-              href={`/admin-app/shows/${showId}?tab=requirements`}
+              href={`/admin-app/shows/${showId}?tab=lineup`}
               className="text-primary underline-offset-2 hover:underline text-sm"
             >
               Set up booking requirements
@@ -1016,31 +1114,30 @@ export function LineupTab({
 
       {/* Manual publish — booker decides when the lineup is good enough */}
       {requirements.length > 0 && !allSlotsFilled && ['draft', 'booking', 'fullbooked'].includes(showStatus) && (
-        <div className="rounded-xl border bg-card p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <h3 className="font-semibold text-sm">Publish lineup now</h3>
-              <p className="text-sm text-muted-foreground">
-                {filledSlots === 0
-                  ? 'At least one comedian has to accept before the lineup can be published.'
-                  : `${filledSlots} of ${totalSlots} spots are filled. Publish when you are happy — pending offers keep running, and comedians who accept later are added to the lineup.`}
-              </p>
-            </div>
+        <LineupCallout
+          title="Publish lineup now"
+          action={
             <button
               type="button"
               onClick={handlePublishLineup}
               disabled={isPending || filledSlots === 0}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               Publish lineup
             </button>
-          </div>
-        </div>
+          }
+        >
+          <p className="text-sm text-muted-foreground">
+            {filledSlots === 0
+              ? 'At least one comedian has to accept before the lineup can be published.'
+              : `${filledSlots} of ${totalSlots} spots are filled. Publish when you are happy — pending offers keep running, and comedians who accept later are added to the lineup.`}
+          </p>
+        </LineupCallout>
       )}
 
       {/* Published with open slots */}
       {requirements.length > 0 && !allSlotsFilled && showStatus === 'published' && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 p-5">
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50/50 p-5 dark:bg-emerald-950/20">
           <h3 className="font-bold text-emerald-900 dark:text-emerald-300">Published with open spots</h3>
           <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">
             {filledSlots} of {totalSlots} spots are filled. The event page is live, and the lineup updates as more comedians accept.{' '}
@@ -1054,7 +1151,7 @@ export function LineupTab({
 
       {/* All-filled celebration */}
       {allSlotsFilled && showStatus === 'booking' && (
-        <div className="rounded-xl border-2 border-purple-300 bg-purple-50/50 dark:bg-purple-950/20 p-5">
+        <div className="rounded-2xl border-2 border-purple-300 bg-purple-50/50 p-5 dark:bg-purple-950/20">
           <h3 className="font-bold text-purple-900 dark:text-purple-300">The lineup is ready! 🎉</h3>
           <p className="text-sm text-purple-700 dark:text-purple-400 mt-0.5">
             Every spot is filled. The system generates the lineup poster, publishes the event page and starts marketing automatically.

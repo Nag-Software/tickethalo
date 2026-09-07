@@ -1,11 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { formatMoney } from '@/lib/artist-portal'
 import { buildMarketingSlots, artistDisplayName } from '@/lib/marketing/slots'
 import { resolvePalette } from '@/lib/marketing/palette'
-import { facebookEventDescription, facebookEventTitle, socialCaption, type MarketingCopyInput } from '@/lib/marketing/copy'
 import { AutoPosterToggle } from './automation-bar'
 import { BrandColorsCard } from './brand-colors-card'
-import { ChannelCopy } from './channel-copy'
 import { ChecklistCard } from './checklist-card'
 import { ExportPanel, type ExportState } from './export-panel'
 import { PosterStage } from './poster-stage'
@@ -30,15 +27,14 @@ import {
   uploadShowPosterAction,
 } from './actions'
 import type { MarketingExportFormat, ShowStatus } from '@/types/database'
-import { appUrl } from '@/lib/app-url'
 
 /**
  * Markedsføringsfanen på et show.
  *
  * Venstre spalte er resultatet — plakaten og filene som skal ut i kanalene.
- * Høyre spalte er verktøyene som lager det: farger, mal, hvem som står i hvilken
- * rute, og teksten som følger med. Rekkefølgen er den samme som arbeidsflyten:
- * velg uttrykk, velg design, koble bilder, eksporter.
+ * Høyre spalte er verktøyene som lager det: farger, mal og hvem som står i
+ * hvilken rute. Rekkefølgen er den samme som arbeidsflyten: velg uttrykk, velg
+ * design, koble bilder, eksporter.
  *
  * AI-plakaten er ett av alternativene her, ikke selve fanen. Klubben kan gjøre
  * hele jobben med sin egen plakat uten å ta den i bruk.
@@ -47,8 +43,6 @@ import { appUrl } from '@/lib/app-url'
 const GENERATE_BLOCKED_HINT: Partial<Record<ShowStatus, string>> = {
   draft: 'Book the lineup first — the AI poster needs the confirmed artists.',
 }
-
-const appOrigin = appUrl
 
 export async function MarketingTab({ showId }: { showId: string }) {
   const db = createAdminClient()
@@ -70,7 +64,7 @@ export async function MarketingTab({ showId }: { showId: string }) {
     { data: tasks },
   ] = await Promise.all([
     show.club_id
-      ? db.from('clubs').select('brand_color, city').eq('id', show.club_id).maybeSingle()
+      ? db.from('clubs').select('brand_color').eq('id', show.club_id).maybeSingle()
       : Promise.resolve({ data: null }),
     db.from('show_requirements').select('id, role_name, quantity, lineup_position').eq('show_id', showId),
     db.from('confirmed_spots').select('artist_id, show_requirement_id, status').eq('show_id', showId),
@@ -138,21 +132,6 @@ export async function MarketingTab({ showId }: { showId: string }) {
     isStale: row.source_poster_url !== show.poster_url,
   }))
 
-  const ticketUrl = show.ticket_url || (show.status === 'published' ? `${appOrigin()}/events/${show.slug}` : null)
-  const copyInput: MarketingCopyInput = {
-    title: show.title,
-    date: show.date,
-    startTime: show.start_time,
-    venue: show.venue_name ?? show.venue_address,
-    city: club?.city ?? null,
-    description: show.description,
-    ticketUrl,
-    priceLabel: show.ticket_price != null ? formatMoney(show.ticket_price, show.currency) : null,
-    lineup: slots.flatMap((slot) => (
-      slot.artistName ? [{ name: slot.artistName, roleLabel: slot.roleLabel }] : []
-    )),
-  }
-
   const bookedCount = slots.filter((slot) => slot.artistId).length
   const canGenerate = bookedCount > 0
   const generateHint = canGenerate ? null : GENERATE_BLOCKED_HINT[show.status] ?? 'No confirmed artists yet.'
@@ -187,13 +166,6 @@ export async function MarketingTab({ showId }: { showId: string }) {
             hasPoster={Boolean(show.poster_url)}
             generateAction={generateMarketingExportAction}
             generateAllAction={generateAllMarketingExportsAction}
-          />
-
-          <ChannelCopy
-            eventTitle={facebookEventTitle(copyInput)}
-            eventDescription={facebookEventDescription(copyInput)}
-            caption={socialCaption(copyInput)}
-            ticketUrl={ticketUrl}
           />
         </div>
 
