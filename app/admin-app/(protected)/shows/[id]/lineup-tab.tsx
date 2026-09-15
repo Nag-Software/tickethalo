@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { RoleIcon } from '@/components/admin/show-booking-card'
-import { LineupCallout, SpotIconButton, SpotNumber, spotCardClass } from './lineup-ui'
+import { LineupCallout, SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
 import { cn } from '@/lib/utils'
 import {
   addRequirementAction,
@@ -30,7 +30,7 @@ import {
   updateOfferStatusAction,
   openRequirementEnergyLevelsAction,
 } from '../actions'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
 type Artist = {
   id: string
@@ -55,6 +55,7 @@ type Requirement = {
   min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -172,6 +173,10 @@ export function LineupTab({
   selectableArtists,
   energyRelaxationSuggestions,
   allSlotsFilled,
+  submissionsAudience,
+  submissionsCloseAt,
+  rosterSize,
+  pendingByRequirement,
 }: {
   showId: string
   showStatus: string
@@ -183,6 +188,10 @@ export function LineupTab({
   selectableArtists: SelectableArtist[]
   energyRelaxationSuggestions: Record<string, { candidates: number }>
   allSlotsFilled: boolean
+  submissionsAudience: SubmissionsAudience
+  submissionsCloseAt: string | null
+  rosterSize: number
+  pendingByRequirement: Record<string, number>
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -567,8 +576,23 @@ export function LineupTab({
   }, 0)
   const offerableArtists = selectableArtists.filter(a => !pendingOfferArtistIds.has(a.id))
 
+  const pendingSubmissionTotal = Object.values(pendingByRequirement).reduce((sum, count) => sum + count, 0)
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
+      {/* Søknadsinnstillingene hører hjemme her også — det er denne fanen
+          bookeren står i mens søknadene faktisk kommer inn. */}
+      {requirements.length > 0 && (
+        <SubmissionsBar
+          showId={showId}
+          audience={submissionsAudience}
+          closeAt={submissionsCloseAt}
+          rosterSize={rosterSize}
+          pendingTotal={pendingSubmissionTotal}
+          disabled={showStatus === 'completed' || showStatus === 'cancelled'}
+        />
+      )}
+
       {requirements.map((req, index) => {
         const reqSpots = activeSpots.filter(s => s.show_requirement_id === req.id)
         const reqPending = allOffers.filter(
@@ -606,6 +630,14 @@ export function LineupTab({
               <SpotNumber position={index + 1} />
               <RoleIcon roleName={req.role_name} className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
               <span className="truncate text-base font-bold">{req.role_name}</span>
+
+              <SubmissionsToggle
+                showId={showId}
+                reqId={req.id}
+                open={req.submissions_open}
+                pendingCount={pendingByRequirement[req.id] ?? 0}
+                disabled={showStatus === 'completed' || showStatus === 'cancelled'}
+              />
 
               {isLocked && (
                 <span className={`${STATUS_PILL_CLASS} bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400`}>

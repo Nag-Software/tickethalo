@@ -394,6 +394,14 @@ export async function bookShow(showId: string) {
   }> = []
 
   for (const req of requirements) {
+    // En plass klubben har åpnet for søknader skal motoren holde fingrene
+    // fra. Uten dette rekker den å fylle plassen med egne tilbud før noen
+    // har rukket å søke — og ingenting feiler, funksjonen ser bare død ut.
+    //
+    // Bookeren kan fortsatt sende manuelle tilbud på plassen; det er bare
+    // automatikken som trekker seg.
+    if (req.submissions_open) continue
+
     const { count: filled } = await admin
       .from('confirmed_spots')
       .select('*', { count: 'exact', head: true })
@@ -988,6 +996,10 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
 
   if (!show || !requirement) return
   if (!ACTIVE_BOOKING_STATUSES.includes(show.status as (typeof ACTIVE_BOOKING_STATUSES)[number])) return
+  // Samme grunn som i `bookShow`: en plass som er åpen for søknader fylles
+  // av komikere som melder seg, ikke av motoren. Den gjelder også her —
+  // plassen blir jo nettopp ledig igjen når noen faller fra.
+  if (requirement.submissions_open) return
 
   const { count: filled } = await admin
     .from('confirmed_spots')

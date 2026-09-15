@@ -13,7 +13,7 @@ import { MarketingTab } from './marketing/marketing-tab'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
 
@@ -90,6 +90,24 @@ export default async function ShowDetailPage({
   ])
   const selectableArtists = withClubReview(rosterArtists ?? [], reviews)
   const artistMap = Object.fromEntries((artistRows ?? []).map(a => [a.id, a]))
+
+  // Ubehandlede søknader per lineup-plass. Bare `pending` telles: en søknad
+  // som er godtatt eller avslått er ikke noe bookeren skal minnes på.
+  const { data: pendingSubmissions } = shouldLoadRelatedArtists
+    ? await db
+      .from('show_submissions')
+      .select('show_requirement_id')
+      .eq('show_id', id)
+      .eq('status', 'pending')
+    : { data: [] as Array<{ show_requirement_id: string }> }
+
+  const pendingSubmissionsByRequirement = (pendingSubmissions ?? []).reduce<Record<string, number>>(
+    (counts, row) => {
+      counts[row.show_requirement_id] = (counts[row.show_requirement_id] ?? 0) + 1
+      return counts
+    },
+    {},
+  )
 
   // Compute fill status per requirement
   const activeLineup = (lineup ?? []).filter(s => ['confirmed', 'completed', 'paid'].includes(s.status))
@@ -290,10 +308,15 @@ export default async function ShowDetailPage({
                   min_score: r.min_score ?? null,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
+                  submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
                   compensation_percent: r.compensation_percent ?? null,
                 }))}
+                submissionsAudience={(show.submissions_audience ?? 'roster') as SubmissionsAudience}
+                submissionsCloseAt={show.submissions_close_at ?? null}
+                rosterSize={roster.length}
+                pendingByRequirement={pendingSubmissionsByRequirement}
               />
             : <LineupTab
                 showId={show.id}
@@ -307,6 +330,7 @@ export default async function ShowDetailPage({
                   min_score: r.min_score ?? null,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
+                  submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
                   compensation_percent: r.compensation_percent ?? null,
@@ -333,6 +357,10 @@ export default async function ShowDetailPage({
                   .map(({ id, full_name, stage_name, email }) => ({ id, full_name, stage_name, email }))}
                 energyRelaxationSuggestions={energyRelaxationSuggestions}
                 allSlotsFilled={allSlotsFilled}
+                submissionsAudience={(show.submissions_audience ?? 'roster') as SubmissionsAudience}
+                submissionsCloseAt={show.submissions_close_at ?? null}
+                rosterSize={roster.length}
+                pendingByRequirement={pendingSubmissionsByRequirement}
               />
         )}
 

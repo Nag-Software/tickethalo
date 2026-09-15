@@ -177,6 +177,9 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     min_score: optionalInteger(formData.get('min_score')),
     energy_level: ((formData.get('energy_level') as RequirementEnergy | null) ?? 'any'),
     required_gender: ((formData.get('required_gender') as RequirementGender | null) ?? 'any'),
+    // Står som streng i skjemaet — en avslått checkbox sender ingenting, og
+    // `'false'` er sant som streng. Sammenlikningen må derfor være eksplisitt.
+    submissions_open: String(formData.get('submissions_open') ?? '') === 'true',
     compensation_type: compensationType,
     compensation_amount: compensationAmount,
     compensation_percent: compensationPercent,

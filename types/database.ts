@@ -16,6 +16,18 @@ export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
 export type RequirementCompensationType = 'fixed' | 'percent'
 export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 'filled_by_other' | 'cancelled'
 export type ConfirmedSpotStatus = 'confirmed' | 'cancelled' | 'completed' | 'paid'
+
+/** Hvem som får søke på et shows åpne plasser. Se migrasjon 045. */
+export type SubmissionsAudience = 'roster' | 'everyone'
+/** Om komikeren fant plassen selv, eller ble invitert til den. */
+export type SubmissionSource = 'open_call' | 'invitation'
+export type SubmissionStatus =
+  | 'pending'
+  | 'shortlisted'
+  | 'accepted'
+  | 'declined'
+  | 'withdrawn'
+  | 'filled_by_other'
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled'
 export type TicketStatus = 'valid' | 'used' | 'refunded' | 'cancelled'
 export type ClubPayoutStatus = 'pending' | 'paid' | 'failed' | 'cancelled'
@@ -271,6 +283,10 @@ export type Show = {
   marketing_palette: MarketingPalette | null
   selected_marketing_design_id: string | null
   status: ShowStatus
+  /** Hvem som kan søke på plassene showet har åpnet. Se `ShowRequirement`. */
+  submissions_audience: SubmissionsAudience
+  /** Siste tidspunkt en søknad kan sendes. Null = ingen frist satt. */
+  submissions_close_at: string | null
   stripe_product_id: string | null
   stripe_price_id: string | null
   is_template: boolean
@@ -341,9 +357,51 @@ export type ShowRequirement = {
   min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  /**
+   * Plassen tar imot søknader fra komikere. Uavhengig av rollens øvrige
+   * krav — men en åpen plass holdes utenfor bookingautomatikken, se
+   * `bookShow()` i lib/actions/booking.ts.
+   */
+  submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Komikeren har meldt seg på en åpen lineup-plass.
+ *
+ * Ikke et tilbud: ingenting er booket før bookeren godtar, og da er det
+ * et vanlig `BookingOffer` som går ut. `booking_offer_id` peker på det.
+ */
+export type ShowSubmission = {
+  id: string
+  show_id: string
+  show_requirement_id: string
+  artist_id: string
+  source: SubmissionSource
+  invitation_id: string | null
+  status: SubmissionStatus
+  /** Komikerens egen setning til bookeren. Valgfri — ett klikk holder. */
+  message: string | null
+  /** Tilbudet søknaden ble. Null så lenge den ikke er godtatt. */
+  booking_offer_id: string | null
+  responded_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Klubbens invitasjon til en av sine egne om å søke på et show. */
+export type ShowSubmissionInvitation = {
+  id: string
+  show_id: string
+  artist_id: string
+  /** Lar komikeren søke uten portalkonto — `artists.auth_user_id` er nullbar. */
+  token: string
+  sent_at: string | null
+  opened_at: string | null
   created_at: string
   updated_at: string
 }
@@ -616,6 +674,8 @@ export type Database = {
           marketing_palette?: MarketingPalette | null
           selected_marketing_design_id?: string | null
           status?: ShowStatus
+          submissions_audience?: SubmissionsAudience
+          submissions_close_at?: string | null
           stripe_product_id?: string | null
           stripe_price_id?: string | null
           is_template?: boolean
@@ -694,6 +754,7 @@ export type Database = {
           min_score?: number | null
           energy_level?: RequirementEnergy
           required_gender?: RequirementGender
+          submissions_open?: boolean
           compensation_type?: RequirementCompensationType | null
           compensation_amount?: number | null
           compensation_percent?: number | null
@@ -701,6 +762,40 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<ShowRequirement>
+        Relationships: []
+      }
+      show_submissions: {
+        Row: ShowSubmission
+        Insert: {
+          id?: string
+          show_id: string
+          show_requirement_id: string
+          artist_id: string
+          source?: SubmissionSource
+          invitation_id?: string | null
+          status?: SubmissionStatus
+          message?: string | null
+          booking_offer_id?: string | null
+          responded_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ShowSubmission>
+        Relationships: []
+      }
+      show_submission_invitations: {
+        Row: ShowSubmissionInvitation
+        Insert: {
+          id?: string
+          show_id: string
+          artist_id: string
+          token?: string
+          sent_at?: string | null
+          opened_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ShowSubmissionInvitation>
         Relationships: []
       }
       booking_offers: {

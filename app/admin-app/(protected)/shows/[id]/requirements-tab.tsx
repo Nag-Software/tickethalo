@@ -32,8 +32,8 @@ import {
 } from '../actions'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
 import { RoleIcon } from '@/components/admin/show-booking-card'
-import { LineupCallout, SpotIconButton, SpotNumber, spotCardClass } from './lineup-ui'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import { LineupCallout, SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
+import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ type Requirement = {
   min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -55,6 +56,7 @@ type ReqState = {
   min_score: string
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  submissions_open: boolean
   compensation_type: RequirementCompensationType | ''
   compensation_amount: string
   compensation_percent: string
@@ -76,6 +78,14 @@ type Props = {
   showStatus: string
   showCurrency: string
   requirements: Requirement[]
+  /** Hvem som får søke på plassene showet åpner. Se migrasjon 045. */
+  submissionsAudience: SubmissionsAudience
+  /** Søknadsfristen som ISO-streng, eller null når ingen er satt. */
+  submissionsCloseAt: string | null
+  /** Antall komikere klubben har knyttet til seg — publikummet ved 'roster'. */
+  rosterSize: number
+  /** Ubehandlede søknader på showet, per lineup-plass. */
+  pendingByRequirement: Record<string, number>
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -87,13 +97,20 @@ const WIZARD_INITIAL: WizardState = {
   min_score: '',
   energy_level: 'any',
   required_gender: 'any',
+  submissions_open: false,
   compensation_type: '',
   compensation_amount: '',
   compensation_percent: '',
 }
 
-/** Rammen rundt hver kriteriekontroll — samme høyde og radius i alle fire rutene. */
-const FIELD_CONTROL_CLASS = 'h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-none'
+/**
+ * Rammen rundt hver kriteriekontroll — samme høyde og radius i alle fire rutene.
+ *
+ * 30px, ikke 36: etiketten står inne i kontrollen i stedet for over den, så
+ * hver rute bærer to linjer informasjon på under halve høyden. Seks plasser
+ * skal få plass på skjermen uten å scrolle.
+ */
+const FIELD_CONTROL_CLASS = 'h-[30px] w-full rounded-lg border border-input bg-background px-2.5 text-[13px] shadow-none'
 
 const SCORE_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
 
@@ -177,6 +194,7 @@ function stateFromRequirement(requirement: Requirement): ReqState {
     min_score: requirement.min_score != null ? String(requirement.min_score) : '',
     energy_level: requirement.energy_level,
     required_gender: requirement.required_gender,
+    submissions_open: requirement.submissions_open,
     compensation_type: requirement.compensation_type ?? '',
     compensation_amount: requirement.compensation_amount != null ? formatEditableNumber(requirement.compensation_amount / 100) : '',
     compensation_percent: requirement.compensation_percent != null ? formatEditableNumber(requirement.compensation_percent) : '',
@@ -193,6 +211,7 @@ function buildFormData(showId: string, reqId: string, state: ReqState): FormData
   fd.set('min_score', state.min_score)
   fd.set('energy_level', state.energy_level)
   fd.set('required_gender', state.required_gender)
+  fd.set('submissions_open', String(state.submissions_open))
   fd.set('compensation_type', state.compensation_type)
   fd.set('compensation_amount', state.compensation_amount)
   fd.set('compensation_percent', state.compensation_percent)
@@ -205,6 +224,7 @@ function isSameReqState(left: ReqState, right: ReqState) {
     && left.min_score === right.min_score
     && left.energy_level === right.energy_level
     && left.required_gender === right.required_gender
+    && left.submissions_open === right.submissions_open
     && left.compensation_type === right.compensation_type
     && left.compensation_amount === right.compensation_amount
     && left.compensation_percent === right.compensation_percent
@@ -343,7 +363,16 @@ function moveRequirementId(ids: string[], draggedId: string, targetId: string, e
 
 // ─── RequirementsTab ──────────────────────────────────────────────────────────
 
-export function RequirementsTab({ showId, showStatus, showCurrency, requirements }: Props) {
+export function RequirementsTab({
+  showId,
+  showStatus,
+  showCurrency,
+  requirements,
+  submissionsAudience,
+  submissionsCloseAt,
+  rosterSize,
+  pendingByRequirement,
+}: Props) {
   const router = useRouter()
 
   const [wizard, setWizard] = React.useState<WizardState>(WIZARD_INITIAL)
@@ -580,6 +609,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     fd.set('min_score', state.min_score)
     fd.set('energy_level', state.energy_level)
     fd.set('required_gender', state.required_gender)
+    fd.set('submissions_open', String(state.submissions_open))
     fd.set('compensation_type', state.compensation_type)
     fd.set('compensation_amount', state.compensation_amount)
     fd.set('compensation_percent', state.compensation_percent)
@@ -625,6 +655,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     fd.set('min_score', '')
     fd.set('energy_level', "any")
     fd.set('required_gender', "any")
+    fd.set('submissions_open', 'false')
     fd.set('compensation_type', "")
     fd.set('compensation_amount', "")
     fd.set('compensation_percent', "")
@@ -649,6 +680,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
     fd.set('min_score', wizard.min_score)
     fd.set('energy_level', wizard.energy_level)
     fd.set('required_gender', wizard.required_gender)
+    fd.set('submissions_open', String(wizard.submissions_open))
     fd.set('compensation_type', wizard.compensation_type)
     fd.set('compensation_amount', wizard.compensation_amount)
     fd.set('compensation_percent', wizard.compensation_percent)
@@ -700,12 +732,27 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
   if (blockingIssueCount > 0) bookingBlockers.push(`${blockingIssueCount} spot${blockingIssueCount > 1 ? 's have' : ' has'} invalid values`)
   if (totalPercent > 100) bookingBlockers.push(`Percentage allocation is ${Math.round(totalPercent * 10) / 10}% (max 100%)`)
   const canStartBooking = bookingBlockers.length === 0
+  const pendingTotal = Object.values(pendingByRequirement).reduce((sum, count) => sum + count, 0)
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="max-w-4xl space-y-2.5">
+      {/* ── Submissions: hvem, og hvor lenge ──────────────────────────────
+          Én rad. Fanen ved siden av heter «Submissions» og har tellingen på
+          seg — et forklarende avsnitt her gjorde ingen jobb. */}
+      {orderedRequirements.length > 0 && (
+        <SubmissionsBar
+          showId={showId}
+          audience={submissionsAudience}
+          closeAt={submissionsCloseAt}
+          rosterSize={rosterSize}
+          pendingTotal={pendingTotal}
+          disabled={!canEdit}
+        />
+      )}
+
       {/* ── Existing requirements ─────────────────────────────────────────── */}
       {orderedRequirements.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {orderedRequirements.map((req, index) => {
             const state = reqStates[req.id] ?? stateFromRequirement(req)
             const saving = savingIds.has(req.id)
@@ -741,14 +788,14 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                 )}
 
                 {/* ── Header row ── */}
-                <div className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3.5 pt-2 pb-1 sm:px-4">
                   <SpotNumber
                     position={index + 1}
                     title={canEdit ? 'Drag to reorder' : undefined}
-                    className={canEdit ? 'cursor-grab active:cursor-grabbing' : undefined}
+                    className={cn('size-[26px] text-xs', canEdit && 'cursor-grab active:cursor-grabbing')}
                   />
 
-                  <RoleIcon roleName={state.role_name} className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
+                  <RoleIcon roleName={state.role_name} className="size-[18px] shrink-0 text-[var(--ev-accent-fill)]" />
 
                   <div className="relative min-w-0">
                     <select
@@ -756,14 +803,24 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                       onChange={(e) => updateField(req.id, 'role_name', e.target.value)}
                       onBlur={() => flushAutosave(req.id)}
                       aria-label="Role"
-                      className="w-full min-w-0 appearance-none rounded-lg bg-transparent py-1 pl-1.5 pr-7 text-base font-bold outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
+                      className="w-full min-w-0 appearance-none rounded-lg bg-transparent py-0.5 pl-1 pr-6 text-[15px] font-bold outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
                     >
                       {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
                         <option key={role} value={role}>{role}</option>
                       ))}
                     </select>
-                    <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <ChevronDown className="pointer-events-none absolute right-1 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   </div>
+
+                  {/* Plassens tilstand hører sammen med plassens navn — ikke
+                      i et eget bånd under kriteriene. */}
+                  <SubmissionsToggle
+                    showId={showId}
+                    reqId={req.id}
+                    open={state.submissions_open}
+                    pendingCount={pendingByRequirement[req.id] ?? 0}
+                    disabled={!canEdit}
+                  />
 
                   {issue && <StatusPill tone={issue.tone}>{issue.message}</StatusPill>}
                   {saving && (
@@ -777,7 +834,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                     </span>
                   )}
 
-                  <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5">
                     <SpotIconButton
                       onClick={() => duplicateRequirement(state)}
                       disabled={isAdding}
@@ -799,7 +856,7 @@ export function RequirementsTab({ showId, showStatus, showCurrency, requirements
                 </div>
 
                 {/* ── Criteria ── */}
-                <div className="mb-4 ml-4 mr-4 grid grid-cols-2 divide-x divide-y border-l sm:mb-5 sm:ml-[3.6rem] sm:mr-5 sm:grid-cols-4 sm:divide-y-0">
+                <div className="mb-2.5 ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-4">
                   <FieldCell label="Energy">
                     <Select
                       value={state.energy_level}
@@ -978,9 +1035,9 @@ function StatusPill({ tone, children }: { tone: CompensationIssue['tone']; child
 /** Én kriterierute i kortet: etiketten over, kontrollen i sin egen ramme. */
 function FieldCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 px-3 py-2.5 sm:px-4">
-      <Label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</Label>
-      {children}
+    <div className="flex min-w-0 items-center gap-2">
+      <Label className="shrink-0 text-[11px] font-medium text-muted-foreground">{label}</Label>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }

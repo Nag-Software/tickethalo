@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -15,6 +15,7 @@ import {
   Video,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { MAX_UPLOAD_BYTES, compressImageFile } from "@/lib/image-compress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LocationField, type SelectedLocation } from "@/components/artist/location-field"
@@ -75,6 +76,8 @@ export function ArtistSignupForm({
     youtube: false,
   })
   const [imageName, setImageName] = useState<string | null>(null)
+  const [preparingImage, setPreparingImage] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const [location, setLocation] = useState<SelectedLocation | null>(null)
   const [languages, setLanguages] = useState<LanguageCode[]>([])
   // Beholdes så hintet under språkvelgeren kan si hvor forslaget kom fra.
@@ -111,6 +114,53 @@ export function ArtistSignupForm({
   )
   const progress = Math.round((completed / requiredFields.length) * 100)
   const missing = requiredFields.filter((field) => !values[field.id])
+
+  /**
+   * Et bilde rett fra mobilkameraet er større enn det serverless-funksjonen
+   * tar imot, så vi krymper det her og bytter ut fila i input-feltet. Da går
+   * skjemaet som en helt vanlig POST videre.
+   */
+  async function handleImageChange(file: File | undefined) {
+    if (!file) {
+      setImageName(null)
+      setValues((prev) => ({ ...prev, profile_image_file: false }))
+      return
+    }
+
+    setImageName(file.name)
+    setPreparingImage(true)
+    try {
+      const compressed = await compressImageFile(file)
+      if (compressed !== file) replaceSelectedFile(compressed)
+
+      const selected = imageInputRef.current?.files?.[0] ?? compressed
+      if (selected.size > MAX_UPLOAD_BYTES) {
+        toast.error("The image is too large. Choose a smaller picture.")
+        if (imageInputRef.current) imageInputRef.current.value = ""
+        setImageName(null)
+        setValues((prev) => ({ ...prev, profile_image_file: false }))
+        return
+      }
+
+      setImageName(selected.name)
+      setValues((prev) => ({ ...prev, profile_image_file: true }))
+    } finally {
+      setPreparingImage(false)
+    }
+  }
+
+  /** `input.files` kan bare settes med en DataTransfer — den mangler i eldre nettlesere. */
+  function replaceSelectedFile(file: File) {
+    const input = imageInputRef.current
+    if (!input || typeof DataTransfer === "undefined") return
+    try {
+      const transfer = new DataTransfer()
+      transfer.items.add(file)
+      input.files = transfer.files
+    } catch {
+      // Beholder originalen; størrelsessjekken under sier fra hvis den er for stor.
+    }
+  }
 
   function updateTextField(field: RequiredFieldId, value: string) {
     setValues((prev) => ({
@@ -197,7 +247,9 @@ export function ArtistSignupForm({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-medium">Profile Picture</p>
-                <p className="truncate text-[13px] text-[var(--ev-muted)]">{imageName ?? "PNG, JPG or WebP"}</p>
+                <p className="truncate text-[13px] text-[var(--ev-muted)]">
+                  {preparingImage ? "Preparing image…" : (imageName ?? "PNG, JPG or WebP")}
+                </p>
               </div>
               <span className="shrink-0 rounded-full bg-[var(--ev-text)] px-3.5 py-2 text-[13px] font-semibold text-[var(--ev-bg)]">Choose Image</span>
               <input
@@ -207,11 +259,8 @@ export function ArtistSignupForm({
                 accept="image/png,image/jpeg,image/webp"
                 required
                 className="sr-only"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  setImageName(file?.name ?? null)
-                  setValues((prev) => ({ ...prev, profile_image_file: Boolean(file) }))
-                }}
+                ref={imageInputRef}
+                onChange={(event) => void handleImageChange(event.target.files?.[0])}
               />
             </label>
 
@@ -274,7 +323,7 @@ export function ArtistSignupForm({
             <Button
               type="submit"
               className="h-11 rounded-full border-0 bg-[var(--ev-text)] px-5 text-[13px] font-semibold text-[var(--ev-bg)] transition-colors hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)] disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] sm:min-w-48"
-              disabled={missing.length > 0}
+              disabled={missing.length > 0 || preparingImage}
             >
               <BadgeCheck className="size-4" />
               Register Artist Profile

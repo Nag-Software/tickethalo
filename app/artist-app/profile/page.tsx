@@ -6,6 +6,7 @@ import { getCurrentArtist } from '@/lib/artist-portal'
 import { formatArtistRoleList } from '@/lib/artist-roles'
 import { isArtistBookable } from '@/lib/artist-readiness'
 import { LocationLanguageFields } from '@/components/artist/location-language-fields'
+import { ProfileImageInput } from '@/components/artist/profile-image-input'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 
@@ -57,12 +58,7 @@ export default async function ArtistProfilePage() {
                   />
                 </Field>
                 <Field label="Profile Picture">
-                  <input
-                    name="profile_image_file"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="w-full text-[13px] text-[var(--ev-muted)] file:mr-3 file:rounded-full file:border-0 file:bg-[var(--ev-card-hover)] file:px-3.5 file:py-2 file:text-[13px] file:font-medium file:text-[var(--ev-text)]"
-                  />
+                  <ProfileImageInput />
                 </Field>
               </div>
 
