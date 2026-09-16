@@ -1,7 +1,11 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { osloDate, ticketSalesState } from '@/lib/ticket-sales'
+import { type PublicTicketSalesState, toPublicTicketSalesState } from '@/lib/ticket-sales-display'
 import type { Artist, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
 
-export type PublicShow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id'> & {
+type PublicShowRow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id' | 'ticket_sales_closed_at' | 'deleted_at'>
+
+export type PublicShow = PublicShowRow & {
   clubName: string | null
   clubSlug: string | null
   clubCity: string | null
@@ -10,6 +14,11 @@ export type PublicShow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'd
   clubLegalName: string | null
   clubOrgNumber: string | null
   soldTickets: number
+  /**
+   * Om billetten kan kjøpes nå, regnet ut på serveren da siden ble hentet.
+   * Knappen leser denne; checkout sjekker på nytt når kjøperen trykker.
+   */
+  salesState: PublicTicketSalesState
 }
 
 export type PublicLineupItem = {
@@ -20,15 +29,23 @@ export type PublicLineupItem = {
 
 /** `as const` er ikke pynt: supabase-js utleder radtypen fra selve strengen. */
 const SHOW_COLUMNS =
-  'id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status, club_id' as const
+  'id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status, club_id, ticket_sales_closed_at, deleted_at' as const
+
+// Arkiverte show står som `cancelled` og faller bort på statusfilteret alene.
+// `deleted_at` sjekkes likevel i hver spørring: et slettet show skal ikke
+// dukke opp igjen om noen en dag endrer statusen på raden for hånd.
+//
+// «I dag» er norsk dato, som i salgsreglene. UTC-datoen lot gårsdagens show
+// bli stående i lista den første timen eller to etter midnatt.
 
 export async function getUpcomingPublishedShows(limit?: number): Promise<PublicShow[]> {
   const db = createAdminClient()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = osloDate()
   let query = db
     .from('shows')
     .select(SHOW_COLUMNS)
     .eq('status', 'published')
+    .is('deleted_at', null)
     .gte('date', today)
     .order('date', { ascending: true })
 
@@ -45,6 +62,7 @@ export async function getPublishedShowBySlug(slug: string): Promise<PublicShow |
     .select(SHOW_COLUMNS)
     .eq('slug', slug)
     .eq('status', 'published')
+    .is('deleted_at', null)
     .single()
 
   if (!show) return null
@@ -59,7 +77,7 @@ export async function getPublishedShowBySlug(slug: string): Promise<PublicShow |
  */
 export async function getClubShows(clubId: string, pastLimit = 6): Promise<{ upcoming: PublicShow[]; past: PublicShow[] }> {
   const db = createAdminClient()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = osloDate()
 
   const [{ data: upcoming }, { data: past }] = await Promise.all([
     db
@@ -67,6 +85,7 @@ export async function getClubShows(clubId: string, pastLimit = 6): Promise<{ upc
       .select(SHOW_COLUMNS)
       .eq('club_id', clubId)
       .eq('status', 'published')
+      .is('deleted_at', null)
       .gte('date', today)
       .order('date', { ascending: true }),
     db
@@ -74,6 +93,7 @@ export async function getClubShows(clubId: string, pastLimit = 6): Promise<{ upc
       .select(SHOW_COLUMNS)
       .eq('club_id', clubId)
       .in('status', ['published', 'completed'])
+      .is('deleted_at', null)
       .lt('date', today)
       .order('date', { ascending: false })
       .limit(pastLimit),
@@ -148,15 +168,19 @@ export function ticketFillPercent(show: Pick<Show, 'capacity'> & { soldTickets: 
 }
 
 /**
- * Fyller på klubbnavn og antall solgte billetter.
+ * Fyller på klubbnavn, antall solgte billetter og salgsstatus.
  *
- * Begge deler hentes i én runde hver, uansett hvor mange show lista har.
- * Billettallet kommer fra `show_ticket_counts` (migrasjon 031) — før dette
+ * Klubber og billettall hentes i én runde hver, uansett hvor mange show lista
+ * har. Billettallet kommer fra `show_ticket_counts` (migrasjon 031) — før dette
  * gjorde funksjonen én count-spørring per show, altså tjue kall for en
  * forside med tjue show.
  */
-async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id'>>): Promise<PublicShow[]> {
+async function withTicketCounts(shows: PublicShowRow[]): Promise<PublicShow[]> {
   if (shows.length === 0) return []
+
+  // Ett tidspunkt for hele lista, så to show med samme dato aldri kan havne på
+  // hver sin side av midnatt.
+  const now = new Date()
 
   const db = createAdminClient()
   const clubIds = [...new Set(shows.map((show) => show.club_id).filter((clubId): clubId is string => Boolean(clubId)))]
@@ -194,6 +218,7 @@ async function withTicketCounts(shows: Array<Pick<Show, 'id' | 'title' | 'slug' 
       clubLegalName: club?.legal_name ?? null,
       clubOrgNumber: club?.org_number ?? null,
       soldTickets: soldByShow.get(show.id) ?? 0,
+      salesState: toPublicTicketSalesState(ticketSalesState(show, now)),
     }
   })
 }

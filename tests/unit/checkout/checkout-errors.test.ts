@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   CheckoutError,
+  checkoutErrorForSalesState,
   checkoutErrorMessage,
   describeCheckoutError,
   isMissingStripeResource,
   toCheckoutError,
   type CheckoutErrorCode,
 } from '@/lib/checkout/errors'
+import { ticketSalesState } from '@/lib/ticket-sales'
 
 describe('checkout errors', () => {
   it.each([
-    'show_not_found', 'show_not_published', 'show_past', 'sold_out', 'price_missing',
-    'club_not_payable', 'stripe_config', 'stripe_unavailable', 'unknown',
+    'show_not_found', 'show_not_published', 'show_past', 'sold_out', 'sales_closed', 'sales_not_open',
+    'price_missing', 'club_not_payable', 'stripe_config', 'stripe_unavailable', 'unknown',
   ] satisfies CheckoutErrorCode[])('has safe user copy for %s', (code) => {
     expect(checkoutErrorMessage(code)).toBeTruthy()
     expect(checkoutErrorMessage(code)).not.toMatch(/secret|stack|undefined/i)
@@ -20,8 +22,25 @@ describe('checkout errors', () => {
   it.each([
     ['price_missing', true], ['club_not_payable', true], ['stripe_config', true], ['unknown', true],
     ['sold_out', false], ['show_past', false], ['stripe_unavailable', false],
+    ['sales_closed', false], ['sales_not_open', false],
   ] as const)('classifies %s operator fault as %s', (code, expected) => {
     expect(new CheckoutError(code).isOperatorFault).toBe(expected)
+  })
+
+  it('tells the buyer when sales open', () => {
+    const error = new CheckoutError('sales_not_open', { openDate: '2026-09-17' })
+    expect(error.message).toBe('Tickets for this show go on sale on 17 September 2026.')
+    expect(error.openDate).toBe('2026-09-17')
+    expect(error.isOperatorFault).toBe(false)
+  })
+
+  it('falls back to generic copy when the open date is missing or invalid', () => {
+    expect(new CheckoutError('sales_not_open').message).toBe('Tickets for this show are not on sale yet.')
+    expect(checkoutErrorMessage('sales_not_open', { openDate: 'soon' })).toBe('Tickets for this show are not on sale yet.')
+  })
+
+  it('ignores an open date on codes that do not use one', () => {
+    expect(checkoutErrorMessage('sales_closed', { openDate: '2026-09-17' })).toBe('Ticket sales for this show are closed.')
   })
 
   it('preserves an existing checkout error', () => {
@@ -62,5 +81,47 @@ describe('checkout errors', () => {
     expect(describeCheckoutError(error, { showId: 'show-1', slug: undefined })).toBe(
       '[stripe_config] showId=show-1 req=req_123',
     )
+  })
+})
+
+describe('checkout errors for the ticket sales state', () => {
+  const show = (date: string, overrides: Record<string, unknown> = {}) => ({
+    status: 'published',
+    date,
+    ticket_sales_closed_at: null,
+    deleted_at: null,
+    ...overrides,
+  })
+  const now = new Date('2026-09-16T10:00:00Z')
+
+  it('lets an open show through', () => {
+    expect(checkoutErrorForSalesState(ticketSalesState(show('2026-12-14'), now))).toBeNull()
+  })
+
+  it('refuses a show before the 90-day window opens, with the open date', () => {
+    const error = checkoutErrorForSalesState(ticketSalesState(show('2026-12-15'), now), 'show=abc')
+    expect(error).toMatchObject({ code: 'sales_not_open', openDate: '2026-09-17' })
+    expect(error?.message).toBe('Tickets for this show go on sale on 17 September 2026.')
+    expect(error?.detail).toBe('show=abc opens_at=2026-09-16T22:00:00.000Z')
+  })
+
+  it('refuses a show whose sales were stopped', () => {
+    const state = ticketSalesState(show('2026-10-01', { ticket_sales_closed_at: '2026-09-15T08:00:00Z' }), now)
+    const error = checkoutErrorForSalesState(state)
+    expect(error).toMatchObject({ code: 'sales_closed', detail: 'closed_at=2026-09-15T08:00:00Z' })
+    expect(error?.isOperatorFault).toBe(false)
+  })
+
+  it('refuses a show that has ended', () => {
+    expect(checkoutErrorForSalesState(ticketSalesState(show('2026-09-15'), now))?.code).toBe('show_past')
+  })
+
+  it.each([
+    [{ status: 'draft' }],
+    [{ status: 'cancelled' }],
+    [{ deleted_at: '2026-09-10T10:00:00Z' }],
+  ])('treats an unpublished, cancelled or archived show as not published %#', (overrides) => {
+    const error = checkoutErrorForSalesState(ticketSalesState(show('2026-10-01', overrides), now), 'status=x')
+    expect(error).toMatchObject({ code: 'show_not_published', detail: 'status=x' })
   })
 })

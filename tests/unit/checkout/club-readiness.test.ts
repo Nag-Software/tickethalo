@@ -11,6 +11,7 @@ const readyClub: ClubReadiness = {
   stripe_account_id: 'acct_123',
   charges_enabled: true,
   payouts_enabled: true,
+  payout_schedule_interval: 'manual',
   legal_name: 'Comedy AS',
   org_number: '123456789',
   support_email: 'club@example.com',
@@ -24,6 +25,7 @@ describe('club checkout readiness', () => {
 
   it('rejects a missing club', () => {
     expect(isClubPayoutReady(null)).toBe(false)
+    expect(isClubPayoutReady(undefined)).toBe(false)
     expect(missingReadinessLabels(null)).toEqual(['Showet er ikke koblet til en klubb'])
   })
 
@@ -31,17 +33,54 @@ describe('club checkout readiness', () => {
     ['stripe_account_id', null, 'Stripe account created'],
     ['charges_enabled', false, 'Can accept payments'],
     ['payouts_enabled', false, 'Bank account for payouts'],
+    ['payout_schedule_interval', null, 'Payouts held until after the show'],
     ['legal_name', '  ', 'Legal name'],
     ['org_number', '', 'Company registration number'],
   ] as const)('reports missing %s', (key, value, label) => {
     const club = { ...readyClub, [key]: value }
     expect(isClubPayoutReady(club)).toBe(false)
-    expect(missingReadinessLabels(club)).toContain(label)
+    expect(missingReadinessLabels(club)).toEqual([label])
+  })
+
+  it.each(['daily', 'weekly', 'monthly', 'Manual', ''])(
+    'is not ready while the payout schedule is %j',
+    (interval) => {
+      const club = { ...readyClub, payout_schedule_interval: interval }
+      expect(isClubPayoutReady(club)).toBe(false)
+      expect(missingReadinessLabels(club)).toEqual(['Payouts held until after the show'])
+    },
+  )
+
+  it('treats an unchecked payout schedule as not ready, even when Stripe is otherwise done', () => {
+    const club = { ...readyClub, payout_schedule_interval: null }
+    const schedule = describeClubReadiness(club).find((item) => item.key === 'payout_schedule')
+    expect(schedule).toEqual({ key: 'payout_schedule', label: 'Payouts held until after the show', done: false })
+  })
+
+  it('lists every missing item for a club that has not started', () => {
+    const club: ClubReadiness = {
+      stripe_account_id: null,
+      charges_enabled: false,
+      payouts_enabled: false,
+      payout_schedule_interval: null,
+      legal_name: null,
+      org_number: null,
+      support_email: null,
+    }
+    expect(isClubPayoutReady(club)).toBe(false)
+    expect(missingReadinessLabels(club)).toEqual([
+      'Stripe account created',
+      'Can accept payments',
+      'Bank account for payouts',
+      'Payouts held until after the show',
+      'Legal name',
+      'Company registration number',
+    ])
   })
 
   it('returns readiness items in onboarding order', () => {
     expect(describeClubReadiness(readyClub).map((item) => item.key)).toEqual([
-      'stripe_account', 'charges', 'payouts', 'legal_name', 'org_number',
+      'stripe_account', 'charges', 'payouts', 'payout_schedule', 'legal_name', 'org_number',
     ])
   })
 

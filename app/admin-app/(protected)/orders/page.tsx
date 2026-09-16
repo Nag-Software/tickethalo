@@ -3,7 +3,9 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { getClubAccess } from '@/lib/club-auth'
 import { CircleHelp, CreditCard } from 'lucide-react'
 import { refundOrderAction } from '@/lib/actions/refund'
+import { isAwaitingRefund } from '@/lib/refunds'
 import { RefundOrderButton } from '@/components/admin/refund-order-button'
+import type { OrderCancellationReason } from '@/types/database'
 
 type PaymentMethodInfo = {
   key: 'vipps' | 'klarna' | 'card' | 'unknown'
@@ -29,6 +31,11 @@ const statusLabels: Record<string, string> = {
   failed: 'Failed',
   refunded: 'Refunded',
   cancelled: 'Cancelled',
+}
+
+const cancellationLabels: Record<OrderCancellationReason, string> = {
+  sold_out: 'Sold out — no ticket issued',
+  invalid_show: 'Show not on sale — no ticket issued',
 }
 
 /**
@@ -85,30 +92,30 @@ export default async function OrdersPage() {
   const db = createAdminClient()
   const clubAccess = await getClubAccess()
 
-  // Scope to club's shows
-  let showIds: string[] = []
-  if (clubAccess.clubIds.length > 0) {
-    const { data: clubShows } = await db
-      .from('shows')
-      .select('id')
-      .in('club_id', clubAccess.clubIds)
-    showIds = (clubShows ?? []).map((s) => s.id)
-  }
-
-  const { data: orders } = showIds.length
+  // Ordren eier klubbtilknytningen selv. Avgrenset via showene forsvant
+  // ordrer på arkiverte show og ordrer uten show (betalt for et show som ikke
+  // fantes) — nettopp de som må refunderes. `assertOrderAccess` avgrenser på
+  // samme måte.
+  const { data: orders, error: ordersError } = clubAccess.clubIds.length
     ? await db
         .from('orders')
-        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, created_at, payment_method_type, platform_fee_amount, club_net_amount')
-        .in('show_id', showIds)
+        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, created_at, payment_method_type, platform_fee_amount, club_net_amount, refunded_amount, refunded_at, stripe_payment_intent_id, cancellation_reason')
+        .in('club_id', clubAccess.clubIds)
         .order('created_at', { ascending: false })
         .limit(100)
-    : { data: [] }
+    : { data: [], error: null }
+
+  // En tom liste ville sett ut som «ingen salg» — og skjult ordrer som venter
+  // på refusjon.
+  if (ordersError) throw new Error(`Could not load orders: ${ordersError.message}`)
 
   const orderShowIds = [...new Set((orders ?? []).filter(o => o.show_id).map(o => o.show_id as string))]
   const orderIds = (orders ?? []).map((order) => order.id)
+  // Uten filter på `deleted_at`: et arkivert show skal fortsatt ha et navn i
+  // ordrelisten.
   const { data: showRows } = orderShowIds.length
-    ? await db.from('shows').select('id, title').in('id', orderShowIds)
-    : { data: [] as Array<{ id: string; title: string }> }
+    ? await db.from('shows').select('id, title, deleted_at').in('id', orderShowIds)
+    : { data: [] as Array<{ id: string; title: string; deleted_at: string | null }> }
   const { data: ticketRows } = orderIds.length
     ? await db.from('tickets').select('order_id, status').in('order_id', orderIds)
     : { data: [] as Array<{ order_id: string; status: string }> }
@@ -143,6 +150,8 @@ export default async function OrdersPage() {
             <tbody>
               {(orders ?? []).map((o) => {
                 const show = o.show_id ? showMap[o.show_id] : null
+                const awaitingRefund = isAwaitingRefund(o)
+                const partiallyRefunded = o.status === 'paid' && (o.refunded_amount ?? 0) > 0
                 const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }
                 const isCheckedIn = ticketSummary.total > 0 && ticketSummary.checkedIn === ticketSummary.total
                 const paymentMethod = resolvePaymentMethod(o.payment_method_type)
@@ -161,7 +170,16 @@ export default async function OrdersPage() {
                       <div className="font-medium">{o.buyer_name ?? '—'}</div>
                       <div className="text-xs text-muted-foreground">{o.buyer_email}</div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{show?.title ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {show ? (
+                        <>
+                          <div>{show.title}</div>
+                          {show.deleted_at && <div className="text-xs">Deleted</div>}
+                        </>
+                      ) : (
+                        'Deleted show'
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{money(o.amount_total)}</div>
                       <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} pcs</div>
@@ -176,13 +194,34 @@ export default async function OrdersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[o.status] ?? 'bg-zinc-100 text-zinc-600'}`}>
-                          {statusLabels[o.status] ?? o.status}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isCheckedIn ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'}`}>
-                          {isCheckedIn ? 'Checked in' : 'Not checked in'}
-                        </span>
+                        {awaitingRefund ? (
+                          // Betalt hos Stripe, men ingen billett. Refunderes
+                          // automatisk; knappen til høyre er for når det ikke
+                          // har skjedd.
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                            Refund pending
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[o.status] ?? 'bg-zinc-100 text-zinc-600'}`}>
+                            {statusLabels[o.status] ?? o.status}
+                          </span>
+                        )}
+                        {partiallyRefunded && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                            Partially refunded {money(o.refunded_amount)}
+                          </span>
+                        )}
+                        {ticketSummary.total > 0 && (
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isCheckedIn ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                            {isCheckedIn ? 'Checked in' : 'Not checked in'}
+                          </span>
+                        )}
                       </div>
+                      {o.cancellation_reason && o.status !== 'paid' && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {cancellationLabels[o.cancellation_reason] ?? 'No ticket issued'}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <PaymentMethodBadge method={paymentMethod} />
@@ -192,11 +231,14 @@ export default async function OrdersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">
-                        {o.status === 'paid' ? (
+                        {o.status === 'paid' || awaitingRefund ? (
                           <RefundOrderButton
                             action={refundOrderAction}
                             orderId={o.id}
-                            amountLabel={money(o.amount_total)}
+                            // Stripe refunderer det som gjenstår. Etter en
+                            // delrefusjon er det mindre enn ordrebeløpet.
+                            amountLabel={money(Math.max((o.amount_total ?? 0) - (o.refunded_amount ?? 0), 0))}
+                            awaitingRefund={awaitingRefund}
                           />
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>

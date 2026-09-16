@@ -40,7 +40,8 @@ export default async function NewShowPage({
 
   if (from) {
     const db = createAdminClient()
-    let templateQuery = db.from('shows').select('*').eq('id', from)
+    // Et arkivert show er slettet for bookeren og kan ikke brukes som mal.
+    let templateQuery = db.from('shows').select('*').eq('id', from).is('deleted_at', null)
 
     if (clubAccess.clubIds.length === 0) {
       templateQuery = templateQuery.eq('id', '00000000-0000-0000-0000-000000000000')
@@ -114,6 +115,7 @@ export default async function NewShowPage({
   let showsQuery = db
     .from('shows')
     .select('id, title, date, start_time, venue_address, venue_name, poster_url')
+    .is('deleted_at', null)
     .order('date', { ascending: false })
     .limit(5)
 

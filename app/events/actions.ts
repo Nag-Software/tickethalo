@@ -6,11 +6,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import {
+  type CheckoutError,
   type CheckoutErrorCode,
+  checkoutErrorForSalesState,
   checkoutErrorMessage,
   describeCheckoutError,
   toCheckoutError,
 } from '@/lib/checkout/errors'
+import { ticketSalesState } from '@/lib/ticket-sales'
 
 export type CheckoutActionResult = {
   error: { code: CheckoutErrorCode; message: string }
@@ -40,9 +43,22 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
 
   // Check for external ticket URL — if set, redirect directly
   const db = createAdminClient()
-  const { data: show, error: showError } = await db.from('shows').select('ticket_url').eq('id', showId).single()
+  const { data: show, error: showError } = await db
+    .from('shows')
+    .select('ticket_url, status, date, ticket_sales_closed_at, deleted_at')
+    .eq('id', showId)
+    .single()
   if (showError || !show) return failure('show_not_found', showError?.message, { showId, slug })
-  if (show.ticket_url) redirect(show.ticket_url)
+
+  if (show.ticket_url) {
+    // En ekstern billettside går utenom `createCheckoutSession`, og dermed
+    // utenom salgsreglene. Uten sjekken her ville et stengt, passert eller
+    // arkivert show fortsatt sendt kjøpere videre — og knappen på siden sier
+    // noe annet enn det som skjer når man trykker.
+    const salesError = checkoutErrorForSalesState(ticketSalesState(show), `status=${show.status} date=${show.date}`)
+    if (salesError) return checkoutFailure(salesError, { showId, slug })
+    redirect(show.ticket_url)
+  }
 
   let checkoutUrl: string
   try {
@@ -52,15 +68,26 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
     // Next redacts messages from thrown errors in production, so expected
     // errors are returned as values. The cause only exists here — log it before
     // it is gone, so the Stripe code never has to be guessed from a screenshot.
-    const checkoutError = toCheckoutError(error)
-    const line = `[Checkout] ${describeCheckoutError(checkoutError, { showId, slug })}`
-    if (checkoutError.isOperatorFault) console.error(line)
-    else console.warn(line)
-
-    return { error: { code: checkoutError.code, message: checkoutError.message } }
+    return checkoutFailure(toCheckoutError(error), { showId, slug })
   }
 
   redirect(checkoutUrl)
+}
+
+/**
+ * Every `CheckoutError` reaches the buyer the same way: as a returned value the
+ * form shows as a toast. Stopped sales and sales that have not opened are the
+ * buyer's news, not ours, so they are logged as warnings.
+ */
+function checkoutFailure(
+  checkoutError: CheckoutError,
+  context: Record<string, string | undefined>,
+): CheckoutActionResult {
+  const line = `[Checkout] ${describeCheckoutError(checkoutError, context)}`
+  if (checkoutError.isOperatorFault) console.error(line)
+  else console.warn(line)
+
+  return { error: { code: checkoutError.code, message: checkoutError.message } }
 }
 
 function failure(code: CheckoutErrorCode, detail: string | undefined, context: Record<string, string | undefined>) {

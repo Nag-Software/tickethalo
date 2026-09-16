@@ -30,9 +30,20 @@ export type SubmissionStatus =
   | 'filled_by_other'
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled'
 export type TicketStatus = 'valid' | 'used' | 'refunded' | 'cancelled'
-export type ClubPayoutStatus = 'pending' | 'paid' | 'failed' | 'cancelled'
-/** `capped` = Stripe-gebyret oversteg provisjonen. Da er det prisen som må endres. */
-export type FeeTrueupStatus = 'pending' | 'done' | 'not_needed' | 'capped' | 'failed'
+/**
+ * `creating` = reservert i databasen, Stripe har ikke bekreftet. Resten speiler
+ * Stripe-utbetalingen. En utbetaling kan gå fra `paid` til `failed`.
+ * Se migrasjon 047.
+ */
+export type ClubPayoutStatus = 'creating' | 'pending' | 'in_transit' | 'paid' | 'failed' | 'cancelled'
+export type ClubPayoutOrigin = 'tickethalo' | 'stripe'
+/**
+ * Stripe-gebyret belastes plattformkontoen og bokføres fra Stripes gebyrrapport.
+ * `pending` = rapporten er ikke hentet ennå (~96 t etter betaling).
+ */
+export type StripeFeeStatus = 'pending' | 'reconciled' | 'not_applicable'
+/** Hvorfor en betalt sesjon ikke ga billetter. Ordren står i refusjonskøen. */
+export type OrderCancellationReason = 'sold_out' | 'invalid_show' | 'sales_closed'
 export type EmailLogStatus = 'pending' | 'sent' | 'failed'
 export type MarketingTaskKey =
   | 'publish_event_page'
@@ -103,8 +114,12 @@ export type Club = {
   payout_hold_days: number
   /** Komikernes samlede andel av klubbens netto på et show. 9000 = 90 %. */
   artist_share_bps: number
-  /** Tickethalo dekker Stripe-gebyret av sin provisjon. */
-  absorb_stripe_fee: boolean
+  /**
+   * Utbetalingsplanen fra Stripe Balance Settings. Må være `manual` før
+   * klubben kan selge. Null = ikke sjekket ennå. Se migrasjon 047.
+   */
+  payout_schedule_interval: string | null
+  payout_schedule_checked_at: string | null
 
   created_at: string
   updated_at: string
@@ -292,6 +307,12 @@ export type Show = {
   is_template: boolean
   published_at: string | null
   club_id: string | null
+  /** Satt = bookeren har stengt billettsalget. Showet er fortsatt synlig. */
+  ticket_sales_closed_at: string | null
+  ticket_sales_closed_by: string | null
+  /** Satt = slettet, men arkivert fordi showet har salgshistorikk. Se `delete_show`. */
+  deleted_at: string | null
+  deleted_by: string | null
   created_at: string
   updated_at: string
 }
@@ -471,11 +492,25 @@ export type Order = {
   stripe_application_fee_id: string | null
   gross_amount: number | null
   platform_fee_amount: number | null
-  stripe_fee_amount: number | null
+  /** gross − provisjon. Stripe-gebyret betales av Tickethalo og trekkes ikke herfra. */
   club_net_amount: number | null
-  fee_trueup_amount: number | null
-  fee_trueup_status: FeeTrueupStatus
+  /** Stripes behandlingsgebyr inkl. mva, belastet plattformkontoen. */
+  stripe_fee_amount: number | null
+  stripe_fee_tax_amount: number | null
+  stripe_fee_status: StripeFeeStatus
+  stripe_fee_reconciled_at: string | null
   payment_method_type: string | null
+  /** Kumulativt refundert beløp. `status` blir `refunded` først ved full refusjon. */
+  refunded_amount: number
+  application_fee_refunded_amount: number
+  cancellation_reason: OrderCancellationReason | null
+  /** Stripe-disputtens status. Åpen disputt = kan ikke refunderes, blokkerer sletting. */
+  dispute_status: string | null
+  disputed_at: string | null
+  /** Refusjonsforsøk som har feilet eller blitt reversert av Stripe. */
+  refund_attempts: number
+  last_refund_attempt_at: string | null
+  last_refund_error: string | null
   refunded_at: string | null
   refund_reason: string | null
 
@@ -492,10 +527,75 @@ export type ClubPayout = {
   period_start: string | null
   period_end: string | null
   status: ClubPayoutStatus
+  origin: ClubPayoutOrigin
+  stripe_account_id: string | null
+  arrival_date: string | null
+  failure_code: string | null
   failure_reason: string | null
+  failed_at: string | null
+  cancelled_at: string | null
+  status_synced_at: string | null
   created_at: string
   updated_at: string
   paid_at: string | null
+}
+
+/** Speil av Tickethalos egne Stripe-balansetransaksjoner. Se migrasjon 047. */
+export type PlatformBalanceTransaction = {
+  id: string
+  /** Testdata og ekte penger holdes adskilt. */
+  livemode: boolean
+  type: string
+  reporting_category: string
+  amount: number
+  fee: number
+  net: number
+  currency: string
+  source_id: string | null
+  description: string | null
+  connected_account_id: string | null
+  charge_id: string | null
+  created_at_stripe: string
+  available_on: string | null
+  synced_at: string
+}
+
+/** Én gebyrlinje fra Stripes Fees report. */
+export type StripeFeeEntry = {
+  id: string
+  livemode: boolean
+  row_key: string
+  report_run_id: string
+  balance_transaction_id: string | null
+  fee_transaction_id: string | null
+  incurred_by: string | null
+  incurred_by_type: string | null
+  incurred_at: string | null
+  order_id: string | null
+  amount: number
+  tax_amount: number
+  currency: string
+  product: string | null
+  feature_name: string | null
+  fee_description: string | null
+  created_at: string
+}
+
+export type StripeFeeReportRunStatus = 'pending' | 'processed' | 'failed'
+
+export type StripeFeeReportRun = {
+  id: string
+  livemode: boolean
+  report_run_id: string
+  report_type: string
+  interval_start: string
+  interval_end: string
+  status: StripeFeeReportRunStatus
+  error: string | null
+  row_count: number | null
+  processed_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type ClubSettlement = {
@@ -681,6 +781,10 @@ export type Database = {
           is_template?: boolean
           published_at?: string | null
           club_id?: string | null
+          ticket_sales_closed_at?: string | null
+          ticket_sales_closed_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -873,10 +977,19 @@ export type Database = {
           gross_amount?: number | null
           platform_fee_amount?: number | null
           stripe_fee_amount?: number | null
+          stripe_fee_tax_amount?: number | null
+          stripe_fee_status?: StripeFeeStatus
+          stripe_fee_reconciled_at?: string | null
           club_net_amount?: number | null
-          fee_trueup_amount?: number | null
-          fee_trueup_status?: FeeTrueupStatus
           payment_method_type?: string | null
+          refunded_amount?: number
+          application_fee_refunded_amount?: number
+          cancellation_reason?: OrderCancellationReason | null
+          dispute_status?: string | null
+          disputed_at?: string | null
+          refund_attempts?: number
+          last_refund_attempt_at?: string | null
+          last_refund_error?: string | null
           refunded_at?: string | null
           refund_reason?: string | null
           created_at?: string
@@ -988,7 +1101,8 @@ export type Database = {
           commission_vat_bps?: number
           payout_hold_days?: number
           artist_share_bps?: number
-          absorb_stripe_fee?: boolean
+          payout_schedule_interval?: string | null
+          payout_schedule_checked_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1020,12 +1134,76 @@ export type Database = {
           period_start?: string | null
           period_end?: string | null
           status?: ClubPayoutStatus
+          origin?: ClubPayoutOrigin
+          stripe_account_id?: string | null
+          arrival_date?: string | null
+          failure_code?: string | null
           failure_reason?: string | null
+          failed_at?: string | null
+          cancelled_at?: string | null
+          status_synced_at?: string | null
           created_at?: string
           updated_at?: string
           paid_at?: string | null
         }
         Update: Partial<ClubPayout>
+        Relationships: []
+      }
+      platform_balance_transactions: {
+        Row: PlatformBalanceTransaction
+        Insert: Omit<PlatformBalanceTransaction, 'synced_at' | 'fee' | 'source_id' | 'description' | 'connected_account_id' | 'charge_id' | 'available_on'> & {
+          fee?: number
+          source_id?: string | null
+          description?: string | null
+          connected_account_id?: string | null
+          charge_id?: string | null
+          available_on?: string | null
+          synced_at?: string
+        }
+        Update: Partial<PlatformBalanceTransaction>
+        Relationships: []
+      }
+      stripe_fee_entries: {
+        Row: StripeFeeEntry
+        Insert: {
+          id?: string
+          livemode: boolean
+          row_key: string
+          report_run_id: string
+          balance_transaction_id?: string | null
+          fee_transaction_id?: string | null
+          incurred_by?: string | null
+          incurred_by_type?: string | null
+          incurred_at?: string | null
+          order_id?: string | null
+          amount: number
+          tax_amount?: number
+          currency: string
+          product?: string | null
+          feature_name?: string | null
+          fee_description?: string | null
+          created_at?: string
+        }
+        Update: Partial<StripeFeeEntry>
+        Relationships: []
+      }
+      stripe_fee_report_runs: {
+        Row: StripeFeeReportRun
+        Insert: {
+          id?: string
+          livemode: boolean
+          report_run_id: string
+          report_type: string
+          interval_start: string
+          interval_end: string
+          status?: StripeFeeReportRunStatus
+          error?: string | null
+          row_count?: number | null
+          processed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<StripeFeeReportRun>
         Relationships: []
       }
       club_settlements: {
@@ -1144,6 +1322,20 @@ export type Database = {
         }
         Relationships: []
       }
+      /** Tickethalos resultat per måned fra plattformkontoen. Se migrasjon 047. */
+      platform_ledger_monthly: {
+        Row: {
+          month: string
+          livemode: boolean
+          currency: string
+          commission_amount: number
+          commission_refunded_amount: number
+          stripe_fee_amount: number
+          other_amount: number
+          margin_amount: number
+        }
+        Relationships: []
+      }
     }
     Functions: {
       accept_booking_offer: {
@@ -1180,11 +1372,63 @@ export type Database = {
           p_ticket_names?: string[] | null
         }
         Returns: {
-          result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show'
+          result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show' | 'sales_closed'
           order_id: string
           ticket_code: string | null
           ticket_codes: string[] | null
           duplicate: boolean
+        }[]
+      }
+      /** «Klar for utbetaling» fra hovedboken. Se migrasjon 047. */
+      club_releasable_amount: {
+        Args: { p_club_id: string }
+        Returns: {
+          earned_amount: number
+          committed_amount: number
+          releasable_amount: number
+          cutoff_date: string | null
+        }[]
+      }
+      /** Atomisk reservasjon av neste utbetaling. Tom liste = ingenting å utbetale. */
+      reserve_club_payout: {
+        Args: {
+          p_club_id: string
+          p_available_amount: number
+          p_currency: string
+          p_stripe_account_id: string
+        }
+        Returns: {
+          payout_id: string
+          amount: number
+          resumed: boolean
+          created_at: string
+          releasable_amount: number | null
+        }[]
+      }
+      show_sales_summary: {
+        Args: { p_show_id: string }
+        Returns: {
+          paid_orders: number
+          paid_amount: number
+          valid_tickets: number
+          used_tickets: number
+          refunded_orders: number
+          awaiting_refund_orders: number
+          awaiting_refund_amount: number
+          total_orders: number
+          fee_invoices: number
+          open_dispute_orders: number
+        }[]
+      }
+      /** Den eneste veien et show slettes. Se migrasjon 047. */
+      delete_show: {
+        Args: { p_show_id: string; p_actor_id?: string | null }
+        Returns: {
+          result: 'blocked' | 'archived' | 'deleted' | 'not_found'
+          paid_orders: number
+          valid_tickets: number
+          used_tickets: number
+          awaiting_refund_orders: number
         }[]
       }
     }

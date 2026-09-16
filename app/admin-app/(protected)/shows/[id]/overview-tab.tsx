@@ -5,6 +5,8 @@ import { Separator } from '@/components/ui/separator'
 import { ShowDetailsForm } from './show-details-form'
 import type { LineupArtist } from '@/components/admin/interactive-lineup'
 import type { BookingSpot } from '@/lib/booking-spots'
+import { ticketSalesNote, toTicketSalesStateDto } from '@/lib/show-sales-shared'
+import { ticketSalesState } from '@/lib/ticket-sales'
 import type { ShowStatus } from '@/types/database'
 
 type OverviewShow = {
@@ -21,6 +23,8 @@ type OverviewShow = {
   currency: string
   status: ShowStatus
   poster_url: string | null
+  ticket_sales_closed_at: string | null
+  deleted_at: string | null
 }
 
 /**
@@ -45,6 +49,10 @@ export function OverviewTab({
   allSlotsFilled: boolean
   updateShowDetailsAction: (formData: FormData) => Promise<{ error?: string } | void>
 }) {
+  // Solgt-tallet alene sier ikke om salget står stille fordi det ikke har
+  // åpnet ennå, eller fordi bookeren har stengt det.
+  const salesNote = ticketSalesNote(toTicketSalesStateDto(ticketSalesState(show)))
+
   return (
     <div className="grid items-start gap-6 lg:grid-cols-2">
       <InteractiveBookingCard
@@ -58,6 +66,7 @@ export function OverviewTab({
           posterUrl: show.poster_url,
           capacity: show.capacity,
           soldTickets: ticketsSold,
+          ticketSalesNote: salesNote,
           spots,
         }}
       />

@@ -9,6 +9,7 @@ export default async function ScannerPickShowPage() {
     .from('shows')
     .select('id, title, date, venue_name, venue_address, status')
     .in('status', ['published', 'fullbooked', 'completed', 'booking'])
+    .is('deleted_at', null)
     .order('date', { ascending: false })
     .limit(50)
 

@@ -44,6 +44,17 @@ function resolveOutcome(
     }
   }
 
+  // Betalt, men ingen billett. Kom webhooken først, får denne siden
+  // `duplicate` — da er det ordren som vet hvorfor, via `cancellationReason`.
+  const noTicketReason =
+    completion?.result === 'sold_out' || completion?.result === 'invalid_show'
+      ? completion.result
+      : completion?.cancellationReason ?? null
+
+  if (noTicketReason) {
+    return noTicketOutcome(noTicketReason, completion?.refunded === true)
+  }
+
   switch (completion?.result) {
     case 'created':
       return completion.emailSent
@@ -54,6 +65,15 @@ function resolveOutcome(
             message: 'The payment went through, but the ticket could not be emailed automatically. Keep the ticket code below — it gets you in.',
           }
     case 'duplicate':
+      // En betalt ordre har alltid minst én billett. Uten koder, og uten at
+      // ordren kunne leses, vet vi ikke nok til å love at billetten er sendt.
+      if (!completion.ticketCode && !(completion.ticketCodes?.length ?? 0)) {
+        return {
+          tone: 'warning',
+          heading: 'We could not confirm your ticket',
+          message: `The payment was registered, but we could not confirm that a ticket was issued. Check your email in a few minutes. If no ticket arrives, contact us at ${SUPPORT_EMAIL} with the reference below.`,
+        }
+      }
       return {
         tone: 'success',
         heading: 'Thanks for your purchase',
@@ -64,12 +84,6 @@ function resolveOutcome(
         tone: 'warning',
         heading: 'The payment is not complete',
         message: 'We have not registered a payment yet. If it is approved, the ticket arrives by email automatically — you do not need to do anything else.',
-      }
-    case 'sold_out':
-      return {
-        tone: 'error',
-        heading: 'The show sold out',
-        message: `The last ticket was taken before your purchase completed, so we could not issue you one. Contact us at ${SUPPORT_EMAIL} and we will refund you.`,
       }
     case 'failed':
     case 'missing_show':
@@ -84,6 +98,32 @@ function resolveOutcome(
         heading: 'Thanks for your purchase',
         message: 'Your ticket is on its way by email.',
       }
+  }
+}
+
+/**
+ * The buyer paid, but no ticket could be issued. The payment is refunded
+ * automatically (see `finalizeCheckoutSession` and the refund queue), so the
+ * copy says so instead of asking the buyer to chase us for their money — and
+ * never suggests a ticket is on its way.
+ */
+function noTicketOutcome(reason: 'sold_out' | 'invalid_show', refunded: boolean): Outcome {
+  const refund = refunded
+    ? 'Your payment has been refunded automatically. It can take a few business days before it shows up in your account.'
+    : 'Your payment will be refunded automatically within a few days — you do not need to do anything.'
+
+  if (reason === 'sold_out') {
+    return {
+      tone: 'error',
+      heading: 'The show sold out',
+      message: `The last tickets were taken before your purchase completed, so we could not issue you one. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
+    }
+  }
+
+  return {
+    tone: 'error',
+    heading: 'This show is no longer on sale',
+    message: `The show was cancelled or taken off sale before your purchase completed, so no ticket was issued. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
   }
 }
 

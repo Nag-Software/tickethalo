@@ -2,6 +2,8 @@ import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
+import { refundOrder } from '@/lib/refunds'
+import type { OrderCancellationReason } from '@/types/database'
 
 type FinalizeCheckoutResult = {
   result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show' | 'missing_show' | 'unpaid' | 'failed'
@@ -13,6 +15,14 @@ type FinalizeCheckoutResult = {
   emailError?: string
   /** Settes når betalingen er bokført, slik at gebyr-oppgjøret kan kjøres. */
   chargeId?: string | null
+  /**
+   * Betalingen ga ingen billett (utsolgt eller ugyldig show). Settes også på
+   * `duplicate`, slik at suksessiden ikke sier «billetten er sendt» når
+   * webhooken kom først og ordren ble kansellert.
+   */
+  cancellationReason?: OrderCancellationReason | null
+  /** Kjøperen har fått pengene tilbake. Bare satt når ingen billett ble utstedt. */
+  refunded?: boolean
 }
 
 /**
@@ -80,6 +90,55 @@ function buildTicketVerificationUrl(origin: string, ticketCode: string) {
   return `${origin.replace(/\/$/, '')}/admin-app/tickets/verify?code=${encodeURIComponent(ticketCode)}`
 }
 
+/**
+ * Kjøperen har betalt, men fikk ingen billett. Pengene sendes tilbake med én
+ * gang i stedet for at noen må oppdage ordren og refundere manuelt.
+ *
+ * Feiler det, står ordren i refusjonskøen (`processRefundQueue`) og prøves
+ * igjen — derfor logges feilen i stedet for å kastes. En kastet feil ville
+ * gitt webhooken 500 og suksessiden en feilside for en ordre som allerede er
+ * bokført.
+ */
+async function refundOrderWithoutTicket(orderId: string, sessionId: string): Promise<boolean> {
+  try {
+    const result = await refundOrder(orderId, 'no_ticket_issued')
+    if (result.ok) return true
+
+    console.error(
+      `[Checkout] Automatic refund of order ${orderId} (session ${sessionId}) failed: ${result.error} — the refund queue will retry`,
+    )
+    return false
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(
+      `[Checkout] Automatic refund of order ${orderId} (session ${sessionId}) failed: ${message} — the refund queue will retry`,
+    )
+    return false
+  }
+}
+
+async function readOrderWithoutTicket(
+  orderId: string | null,
+): Promise<{ cancellationReason: OrderCancellationReason | null; refunded: boolean }> {
+  if (!orderId) return { cancellationReason: null, refunded: false }
+
+  const { data: order, error } = await createAdminClient()
+    .from('orders')
+    .select('status, cancellation_reason, refunded_at')
+    .eq('id', orderId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn(`[Checkout] Could not read order ${orderId} without tickets: ${error.message}`)
+    return { cancellationReason: null, refunded: false }
+  }
+
+  return {
+    cancellationReason: order?.cancellation_reason ?? null,
+    refunded: order?.status === 'refunded' || Boolean(order?.refunded_at),
+  }
+}
+
 export async function finalizeCheckoutSession(
   session: Stripe.Checkout.Session,
   options?: { accountId?: string | null },
@@ -132,9 +191,28 @@ export async function finalizeCheckoutSession(
   }
 
   if (completion.result !== 'created') {
-    if (completion.result === 'sold_out') {
-      console.error('[Checkout] Checkout completed after sellout:', session.id)
+    let cancellationReason: OrderCancellationReason | null = null
+    let refunded: boolean | undefined
+
+    if (completion.result === 'sold_out' || completion.result === 'invalid_show') {
+      console.error(`[Checkout] Paid session ${session.id} got no ticket (${completion.result}) — refunding`)
+      cancellationReason = completion.result
+      refunded = completion.order_id
+        ? await refundOrderWithoutTicket(completion.order_id, session.id)
+        : false
+    } else if (
+      completion.result === 'duplicate' &&
+      !completion.ticket_code &&
+      !(completion.ticket_codes?.length ?? 0)
+    ) {
+      // Den andre av webhooken og suksessiden får `duplicate`. Uten billetter
+      // er ordren kansellert, og kjøperen må få vite det — ikke at billetten
+      // «allerede er sendt». Refusjonen er den førstes ansvar, og køens.
+      const state = await readOrderWithoutTicket(completion.order_id)
+      cancellationReason = state.cancellationReason
+      refunded = state.refunded
     }
+
     return {
       result: completion.result,
       orderId: completion.order_id,
@@ -142,6 +220,8 @@ export async function finalizeCheckoutSession(
       ticketCodes: completion.ticket_codes ?? [],
       emailSent: false,
       chargeId: charge.chargeId,
+      cancellationReason,
+      refunded,
     }
   }
 

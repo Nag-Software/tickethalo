@@ -18,8 +18,8 @@ import {
 } from '@/lib/stripe-connect'
 import { getClubArtistFees } from '@/lib/artist-fees'
 import { getFinanceSummary } from '@/lib/finances'
-import { releasableAmount } from '@/lib/payouts'
-import type { ArtistFeeInvoiceStatus } from '@/types/database'
+import { getReleasableAmount } from '@/lib/payouts'
+import type { ArtistFeeInvoiceStatus, ClubPayoutStatus } from '@/types/database'
 import {
   openClubDashboardAction,
   refreshClubStatusAction,
@@ -37,6 +37,19 @@ const FEE_STATUS: Record<ArtistFeeInvoiceStatus, string> = {
   approved: 'Approved',
   paid: 'Paid',
   rejected: 'On hold',
+}
+
+/**
+ * Utbetalingens status slik Stripe melder den. «Paid» vises først når banken
+ * har bekreftet — at Stripe godtok forespørselen betyr bare at den behandles.
+ */
+const PAYOUT_STATUS: Record<ClubPayoutStatus, string> = {
+  creating: 'Being created',
+  pending: 'Processing',
+  in_transit: 'On the way',
+  paid: 'Paid',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
 }
 
 /**
@@ -70,18 +83,18 @@ export default async function FinancesPage() {
     club.stripe_account_id && club.payouts_enabled
       ? getAccountBalance(club.stripe_account_id).catch(() => null)
       : Promise.resolve(null),
-    club.stripe_account_id
-      ? releasableAmount({
-        id: club.id,
-        name: club.name,
-        currency: club.currency,
-        stripe_account_id: club.stripe_account_id,
-        payout_hold_days: club.payout_hold_days,
-      }).catch(() => 0)
-      : Promise.resolve(0),
+    // Samme tall som utbetalingsjobben reserverer fra, så siden aldri lover
+    // mer enn jobben vil frigi. Feiler oppslaget, vises en strek framfor en
+    // null som ser ut som et svar.
+    getReleasableAmount(clubId)
+      .then((amount) => amount.releasable)
+      .catch((error: unknown) => {
+        console.error('[Finances] Could not compute releasable amount:', error)
+        return null
+      }),
     db
       .from('club_payouts')
-      .select('id, amount, currency, status, created_at, paid_at')
+      .select('id, amount, currency, status, created_at, paid_at, arrival_date, failure_reason, failed_at, cancelled_at')
       .eq('club_id', clubId)
       .order('created_at', { ascending: false })
       .limit(6),
@@ -142,7 +155,14 @@ export default async function FinancesPage() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <Stat label="Available in Stripe" value={money(balance?.available, balance?.currency)} />
-              <Stat label="In transit" value={money(balance?.pending, balance?.currency)} />
+              {/* Stripes ventende saldo: betalinger Stripe ikke har frigitt til
+                  saldoen ennå. Det er ikke utbetalinger på vei til banken —
+                  de står under Payouts. */}
+              <Stat
+                label="Pending in Stripe"
+                value={money(balance?.pending, balance?.currency)}
+                hint="Paid by customers, not yet available"
+              />
               <Stat
                 label="Ready for payout"
                 value={money(upcoming)}
@@ -430,16 +450,20 @@ export default async function FinancesPage() {
               {payouts?.length ? (
                 <ul className="flex flex-col divide-y">
                   {payouts.map((payout) => (
-                    <li key={payout.id} className="flex items-center justify-between gap-4 py-2.5 text-sm first:pt-0 last:pb-0">
-                      <span className="font-medium tabular-nums">{money(payout.amount, payout.currency)}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {payout.status === 'paid' ? 'Paid' : payout.status === 'failed' ? 'Failed' : 'On the way'}
-                        {' · '}
-                        {new Date(payout.paid_at ?? payout.created_at).toLocaleDateString('en-GB', {
-                          day: 'numeric',
-                          month: 'short',
-                        })}
-                      </span>
+                    <li key={payout.id} className="flex flex-col gap-0.5 py-2.5 text-sm first:pt-0 last:pb-0">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="font-medium tabular-nums">{money(payout.amount, payout.currency)}</span>
+                        <span className="text-right text-xs text-muted-foreground">
+                          {PAYOUT_STATUS[payout.status]}
+                          {' · '}
+                          {payoutDateLabel(payout)}
+                        </span>
+                      </div>
+                      {/* Stripes egen forklaring. Som regel bankopplysningene —
+                          klubben må rette dem i Stripe før neste forsøk. */}
+                      {payout.status === 'failed' && payout.failure_reason && (
+                        <p className="text-xs text-destructive">{payout.failure_reason}</p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -486,6 +510,42 @@ export default async function FinancesPage() {
       </div>
     </div>
   )
+}
+
+type PayoutListItem = {
+  status: ClubPayoutStatus
+  created_at: string
+  paid_at: string | null
+  arrival_date: string | null
+  failed_at: string | null
+  cancelled_at: string | null
+}
+
+/**
+ * Datoen som betyr noe for statusen: når pengene kom fram, når de ventes, eller
+ * når utbetalingen stoppet.
+ */
+function payoutDateLabel(payout: PayoutListItem) {
+  const format = (value: string, timeZone?: string) =>
+    new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone })
+
+  // `arrival_date` er en ren dato (midnatt UTC). Formatert i serverens sone
+  // kunne den havnet på dagen før.
+  const arrival = payout.arrival_date ? format(payout.arrival_date, 'UTC') : null
+
+  switch (payout.status) {
+    case 'paid':
+      return payout.paid_at ? format(payout.paid_at) : arrival ?? format(payout.created_at)
+    case 'in_transit':
+    case 'pending':
+      return arrival ? `expected ${arrival}` : format(payout.created_at)
+    case 'failed':
+      return format(payout.failed_at ?? payout.created_at)
+    case 'cancelled':
+      return format(payout.cancelled_at ?? payout.created_at)
+    default:
+      return format(payout.created_at)
+  }
 }
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

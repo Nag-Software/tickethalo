@@ -15,7 +15,7 @@ export default async function AvailableDatesPage() {
   const today = new Date().toISOString().slice(0, 10)
 
   const [{ data: shows }, { data: availability }] = await Promise.all([
-    db.from('shows').select('id, title, date, venue_name, status').gte('date', today).in('status', ['booking', 'published']).order('date'),
+    db.from('shows').select('id, title, date, venue_name, status').gte('date', today).in('status', ['booking', 'published']).is('deleted_at', null).order('date'),
     db.from('artist_availability').select('*').eq('artist_id', artist.id).gte('available_date', today).order('available_date'),
   ])
 

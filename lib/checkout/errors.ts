@@ -6,11 +6,16 @@
  * (Stripe errors are recognised by shape), so client code can use it too.
  */
 
+import type { TicketSalesState } from '@/lib/ticket-sales'
+import { formatSalesOpenDate } from '@/lib/ticket-sales-display'
+
 export type CheckoutErrorCode =
   | 'show_not_found'
   | 'show_not_published'
   | 'show_past'
   | 'sold_out'
+  | 'sales_closed'
+  | 'sales_not_open'
   | 'price_missing'
   | 'club_not_payable'
   | 'stripe_config'
@@ -22,6 +27,9 @@ const MESSAGES: Record<CheckoutErrorCode, string> = {
   show_not_published: 'This show is not on sale yet.',
   show_past: 'This show has already happened, so tickets can no longer be bought.',
   sold_out: 'This show is sold out.',
+  sales_closed: 'Ticket sales for this show are closed.',
+  // Reserveteksten når datoen mangler — se `checkoutErrorMessage`.
+  sales_not_open: 'Tickets for this show are not on sale yet.',
   price_missing: 'The ticket price is missing for this show. We have been notified — please try again later.',
   club_not_payable: 'Tickets for this show are not on sale yet. We have been notified — please try again later.',
   stripe_config: 'Payments are not set up correctly for this show. We have been notified — please try again later.',
@@ -41,18 +49,31 @@ const OPERATOR_FAULT = new Set<CheckoutErrorCode>([
   'club_not_payable',
   'stripe_config',
   'unknown',
+  // `sales_closed` og `sales_not_open` hører ikke hjemme her: showet er satt
+  // opp riktig, og kjøperen får en melding hun kan handle på.
 ])
+
+/** Values some messages need. Everything here is safe to show the buyer. */
+export type CheckoutErrorParams = {
+  /** `YYYY-MM-DD` in Norwegian time — the day ticket sales open (`sales_not_open`). */
+  openDate?: string
+}
 
 export class CheckoutError extends Error {
   readonly code: CheckoutErrorCode
   /** Technical context for the log — never shown to the user. */
   readonly detail?: string
+  readonly openDate?: string
 
-  constructor(code: CheckoutErrorCode, options?: { detail?: string; cause?: unknown }) {
-    super(MESSAGES[code], options?.cause !== undefined ? { cause: options.cause } : undefined)
+  constructor(code: CheckoutErrorCode, options?: { detail?: string; cause?: unknown } & CheckoutErrorParams) {
+    super(
+      checkoutErrorMessage(code, { openDate: options?.openDate }),
+      options?.cause !== undefined ? { cause: options.cause } : undefined,
+    )
     this.name = 'CheckoutError'
     this.code = code
     this.detail = options?.detail
+    this.openDate = options?.openDate
   }
 
   get isOperatorFault() {
@@ -60,8 +81,47 @@ export class CheckoutError extends Error {
   }
 }
 
-export function checkoutErrorMessage(code: CheckoutErrorCode) {
+export function checkoutErrorMessage(code: CheckoutErrorCode, params: CheckoutErrorParams = {}) {
+  if (code === 'sales_not_open' && params.openDate) {
+    // Meldingen bygges i konstruktøren. En ugyldig dato skal gi den generelle
+    // teksten, ikke en ny feil midt i feilhåndteringen.
+    try {
+      return `Tickets for this show go on sale on ${formatSalesOpenDate(params.openDate)}.`
+    } catch {
+      return MESSAGES[code]
+    }
+  }
+
   return MESSAGES[code]
+}
+
+/**
+ * Salgsstatusen som checkout-feil, eller null når salget er åpent.
+ *
+ * Reglene bor i `ticketSalesState`; her bestemmes bare hva kjøperen får høre.
+ * Et arkivert eller kansellert show er «ikke publisert» for kjøperen — at det
+ * finnes salgshistorikk bak, er ikke noe å fortelle.
+ */
+export function checkoutErrorForSalesState(state: TicketSalesState, detail?: string): CheckoutError | null {
+  switch (state.kind) {
+    case 'open':
+      return null
+    case 'unavailable':
+      return new CheckoutError('show_not_published', { detail })
+    case 'ended':
+      return new CheckoutError('show_past', { detail })
+    case 'closed':
+      return new CheckoutError('sales_closed', { detail: joinDetail(detail, `closed_at=${state.closedAt}`) })
+    case 'not_yet_open':
+      return new CheckoutError('sales_not_open', {
+        detail: joinDetail(detail, `opens_at=${state.opensAt.toISOString()}`),
+        openDate: state.openDate,
+      })
+  }
+}
+
+function joinDetail(...parts: Array<string | undefined>) {
+  return parts.filter(Boolean).join(' ')
 }
 
 type StripeErrorShape = {

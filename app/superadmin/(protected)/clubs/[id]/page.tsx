@@ -56,11 +56,22 @@ export default async function ClubDetailPage({
     .eq('club_id', id)
     .order('created_at')
 
-  const { data: clubShows } = await db
-    .from('shows')
-    .select('id, title, date, status, capacity')
-    .eq('club_id', id)
-    .order('date', { ascending: false })
+  // Arkiverte show (slettet av bookeren, men med salgshistorikk) holdes utenfor
+  // tallene og lista. De har bare refunderte ordrer, så inntekt og solgte
+  // billetter blir de samme — men de telles for seg, så de ikke blir borte.
+  const [{ data: clubShows }, { count: archivedShows }] = await Promise.all([
+    db
+      .from('shows')
+      .select('id, title, date, status, capacity')
+      .eq('club_id', id)
+      .is('deleted_at', null)
+      .order('date', { ascending: false }),
+    db
+      .from('shows')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', id)
+      .not('deleted_at', 'is', null),
+  ])
 
   const shows = (clubShows ?? []).slice(0, 10)
   const showIds = (clubShows ?? []).map((show) => show.id)
@@ -134,7 +145,10 @@ export default async function ClubDetailPage({
           <div className="rounded-lg border bg-card p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium">Statusfordeling</h3>
-              <span className="text-xs text-muted-foreground">Alle shows i klubben</span>
+              <span className="text-xs text-muted-foreground">
+                Alle aktive shows i klubben
+                {(archivedShows ?? 0) > 0 && ` · ${archivedShows} arkivert`}
+              </span>
             </div>
             <div className="flex flex-wrap gap-2">
               {['draft', 'booking', 'fullbooked', 'published', 'completed', 'cancelled'].map((status) => {

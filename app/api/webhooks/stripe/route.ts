@@ -3,21 +3,58 @@ import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
-import { settleStripeFee } from '@/lib/stripe-fees'
+import { syncRefundFromCharge } from '@/lib/refunds'
+import { syncPayoutFromStripe } from '@/lib/payouts'
+import { processFeeReportRuns } from '@/lib/stripe-fees'
 import { syncAccountStatus } from '@/lib/stripe-connect'
+import {
+  WEBHOOK_SECRET_ENV_VARS,
+  isFeeReportType,
+  malformedWebhookSecretNames,
+  routeFor,
+} from './routing'
 
 /**
  * 6.9 Stripe webhook endpoint: /api/webhooks/stripe
  *
- * Tar imot to strømmer:
- *  - Plattform-events (`account.updated`) med STRIPE_WEBHOOK_SECRET.
- *  - Connect-events fra klubbenes kontoer med STRIPE_CONNECT_WEBHOOK_SECRET.
+ * To endepunkter i Stripe peker hit, hvert med sin signing secret. Signaturen
+ * prøves mot begge, så det spiller ingen rolle hvilket som leverte.
  *
- * Billettsalget skjer som direct charge på klubbens konto, så
- * `checkout.session.completed` og `charge.*` kommer alltid i den andre
- * strømmen — med `event.account` satt til klubbens konto-ID. Den ID-en må
- * følge med på alle Stripe-oppslag nedstrøms, ellers leter vi på feil konto.
+ * «Connected accounts»-endepunktet (STRIPE_CONNECT_WEBHOOK_SECRET). Events fra
+ * klubbenes kontoer, med `event.account` satt til klubbens konto-ID:
+ *  - checkout.session.completed, checkout.session.async_payment_succeeded
+ *      → billetter utstedes (`finalizeCheckoutSession`). Utsolgt eller ugyldig
+ *        show refunderes automatisk der inne.
+ *  - checkout.session.async_payment_failed → logges; ingen ordre ble laget.
+ *  - charge.refunded → refusjonen speiles på ordren (`lib/refunds.ts`), også
+ *    delrefusjoner og refusjoner gjort i Stripe-dashbordet.
+ *  - charge.dispute.created/updated/closed/funds_withdrawn/funds_reinstated
+ *      → logges for oppfølging.
+ *  - payment_intent.payment_failed → en ventende ordre merkes `failed`.
+ *  - payout.created/updated/paid/failed/canceled → utbetalingsstatus følger
+ *    Stripe (`lib/payouts.ts`).
+ *  - account.updated, balance_settings.updated → klarhet og utbetalingsplan
+ *    (`lib/stripe-connect.ts`).
+ *
+ * «Your account»-endepunktet (STRIPE_WEBHOOK_SECRET). Plattformkontoen, uten
+ * `event.account`:
+ *  - reporting.report_run.succeeded (`all_fees.*`) → Stripe-gebyret bokføres
+ *    (`lib/stripe-fees.ts`). Gebyret trekkes fra plattformen, ikke klubben.
+ *
+ * Billettsalget skjer som direct charge på klubbens konto, så konto-ID-en fra
+ * eventet må følge med på alle Stripe-oppslag nedstrøms — ellers leter vi på
+ * feil konto. Stripe kan levere samme event flere ganger og i vilkårlig
+ * rekkefølge, så alle handlere er idempotente.
  */
+
+// Én gang når modulen lastes, ikke per forespørsel. Bare navnet logges.
+for (const name of malformedWebhookSecretNames(process.env)) {
+  console.warn(
+    `[Stripe Webhook] ${name} does not start with "whsec_" and can never verify a Stripe signature — ` +
+      'copy the signing secret from the webhook endpoint in the Stripe dashboard.',
+  )
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.text()
   const sig = req.headers.get('stripe-signature')
@@ -27,7 +64,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing stripe-signature' }, { status: 400 })
   }
 
-  const secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET]
+  const secrets = WEBHOOK_SECRET_ENV_VARS.map((name) => process.env[name])
     .filter((secret): secret is string => Boolean(secret))
 
   if (secrets.length === 0) {
@@ -60,27 +97,37 @@ export async function POST(req: NextRequest) {
   const account = event.account ?? null
 
   try {
-    switch (event.type) {
-      case 'checkout.session.completed':
+    switch (routeFor(event.type)) {
+      case 'checkout_completed':
         await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, account)
         break
-      case 'charge.succeeded':
-        await handleChargeSucceeded(event.data.object as Stripe.Charge, account)
+      case 'checkout_async_failed':
+        handleAsyncPaymentFailed(event.data.object as Stripe.Checkout.Session, account)
         break
-      case 'payment_intent.payment_failed':
+      case 'charge_refunded':
+        await syncRefundFromCharge(event.data.object as Stripe.Charge, account)
+        break
+      case 'dispute':
+        await handleDispute(event.data.object as Stripe.Dispute, account, event.type)
+        break
+      case 'payment_failed':
         await handlePaymentFailed(event.data.object as Stripe.PaymentIntent)
         break
-      case 'charge.refunded':
-        await handleRefund(event.data.object as Stripe.Charge)
+      case 'payout':
+        await handlePayout(event.data.object as Stripe.Payout, account, event.type)
         break
-      case 'charge.dispute.created':
-        await handleDispute(event.data.object as Stripe.Dispute, account)
+      case 'account':
+        await syncAccountStatus(account ?? (event.data.object as Stripe.Account).id)
         break
-      case 'account.updated':
-        await syncAccountStatus((event.data.object as Stripe.Account).id)
+      case 'balance_settings':
+        // Balance Settings finnes bare på tilkoblede kontoer her. Uten konto
+        // er det plattformens egne innstillinger, og dem rører vi ikke.
+        if (account) await syncAccountStatus(account)
         break
-      default:
-        // Unhandled event type — ignore
+      case 'report_run':
+        await handleReportRun(event.data.object as Stripe.Reporting.ReportRun, account)
+        break
+      case 'ignored':
         break
     }
   } catch (err) {
@@ -101,85 +148,146 @@ export async function POST(req: NextRequest) {
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session, account: string | null) {
   const completion = await finalizeCheckoutSession(session, { accountId: account })
 
-  // `finalizeCheckoutSession` returnerer utfallet i stedet for å kaste. Kaster
-  // vi videre her, får Stripe 500 og prøver igjen — det er ønsket for feil som
-  // kan gå over av seg selv, men ikke for utsolgt eller ukjent show.
-  if (completion.result === 'failed') {
-    throw new Error(`complete_checkout_order failed for session ${session.id}: ${completion.emailError ?? 'unknown error'}`)
-  }
+  // `finalizeCheckoutSession` returnerer utfallet i stedet for å kaste. Bare
+  // `failed` kastes videre: da får Stripe 500 og prøver igjen, som er ønsket
+  // for feil som kan gå over av seg selv — men ikke for utsolgt eller ugyldig
+  // show, der et nytt forsøk gir samme svar.
+  switch (completion.result) {
+    case 'failed':
+      throw new Error(
+        `complete_checkout_order failed for session ${session.id}: ${completion.emailError ?? 'unknown error'}`,
+      )
 
-  if (completion.result === 'sold_out' || completion.result === 'missing_show') {
-    console.error(`[Stripe Webhook] Paid session ${session.id} got no ticket (${completion.result}) — needs manual refund`)
-  }
+    case 'sold_out':
+    case 'invalid_show': {
+      // Betalt, men ingen billett. Refusjonen er forsøkt inne i finalize; lyktes
+      // den ikke, står ordren i refusjonskøen og cron prøver igjen.
+      const refunded = completion.refunded === true
+      const log = refunded ? console.warn : console.error
+      log(
+        `[Stripe Webhook] Paid session ${session.id} on ${account ?? 'platform'} got no ticket ` +
+          `(${completion.result}) — order=${completion.orderId ?? 'unknown'} refunded=${refunded}` +
+          (refunded ? '' : ' — left in the refund queue'),
+      )
+      break
+    }
 
-  if (completion.result === 'created' && !completion.emailSent) {
-    console.error(`[Stripe Webhook] Ticket ${completion.ticketCode} created but email failed: ${completion.emailError ?? 'unknown error'}`)
+    case 'missing_show':
+      // Uten show-ID på sesjonen finnes det ingen ordre, og dermed heller ingen
+      // rad i refusjonskøen.
+      console.error(
+        `[Stripe Webhook] Session ${session.id} on ${account ?? 'platform'} has no show_id — ` +
+          `refunded=${completion.refunded === true}. Check the payment in Stripe.`,
+      )
+      break
+
+    case 'unpaid':
+      // Utsatt betalingsmåte: `async_payment_succeeded` fullfører senere.
+      console.info(`[Stripe Webhook] Session ${session.id} completed but not paid yet — waiting for async payment`)
+      break
+
+    case 'created':
+      if (!completion.emailSent) {
+        console.error(
+          `[Stripe Webhook] Ticket ${completion.ticketCode} created but email failed: ${completion.emailError ?? 'unknown error'}`,
+        )
+      }
+      break
+
+    case 'duplicate':
+      break
   }
 }
 
-/**
- * Gebyr-oppgjøret. Kjøres på `charge.succeeded` fordi det er først da Stripe
- * har bokført hva betalingen faktisk kostet. Er transaksjonen ikke bokført
- * ennå, blir ordren stående `pending` og plukkes opp av cron.
- */
-async function handleChargeSucceeded(charge: Stripe.Charge, account: string | null) {
-  if (!account) return
-
-  const outcome = await settleStripeFee(charge.id, account)
-  if (outcome.result === 'pending') {
-    console.warn(`[Fees] Charge ${charge.id} not settled yet: ${outcome.reason} — cron will retry`)
-  }
+/** Utsatt betaling som feilet. Ingen ordre ble laget, så det er ingenting å rydde. */
+function handleAsyncPaymentFailed(session: Stripe.Checkout.Session, account: string | null) {
+  console.warn(
+    `[Stripe Webhook] Async payment failed for session ${session.id} on ${account ?? 'platform'} ` +
+      `(show ${session.metadata?.show_id ?? 'unknown'}) — no ticket issued`,
+  )
 }
 
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   const admin = createAdminClient()
-  await admin
+
+  // Bare en ventende ordre kan feile. Checkout lar kunden prøve et nytt kort i
+  // samme payment intent, og Stripe garanterer ikke rekkefølgen på events — et
+  // sent `payment_failed` skal ikke gjøre en betalt ordre om til `failed`.
+  const { error } = await admin
     .from('orders')
     .update({ status: 'failed' })
     .eq('stripe_payment_intent_id', paymentIntent.id)
-}
+    .eq('status', 'pending')
 
-async function handleRefund(charge: Stripe.Charge) {
-  const admin = createAdminClient()
-  const paymentIntentId = typeof charge.payment_intent === 'string'
-    ? charge.payment_intent
-    : null
-  if (!paymentIntentId) return
-
-  // Update order. Beløpene i hovedboken står — avregningen trenger dem for å
-  // vise hva som ble solgt og hvor mye som gikk tilbake.
-  const { data: order } = await admin
-    .from('orders')
-    .update({ status: 'refunded', refunded_at: new Date().toISOString() })
-    .eq('stripe_payment_intent_id', paymentIntentId)
-    .select('id')
-    .single()
-
-  if (order) {
-    // Mark tickets as refunded
-    await admin
-      .from('tickets')
-      .update({ status: 'refunded' })
-      .eq('order_id', order.id)
+  if (error) {
+    throw new Error(`Could not mark orders for ${paymentIntent.id} as failed: ${error.message}`)
   }
 }
 
 /**
- * Disputen belaster klubbens konto — klubben er selger og bærer
- * arrangementsrisikoen. Vi logger den slik at den kan følges opp.
+ * Utbetalingsstatus følger Stripe. Plattformens egne utbetalinger (uten
+ * `event.account`) er Tickethalos og hører ikke hjemme i `club_payouts`.
  */
-async function handleDispute(dispute: Stripe.Dispute, account: string | null) {
+async function handlePayout(payout: Stripe.Payout, account: string | null, eventType: string) {
+  if (!account) return
+
+  await syncPayoutFromStripe(payout.id, account)
+
+  // En automatisk utbetaling betyr at klubbens plan ikke står på `manual` —
+  // billettpengene går ut før showet. Synken setter planen tilbake, eller
+  // markerer klubben som ikke klar hvis Stripe ikke godtar det.
+  if (eventType === 'payout.created' && payout.automatic) {
+    console.error(
+      `[Stripe Webhook] Automatic payout ${payout.id} (${payout.amount} ${payout.currency}) on ${account} — ` +
+        'the payout schedule is not manual. Re-applying it.',
+    )
+    await syncAccountStatus(account)
+  }
+}
+
+/**
+ * Stripes gebyrrapport er klar. Rapportene bestilles på plattformkontoen, så
+ * kjøringer fra en tilkoblet konto eller av en annen type ignoreres.
+ * `processFeeReportRuns` plukker opp alle ferdige kjøringer, ikke bare denne,
+ * og er trygg å kjøre flere ganger.
+ */
+async function handleReportRun(run: Stripe.Reporting.ReportRun, account: string | null) {
+  if (account || !isFeeReportType(run.report_type)) return
+
+  const result = await processFeeReportRuns()
+  console.info(
+    `[Stripe Webhook] Fee report ${run.id} (${run.report_type}) processed — runs=${result.processed} ` +
+      `entries=${result.entries} orders=${result.ordersReconciled}`,
+  )
+}
+
+/**
+ * Disputen trekkes fra klubbens saldo (direct charge), men Tickethalo hefter
+ * hvis saldoen går negativ (`losses_collector = application`). Den logges
+ * slik at den kan følges opp — hele livsløpet, ikke bare opprettelsen.
+ */
+async function handleDispute(dispute: Stripe.Dispute, account: string | null, eventType: string) {
   const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge.id
   const admin = createAdminClient()
 
-  const { data: order } = await admin
+  const { data: order, error } = await admin
     .from('orders')
-    .select('id, club_id, buyer_email')
+    .select('id, club_id')
     .eq('stripe_charge_id', chargeId)
     .maybeSingle()
 
-  console.error(
-    `[Stripe Webhook] Dispute ${dispute.id} (${dispute.reason}, ${dispute.amount}) on account ${account ?? 'platform'} ` +
-      `— order=${order?.id ?? 'unknown'} club=${order?.club_id ?? 'unknown'}`,
+  if (error) {
+    // Bare logging står på spill, så eventet kvitteres likevel.
+    console.error(`[Stripe Webhook] Could not look up the order for dispute ${dispute.id}: ${error.message}`)
+  }
+
+  const log = eventType === 'charge.dispute.created' || eventType === 'charge.dispute.funds_withdrawn'
+    ? console.error
+    : console.warn
+
+  log(
+    `[Stripe Webhook] ${eventType}: dispute ${dispute.id} (${dispute.reason}, ${dispute.amount} ${dispute.currency}, ` +
+      `status=${dispute.status}) on account ${account ?? 'platform'} — ` +
+      `order=${order?.id ?? 'unknown'} club=${order?.club_id ?? 'unknown'}`,
   )
 }

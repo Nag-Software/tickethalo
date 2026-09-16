@@ -9,7 +9,13 @@ import {
   commissionFor,
   isClubPayoutReady,
 } from '@/lib/stripe-connect'
-import { CheckoutError, isMissingStripeResource, toCheckoutError } from '@/lib/checkout/errors'
+import {
+  CheckoutError,
+  checkoutErrorForSalesState,
+  isMissingStripeResource,
+  toCheckoutError,
+} from '@/lib/checkout/errors'
+import { ticketSalesState } from '@/lib/ticket-sales'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 
 type ShowForCheckout = {
@@ -21,6 +27,18 @@ type ShowForCheckout = {
   currency: string
   stripe_price_id: string | null
 }
+
+/**
+ * Hvor lenge en påbegynt betaling kan fullføres, i sekunder.
+ *
+ * Stripes standard er 24 timer. Stenger bookeren salget, kunne en fane som
+ * sto åpen fra i går da fortsatt betale — og slettes showet i mellomtiden,
+ * må pengene refunderes fordi oppgjøret ikke kan gi billett. 30 minutter er
+ * det korteste Stripe godtar, regnet fra når Stripe oppretter sesjonen. Det
+ * ekstra minuttet dekker nettverkstid og klokkeforskjell: kommer vi ett
+ * sekund under grensen, avviser Stripe forespørselen og ingen får kjøpt.
+ */
+const CHECKOUT_SESSION_TTL_SECONDS = 31 * 60
 
 export type TicketOrderInput = {
   quantity: number
@@ -48,13 +66,30 @@ export async function createCheckoutSession(
 
   const { data: show, error } = await admin
     .from('shows')
-    .select('id, title, slug, date, ticket_price, currency, stripe_price_id, capacity, status, club_id')
+    .select('id, title, slug, date, start_time, ticket_price, currency, stripe_price_id, capacity, status, club_id, ticket_sales_closed_at, deleted_at')
     .eq('id', showId)
     .single()
 
   if (error || !show) throw new CheckoutError('show_not_found', { detail: error?.message, cause: error })
-  if (show.status !== 'published') throw new CheckoutError('show_not_published', { detail: `status=${show.status}` })
-  if (show.date < new Date().toISOString().slice(0, 10)) throw new CheckoutError('show_past', { detail: `date=${show.date}` })
+
+  // Publisert, ikke arkivert, ikke passert, ikke stengt av bookeren og innenfor
+  // salgsvinduet på 90 dager. Reglene står i `lib/ticket-sales.ts` og ingen
+  // andre steder. Den gamle datosjekken her brukte UTC-datoen, og slapp derfor
+  // gjennom kjøp til gårsdagens show den første timen eller to etter midnatt —
+  // betalinger oppgjøret så måtte avvise og refundere.
+  const salesError = checkoutErrorForSalesState(
+    ticketSalesState(show),
+    [
+      `status=${show.status}`,
+      `date=${show.date}`,
+      show.start_time && `start=${show.start_time}`,
+      show.deleted_at && `deleted_at=${show.deleted_at}`,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  )
+  if (salesError) throw salesError
+
   if (!show.ticket_price) throw new CheckoutError('price_missing')
 
   const club = await loadClub(show.club_id)
@@ -162,11 +197,15 @@ function createSession(
 ) {
   // Provisjonen er per billett, så den skal ganges opp med antallet.
   const commission = commissionFor(show.ticket_price!, club) * quantity
+  // Regnes her og ikke hos kalleren: prøves sesjonen på nytt med en ny pris,
+  // skal fristen gjelde fra det nye forsøket.
+  const expiresAt = Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_TTL_SECONDS
 
   return stripe.checkout.sessions.create(
     {
       mode: 'payment',
       line_items: [{ price: priceId, quantity }],
+      expires_at: expiresAt,
       // `s` lar suksesssiden finne fram til riktig Connect-konto. Sesjonen
       // finnes bare på klubbens konto, så uten den kan den ikke hentes.
       success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&s=${show.id}`,

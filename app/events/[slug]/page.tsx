@@ -13,6 +13,7 @@ import {
   remainingTickets,
   ticketFillPercent,
 } from '@/lib/public-events'
+import { ticketSalesNote } from '@/lib/ticket-sales-display'
 import { cn, shouldBypassImageOptimization } from '@/lib/utils'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
@@ -58,20 +59,32 @@ export default async function EventDetailPage({ params }: Props) {
   const soldOut = remaining === 0
   const fillPercent = ticketFillPercent(show)
   const showLocation = show.venue_name ?? show.venue_address
+  // Worked out on the server when the page was fetched — see `withTicketCounts`.
+  const salesOpen = show.salesState.kind === 'open'
 
   // The same calm microcopy as on the cards in the list, instead of a badge.
+  // No urgency while sales are not open: the button already says why.
   const capacity = soldOut
     ? { text: 'Sold out', urgent: false }
-    : remaining !== null && remaining <= 10
-      ? { text: `Only ${remaining} left`, urgent: true }
-      : fillPercent >= 80
-        ? { text: 'Almost sold out', urgent: true }
-        : null
+    : !salesOpen
+      ? null
+      : remaining !== null && remaining <= 10
+        ? { text: `Only ${remaining} left`, urgent: true }
+        : fillPercent >= 80
+          ? { text: 'Almost sold out', urgent: true }
+          : null
 
   const price = formatTicketPrice(show)
-  const checkoutNote = show.ticket_url
-    ? 'You will be sent on to an external ticket page.'
-    : 'Payment opens in secure checkout.'
+  // The line under the button. Before sales open it says exactly when, which the
+  // short button label has no room for. Where nothing can be bought it says
+  // nothing — "Payment opens in secure checkout" under a disabled button is noise.
+  const checkoutNote = !salesOpen
+    ? ticketSalesNote(show.salesState)
+    : soldOut
+      ? null
+      : show.ticket_url
+        ? 'You will be sent on to an external ticket page.'
+        : 'Payment opens in secure checkout.'
 
   const buyButton = (full?: boolean) => (
     <TicketOrder
@@ -79,6 +92,7 @@ export default async function EventDetailPage({ params }: Props) {
       slug={show.slug}
       price={price}
       soldOut={soldOut}
+      salesState={show.salesState}
       remaining={remaining}
       full={full}
     />
@@ -173,6 +187,12 @@ export default async function EventDetailPage({ params }: Props) {
                 {showLocation && <> · {showLocation}</>}
                 {show.clubCity && <>, {show.clubCity}</>}
               </p>
+
+              {/* On mobile the buy block is hidden and the bottom bar has no room
+                  for the full date and time sales open, so it goes here. */}
+              {!salesOpen && checkoutNote && (
+                <p className="text-[15px] text-[var(--ev-faint)] lg:hidden">{checkoutNote}</p>
+              )}
             </header>
 
             {/* Buy block — hidden on mobile, where the fixed bottom bar takes over */}
@@ -195,7 +215,7 @@ export default async function EventDetailPage({ params }: Props) {
               </div>
               <div className="ml-auto flex flex-col items-end gap-2">
                 {buyButton()}
-                <p className="text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>
+                {checkoutNote && <p className="text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>}
               </div>
             </div>
 

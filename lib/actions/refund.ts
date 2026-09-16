@@ -4,6 +4,21 @@ import { revalidatePath } from 'next/cache'
 import { assertOrderAccess } from '@/lib/club-auth'
 import { refundOrder, type RefundReason } from '@/lib/refunds'
 
+// Skjemaet kommer fra nettleseren og kan inneholde hva som helst. Årsaken
+// havner på ordren og i Stripe-metadata, så bare kjente verdier slipper gjennom.
+const REFUND_REASONS: readonly RefundReason[] = [
+  'customer_request',
+  'show_cancelled',
+  'duplicate',
+  'other',
+  'no_ticket_issued',
+]
+
+function parseRefundReason(value: FormDataEntryValue | null): RefundReason | null {
+  const reason = String(value ?? '').trim() || 'customer_request'
+  return (REFUND_REASONS as readonly string[]).includes(reason) ? (reason as RefundReason) : null
+}
+
 /**
  * Klubbadmin refunderer én ordre fra ordrelisten.
  *
@@ -13,7 +28,11 @@ import { refundOrder, type RefundReason } from '@/lib/refunds'
  */
 export async function refundOrderAction(formData: FormData): Promise<{ error: string } | undefined> {
   const orderId = String(formData.get('order_id') ?? '')
-  const reason = (String(formData.get('reason') ?? 'customer_request') || 'customer_request') as RefundReason
+  const reason = parseRefundReason(formData.get('reason'))
+
+  if (!reason) {
+    return { error: 'Choose a reason for the refund.' }
+  }
 
   try {
     await assertOrderAccess(orderId)

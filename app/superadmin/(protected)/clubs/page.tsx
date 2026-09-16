@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Building2, Inbox, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { isClubPayoutReady } from '@/lib/stripe-connect'
+import { describeClubReadiness } from '@/lib/stripe-connect'
 
 export const metadata = { title: 'Klubber — Superadmin' }
 
@@ -12,7 +12,7 @@ export default async function ClubsPage() {
 
   const { data: clubs } = await db
     .from('clubs')
-    .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, legal_name, org_number, support_email')
+    .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, support_email')
     .order('name')
 
   const clubIds = (clubs ?? []).map((c) => c.id)
@@ -23,11 +23,14 @@ export default async function ClubsPage() {
         .in('club_id', clubIds)
     : { data: [] }
 
+  // Arkiverte show (slettet av bookeren, men med salgshistorikk) telles ikke —
+  // for klubben finnes de ikke lenger.
   const { data: showCounts } = clubIds.length
     ? await db
         .from('shows')
         .select('club_id')
         .in('club_id', clubIds)
+        .is('deleted_at', null)
     : { data: [] }
 
   // Antall ubehandlede betasøknader. Vises som et merke på lenken, slik at
@@ -92,8 +95,14 @@ export default async function ClubsPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {clubs.map((club) => {
-              const ready = isClubPayoutReady(club)
+              const readiness = describeClubReadiness(club)
+              const missing = readiness.filter((item) => !item.done)
+              const ready = missing.length === 0
               const hasAccount = Boolean(club.stripe_account_id)
+              // Kontoen kan være ferdig hos Stripe mens utbetalingene ikke er
+              // holdt tilbake. Det er en plattformfeil, ikke noe klubben mangler,
+              // så den får sin egen etikett.
+              const onlyScheduleMissing = missing.length > 0 && missing.every((item) => item.key === 'payout_schedule')
 
               return (
               <Link
@@ -119,8 +128,15 @@ export default async function ClubsPage() {
                       Klar for salg
                     </span>
                   ) : (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                      {hasAccount ? 'Oppsett ikke fullført' : 'Ingen Stripe-konto'}
+                    <span
+                      title={missing.map((item) => item.label).join(', ')}
+                      className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                    >
+                      {!hasAccount
+                        ? 'Ingen Stripe-konto'
+                        : onlyScheduleMissing
+                          ? 'Utbetalingsplan ikke manuell'
+                          : 'Oppsett ikke fullført'}
                     </span>
                   )}
                 </div>

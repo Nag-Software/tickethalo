@@ -1,20 +1,22 @@
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminHeader } from '@/components/admin/admin-header'
-import { DeleteButton } from '@/components/admin/delete-button'
+import { DeleteShowDialog } from '@/components/admin/delete-show-dialog'
 import { ShowBookingCard, SHOW_STATUS_LABELS } from '@/components/admin/show-booking-card'
 import { buildBookingSpots, type BookingSpot } from '@/lib/booking-spots'
-import { deleteShowAction } from './actions'
+import { ticketSalesNote, toTicketSalesStateDto } from '@/lib/show-sales-shared'
+import { ticketSalesState } from '@/lib/ticket-sales'
 import type { Artist, BookingOffer, ConfirmedSpot, Show, ShowRequirement, ShowStatus } from '@/types/database'
 import { getClubAccess } from '@/lib/club-auth'
 
-type ShowRow = Pick<Show, 'id' | 'title' | 'date' | 'venue_name' | 'venue_address' | 'status' | 'capacity' | 'ticket_price' | 'currency' | 'published_at' | 'slug' | 'poster_url'>
+type ShowRow = Pick<Show, 'id' | 'title' | 'date' | 'venue_name' | 'venue_address' | 'status' | 'capacity' | 'ticket_price' | 'currency' | 'published_at' | 'slug' | 'poster_url' | 'ticket_sales_closed_at'>
 type RequirementRow = Pick<ShowRequirement, 'id' | 'show_id' | 'role_name' | 'quantity' | 'lineup_position' | 'compensation_type' | 'compensation_amount' | 'compensation_percent'>
 type SpotRow = Pick<ConfirmedSpot, 'show_id' | 'artist_id' | 'show_requirement_id' | 'status'>
 type OfferRow = Pick<BookingOffer, 'show_id' | 'artist_id' | 'show_requirement_id' | 'status'>
 type ArtistRow = Pick<Artist, 'id' | 'full_name' | 'stage_name'>
 type EnrichedShowRow = ShowRow & {
   soldTickets: number
+  ticketSalesNote: string | null
   spots: BookingSpot[]
 }
 
@@ -42,7 +44,9 @@ export default async function ShowsPage({
 
   let showsQuery = db
     .from('shows')
-    .select('id, title, date, venue_name, venue_address, status, capacity, ticket_price, currency, published_at, slug, poster_url')
+    .select('id, title, date, venue_name, venue_address, status, capacity, ticket_price, currency, published_at, slug, poster_url, ticket_sales_closed_at')
+    // Arkiverte show er slettet for bookeren. De står bare igjen for regnskapet.
+    .is('deleted_at', null)
     .order('date', { ascending: true })
     .limit(200)
 
@@ -127,6 +131,7 @@ export default async function ShowsPage({
     return {
       ...show,
       soldTickets,
+      ticketSalesNote: ticketSalesNote(toTicketSalesStateDto(ticketSalesState(show))),
       spots,
     }
   })
@@ -207,7 +212,7 @@ function UpcomingShowsGrid({ rows }: { rows: EnrichedShowRow[] }) {
       {rows.map((show) => (
         <ShowBookingCard
           key={show.id}
-          deleteAction={deleteShowAction}
+          deletable
           show={{
             id: show.id,
             title: show.title,
@@ -216,6 +221,7 @@ function UpcomingShowsGrid({ rows }: { rows: EnrichedShowRow[] }) {
             posterUrl: show.poster_url,
             capacity: show.capacity,
             soldTickets: show.soldTickets,
+            ticketSalesNote: show.ticketSalesNote,
             spots: show.spots,
           }}
         />
@@ -263,12 +269,7 @@ function ShowsTable({ rows }: { rows: ShowRow[] }) {
                   : '—'}
               </td>
               <td className="px-4 py-3 text-right">
-                <DeleteButton
-                  action={deleteShowAction}
-                  id={show.id}
-                  idField="show_id"
-                  confirmMessage={`Delete the show "${show.title}"? This cannot be undone.`}
-                />
+                <DeleteShowDialog showId={show.id} showTitle={show.title} variant="text" />
               </td>
             </tr>
           ))}

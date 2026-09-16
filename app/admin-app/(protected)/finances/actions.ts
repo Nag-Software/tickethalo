@@ -75,11 +75,48 @@ async function currentClub(): Promise<ConnectClub> {
   return data as unknown as ConnectClub
 }
 
+/**
+ * Hva klubbadmin skal få høre når utbetalingsplanen ikke er bekreftet som
+ * manuell. Null er ikke det samme som automatisk: da svarte Stripe ikke, og et
+ * nytt forsøk hjelper som regel.
+ */
+function payoutScheduleProblem(interval: string | null): { error: string } | undefined {
+  if (interval === 'manual') return undefined
+  if (interval === null) {
+    return { error: 'Status updated — but we could not check the payout schedule with Stripe. Try again in a moment.' }
+  }
+  return {
+    error:
+      'Status updated — Stripe did not let us hold payouts until after the show, so tickets cannot go on sale yet. ' +
+      'We have been notified.',
+  }
+}
+
 export async function startClubOnboardingAction(): Promise<ActionError> {
   let url: string
 
   try {
-    url = await createOnboardingLink(await currentClub())
+    const club = await currentClub()
+
+    // Er Stripe-kontoen ferdig og det bare er utbetalingsplanen som mangler,
+    // har onboardingen ingenting å vise klubben — planen settes av oss, ikke
+    // av klubben. Da synkes status i stedet for en rundtur til Stripe.
+    if (
+      club.stripe_account_id &&
+      club.charges_enabled &&
+      club.payouts_enabled &&
+      club.payout_schedule_interval !== 'manual'
+    ) {
+      const status = await syncAccountStatus(club.stripe_account_id)
+      revalidatePath(PATH)
+
+      if (status.chargesEnabled && status.payoutsEnabled) {
+        return payoutScheduleProblem(status.payoutScheduleInterval)
+      }
+      // Stripe trenger mer fra klubben likevel — videre til onboardingen.
+    }
+
+    url = await createOnboardingLink(club)
   } catch (error) {
     return toActionError(error, 'Could not open Stripe onboarding. Try again in a moment.')
   }
@@ -116,6 +153,11 @@ export async function refreshClubStatusAction(): Promise<ActionError> {
     if (!status.chargesEnabled || !status.payoutsEnabled) {
       return { error: 'Status updated — Stripe still needs more information from the club.' }
     }
+
+    // Kontoen er i orden hos Stripe, men salget åpner ikke før utbetalingene
+    // holdes til etter showet. Sjekklista viser det, men knappen bør si hvorfor.
+    const scheduleProblem = payoutScheduleProblem(status.payoutScheduleInterval)
+    if (scheduleProblem) return scheduleProblem
   } catch (error) {
     return toActionError(error, 'Could not reach Stripe. Try again in a moment.')
   }

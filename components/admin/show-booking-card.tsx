@@ -12,7 +12,7 @@ import {
   Ticket,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { DeleteButton } from '@/components/admin/delete-button'
+import { DeleteShowDialog } from '@/components/admin/delete-show-dialog'
 import type { BookingSpot } from '@/lib/booking-spots'
 import { canonicalRoleLabel, canonicalRoleValue } from '@/lib/artist-roles'
 import type { CanonicalArtistRole } from '@/lib/artist-roles'
@@ -27,6 +27,8 @@ export type BookingCardShow = {
   posterUrl: string | null
   capacity: number | null
   soldTickets: number
+  /** One line under the sold count when sales haven't opened yet or were stopped. */
+  ticketSalesNote?: string | null
   spots: BookingSpot[]
 }
 
@@ -66,14 +68,17 @@ export function RoleIcon({ roleName, className }: { roleName: string; className?
 
 export function ShowBookingCard({
   show,
-  deleteAction,
+  deletable = false,
   linked = true,
   lineup,
   compact = false,
 }: {
   show: BookingCardShow
-  /** Omit on the show's own page — the header already carries a delete button. */
-  deleteAction?: (formData: FormData) => Promise<void>
+  /**
+   * Draws «View details» and «Delete show». Off on the show's own page — the
+   * header already carries a delete button.
+   */
+  deletable?: boolean
   /** false on the show's own page, where every link would point at the current page. */
   linked?: boolean
   /** Replaces the read-only spot list — see `InteractiveBookingCard`. */
@@ -101,13 +106,13 @@ export function ShowBookingCard({
   return (
     <article
       className={cn(
-        'flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition',
+        'flex flex-col overflow-hidden rounded-2xl border border-2 border-zinc-200 shadow-sm transition',
         linked && 'hover:-translate-y-0.5 hover:shadow-md',
       )}
     >
       {!compact && (
         <>
-        <header className="flex items-start gap-4 p-5">
+        <header className="flex items-start gap-4 p-4 bg-card">
           <Wrapper href={showDetailHref} className="shrink-0 text-center">
             <span className="flex size-14 flex-col items-center justify-center rounded-xl bg-[var(--ev-accent-fill)] leading-none text-white">
               <span className="text-2xl font-black tabular-nums">{day}</span>
@@ -160,7 +165,7 @@ export function ShowBookingCard({
         </>
       )}
 
-      <div className="flex flex-1 flex-col gap-3 p-4">
+      <div className="flex flex-1 flex-col gap-3">
         <section className="@container overflow-hidden rounded-xl border">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
@@ -201,10 +206,13 @@ export function ShowBookingCard({
                 <div className="h-full rounded-full bg-emerald-500" style={{ width: `${fillPercent}%` }} />
               </div>
             )}
+            {show.ticketSalesNote && (
+              <p className="mt-2 text-xs text-muted-foreground">{show.ticketSalesNote}</p>
+            )}
           </section>
         )}
 
-        {deleteAction && (
+        {deletable && (
           <div className="mt-auto flex items-center justify-between gap-3 pt-1">
             <Link
               href={showDetailHref}
@@ -212,14 +220,7 @@ export function ShowBookingCard({
             >
               View details
             </Link>
-            <DeleteButton
-              action={deleteAction}
-              id={show.id}
-              idField="show_id"
-              label="Delete show"
-              tone="danger"
-              confirmMessage={`Delete the show "${show.title}"? This cannot be undone.`}
-            />
+            <DeleteShowDialog showId={show.id} showTitle={show.title} variant="danger" />
           </div>
         )}
       </div>

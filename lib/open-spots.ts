@@ -88,6 +88,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
     .select('id, title, date, start_time, venue_name, venue_address, currency, club_id, submissions_audience, submissions_close_at')
     .in('id', showIds)
     .eq('status', 'booking')
+    .is('deleted_at', null)
     .gte('date', today)
     .or(`submissions_close_at.is.null,submissions_close_at.gt.${now}`)
 
@@ -241,6 +242,8 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
     db.from('shows')
       .select('id, title, date, status, club_id, submissions_audience, submissions_close_at')
       .eq('id', requirement.show_id)
+      // Et arkivert show finnes ikke lenger for komikerne.
+      .is('deleted_at', null)
       .maybeSingle(),
   ])
 

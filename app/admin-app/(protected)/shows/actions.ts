@@ -13,6 +13,19 @@ import { defaultLineupSpots } from '@/lib/lineup-defaults'
 import { normalizeCurrency } from '@/lib/currencies'
 import { assertClubCanSell } from '@/lib/stripe-connect'
 import { MARKETING_DESIGN_BUCKET, sanitizeStorageFileName } from '@/lib/marketing/storage'
+import { getAuthUser, getSessionProfile } from '@/lib/session'
+import { refundShow } from '@/lib/refunds'
+import {
+  CheckoutSessionExpiryError,
+  deleteShowBlockedMessage,
+  getShowSalesOverview,
+  hasRefundableSales,
+  isTicketSalesStopped,
+  resumeTicketSales,
+  stopTicketSales,
+  toShowSalesOverviewDto,
+  type ShowSalesOverviewDto,
+} from '@/lib/show-sales'
 import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -1261,11 +1274,194 @@ export async function publishLineupAction(formData: FormData) {
   revalidatePath('/admin-app/shows')
 }
 
-export async function deleteShowAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
-  const db = createAdminClient()
-  await db.from('shows').delete().eq('id', showId)
+// ─────────────────────────────────────────────────────────────
+// Billettsalg og sletting
+//
+// Handlingene under returnerer `{ error }` i stedet for å kaste. Next
+// skjuler meldingen i en kastet feil i produksjon, og her er meldingen det
+// bookeren trenger for å vite hva som må gjøres før hen kan gå videre.
+// ─────────────────────────────────────────────────────────────
+
+export type StopTicketSalesResult =
+  | { ok: true; expiredCheckoutSessions: number; warning?: string }
+  | { error: string }
+
+export type ResumeTicketSalesResult = { ok: true } | { error: string }
+
+export type RefundAllShowTicketsResult =
+  | { ok: true; total: number; refunded: number; failed: number; errors: string[] }
+  | { error: string }
+
+function actionErrorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message : 'Something went wrong. Please try again.'
+}
+
+/** Profilen som gjør endringen, til `*_by`-kolonnene. Null tåles — raden sier da bare når. */
+async function currentProfileId() {
+  const user = await getAuthUser()
+  if (!user) return null
+  const profile = await getSessionProfile(user.id)
+  return profile?.id ?? null
+}
+
+/** Sluggen hentes før endringen, så arrangementssiden kan revalideres også når showet er borte. */
+async function showSlug(showId: string) {
+  const { data } = await createAdminClient().from('shows').select('slug').eq('id', showId).maybeSingle()
+  return data?.slug ?? null
+}
+
+/** Salgsstatus vises i admin, på ordrelisten og på de offentlige sidene. */
+function revalidateShowSales(showId: string, slug: string | null) {
+  revalidatePath(`/admin-app/shows/${showId}`)
   revalidatePath('/admin-app/shows')
+  revalidatePath('/admin-app/orders')
+  revalidatePath('/events')
+  if (slug) revalidatePath(`/events/${slug}`)
+}
+
+/**
+ * Det bookeren må se før sletting: salgsstatus, tall og hva som kommer til å
+ * skje. Dialogen henter dette når den åpnes, så tallene er ferske.
+ */
+export async function getShowSalesOverviewAction(showId: string): Promise<ShowSalesOverviewDto | { error: string }> {
+  try {
+    await assertShowAccess(showId)
+    return toShowSalesOverviewDto(await getShowSalesOverview(showId))
+  } catch (error) {
+    return { error: actionErrorMessage(error) }
+  }
+}
+
+/**
+ * Sletter et show — eller arkiverer det, når det har salgshistorikk.
+ *
+ * Avgjørelsen tas av `delete_show()` under lås på showraden, ikke her: et
+ * kjøp som fullføres mens bookeren står i dialogen skal stoppe slettingen.
+ * Et show med betalinger som ikke er refundert kan aldri slettes.
+ */
+export async function deleteShowAction(formData: FormData): Promise<{ error: string } | undefined> {
+  const showId = String(formData.get('show_id') ?? '')
+
+  try {
+    await assertShowAccess(showId)
+    const [actorId, slug] = await Promise.all([currentProfileId(), showSlug(showId)])
+
+    const { data, error } = await createAdminClient()
+      .rpc('delete_show', { p_show_id: showId, p_actor_id: actorId })
+      .single()
+
+    if (error || !data) {
+      console.error(`[Shows] delete_show failed for ${showId}: ${error?.message ?? 'no result'}`)
+      return { error: `The show could not be deleted: ${error?.message ?? 'the database returned no result'}.` }
+    }
+
+    if (data.result === 'blocked') return { error: deleteShowBlockedMessage(data) }
+    if (data.result === 'not_found') return { error: 'This show no longer exists. It may already have been deleted.' }
+
+    revalidateShowSales(showId, slug)
+  } catch (error) {
+    return { error: actionErrorMessage(error) }
+  }
+
+  // Utenfor try/catch: `redirect` kaster, og catch-grenen ville gjort
+  // navigeringen om til en feilmelding.
   redirect('/admin-app/shows')
+}
+
+/**
+ * Stenger billettsalget uten å avpublisere showet. Arrangementssiden står,
+ * solgte billetter gjelder fortsatt, og påbegynte kjøp avbrytes hos Stripe.
+ */
+export async function stopTicketSalesAction(formData: FormData): Promise<StopTicketSalesResult> {
+  const showId = String(formData.get('show_id') ?? '')
+  let slug: string | null = null
+
+  try {
+    await assertShowAccess(showId)
+    const [actorId, loadedSlug] = await Promise.all([currentProfileId(), showSlug(showId)])
+    slug = loadedSlug
+
+    const { expiredCheckoutSessions } = await stopTicketSales(showId, actorId)
+    revalidateShowSales(showId, slug)
+    return { ok: true, expiredCheckoutSessions }
+  } catch (error) {
+    // Salget er stengt i databasen — bare oppryddingen hos Stripe feilet.
+    // Det er en advarsel, ikke en feil, ellers ville bookeren trodd salget
+    // fortsatt var åpent.
+    if (error instanceof CheckoutSessionExpiryError) {
+      revalidateShowSales(showId, slug)
+      return { ok: true, expiredCheckoutSessions: error.expiredCheckoutSessions, warning: error.message }
+    }
+
+    console.error(`[Shows] Stop ticket sales for ${showId} failed: ${actionErrorMessage(error)}`)
+    return { error: actionErrorMessage(error) }
+  }
+}
+
+export async function resumeTicketSalesAction(formData: FormData): Promise<ResumeTicketSalesResult> {
+  const showId = String(formData.get('show_id') ?? '')
+
+  try {
+    await assertShowAccess(showId)
+    const slug = await showSlug(showId)
+    await resumeTicketSales(showId)
+    revalidateShowSales(showId, slug)
+    return { ok: true }
+  } catch (error) {
+    return { error: actionErrorMessage(error) }
+  }
+}
+
+/**
+ * Refunderer alle betalte ordrer på showet — steget før et show med salg
+ * kan slettes.
+ *
+ * Krever at salget er stengt, så ingen ny billett selges mens refusjonene
+ * går, og at bookeren har skrevet inn showets tittel. Refusjonen kan ikke
+ * angres og går rett på klubbens Stripe-saldo.
+ */
+export async function refundAllShowTicketsAction(formData: FormData): Promise<RefundAllShowTicketsResult> {
+  const showId = String(formData.get('show_id') ?? '')
+  const confirmTitle = String(formData.get('confirm_title') ?? '').trim()
+  let slug: string | null = null
+  let started = false
+
+  try {
+    await assertShowAccess(showId)
+    const [overview, loadedSlug] = await Promise.all([getShowSalesOverview(showId), showSlug(showId)])
+    slug = loadedSlug
+
+    if (!isTicketSalesStopped(overview.sales)) {
+      return { error: 'Stop ticket sales before refunding all tickets.' }
+    }
+    if (!confirmTitle || confirmTitle !== overview.title.trim()) {
+      return { error: 'Type the exact show title to confirm the refund.' }
+    }
+    if (!hasRefundableSales(overview.summary)) {
+      return { error: 'There is nothing left to refund on this show.' }
+    }
+
+    started = true
+    const result = await refundShow(showId)
+    return {
+      ok: true,
+      total: result.total,
+      refunded: result.refunded,
+      failed: result.failed,
+      errors: result.errors,
+    }
+  } catch (error) {
+    const message = actionErrorMessage(error)
+    console.error(`[Shows] Refund all tickets for ${showId} failed: ${message}`)
+
+    // Noen ordrer kan være refundert før det smalt. Hver ordre er idempotent
+    // mot Stripe, så et nytt forsøk er trygt — men bookeren må vite det.
+    return {
+      error: started
+        ? `${message} Some orders may already be refunded. Check the orders list, then try again.`
+        : message,
+    }
+  } finally {
+    if (started) revalidateShowSales(showId, slug)
+  }
 }

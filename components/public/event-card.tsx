@@ -23,6 +23,8 @@ import { formatDayLabel } from '@/lib/event-filters'
 function capacityNote(show: PublicShow): { text: string; urgent: boolean } | null {
   const remaining = remainingTickets(show)
   if (remaining === 0) return { text: 'Sold out', urgent: false }
+  // "3 left" pushes a ticket that cannot be bought right now. The button says why.
+  if (show.salesState.kind !== 'open') return null
 
   const fill = ticketFillPercent(show)
   if (remaining !== null && remaining <= 10) return { text: `${remaining} left`, urgent: true }
@@ -135,8 +137,11 @@ export function EventCard({
         {place && <p className="truncate text-[15px] text-[var(--ev-faint)] sm:text-[13px]">{place}</p>}
 
         {/* Price, capacity and the only action on one line.
-            mt-auto aligns the buy buttons to the bottom across a row. */}
-        <div className="mt-auto flex items-center gap-x-3 pt-2.5 sm:gap-x-2.5">
+            mt-auto aligns the buy buttons to the bottom across a row.
+            flex-wrap is for the disabled states: "On sale 17 Sep" is twice as
+            wide as "Buy", and a narrow card drops it to its own line rather
+            than pushing it out over the edge. */}
+        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 pt-2.5 sm:gap-x-2.5">
           <span className="text-[17px] font-semibold tabular-nums text-[var(--ev-text)] sm:text-[13px] sm:font-medium">
             {formatTicketPrice(show)}
           </span>
@@ -156,6 +161,7 @@ export function EventCard({
             slug={show.slug ?? show.id}
             price={formatTicketPrice(show)}
             soldOut={soldOut}
+            salesState={show.salesState}
             remaining={remainingTickets(show)}
             triggerLabel="Buy"
             triggerClassName={cn(

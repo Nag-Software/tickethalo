@@ -3,19 +3,24 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatTicketCode } from '@/lib/tickets'
 import { AdminHeader } from '@/components/admin/admin-header'
-import { DeleteButton } from '@/components/admin/delete-button'
-import { deleteShowAction, updateShowDetailsAction } from '../actions'
+import { DeleteShowDialog } from '@/components/admin/delete-show-dialog'
+import { ShowSalesPanel, TicketSalesChip } from '@/components/admin/show-sales-panel'
+import { getShowSalesOverview, toShowSalesOverviewDto, toTicketSalesStateDto } from '@/lib/show-sales'
+import { ticketSalesState } from '@/lib/ticket-sales'
+import { updateShowDetailsAction } from '../actions'
 import { buildBookingSpots } from '@/lib/booking-spots'
 import { OverviewTab } from './overview-tab'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
 import { MarketingTab } from './marketing/marketing-tab'
+import { SubmissionsTab } from './submissions-tab'
+import { loadSubmissionGroups } from './submissions-data'
 import { artistMatchesRole } from '@/lib/artist-roles'
 import { assertShowAccess } from '@/lib/club-auth'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
-type ShowTab = 'overview' | 'lineup' | 'marketing' | 'tickets'
+type ShowTab = 'overview' | 'lineup' | 'submissions' | 'marketing' | 'tickets'
 
 export default async function ShowDetailPage({
   params,
@@ -40,6 +45,7 @@ export default async function ShowDetailPage({
     { data: lineup },
     { data: tickets },
     { count: soldTicketCount },
+    salesOverview,
   ] = await Promise.all([
     db.from('shows').select('*').eq('id', id).single(),
     db.from('show_requirements').select('*').eq('show_id', id).order('lineup_position').order('created_at'),
@@ -52,9 +58,17 @@ export default async function ShowDetailPage({
     tab === 'overview'
       ? db.from('tickets').select('id', { count: 'exact', head: true }).eq('show_id', id).in('status', ['valid', 'used'])
       : Promise.resolve({ count: 0 }),
+    // Salgspanelet i Tickets-fanen: stenging, refusjon og sletting.
+    shouldLoadTickets
+      ? getShowSalesOverview(id).then(toShowSalesOverviewDto)
+      : Promise.resolve(null),
   ])
 
   if (!show) notFound()
+
+  // `select('*')` gir `ticket_sales_closed_at` og `deleted_at`. Merkelappen
+  // leser samme regel som checkout, så admin og kjøperen aldri er uenige.
+  const salesState = toTicketSalesStateDto(ticketSalesState(show))
 
   // Fetch related artist/requirement data (split queries — no Relationships in DB types)
   const offerArtistIds = [...new Set((offers ?? []).map(o => o.artist_id))]
@@ -93,13 +107,12 @@ export default async function ShowDetailPage({
 
   // Ubehandlede søknader per lineup-plass. Bare `pending` telles: en søknad
   // som er godtatt eller avslått er ikke noe bookeren skal minnes på.
-  const { data: pendingSubmissions } = shouldLoadRelatedArtists
-    ? await db
-      .from('show_submissions')
-      .select('show_requirement_id')
-      .eq('show_id', id)
-      .eq('status', 'pending')
-    : { data: [] as Array<{ show_requirement_id: string }> }
+  // Hentes på alle faner — tellingen står på «Submissions»-fanen.
+  const { data: pendingSubmissions } = await db
+    .from('show_submissions')
+    .select('show_requirement_id')
+    .eq('show_id', id)
+    .eq('status', 'pending')
 
   const pendingSubmissionsByRequirement = (pendingSubmissions ?? []).reduce<Record<string, number>>(
     (counts, row) => {
@@ -166,9 +179,12 @@ export default async function ShowDetailPage({
     declined: (offers ?? []).filter(o => o.status === 'declined').length,
   }
 
+  const pendingSubmissionTotal = (pendingSubmissions ?? []).length
+
   const TABS: { key: ShowTab; label: string; badge?: number }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'lineup', label: 'Lineup', badge: (offerStats.sent || activeLineup.length) ? Math.max(offerStats.sent, activeLineup.length) : undefined },
+    { key: 'submissions', label: 'Submissions', badge: pendingSubmissionTotal || undefined },
     { key: 'marketing', label: 'Marketing' },
     { key: 'tickets', label: 'Tickets' },
   ]
@@ -216,6 +232,18 @@ export default async function ShowDetailPage({
     })
     : []
 
+  const submissionGroups = tab === 'submissions'
+    ? await loadSubmissionGroups(db, {
+      showId: id,
+      clubId: showClubId,
+      showStatus: show.status,
+      currency: show.currency,
+      requirements: requirements ?? [],
+      lineup: lineup ?? [],
+      offers: offers ?? [],
+    })
+    : []
+
   const showLocation = show.venue_address ?? show.venue_name
 
   return (
@@ -228,15 +256,12 @@ export default async function ShowDetailPage({
             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${SHOW_STATUS_COLORS[show.status]}`}>
               {SHOW_STATUS_LABELS[show.status] ?? show.status}
             </span>
+            {/* Et show som ikke er publisert selger ikke — da sier merkelappen ingenting nytt. */}
+            {salesState.kind !== 'unavailable' && <TicketSalesChip sales={salesState} className="hidden sm:inline" />}
             <Link href="/admin-app/shows" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
               ← Back
             </Link>
-            <DeleteButton
-              action={deleteShowAction}
-              id={show.id}
-              idField="show_id"
-              confirmMessage={`Delete the show "${show.title}"? This cannot be undone.`}
-            />
+            <DeleteShowDialog showId={show.id} showTitle={show.title} />
           </div>
         }
       />
@@ -255,7 +280,7 @@ export default async function ShowDetailPage({
           >
             {t.label}
             {t.badge != null && t.badge > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center size-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+              <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
                 {t.badge}
               </span>
             )}
@@ -364,12 +389,16 @@ export default async function ShowDetailPage({
               />
         )}
 
+        {/* ══════════════════ SUBMISSIONS ══════════════════ */}
+        {tab === 'submissions' && <SubmissionsTab showId={show.id} groups={submissionGroups} />}
+
         {/* ══════════════════ MARKETING ══════════════════ */}
         {tab === 'marketing' && <MarketingTab showId={id} />}
 
         {/* ══════════════════ TICKETS ══════════════════ */}
         {tab === 'tickets' && (
           <>
+          {salesOverview && <ShowSalesPanel overview={salesOverview} />}
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm font-semibold text-muted-foreground">
               {tickets?.length ?? 0} tickets

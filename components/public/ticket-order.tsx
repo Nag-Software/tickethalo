@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { startCheckoutAction } from '@/app/events/actions'
+import { type PublicTicketSalesState, ticketSalesButtonLabel } from '@/lib/ticket-sales-display'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import { cn } from '@/lib/utils'
 
@@ -24,12 +25,17 @@ import { cn } from '@/lib/utils'
  *
  * Kapasiteten begrenser antallet her, men avgjøres til slutt i oppgjøret
  * (migrasjon 036): siden kan være minutter gammel når betalingen kommer inn.
+ *
+ * Salgsstatusen kommer ferdig utregnet fra serveren. Er salget ikke åpent,
+ * står det på knappen hvorfor — ingen skal fylle ut navn for så å få nei i
+ * checkout. Checkout sjekker uansett på nytt når kjøperen trykker.
  */
 export function TicketOrder({
   showId,
   slug,
   price,
   soldOut,
+  salesState,
   remaining,
   maxPerOrder = MAX_TICKETS_PER_ORDER,
   full,
@@ -42,6 +48,8 @@ export function TicketOrder({
   /** Ferdig formatert pris per billett, f.eks. «250 kr». */
   price: string
   soldOut: boolean
+  /** Fra `PublicShow.salesState`. Alt annet enn `open` gir en deaktivert knapp. */
+  salesState: PublicTicketSalesState
   /** Ledige plasser, når showet har en kapasitet. */
   remaining: number | null
   maxPerOrder?: number
@@ -77,10 +85,19 @@ export function TicketOrder({
   )
   const buttonClass = triggerClassName ?? defaultTrigger
 
-  if (soldOut) {
+  // Salgsstatusen går foran «Sold out», i samme rekkefølge som checkout sjekker:
+  // at showet er passert eller salget stengt, er det kjøperen trenger å vite.
+  const blockedLabel = ticketSalesButtonLabel(salesState) ?? (soldOut ? 'Sold out' : null)
+
+  if (blockedLabel) {
     return (
-      <button type="button" disabled className={buttonClass} style={{ borderRadius: 'var(--ev-r-chip)' }}>
-        <Ticket className="size-4" /> Sold out
+      <button
+        type="button"
+        disabled
+        className={cn(buttonClass, 'whitespace-nowrap')}
+        style={{ borderRadius: 'var(--ev-r-chip)' }}
+      >
+        <Ticket className="size-4" /> {blockedLabel}
       </button>
     )
   }

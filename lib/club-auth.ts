@@ -96,7 +96,15 @@ export async function assertShowAccess(showId: string) {
     throw new Error('Du har ikke tilgang til noen klubb.')
   }
 
-  const query = db.from('shows').select('id, club_id').eq('id', showId).in('club_id', access.clubIds)
+  // Et arkivert show (`deleted_at`) er slettet for bookeren. Det står bare
+  // igjen for regnskapets skyld, så ingen handling skal kunne treffe det —
+  // heller ikke en gammel fane eller et direkte kall til en server action.
+  const query = db
+    .from('shows')
+    .select('id, club_id')
+    .eq('id', showId)
+    .in('club_id', access.clubIds)
+    .is('deleted_at', null)
 
   const { data: show } = await query.maybeSingle()
 

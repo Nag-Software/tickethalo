@@ -9,9 +9,11 @@ import type { ArtistFeeInvoiceStatus, RequirementCompensationType } from '@/type
  * Honoraret komikerne skal ha etter at showet er spilt.
  *
  * Grunnlaget er klubbens nettoinntekt på showet — `orders.club_net_amount`,
- * altså det klubben faktisk sitter igjen med etter provisjon og Stripe-gebyr
- * (se migrasjon 032). Av den går `clubs.artist_share_bps` (90 % som standard)
- * til lineupen; resten blir hos klubben.
+ * altså billettinntekten minus Tickethalos provisjon. Stripe-gebyret trekkes
+ * ikke herfra: det belastes plattformkontoen og betales av Tickethalo (se
+ * migrasjon 047 og `lib/stripe-fees.ts`). Av nettoinntekten går
+ * `clubs.artist_share_bps` (90 % som standard) til lineupen; resten blir hos
+ * klubben.
  *
  * Hva den enkelte får står i lineupen, ikke her: fast beløp eller prosent på
  * `show_requirements`, satt da spoten ble booket. Denne modulen gjør bare to
