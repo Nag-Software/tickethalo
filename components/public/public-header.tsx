@@ -71,10 +71,10 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
         href="/"
         className="flex h-10 items-center gap-2 rounded-full bg-[var(--ev-accent-fill)] md:h-9 pl-1.5 pr-2.5 text-[var(--ev-text)] transition-transform duration-200 hover:scale-[1.02] md:pr-3.5"
       >
-        <span className="grid size-6 text-white shrink-0 place-content-center rounded-full bg-[var(--ev-text)]/15">
+        <span className="grid size-6 shrink-0 place-content-center rounded-full bg-[var(--ev-text)]/15 text-[var(--ev-text)]">
           <Logo className="size-3.5" />
         </span>
-        <span className="hidden text-white text-[12px] font-semibold tracking-[-0.01em] min-[360px]:block md:text-[13px]">
+        <span className="hidden text-[12px] font-semibold tracking-[-0.01em] text-[var(--ev-text)] min-[360px]:block md:text-[13px]">
           Tickethalo
         </span>
       </Link>

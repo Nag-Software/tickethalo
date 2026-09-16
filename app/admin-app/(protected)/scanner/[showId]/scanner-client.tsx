@@ -101,7 +101,7 @@ export function ScannerClient({
         setIsProcessing(false)
       }
     },
-    [showScanResult]
+    [showId, showScanResult]
   )
 
   // ── Start camera ────────────────────────────────────────────────────────
@@ -150,13 +150,22 @@ export function ScannerClient({
 
   // Start/stop camera based on active tab
   useEffect(() => {
-    if (activeTab === 'scan') {
-      startCamera()
-    } else {
-      stopCamera()
+    // Camera setup updates several status fields. Schedule it after the effect
+    // has subscribed so those updates are not synchronous effect cascades.
+    const timer = window.setTimeout(() => {
+      if (activeTab === 'scan') {
+        void startCamera()
+      } else {
+        stopCamera()
+      }
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+      controlsRef.current?.stop()
+      controlsRef.current = null
     }
-    return () => stopCamera()
-  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, startCamera, stopCamera])
 
   // Clear timeout on unmount
   useEffect(() => {

@@ -29,19 +29,19 @@ const requiredFields = [
   { id: "full_name", label: "Name" },
   { id: "email", label: "Email" },
   { id: "password", label: "Password" },
+  { id: "password_confirm", label: "Confirm Password" },
   { id: "profile_image_file", label: "Profile Picture" },
   { id: "phone", label: "Phone" },
   { id: "location", label: "Location" },
   { id: "language", label: "Language" },
   { id: "gender", label: "Gender" },
-  { id: "youtube", label: "YouTube Video" },
 ] as const
 
 type RequiredFieldId = (typeof requiredFields)[number]["id"]
 
 const focusRing = 'outline-none ring-1 ring-inset ring-[var(--ev-line)] transition-[box-shadow] focus-visible:ring-2 focus-visible:ring-[var(--ev-accent-fill)]'
 const fieldClassName = `h-11 rounded-xl border-0 bg-[var(--ev-bg)] text-[14px] shadow-none ${focusRing}`
-const selectClassName = `h-11 w-full appearance-none rounded-xl border-0 bg-[var(--ev-bg)] px-3.5 text-[14px] ${focusRing}`
+const selectClassName = `h-11 w-full appearance-none rounded-xl border-0 bg-[var(--ev-bg)] px-3.5 text-[14px] data-placeholder:text-[var(--ev-text)] ${focusRing}`
 
 const textareaClassName = `min-h-28 w-full rounded-xl bg-[var(--ev-bg)] px-3.5 py-3 text-[14px] leading-relaxed placeholder:text-[var(--ev-faint)] ${focusRing}`
 
@@ -68,18 +68,20 @@ export function ArtistSignupForm({
     full_name: false,
     email: false,
     password: false,
+    password_confirm: false,
     profile_image_file: false,
     phone: false,
     location: false,
     language: false,
     gender: false,
-    youtube: false,
   })
   const [imageName, setImageName] = useState<string | null>(null)
   const [preparingImage, setPreparingImage] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [location, setLocation] = useState<SelectedLocation | null>(null)
   const [languages, setLanguages] = useState<LanguageCode[]>([])
+  const [password, setPassword] = useState('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState('')
   // Beholdes så hintet under språkvelgeren kan si hvor forslaget kom fra.
   const [suggestedFrom, setSuggestedFrom] = useState<string | null>(null)
 
@@ -114,6 +116,7 @@ export function ArtistSignupForm({
   )
   const progress = Math.round((completed / requiredFields.length) * 100)
   const missing = requiredFields.filter((field) => !values[field.id])
+  const passwordsDoNotMatch = passwordConfirmation.length > 0 && password !== passwordConfirmation
 
   /**
    * Et bilde rett fra mobilkameraet er større enn det serverless-funksjonen
@@ -204,9 +207,9 @@ export function ArtistSignupForm({
           </div>
         </aside>
 
-        <form action={action} method="post" encType="multipart/form-data" className="space-y-8 p-6 md:p-8">
+        <form action={action} method="post" encType="multipart/form-data" className="space-y-8 p-4 md:p-6">
           {successMessage && (
-            <div className="rounded-xl bg-[var(--ev-bg)] px-4 py-3 text-[14px] font-medium">
+            <div className="rounded-xl bg-green-100 outline-green-500 outline-1 px-4 py-3 text-[14px] font-medium">
               {successMessage}
             </div>
           )}
@@ -221,7 +224,26 @@ export function ArtistSignupForm({
             <div className="grid gap-4 md:grid-cols-2">
               <LabeledInput icon={User} id="full_name" name="full_name" label="Full Name" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
               <LabeledInput icon={AtSign} id="email" name="email" label="Email" type="email" placeholder="name@example.com" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
-              <LabeledInput icon={Lock} id="password" name="password" label="Password" type="password" minLength={8} autoComplete="new-password" onValue={(value) => updateTextField("password", value)} required />
+              <LabeledInput icon={Lock} id="password" name="password" label="Password" type="password" minLength={8} autoComplete="new-password" onValue={(value) => { setPassword(value); updateTextField("password", value) }} required />
+              <div>
+                <LabeledInput
+                  icon={Lock}
+                  id="password_confirm"
+                  name="password_confirm"
+                  label="Confirm Password"
+                  type="password"
+                  minLength={8}
+                  autoComplete="new-password"
+                  onValue={(value) => { setPasswordConfirmation(value); updateTextField("password_confirm", value) }}
+                  aria-invalid={passwordsDoNotMatch}
+                  required
+                />
+                {passwordsDoNotMatch && (
+                  <p className="mt-2 text-[12px] text-[var(--ev-accent)]" role="alert">
+                    Passwords do not match.
+                  </p>
+                )}
+              </div>
               <LabeledInput icon={Phone} id="phone" name="phone" label="Phone" type="tel" autoComplete="tel" onValue={(value) => updateTextField("phone", value)} required />
               <div className="space-y-2">
                 <label htmlFor="location" className="text-[13px] font-medium">Location</label>
@@ -246,9 +268,9 @@ export function ArtistSignupForm({
                 <ImagePlus className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium">Profile Picture</p>
+                <p className="text-[13px] font-medium">Headshot Picture</p>
                 <p className="truncate text-[13px] text-[var(--ev-muted)]">
-                  {preparingImage ? "Preparing image…" : (imageName ?? "PNG, JPG or WebP")}
+                  {preparingImage ? "Preparing image…" : (imageName ?? "This photo can be used on posters. Please choose a headshot.")}
                 </p>
               </div>
               <span className="shrink-0 rounded-full bg-[var(--ev-text)] px-3.5 py-2 text-[13px] font-semibold text-[var(--ev-bg)]">Choose Image</span>
@@ -287,9 +309,9 @@ export function ArtistSignupForm({
                 </Select>
               </div>
               <div className="space-y-2">
-                <LabeledInput icon={Video} id="youtube" name="youtube" label="YouTube Video" type="url" placeholder="https://youtube.com/watch?v=..." onValue={(value) => updateTextField("youtube", value)} required />
+                  <LabeledInput icon={Video} id="showcase" name="showcase" label="Showcase Video (optional)" type="url" placeholder="https://example.com/video" onValue={() => undefined} />
                 <Label className="text-[12px] font-normal text-[var(--ev-faint)]">
-                    We use this video to assess your stage presence, and it will not be published outside our internal system.
+                  We use it to assess your stage presence, and it will not be published outside our internal system.
                 </Label>
               </div>
             </div>
@@ -323,7 +345,7 @@ export function ArtistSignupForm({
             <Button
               type="submit"
               className="h-11 rounded-full border-0 bg-[var(--ev-text)] px-5 text-[13px] font-semibold text-[var(--ev-bg)] transition-colors hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)] disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] sm:min-w-48"
-              disabled={missing.length > 0 || preparingImage}
+              disabled={missing.length > 0 || passwordsDoNotMatch || preparingImage}
             >
               <BadgeCheck className="size-4" />
               Register Artist Profile

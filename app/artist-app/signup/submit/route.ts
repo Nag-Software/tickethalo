@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { registerArtist } from '@/lib/actions/artist'
+import { createClient } from '@/lib/supabase/server'
 import { lookupCountry, type CountryCode } from '@/lib/geo'
 import { normalizeLanguages } from '@/lib/languages'
 import type { ArtistGender } from '@/types/database'
@@ -14,9 +15,11 @@ export async function POST(request: Request) {
   try {
     validateSignupForm(formData)
 
+    const password = String(formData.get('password') ?? '')
+
     await registerArtist({
       email,
-      password: String(formData.get('password') ?? ''),
+      password,
       full_name: String(formData.get('full_name') ?? ''),
       phone: optionalString(formData.get('phone')),
       bio: optionalString(formData.get('bio')),
@@ -28,7 +31,15 @@ export async function POST(request: Request) {
       profile_image_file: fileOrUndefined(formData.get('profile_image_file')),
     })
 
-    return NextResponse.redirect(new URL(`${signupPath}?status=submitted`, origin), 303)
+    const supabase = await createClient()
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (signInError) {
+      console.error('Artist signup succeeded but automatic sign-in failed:', signInError)
+      return NextResponse.redirect(new URL('/artist-app/login?error=signup_login', origin), 303)
+    }
+
+    return NextResponse.redirect(new URL('/artist-app', origin), 303)
   } catch (error) {
     console.error(error)
     const code = toSignupErrorCode(error)
@@ -39,27 +50,34 @@ export async function POST(request: Request) {
 function toSignupErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : ''
   if (message.includes('already') || message.includes('duplicate')) return 'email_exists'
+  if (message.includes('passwords do not match')) return 'password_mismatch'
   if (message.includes('password')) return 'invalid_password'
   if (message.includes('email')) return 'invalid_email'
-  if (message.includes('youtube')) return 'invalid_youtube'
+  if (message.includes('video')) return 'invalid_video'
   if (message.includes('required')) return 'missing'
   return 'failed'
 }
 
 function validateSignupForm(formData: FormData) {
   const requiredTextFields = ['full_name', 'email', 'password', 'phone', 'city', 'gender']
+  const password = optionalString(formData.get('password'))
+  const passwordConfirmation = optionalString(formData.get('password_confirm'))
   const hasMissingText = requiredTextFields.some((field) => !optionalString(formData.get(field)))
   const hasImage = Boolean(fileOrUndefined(formData.get('profile_image_file')))
   const hasCountry = Boolean(country(formData.get('country')))
   const hasLanguage = normalizeLanguages(formData.getAll('language').map((value) => String(value))).length > 0
-  const youtube = optionalString(formData.get('youtube'))
+  const video = optionalString(formData.get('showcase'))
 
-  if (hasMissingText || !hasImage || !hasCountry || !hasLanguage || !youtube) {
+  if (hasMissingText || !hasImage || !hasCountry || !hasLanguage) {
     throw new Error('Required fields missing')
   }
 
-  if (!isYouTubeUrl(youtube)) {
-    throw new Error('Invalid YouTube URL')
+  if (password !== passwordConfirmation) {
+    throw new Error('Passwords do not match')
+  }
+
+  if (video && !isVideoUrl(video)) {
+    throw new Error('Invalid video URL')
   }
 }
 
@@ -85,7 +103,7 @@ function socialLinks(formData: FormData): Record<string, string> | undefined {
   const links = {
     instagram: optionalString(formData.get('instagram')),
     tiktok: optionalString(formData.get('tiktok')),
-    youtube: optionalString(formData.get('youtube')),
+    showcase: optionalString(formData.get('showcase')),
     facebook: optionalString(formData.get('facebook')),
     website: optionalString(formData.get('website')),
   }
@@ -93,11 +111,10 @@ function socialLinks(formData: FormData): Record<string, string> | undefined {
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
-function isYouTubeUrl(value: string) {
+function isVideoUrl(value: string) {
   try {
     const url = new URL(value)
-    const host = url.hostname.replace(/^www\./, '')
-    return host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com'
+    return url.protocol === 'http:' || url.protocol === 'https:'
   } catch {
     return false
   }

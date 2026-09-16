@@ -8,7 +8,12 @@ export const metadata = { title: 'Comedian Portal — Tickethalo' }
 
 export default async function ArtistLayout({ children }: { children: React.ReactNode }) {
   const pathname = await getRequestPathname()
-  const isPublicRoute = pathname.startsWith('/artist-app/login') || pathname.startsWith('/artist-app/signup')
+  const isPublicRoute =
+    pathname.startsWith('/artist-app/login') ||
+    pathname.startsWith('/artist-app/signup') ||
+    pathname.startsWith('/artist-app/forgot-password') ||
+    pathname.startsWith('/artist-app/reset-password') ||
+    pathname.startsWith('/artist-app/auth/callback')
 
   if (isPublicRoute) return children
 

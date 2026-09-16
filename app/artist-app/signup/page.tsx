@@ -9,7 +9,7 @@ export default async function ArtistSignupPage({
 }: {
   searchParams: Promise<{ status?: string; error?: string }>
 }) {
-  const { status, error } = await searchParams
+  const { error } = await searchParams
 
   return (
     <main
@@ -25,23 +25,24 @@ export default async function ArtistSignupPage({
             Register comedian profile
           </h1>
           <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[var(--ev-muted)]">
-            Submit your profile, video and contact info, and the booking teams will review you for upcoming shows.
+            Create your comedian profile, video and contact info, and start using the artist portal right away.
           </p>
         </header>
 
         <div className="">
           <ArtistSignupForm
             action="/artist-app/signup/submit"
-            successMessage={status === 'submitted' ? 'Your profile has been submitted for review.' : undefined}
             errorMessage={
               error === 'email_exists'
                 ? 'This email address is already registered. Try logging in.'
                 : error === 'invalid_password'
                   ? 'Password must be at least 8 characters.'
+                  : error === 'password_mismatch'
+                    ? 'Passwords do not match.'
                   : error === 'invalid_email'
                     ? 'Invalid email address.'
-                    : error === 'invalid_youtube'
-                      ? 'Enter a valid YouTube video link.'
+                      : error === 'invalid_video'
+                        ? 'Enter a valid video link.'
                       : error === 'missing'
                         ? 'Fill in all required fields before submitting.'
                         : error === 'unconfirmed'

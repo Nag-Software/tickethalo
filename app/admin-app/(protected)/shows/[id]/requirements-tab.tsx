@@ -395,59 +395,6 @@ export function RequirementsTab({
   const debounceTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const reqStatesRef = React.useRef(reqStates)
 
-  React.useEffect(() => {
-    reqStatesRef.current = reqStates
-  }, [reqStates])
-
-  React.useEffect(() => {
-    const timers = debounceTimers.current
-    return () => {
-      Object.values(timers).forEach((timer) => clearTimeout(timer))
-    }
-  }, [])
-
-  React.useEffect(() => {
-    const cachedDrafts = loadRequirementDrafts(showId)
-    const validDrafts = Object.fromEntries(
-      Object.entries(cachedDrafts).filter(([id]) => sortedRequirements.some((requirement) => requirement.id === id))
-    )
-
-    if (Object.keys(validDrafts).length === 0) {
-      saveRequirementDrafts(showId, {})
-      return
-    }
-
-    const mergedStates = {
-      ...Object.fromEntries(sortedRequirements.map((requirement) => [requirement.id, stateFromRequirement(requirement)])),
-      ...validDrafts,
-    }
-
-    setReqStates(mergedStates)
-    setDirtyIds(new Set(Object.keys(validDrafts)))
-
-    for (const [id, state] of Object.entries(validDrafts)) {
-      const blockingIssue = blockingCompensationIssue(orderedIds, mergedStates, id, state)
-      if (!blockingIssue) {
-        debounceTimers.current[id] = setTimeout(() => {
-          delete debounceTimers.current[id]
-          persistReq(id, state)
-        }, 150)
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showId])
-
-  React.useEffect(() => {
-    const drafts = Object.fromEntries(
-      [...dirtyIds]
-        .map((id) => [id, reqStates[id]] as const)
-        .filter((entry): entry is [string, ReqState] => Boolean(entry[1]))
-    )
-    saveRequirementDrafts(showId, drafts)
-  }, [dirtyIds, reqStates, showId])
-
-  // ── Autosave logic ──────────────────────────────────────────────────────────
-
   const persistReq = React.useCallback(
     (id: string, state: ReqState) => {
       setSavingIds((prev) => new Set([...prev, id]))
@@ -480,6 +427,63 @@ export function RequirementsTab({
     },
     [showId]
   )
+
+  React.useEffect(() => {
+    reqStatesRef.current = reqStates
+  }, [reqStates])
+
+  React.useEffect(() => {
+    const timers = debounceTimers.current
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer))
+    }
+  }, [])
+
+  React.useEffect(() => {
+    const cachedDrafts = loadRequirementDrafts(showId)
+    const validDrafts = Object.fromEntries(
+      Object.entries(cachedDrafts).filter(([id]) => sortedRequirements.some((requirement) => requirement.id === id))
+    )
+
+    if (Object.keys(validDrafts).length === 0) {
+      saveRequirementDrafts(showId, {})
+      return
+    }
+
+    const mergedStates = {
+      ...Object.fromEntries(sortedRequirements.map((requirement) => [requirement.id, stateFromRequirement(requirement)])),
+      ...validDrafts,
+    }
+
+    const restoreTimer = setTimeout(() => {
+      setReqStates(mergedStates)
+      setDirtyIds(new Set(Object.keys(validDrafts)))
+
+      for (const [id, state] of Object.entries(validDrafts)) {
+        const blockingIssue = blockingCompensationIssue(orderedIds, mergedStates, id, state)
+        if (!blockingIssue) {
+          debounceTimers.current[id] = setTimeout(() => {
+            delete debounceTimers.current[id]
+            persistReq(id, state)
+          }, 150)
+        }
+      }
+    }, 0)
+
+    return () => clearTimeout(restoreTimer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showId])
+
+  React.useEffect(() => {
+    const drafts = Object.fromEntries(
+      [...dirtyIds]
+        .map((id) => [id, reqStates[id]] as const)
+        .filter((entry): entry is [string, ReqState] => Boolean(entry[1]))
+    )
+    saveRequirementDrafts(showId, drafts)
+  }, [dirtyIds, reqStates, showId])
+
+  // ── Autosave logic ──────────────────────────────────────────────────────────
 
   const scheduleAutosave = React.useCallback(
     (id: string, state: ReqState) => {
@@ -702,13 +706,6 @@ export function RequirementsTab({
     .map((id) => requirementMap[id])
     .filter((requirement): requirement is Requirement => Boolean(requirement))
   const totalPercent = totalPercentAllocation(orderedIds, reqStates)
-  const fixedCount = orderedRequirements.filter((requirement) => reqStates[requirement.id]?.compensation_type === 'fixed').length
-  const percentCount = orderedRequirements.filter((requirement) => reqStates[requirement.id]?.compensation_type === 'percent').length
-  const issueCount = orderedRequirements.filter((requirement) => {
-    const state = reqStates[requirement.id]
-    return state ? Boolean(compensationIssue(orderedIds, reqStates, requirement.id, state)) : false
-  }).length
-
   // ── Booking blockers ────────────────────────────────────────────────────
   const missingRoleName = orderedRequirements.filter((req) => !(reqStates[req.id]?.role_name ?? req.role_name).trim()).length
   const missingCompType = orderedRequirements.filter((req) => !(reqStates[req.id]?.compensation_type ?? req.compensation_type ?? '')).length
@@ -1002,17 +999,6 @@ export function RequirementsTab({
           </LineupCallout>
         </ToastActionForm>
       )}
-    </div>
-  )
-}
-
-// ─── ChipButton ───────────────────────────────────────────────────────────────
-
-function StatPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-border/70 bg-background/70 px-3 py-2">
-      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
     </div>
   )
 }

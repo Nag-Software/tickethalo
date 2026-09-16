@@ -57,7 +57,7 @@ export default async function ArtistProfilePage() {
                     className={inputClass}
                   />
                 </Field>
-                <Field label="Profile Picture">
+                <Field label="Profile picture">
                   <ProfileImageInput />
                 </Field>
               </div>
@@ -78,14 +78,14 @@ export default async function ArtistProfilePage() {
               </Field>
 
               <Field
-                label="YouTube Video"
+                label="Video Link"
                 hint="Update this link to change the video in the player below."
               >
                 <input
-                  name="youtube"
+                  name="showcase"
                   type="url"
-                  defaultValue={links.youtube ?? ''}
-                  placeholder="https://youtube.com/watch?v=..."
+                  defaultValue={links.showcase ?? ''}
+                  placeholder="https://example.com/video"
                   className={inputClass}
                 />
               </Field>
@@ -112,8 +112,8 @@ export default async function ArtistProfilePage() {
           </ToastActionForm>
 
           <YouTubePlayerCard
-            url={links.youtube ?? null}
-            title="Submitted YouTube Video"
+            url={links.showcase ?? null}
+            title="Submitted Video"
             description="The video you submitted in the application is used internally by the booking team."
           />
         </div>

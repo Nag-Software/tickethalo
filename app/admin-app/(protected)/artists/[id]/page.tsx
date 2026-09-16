@@ -152,8 +152,8 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
             <ArtistProfileCard artist={artist} />
 
             <YouTubePlayerCard
-              url={artist.social_links?.youtube ?? null}
-              title="Submitted YouTube video"
+              url={artist.social_links?.showcase ?? null}
+              title="Submitted video"
               description="The video the comedian sent in with their application."
             />
           </div>

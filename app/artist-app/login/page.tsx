@@ -10,9 +10,9 @@ import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 export default async function ArtistLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>
+  searchParams: Promise<{ error?: string; next?: string; reset?: string }>
 }) {
-  const { error, next } = await searchParams
+  const { error, next, reset } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
@@ -59,7 +59,15 @@ export default async function ArtistLoginPage({
             title="Comedian portal"
             description="Sign in with your comedian profile"
             action="/artist-app/login/submit"
-            errorMessage={error === 'invalid' ? 'Invalid email or password.' : undefined}
+            errorMessage={
+              error === 'invalid'
+                ? 'Invalid email or password.'
+                : error === 'signup_login'
+                  ? 'Your profile was created, but automatic sign-in failed. Please sign in.'
+                  : undefined
+            }
+            successMessage={reset === 'success' ? 'Your password has been updated. You can sign in now.' : undefined}
+            forgotPasswordHref="/artist-app/forgot-password"
             signupHref="/artist-app/signup"
             nextPath={next}
             theme="portal"

@@ -26,12 +26,15 @@ export function LoginForm({
   description = "Enter your email below to login to your account",
   action = "#",
   errorMessage,
+  successMessage,
   brandLabel,
   brandHref = '/',
   showSignupLink = true,
   signupHref = '/artist-app/signup',
   signupLabel = 'Sign up here',
   signupPrompt = 'New here?',
+  forgotPasswordHref,
+  forgotPasswordLabel = 'Forgot password?',
   signupSlot,
   submitLabel = 'Sign in',
   submitClassName,
@@ -43,12 +46,15 @@ export function LoginForm({
   description?: string
   action?: string
   errorMessage?: string
+  successMessage?: string
   brandLabel?: string
   brandHref?: string
   showSignupLink?: boolean
   signupHref?: string
   signupLabel?: string
   signupPrompt?: string
+  forgotPasswordHref?: string
+  forgotPasswordLabel?: string
   /** Rendered instead of the signup link — the club portal opens a dialog here. */
   signupSlot?: React.ReactNode
   submitLabel?: string
@@ -111,6 +117,16 @@ export function LoginForm({
                   {errorMessage}
                 </div>
               )}
+              {successMessage && (
+                <div className={cn(
+                  'px-3 py-2 text-sm',
+                  isPortal
+                    ? 'rounded-xl bg-[var(--ev-bg)] text-[var(--ev-text)] ring-1 ring-inset ring-[var(--ev-line)]'
+                    : 'rounded-md bg-emerald-500/10 text-emerald-700',
+                )}>
+                  {successMessage}
+                </div>
+              )}
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
                 <Input
@@ -169,6 +185,18 @@ export function LoginForm({
                     )}
                   </FieldDescription>
                 )}
+                {forgotPasswordHref && <FieldDescription className={cn(
+                    'text-center',
+                    isPoster && 'pt-2 text-sm font-medium text-zinc-600',
+                    isPortal && 'pt-1 text-[13px] text-[var(--ev-muted)]',
+                  )}>
+                  <Link href={forgotPasswordHref} className={cn(
+                      isPoster && 'font-bold underline decoration-2 underline-offset-4 hover:text-[#b83224]',
+                      isPortal && 'font-medium text-[var(--ev-accent)] underline underline-offset-4',
+                    )}>
+                      {forgotPasswordLabel}
+                  </Link>
+                </FieldDescription>}
               </Field>
             </FieldGroup>
           </form>

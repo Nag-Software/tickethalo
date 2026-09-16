@@ -24,9 +24,9 @@ const STEPS = [
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; reset?: string }>
 }) {
-  const { error } = await searchParams
+  const { error, reset } = await searchParams
   const adminPrefix = '/admin-app'
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -42,6 +42,7 @@ export default async function AdminLoginPage({
     : error === 'invalid'
       ? 'Invalid email or password.'
       : undefined
+  const successMessage = reset === 'success' ? 'Your password has been updated. You can sign in now.' : undefined
 
   return (
     <main
@@ -93,7 +94,10 @@ export default async function AdminLoginPage({
             description="Sign in with your club account"
             action={`${adminPrefix}/login/submit`}
             errorMessage={errorMessage}
+            successMessage={successMessage}
             signupPrompt="New club?"
+            forgotPasswordHref="/admin-app/forgot-password"
+            signupHref="artist-app/signup"
             signupSlot={
               <BetaAccessDialog
                 source="login-form"

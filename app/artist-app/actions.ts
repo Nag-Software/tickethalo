@@ -125,7 +125,7 @@ function socialLinksFromForm(formData: FormData) {
   const links = {
     instagram: textValue(formData.get('instagram')),
     tiktok: textValue(formData.get('tiktok')),
-    youtube: textValue(formData.get('youtube')),
+    showcase: textValue(formData.get('showcase')),
     facebook: textValue(formData.get('facebook')),
     website: textValue(formData.get('website')),
   }

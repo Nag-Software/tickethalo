@@ -73,7 +73,7 @@ export async function registerArtist(input: RegisterArtistInput) {
       }
     }
 
-    // 4. Create artist with status = pending_review
+    // 4. Create the artist as approved so the new user can enter immediately.
     const { data: artist, error: artistError } = await admin.from('artists').insert({
       auth_user_id: authUserId,
       full_name: input.full_name,

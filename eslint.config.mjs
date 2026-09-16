@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Downloaded third-party browser bundle; it is not application source.
+    "app/SVG Viewer - View, edit, and optimize SVGs_files/**",
+    "playwright-report/**",
+    "test-results/**",
+    "coverage/**",
+    ".stryker-tmp/**",
+    "reports/**",
   ]),
 ]);
 
