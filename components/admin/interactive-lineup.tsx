@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, ChevronDown, Plus, Search, Send, Trash2, UserPlus, UserRound, XCircle } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Plus, Search, Send, Trash2, UserRound, XCircle } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +17,6 @@ import { ARTIST_ROLE_OPTIONS, artistMatchesRole, canonicalRoleLabel, canonicalRo
 import type { BookingSpot } from '@/lib/booking-spots'
 import { cn } from '@/lib/utils'
 import {
-  addArtistToRequirementAction,
   addRequirementAction,
   cancelOfferAction,
   deleteSpotAction,
@@ -37,7 +36,7 @@ export type LineupArtist = {
 }
 
 /** What picking an artist in the row's artist list should do. */
-type ArtistPickerMode = 'offer' | 'manual' | 'swap'
+type ArtistPickerMode = 'offer' | 'swap'
 
 /** The three fee models a booker actually picks between. */
 type FeeMode = 'none' | 'fixed' | 'percent'
@@ -154,17 +153,6 @@ export function InteractiveLineup({
                 run(
                   () => sendOfferToArtistAction(fd({ artist_id: artist.id, show_requirement_id: spot.requirementId })),
                   `Request sent to ${artistLabel(artist)}.`,
-                )
-                return
-              }
-
-              if (mode === 'manual') {
-                run(
-                  () =>
-                    addArtistToRequirementAction(
-                      fd({ artist_id: artist.id, show_requirement_id: spot.requirementId, currency }),
-                    ),
-                  `${artistLabel(artist)} was added to the lineup.`,
                 )
                 return
               }
@@ -398,12 +386,8 @@ function ArtistCell({
             {spot.state === 'open' && (
               <>
                 <MenuButton icon={Send} onClick={() => setPicker('offer')}>
-                  Send request
-                  <MenuHint>Ask an artist, they accept themselves</MenuHint>
-                </MenuButton>
-                <MenuButton icon={UserPlus} onClick={() => setPicker('manual')}>
-                  Add manually
-                  <MenuHint>Book the artist straight into the spot</MenuHint>
+                  Choose comedian
+                  <MenuHint>Send request now</MenuHint>
                 </MenuButton>
               </>
             )}
@@ -429,23 +413,17 @@ function ArtistCell({
             )}
 
             {spot.state === 'pending' && (
-              <>
-                <MenuButton icon={UserPlus} onClick={() => setPicker('manual')}>
-                  Change
-                  <MenuHint>Book someone else straight into the spot</MenuHint>
-                </MenuButton>
-                <MenuButton
-                  icon={Trash2}
-                  destructive
-                  onClick={() => {
-                    onRemoveArtist()
-                    close()
-                  }}
-                >
-                  Remove
-                  <MenuHint>Withdraws the request that is out</MenuHint>
-                </MenuButton>
-              </>
+              <MenuButton
+                icon={Trash2}
+                destructive
+                onClick={() => {
+                  onRemoveArtist()
+                  close()
+                }}
+              >
+                Remove
+                <MenuHint>Withdraws the request that is out</MenuHint>
+              </MenuButton>
             )}
 
             <MenuButton
