@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { ArtistType, ClubArtist, EnergyLevel } from '@/types/database'
+import type { Artist, ArtistType, ClubArtist, EnergyLevel } from '@/types/database'
 
 type Db = ReturnType<typeof createAdminClient>
 
@@ -69,6 +69,60 @@ export async function clubArtistReviews(
 
   if (error) throw new Error(error.message)
   return new Map((data ?? []).map((row) => [row.artist_id as string, toReview(row)]))
+}
+
+const ROSTER_ARTIST_FIELDS = 'id, full_name, stage_name, email, profile_image_url, status, created_at'
+
+export type ClubRosterArtist = Pick<
+  Artist,
+  'id' | 'full_name' | 'stage_name' | 'email' | 'profile_image_url' | 'status' | 'created_at'
+>
+
+export type ClubRosterEntry = { artist: ClubRosterArtist; review: ClubArtistReview }
+
+/**
+ * Klubbens komikerliste: komikeren og klubbens vurdering av hen, nyeste først.
+ *
+ * Én spørring. Lista var før to rundturer etter hverandre — vurderingene for å
+ * finne hvem som er med, så komikerne med alle ID-ene i en `in()`. Databasen
+ * svarer på under et millisekund; det er rundturene fra serveren som koster,
+ * så komikeren bakes inn i koblingen og søket gjøres i samme runde.
+ */
+export async function clubArtistRoster(
+  db: Db,
+  clubId: string | null,
+  { search = '', limit = 200 }: { search?: string; limit?: number } = {},
+): Promise<ClubRosterEntry[]> {
+  if (!clubId) return []
+
+  // `!inner` gjør søket på komikeren til et filter på koblingen — ellers ble
+  // koblinger uten treff stående med `artists: null`. Å sortere på en innbakt
+  // kolonne krever at kolonnen også er valgt, derfor `created_at` over.
+  let query = db
+    .from('club_artists')
+    .select(`${REVIEW_FIELDS}, artists!inner(${ROSTER_ARTIST_FIELDS})`)
+    .eq('club_id', clubId)
+    .order('artists(created_at)', { ascending: false })
+    .limit(limit)
+
+  // `%` er jokertegn i `ilike`. Resten av søket står i anførselstegn, så komma
+  // og parenteser er tekst å lete etter og ikke en del av filtersyntaksen.
+  const term = search.replace(/%/g, ' ').trim()
+  if (term) {
+    const pattern = `"%${term.replace(/[\\"]/g, (char) => `\\${char}`)}%"`
+    query = query.or(
+      `full_name.ilike.${pattern},stage_name.ilike.${pattern},email.ilike.${pattern}`,
+      { referencedTable: 'artists' },
+    )
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  // `Relationships` i den genererte Database-typen er tom, så formen på det
+  // innbakte treet settes for hånd — samme grep som i `lib/session`.
+  const rows = (data ?? []) as unknown as Array<Record<string, unknown> & { artists: ClubRosterArtist }>
+  return rows.map((row) => ({ artist: row.artists, review: toReview(row) }))
 }
 
 /** Skriver klubbens vurdering. Bare feltene som faktisk sendes inn. */

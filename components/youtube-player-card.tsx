@@ -26,9 +26,12 @@ export function YouTubePlayerCard({
         <>
           <div className="overflow-hidden rounded-xl border bg-black">
             <div className="relative aspect-video w-full">
+              {/* `lazy`: spilleren drar med seg mye skript, og kortet ligger
+                  som regel under bretten. Det skal ikke holde igjen siden. */}
               <iframe
                 src={embedUrl}
                 title={title}
+                loading="lazy"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 referrerPolicy="strict-origin-when-cross-origin"
                 allowFullScreen

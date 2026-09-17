@@ -31,30 +31,35 @@ import { saveClubArtistReviewAction, updateArtistStatusAction } from './actions'
  * med portalenken, nedtrekket gjorde det ikke.
  */
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const SELECT_CLASS =
   'h-9 w-full rounded-4xl border border-input bg-input/30 px-3.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 export default async function ArtistDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // Oppslagene under går samtidig, så en ugyldig ID må stoppes før dem: ellers
+  // feiler vurderingsoppslaget på uuid-typen og gir en feilside i stedet for 404.
+  if (!UUID_PATTERN.test(id)) notFound()
+
   const db = createAdminClient()
 
-  const { data: artist } = await db.from('artists').select('*').eq('id', id).single()
+  // Komikeren venter ikke på innloggingen, og vurderingen venter bare på den —
+  // ikke på komikeren. Klubbens vurdering finnes bare når komikeren er knyttet
+  // til klubben, så den svarer også på det; et eget oppslag for koblingen
+  // trengs ikke.
+  const [{ data: artist }, clubReview, { isSuperadmin }] = await Promise.all([
+    db.from('artists').select('*').eq('id', id).maybeSingle(),
+    getDefaultClubIdForAdmin().then((clubId) => clubArtistReview(db, clubId, id)),
+    getClubAccess(),
+  ])
   if (!artist) notFound()
 
-  const clubId = await getDefaultClubIdForAdmin()
-  const { data: connection } = await db
-    .from('club_artists')
-    .select('artist_id')
-    .eq('club_id', clubId)
-    .eq('artist_id', artist.id)
-    .maybeSingle()
+  const inClub = clubReview !== null
 
-  const inClub = Boolean(connection)
-
-  // Klubbens egen vurdering. Er komikeren ikke knyttet til klubben, finnes
-  // den ikke ennå — da vises et tomt utgangspunkt, og skjemaene er stengt.
-  const review = (await clubArtistReview(db, clubId, artist.id)) ?? EMPTY_REVIEW
-  const { isSuperadmin } = await getClubAccess()
+  // Er komikeren ikke knyttet til klubben, finnes vurderingen ikke ennå — da
+  // vises et tomt utgangspunkt, og skjemaene er stengt.
+  const review = clubReview ?? EMPTY_REVIEW
   const blockers = artistReadinessBlockers({ status: artist.status, category: review.category })
   const normalizedCategories = normalizeArtistRoleList(review.category ?? [])
   const name = artist.stage_name?.trim() || artist.full_name

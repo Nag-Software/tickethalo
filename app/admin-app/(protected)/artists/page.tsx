@@ -6,7 +6,7 @@ import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { RemoveFromClubButton } from '@/components/admin/remove-from-club-button'
 import { artistReadinessBlockers, READINESS_BLOCKER_LABELS } from '@/lib/artist-readiness'
-import { EMPTY_REVIEW, clubArtistReviews } from '@/lib/club-artist-profile'
+import { clubArtistRoster } from '@/lib/club-artist-profile'
 import { formatArtistRoleList } from '@/lib/artist-roles'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge } from '@/components/admin/artist-badges'
@@ -47,42 +47,20 @@ export default async function ArtistsPage({
   const params = await searchParams
   const searchQuery = params.q?.trim() ?? ''
   const filter = toFilter(params.filter)
-  const db = createAdminClient()
   const clubId = await getDefaultClubIdForAdmin()
 
-  // Roller, energi og flagg er klubbens egen vurdering og ligger på
-  // koblingen, ikke på komikeren — se `lib/club-artist-profile`.
-  const reviews = await clubArtistReviews(db, clubId)
-  const rosterIds = [...reviews.keys()]
-
-  let query = db
-    .from('artists')
-    .select('id, full_name, stage_name, email, profile_image_url, status')
-    .in('id', rosterIds)
-    .order('created_at', { ascending: false })
-    .limit(200)
-
-  if (searchQuery) {
-    const sanitizedSearch = searchQuery.replace(/[%,]/g, ' ').trim()
-    if (sanitizedSearch) {
-      query = query.or(`full_name.ilike.%${sanitizedSearch}%,stage_name.ilike.%${sanitizedSearch}%,email.ilike.%${sanitizedSearch}%`)
-    }
-  }
-
-  // Uten koblinger er det ingenting å spørre etter — `in()` med tom liste
-  // ville dessuten hentet alle.
-  const { data: artists } = rosterIds.length > 0 ? await query : { data: [] }
+  // Komikerne og klubbens vurdering av dem — roller, energi og flagg ligger på
+  // koblingen, ikke på komikeren — kommer i én runde, søket medregnet. Se
+  // `clubArtistRoster`.
+  const roster = await clubArtistRoster(createAdminClient(), clubId, { search: searchQuery })
 
   // Blokkeringene leses av flere kolonner, så «ikke klar» avgjøres her og ikke
   // i spørringen. Tellingen bruker samme sett som tabellen viser.
-  const rows = (artists ?? []).map((artist) => {
-    const review = reviews.get(artist.id) ?? EMPTY_REVIEW
-    return {
-      artist,
-      review,
-      blockers: artistReadinessBlockers({ status: artist.status, category: review.category }),
-    }
-  })
+  const rows = roster.map(({ artist, review }) => ({
+    artist,
+    review,
+    blockers: artistReadinessBlockers({ status: artist.status, category: review.category }),
+  }))
   const matchesFilter = (
     { artist, blockers }: { artist: { status: ArtistStatus }; blockers: unknown[] },
     value: ArtistFilter,
@@ -198,19 +176,22 @@ export default async function ArtistsPage({
                   // «Ikke godkjent» står allerede i statuskolonnen. Her vises
                   // bare det som ellers ikke er synlig noe sted i tabellen.
                   const missing = blockers.filter((blocker) => blocker !== 'approval')
+                  const href = `/admin-app/artists/${artist.id}`
                   return (
-                    <tr key={artist.id} className="relative border-b transition-colors last:border-0 hover:bg-muted/30">
-                      <td className="px-5 py-3">
+                    <tr key={artist.id} className="group border-b transition-colors last:border-0 hover:bg-muted/30">
+                      <td className="relative px-5 py-3">
                         <Link
-                          href={`/admin-app/artists/${artist.id}`}
-                          className="group flex items-center gap-3 after:absolute after:inset-0 after:content-['']"
+                          href={href}
+                          className="flex items-center gap-3 after:absolute after:inset-0 after:content-['']"
                         >
                           <Avatar
                             src={artist.profile_image_url}
                             name={artist.stage_name ?? artist.full_name}
                           />
                           <span className="min-w-0">
-                            <span className="block truncate font-semibold group-hover:underline">
+                            {/* Understreket når hvilken som helst av radens lenker er under
+                                pekeren — men ikke over fjern-knappen, som ikke åpner profilen. */}
+                            <span className="block truncate font-semibold group-has-[a:hover]:underline">
                               {artist.full_name}
                             </span>
                             <span className="block truncate text-xs text-muted-foreground">{artist.email}</span>
@@ -222,19 +203,22 @@ export default async function ArtistsPage({
                           </span>
                         </Link>
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
+                      <td className="relative px-5 py-3 text-muted-foreground">
                         {roles.length > 0 ? roles.join(', ') : '—'}
+                        <RowLink href={href} />
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="relative px-5 py-3">
                         <ArtistStatusBadge status={artist.status} />
                         {review.is_flagged && <span className="ml-1"><FlaggedBadge /></span>}
+                        <RowLink href={href} />
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="relative px-5 py-3">
                         {review.admin_energy_level ? (
                           <ArtistEnergyBadge level={review.admin_energy_level} />
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
+                        <RowLink href={href} />
                       </td>
                       <td className="relative px-5 py-3 text-right">
                         <RemoveFromClubButton artistId={artist.id} name={artist.full_name} />
@@ -253,7 +237,7 @@ export default async function ArtistsPage({
                   ? `No comedians match “${searchQuery}”.`
                   : filter === 'not_ready'
                     ? 'Every comedian is ready for booking.'
-                    : rosterIds.length === 0
+                    : rows.length === 0
                       ? 'No comedians in your club yet.'
                       : 'No comedians here yet.'}
               </p>
@@ -305,6 +289,22 @@ export default async function ArtistsPage({
       </div>
     </div>
   )
+}
+
+/**
+ * Resten av raden som klikkflate for profilen.
+ *
+ * Hele raden var før ett lag: navnelenkens `::after`, strukket ut over
+ * `<tr class="relative">`. Safari gjør ikke en tabellrad til containing block
+ * (WebKit-bug 240961), så laget la seg over hele `<main>` i stedet. Den
+ * nederste raden lå øverst, og hvert klikk i lista åpnet den komikeren.
+ *
+ * En celle er containing block i alle nettlesere, så hver celle får sitt eget
+ * lag. Navnet er den ene lenken tastatur og skjermleser ser; disse er bare
+ * flater å klikke på. Fjern-cellen får ikke noe lag — den åpner ingen profil.
+ */
+function RowLink({ href }: { href: string }) {
+  return <Link href={href} tabIndex={-1} aria-hidden className="absolute inset-0" />
 }
 
 function Avatar({ src, name }: { src: string | null; name: string }) {
