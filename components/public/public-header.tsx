@@ -69,7 +69,7 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
         // usynlig i samme farge som fyllet den ligger rundt.
         className="flex h-10 items-center rounded-full bg-[var(--ev-accent-fill)] px-3 transition-transform duration-200 hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-text)] md:h-9"
       >
-        <BrandLogoResponsive tone="dark" priority className="h-6" />
+        <BrandLogoResponsive tone="dark" priority className="h-5" />
       </Link>
 
       {/* The links as one segmented pill */}
