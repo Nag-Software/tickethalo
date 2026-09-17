@@ -1,5 +1,6 @@
 import type Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
+import { ensureClubPayoutScheduleKnown } from '@/lib/stripe-connect'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { osloDate } from '@/lib/ticket-sales'
 import type { ClubPayout, ClubPayoutStatus } from '@/types/database'
@@ -63,6 +64,11 @@ const SYNC_BATCH_SIZE = 50
 /** Samtidige kall mot Stripe i synken — cron-jobben har 60 sekunder totalt. */
 const SYNC_CONCURRENCY = 5
 
+/** Samtidige databaseoppslag når rekkefølgen for frigjøringen settes. */
+const ATTEMPT_LOOKUP_CONCURRENCY = 10
+
+const DEFERRED_REASON = 'deferred to the next run — this run used up its time budget before reaching the club'
+
 const DAY_MS = 24 * 60 * 60 * 1000
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -108,6 +114,9 @@ export type PayoutClub = {
   stripe_account_id: string
   payout_schedule_interval: string | null
 }
+
+/** Klubben med tidspunktet for utbetalingsjobbens siste reservasjon, om den finnes. */
+export type ReleaseCandidate = { id: string; lastAttemptAt: string | null }
 
 export type PayoutOutcome = {
   clubId: string
@@ -292,6 +301,54 @@ export function payoutFailureHoldReason(latest: LatestPayout | null | undefined,
     : `Stripe rejected the last payout request (${cause}); retrying after ${retryDate}`
 }
 
+/**
+ * Om fristen for å starte nytt arbeid er passert. `deadline` er epoch-ms; uten
+ * frist er den aldri passert. Arbeid som er i gang fullføres — fristen settes
+ * derfor med margin til funksjonens tidsgrense.
+ */
+export function isPastDeadline(deadline: number | undefined, now: number = Date.now()): boolean {
+  return typeof deadline === 'number' && now > deadline
+}
+
+/**
+ * Rekkefølgen klubbene vurderes i. Kjøringen har et tidsbudsjett, så det er
+ * klubbene sist i lista som ikke rekkes når det er mye å gjøre. Uten en bevisst
+ * rekkefølge ville det vært de samme klubbene dag etter dag.
+ *
+ * Eldst siste forsøk går først, og klubber som aldri er forsøkt aller først.
+ * En klubb som fikk utbetaling i dag havner bakerst neste gang; en klubb som
+ * ikke ble nådd beholder sin gamle tid og kommer foran. Likt — typisk flere
+ * klubber som aldri er forsøkt — avgjøres av en nøkkel som skifter med `seed`
+ * (datoen), så ikke de samme alltid står sist blant dem heller.
+ */
+export function orderClubsForRelease<T extends ReleaseCandidate>(clubs: readonly T[], seed: string): T[] {
+  return clubs
+    .map((club) => ({ club, attemptedAt: attemptTime(club.lastAttemptAt), tieBreak: rotationKey(seed, club.id) }))
+    .sort((a, b) => {
+      if (a.attemptedAt !== b.attemptedAt) return a.attemptedAt < b.attemptedAt ? -1 : 1
+      if (a.tieBreak !== b.tieBreak) return a.tieBreak - b.tieBreak
+      return a.club.id < b.club.id ? -1 : a.club.id > b.club.id ? 1 : 0
+    })
+    .map(({ club }) => club)
+}
+
+/** Aldri forsøkt, eller et tidspunkt som ikke kan leses, sorteres først. */
+function attemptTime(value: string | null): number {
+  const time = value ? Date.parse(value) : Number.NaN
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY
+}
+
+/** FNV-1a (32 bit) av `seed:id` — stabil innenfor en dag, stokket mellom dager. */
+function rotationKey(seed: string, id: string): number {
+  let hash = 0x811c9dc5
+  const input = `${seed}:${id}`
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -333,7 +390,19 @@ export async function getReleasableAmount(
 // Frigjøring
 // ─────────────────────────────────────────────────────────────
 
-export async function releaseDuePayouts(): Promise<{ clubs: number; released: number; outcomes: PayoutOutcome[] }> {
+/**
+ * Frigjør det som er klart for alle klubber med utbetalinger aktivert.
+ *
+ * Med `deadline` (epoch-ms) startes ingen ny klubb etter fristen. Klubbene som
+ * ikke ble nådd telles i `deferred` og står i `outcomes`, så loggen viser hvem
+ * som venter. Å stoppe midt i er trygt: en reservasjon som ikke ble bekreftet
+ * gjenopptas neste kjøring. Klubbene tas i rekkefølgen fra
+ * `orderClubsForRelease`, så det ikke er de samme som venter hver gang.
+ */
+export async function releaseDuePayouts(options?: {
+  deadline?: number
+}): Promise<{ clubs: number; released: number; outcomes: PayoutOutcome[]; deferred: number }> {
+  const deadline = options?.deadline
   const db = createAdminClient()
 
   const { data, error } = await db
@@ -344,13 +413,34 @@ export async function releaseDuePayouts(): Promise<{ clubs: number; released: nu
 
   if (error) throw new Error(`Could not load clubs for payouts: ${error.message}`)
 
-  const clubs = (data ?? []) as PayoutClub[]
+  const [candidates, withReservation] = await Promise.all([
+    withLastAttempt((data ?? []) as PayoutClub[]),
+    clubsWithUnconfirmedPayout(),
+  ])
+  const clubs = orderClubsForRelease(candidates, osloDate())
   const outcomes: PayoutOutcome[] = []
+  let deferred = 0
 
-  for (const club of clubs) {
-    const base = { clubId: club.id, clubName: club.name }
+  for (const [index, listed] of clubs.entries()) {
+    if (isPastDeadline(deadline)) {
+      deferred = clubs.length - index
+      for (const club of clubs.slice(index)) {
+        outcomes.push({ clubId: club.id, clubName: club.name, released: 0, skipped: DEFERRED_REASON })
+      }
+      console.warn(`[Payouts] Time budget used up — ${deferred} of ${clubs.length} clubs deferred to the next run`)
+      break
+    }
+
+    const base = { clubId: listed.id, clubName: listed.name }
 
     try {
+      // Klubber som var onboardet før planen ble speilet i databasen står med
+      // ukjent plan (null), og ingen webhook kommer av seg selv for dem. Da
+      // spør vi Stripe her i stedet for å hoppe over klubben hver natt.
+      // Kaster ikke: svarer Stripe ikke, er planen fortsatt ukjent og klubben
+      // hoppes over som før.
+      const club = await ensureClubPayoutScheduleKnown(listed)
+
       const scheduleSkip = payoutScheduleSkipReason(club.payout_schedule_interval)
       if (scheduleSkip) {
         outcomes.push({ ...base, released: 0, skipped: scheduleSkip })
@@ -363,17 +453,74 @@ export async function releaseDuePayouts(): Promise<{ clubs: number; released: nu
         continue
       }
 
-      outcomes.push(await releaseForClub(club))
+      // Uten oversikt over reservasjonene (null) behandles alle klubber som om
+      // de kan ha en, slik at ingen ubekreftet utbetaling blir liggende.
+      const mayHaveReservation = withReservation === null || withReservation.has(club.id)
+      outcomes.push(await releaseForClub(club, mayHaveReservation))
     } catch (error) {
       // Én klubb med problemer skal ikke stoppe utbetalingen til de andre.
       const message = errorMessage(error)
-      console.error(`[Payouts] Club ${club.id}: ${message}`)
+      console.error(`[Payouts] Club ${listed.id}: ${message}`)
       outcomes.push({ ...base, released: 0, skipped: message })
     }
   }
 
   const released = outcomes.reduce((total, outcome) => total + outcome.released, 0)
-  return { clubs: clubs.length, released, outcomes }
+  return { clubs: clubs.length, released, outcomes, deferred }
+}
+
+/**
+ * Når utbetalingsjobben sist reserverte en utbetaling for hver klubb. Brukes
+ * bare til rekkefølgen — et oppslag som feiler gir «aldri forsøkt», ikke en
+ * klubb som hoppes over. Utbetalinger Stripe laget selv (`origin = 'stripe'`)
+ * er ikke jobbens forsøk og teller ikke.
+ */
+async function withLastAttempt(clubs: PayoutClub[]): Promise<(PayoutClub & ReleaseCandidate)[]> {
+  const db = createAdminClient()
+  const result: (PayoutClub & ReleaseCandidate)[] = []
+
+  for (let index = 0; index < clubs.length; index += ATTEMPT_LOOKUP_CONCURRENCY) {
+    const batch = clubs.slice(index, index + ATTEMPT_LOOKUP_CONCURRENCY)
+    const attempts = await Promise.all(
+      batch.map(async (club) => {
+        const { data, error } = await db
+          .from('club_payouts')
+          .select('created_at')
+          .eq('club_id', club.id)
+          .eq('origin', 'tickethalo')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (error) {
+          console.warn(`[Payouts] Could not read the last payout attempt for club ${club.id}: ${error.message}`)
+          return null
+        }
+        return data?.created_at ?? null
+      }),
+    )
+
+    batch.forEach((club, position) => result.push({ ...club, lastAttemptAt: attempts[position] }))
+  }
+
+  return result
+}
+
+/**
+ * Klubbene som har en ubekreftet reservasjon (`creating`). Maks én per klubb,
+ * så lista er aldri lengre enn antall klubber. `null` når oppslaget feiler.
+ */
+async function clubsWithUnconfirmedPayout(): Promise<Set<string> | null> {
+  const { data, error } = await createAdminClient()
+    .from('club_payouts')
+    .select('club_id')
+    .eq('status', 'creating')
+
+  if (error) {
+    console.warn(`[Payouts] Could not list unconfirmed payouts: ${error.message}`)
+    return null
+  }
+  return new Set((data ?? []).map((row) => row.club_id))
 }
 
 async function latestPayout(clubId: string): Promise<LatestPayout | null> {
@@ -391,10 +538,21 @@ async function latestPayout(clubId: string): Promise<LatestPayout | null> {
   return data
 }
 
-async function releaseForClub(club: PayoutClub): Promise<PayoutOutcome> {
+async function releaseForClub(club: PayoutClub, mayHaveReservation: boolean): Promise<PayoutOutcome> {
   const db = createAdminClient()
   const base = { clubId: club.id, clubName: club.name }
   const currency = club.currency.toLowerCase()
+
+  // Hovedboken først: den koster ett databasekall, saldoen et Stripe-kall. De
+  // fleste klubber har ingenting til utbetaling de fleste dager, og
+  // tidsbudsjettet skal gå til dem som har. Svaret er bare en forhåndssjekk —
+  // reservasjonen regner på nytt under lås. En ubekreftet reservasjon må
+  // gjenopptas uansett hva hovedboken sier, så da går vi rett videre.
+  let releasable: number | null = null
+  if (!mayHaveReservation) {
+    releasable = (await getReleasableAmount(club.id)).releasable
+    if (releasable <= 0) return { ...base, released: 0, skipped: 'nothing due' }
+  }
 
   const balance = await stripe.balance.retrieve({}, { stripeAccount: club.stripe_account_id })
   const available = availablePayoutBalance(balance, currency)
@@ -417,11 +575,11 @@ async function releaseForClub(club: PayoutClub): Promise<PayoutOutcome> {
 
     // Pengene kan være opptjent uten at Stripe har dem som tilgjengelige ennå.
     // Det er verdt å skille fra «ingenting å utbetale» i loggen.
-    const { releasable } = await getReleasableAmount(club.id)
+    const due = releasable ?? (await getReleasableAmount(club.id)).releasable
     return {
       ...base,
       released: 0,
-      skipped: releasable > 0 ? `balance not available yet (${releasable} due, 0 available in Stripe)` : 'nothing due',
+      skipped: due > 0 ? `balance not available yet (${due} due, 0 available in Stripe)` : 'nothing due',
     }
   }
 
@@ -695,8 +853,15 @@ async function findRowForPayout(payout: Stripe.Payout, accountId: string): Promi
  * Sikkerhetsnettet når webhooks ikke kommer fram: henter status for alle
  * utbetalinger som ikke er avgjort, og for betalte utbetalinger de siste
  * dagene — Stripe kan melde en `paid` utbetaling `failed` i etterkant.
+ *
+ * Med `deadline` (epoch-ms) startes ingen ny runde etter fristen. Radene som
+ * ikke ble nådd (`deferred`) beholder sin gamle `status_synced_at` og kommer
+ * derfor foran neste gang. Åpne utbetalinger står først i køen — de avgjør om
+ * en klubb holdes igjen etter en feil.
  */
-export async function syncOpenPayouts(): Promise<{ checked: number; updated: number }> {
+export async function syncOpenPayouts(options?: {
+  deadline?: number
+}): Promise<{ checked: number; updated: number; deferred: number }> {
   const db = createAdminClient()
   const paidSince = new Date(Date.now() - PAID_RECHECK_DAYS * DAY_MS).toISOString()
   const fields = 'id, club_id, stripe_payout_id, stripe_account_id'
@@ -748,8 +913,15 @@ export async function syncOpenPayouts(): Promise<{ checked: number; updated: num
 
   let updated = 0
   let failed = 0
+  let deferred = 0
 
   for (let index = 0; index < targets.length; index += SYNC_CONCURRENCY) {
+    if (isPastDeadline(options?.deadline)) {
+      deferred = targets.length - index
+      console.warn(`[Payouts] Time budget used up — ${deferred} of ${targets.length} payouts left for the next sync`)
+      break
+    }
+
     const batch = targets.slice(index, index + SYNC_CONCURRENCY)
     const results = await Promise.allSettled(batch.map((target) => syncPayout(target.payoutId, target.accountId)))
 
@@ -763,7 +935,8 @@ export async function syncOpenPayouts(): Promise<{ checked: number; updated: num
     })
   }
 
-  if (failed > 0) console.error(`[Payouts] ${failed} of ${targets.length} payouts could not be synced`)
+  const checked = targets.length - deferred
+  if (failed > 0) console.error(`[Payouts] ${failed} of ${checked} payouts could not be synced`)
 
-  return { checked: targets.length, updated }
+  return { checked, updated, deferred }
 }

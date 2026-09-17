@@ -58,6 +58,26 @@ describe('checkout errors', () => {
     (type) => expect(toCheckoutError({ type, message: 'try later' }).code).toBe('stripe_unavailable'),
   )
 
+  it('treats a checkout deadline that arrived too late as temporary, not as broken setup', () => {
+    // Et SDK-forsøk som kom fram for sent: fristen er da under Stripes minimum.
+    const error = toCheckoutError({
+      type: 'StripeInvalidRequestError',
+      param: 'expires_at',
+      requestId: 'req_late',
+      message: 'The `expires_at` timestamp must be at least 30 minutes from Checkout Session creation.',
+    })
+    expect(error.code).toBe('stripe_unavailable')
+    expect(error.isOperatorFault).toBe(false)
+    expect(error.detail).toContain('param=expires_at')
+    expect(error.detail).toContain('req=req_late')
+  })
+
+  it('still treats other invalid parameters as broken setup', () => {
+    const error = toCheckoutError({ type: 'StripeInvalidRequestError', param: 'line_items[0][price_data][product]', message: 'bad' })
+    expect(error.code).toBe('stripe_config')
+    expect(error.isOperatorFault).toBe(true)
+  })
+
   it('maps unknown Stripe error types without exposing their message', () => {
     const error = toCheckoutError({ type: 'StripeSomethingNewError', message: 'internal detail' })
     expect(error.code).toBe('unknown')
@@ -123,5 +143,8 @@ describe('checkout errors for the ticket sales state', () => {
   ])('treats an unpublished, cancelled or archived show as not published %#', (overrides) => {
     const error = checkoutErrorForSalesState(ticketSalesState(show('2026-10-01', overrides), now), 'status=x')
     expect(error).toMatchObject({ code: 'show_not_published', detail: 'status=x' })
+    // Samme melding for utkast og arkiverte show — den kan ikke love at salget kommer.
+    expect(error?.message).toBe('This show is not on sale.')
+    expect(error?.message).not.toMatch(/\byet\b/i)
   })
 })

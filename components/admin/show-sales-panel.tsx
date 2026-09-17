@@ -62,6 +62,7 @@ export function ShowSalesPanel({ overview }: { overview: ShowSalesOverviewDto })
   const canResume = sales.kind === 'closed'
   const stopped = isTicketSalesStopped(sales)
   const refundable = hasRefundableSales(summary)
+  const disputes = summary.open_dispute_orders
 
   const refundDisabledReason = !stopped
     ? 'Stop ticket sales before refunding all tickets'
@@ -101,13 +102,21 @@ export function ShowSalesPanel({ overview }: { overview: ShowSalesOverviewDto })
             paidAmount={summary.paid_amount}
             awaitingRefundOrders={summary.awaiting_refund_orders}
             awaitingRefundAmount={summary.awaiting_refund_amount}
+            openDisputeOrders={summary.open_dispute_orders}
             disabledReason={refundDisabledReason}
           />
           <DeleteShowDialog showId={overview.showId} showTitle={overview.title} variant="danger" />
         </div>
       </div>
 
-      <dl className="grid grid-cols-2 gap-px border-t bg-border sm:grid-cols-5">
+      {/* Disputter er sjeldne, så tallet vises bare når det finnes en. Da blir
+          det seks felt, og rutenettet går over tre kolonner i stedet for fem. */}
+      <dl
+        className={cn(
+          'grid grid-cols-2 gap-px border-t bg-border',
+          disputes > 0 ? 'sm:grid-cols-3 lg:grid-cols-6' : 'sm:grid-cols-5',
+        )}
+      >
         <Stat label="Tickets sold" value={String(soldTicketCount(summary))} />
         <Stat label="Paid orders" value={String(summary.paid_orders)} />
         <Stat label="Revenue not refunded" value={formatMinorAmount(summary.paid_amount, currency)} />
@@ -119,11 +128,12 @@ export function ShowSalesPanel({ overview }: { overview: ShowSalesOverviewDto })
             summary.awaiting_refund_orders > 0 ? formatMinorAmount(summary.awaiting_refund_amount, currency) : undefined
           }
           highlight={summary.awaiting_refund_orders > 0}
-          className="col-span-2 sm:col-span-1"
+          className={disputes > 0 ? undefined : 'col-span-2 sm:col-span-1'}
         />
+        {disputes > 0 && <Stat label="Open disputes" value={String(disputes)} highlight />}
       </dl>
 
-      {(refundable && !stopped) || summary.awaiting_refund_orders > 0 ? (
+      {(refundable && !stopped) || summary.awaiting_refund_orders > 0 || disputes > 0 ? (
         <div className="space-y-2 border-t px-4 py-3">
           {refundable && !stopped && (
             <p className={WARNING_BOX}>
@@ -136,6 +146,14 @@ export function ShowSalesPanel({ overview }: { overview: ShowSalesOverviewDto })
               {summary.awaiting_refund_orders === 1 ? '1 payment' : `${summary.awaiting_refund_orders} payments`} went
               through after the show sold out or was taken off sale, so no tickets were issued. They are refunded
               automatically, and Refund all tickets includes them.
+            </p>
+          )}
+          {disputes > 0 && (
+            <p className={WARNING_BOX}>
+              {disputes === 1 ? '1 payment is' : `${disputes} payments are`} disputed by the buyer&apos;s bank in
+              Stripe. {disputes === 1 ? 'It' : 'They'} can&apos;t be refunded while the{' '}
+              {disputes === 1 ? 'dispute is' : 'disputes are'} open, and the show can&apos;t be deleted until{' '}
+              {disputes === 1 ? 'it closes' : 'they close'}.
             </p>
           )}
         </div>

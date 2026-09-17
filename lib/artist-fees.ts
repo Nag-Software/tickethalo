@@ -4,12 +4,14 @@ import { requirementFeeLabel } from '@/lib/booking-spots'
 import { clubInvoiceRecipient, feeInvoiceUrl, issueFeeInvoice, syncFeeInvoiceAmount } from '@/lib/fee-invoices'
 import type { ArtistFeeInvoice } from '@/types/database'
 import type { ArtistFeeInvoiceStatus, RequirementCompensationType } from '@/types/database'
+import { clubNetAfterRefunds } from '@/lib/finances'
 
 /**
  * Honoraret komikerne skal ha etter at showet er spilt.
  *
  * Grunnlaget er klubbens nettoinntekt på showet — `orders.club_net_amount`,
- * altså billettinntekten minus Tickethalos provisjon. Stripe-gebyret trekkes
+ * altså billettinntekten minus Tickethalos provisjon, etter refusjoner (se
+ * `clubNetAfterRefunds` i `lib/finances.ts`). Stripe-gebyret trekkes
  * ikke herfra: det belastes plattformkontoen og betales av Tickethalo (se
  * migrasjon 047 og `lib/stripe-fees.ts`). Av nettoinntekten går
  * `clubs.artist_share_bps` (90 % som standard) til lineupen; resten blir hos
@@ -157,14 +159,16 @@ async function showNetRevenue(showId: string): Promise<number> {
   const db = createAdminClient()
 
   // Refunderte ordrer teller ikke: pengene er tilbake hos kjøperen, og da er
-  // de heller ikke grunnlag for honorar.
+  // de heller ikke grunnlag for honorar. Det gjelder også den refunderte delen
+  // av en ordre som bare er delvis refundert i Stripe — ordren står som betalt,
+  // men klubben har ikke lenger hele beløpet.
   const { data: orders } = await db
     .from('orders')
-    .select('club_net_amount')
+    .select('club_net_amount, refunded_amount, application_fee_refunded_amount')
     .eq('show_id', showId)
     .eq('status', 'paid')
 
-  return (orders ?? []).reduce((total, order) => total + (order.club_net_amount ?? 0), 0)
+  return (orders ?? []).reduce((total, order) => total + clubNetAfterRefunds(order), 0)
 }
 
 async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
@@ -468,7 +472,7 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
       .in('show_id', showIds),
     db
       .from('orders')
-      .select('show_id, club_net_amount')
+      .select('show_id, club_net_amount, refunded_amount, application_fee_refunded_amount')
       .in('show_id', showIds)
       .eq('status', 'paid'),
     db
@@ -484,7 +488,7 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
   const netByShow = new Map<string, number>()
   for (const order of orderRows ?? []) {
     if (!order.show_id) continue
-    netByShow.set(order.show_id, (netByShow.get(order.show_id) ?? 0) + (order.club_net_amount ?? 0))
+    netByShow.set(order.show_id, (netByShow.get(order.show_id) ?? 0) + clubNetAfterRefunds(order))
   }
 
   const artistIds = [...new Set(spots.map((spot) => spot.artist_id))]

@@ -30,6 +30,29 @@ export type FinanceSummary = {
 
 const MONTHS_SHOWN = 6
 
+export type OrderNetFields = {
+  club_net_amount: number | null
+  refunded_amount?: number | null
+  application_fee_refunded_amount?: number | null
+}
+
+/**
+ * Klubbens andel av én ordre etter refusjoner: brutto − provisjon, minus det
+ * som gikk tilbake til kunden, pluss provisjonen Tickethalo førte tilbake.
+ * Samme formel som `club_releasable_amount` bruker per betalt ordre, slik at
+ * økonomisiden, honorargrunnlaget og utbetalingen ikke kan være uenige om en
+ * delrefusjon gjort i Stripe-dashbordet.
+ *
+ * Aldri under null: grafen og honorarene viser inntekt, ikke tap. Tapet på et
+ * salg der provisjonen ikke ble ført tilbake, trekkes fra i utbetalingen.
+ */
+export function clubNetAfterRefunds(order: OrderNetFields): number {
+  return Math.max(
+    (order.club_net_amount ?? 0) - (order.refunded_amount ?? 0) + (order.application_fee_refunded_amount ?? 0),
+    0,
+  )
+}
+
 function monthKey(date: Date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
 }
@@ -59,13 +82,13 @@ export async function getFinanceSummary(clubId: string): Promise<FinanceSummary>
   const [{ data: recent }, { data: lifetime }] = await Promise.all([
     db
       .from('orders')
-      .select('club_net_amount, created_at')
+      .select('club_net_amount, refunded_amount, application_fee_refunded_amount, created_at')
       .eq('club_id', clubId)
       .eq('status', 'paid')
       .gte('created_at', from),
     db
       .from('orders')
-      .select('club_net_amount')
+      .select('club_net_amount, refunded_amount, application_fee_refunded_amount')
       .eq('club_id', clubId)
       .eq('status', 'paid'),
   ])
@@ -76,7 +99,7 @@ export async function getFinanceSummary(clubId: string): Promise<FinanceSummary>
     const bucket = byMonth.get(monthKey(new Date(order.created_at)))
     if (!bucket) continue
 
-    bucket.net += order.club_net_amount ?? 0
+    bucket.net += clubNetAfterRefunds(order)
     bucket.tickets += 1
   }
 
@@ -84,6 +107,6 @@ export async function getFinanceSummary(clubId: string): Promise<FinanceSummary>
     months,
     periodNet: months.reduce((total, month) => total + month.net, 0),
     periodTickets: months.reduce((total, month) => total + month.tickets, 0),
-    lifetimeNet: (lifetime ?? []).reduce((total, order) => total + (order.club_net_amount ?? 0), 0),
+    lifetimeNet: (lifetime ?? []).reduce((total, order) => total + clubNetAfterRefunds(order), 0),
   }
 }

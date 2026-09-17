@@ -17,15 +17,22 @@ import { getAuthUser, getSessionProfile } from '@/lib/session'
 import { refundShow } from '@/lib/refunds'
 import {
   CheckoutSessionExpiryError,
+  checkShowDetailsChange,
   deleteShowBlockedMessage,
+  earliestOutstandingSaleAt,
+  expireOpenCheckoutSessions,
   getShowSalesOverview,
+  getShowSalesSummary,
+  hasOutstandingSales,
   hasRefundableSales,
   isTicketSalesStopped,
   resumeTicketSales,
+  stopSalesBeforeDeletion,
   stopTicketSales,
   toShowSalesOverviewDto,
   type ShowSalesOverviewDto,
 } from '@/lib/show-sales'
+import { ticketSalesState } from '@/lib/ticket-sales'
 import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -541,32 +548,85 @@ export async function updateShowDetailsAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const show = await assertShowAccess(showId)
   const db = createAdminClient()
+  const date = String(formData.get('date') ?? '').trim()
 
   // The currency is not picked per show — it is registered on the club under
   // My club, and the show follows it.
-  const { data: club } = show.club_id
-    ? await db.from('clubs').select('currency').eq('id', show.club_id).maybeSingle()
-    : { data: null }
+  const [{ data: club }, { data: current, error: currentError }] = await Promise.all([
+    show.club_id
+      ? db.from('clubs').select('currency').eq('id', show.club_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    db
+      .from('shows')
+      .select('title, date, currency, status, deleted_at, ticket_sales_closed_at')
+      .eq('id', showId)
+      .maybeSingle(),
+  ])
 
+  if (currentError) throw new Error(currentError.message)
+  if (!current) return { error: 'This show no longer exists.' }
+
+  // Without a club currency we leave the show's own — it must not fall back to NOK.
+  const clubCurrency = club?.currency ? normalizeCurrency(club.currency) : null
+
+  // Salget leses bare når dato eller valuta faktisk endres. Skjemaet lagrer
+  // automatisk for hvert felt, og en tittelendring skal ikke koste to
+  // databasekall ekstra.
+  const needsSales = date !== current.date.slice(0, 10) || (clubCurrency !== null && clubCurrency !== current.currency)
+  const [summary, earliestSaleAt] = needsSales
+    ? await Promise.all([getShowSalesSummary(showId), earliestOutstandingSaleAt(showId)])
+    : [null, null]
+
+  const check = checkShowDetailsChange({
+    show: current,
+    date,
+    clubCurrency,
+    hasSales: summary ? hasOutstandingSales(summary) : false,
+    earliestSaleAt,
+  })
+  if (!check.ok) return { error: check.error }
+
+  const title = String(formData.get('title') ?? '').trim()
   const { error } = await db.from('shows').update({
-    title: String(formData.get('title') ?? '').trim(),
+    title,
+    // Stripe-produktet bærer tittelen kjøperen ser på betalingssiden. Et nytt
+    // navn gir et nytt produkt ved neste checkout; prisen settes uansett per
+    // kjøp og påvirkes ikke.
+    ...(title !== current.title ? { stripe_product_id: null } : {}),
     slug: String(formData.get('slug') ?? '').trim(),
     description: optionalText(formData.get('description')),
-    date: String(formData.get('date') ?? '').trim(),
+    date,
     start_time: optionalText(formData.get('start_time')),
     end_time: optionalText(formData.get('end_time')),
     venue_name: null,
     venue_address: optionalText(formData.get('venue_address')),
     capacity: optionalInteger(formData.get('capacity')),
     ticket_price: optionalMoneyToMinor(formData.get('ticket_price')),
-    // Without a club currency we leave the show's own — it must not fall back to NOK.
-    ...(club?.currency ? { currency: normalizeCurrency(club.currency) } : {}),
+    currency: check.currency,
   }).eq('id', showId)
 
   // Next redacts the message on a thrown error in production, and a taken slug
   // is the one failure the booker can actually fix, so it comes back as a value.
   if (error?.code === '23505') return { error: 'That slug is already used by another show.' }
   if (error) throw new Error(error.message)
+
+  // Et kjøp som ble startet mens salget var åpent, kan fortsatt betales i en
+  // halvtime. Er salgsvinduet for den nye datoen ikke åpnet, ville den
+  // betalingen blitt et salg mer enn 90 dager før showet. Databasen sjekker
+  // ikke vinduet, så sesjonene avbrytes — etter svaret, så lagringen ikke
+  // venter på Stripe.
+  if (
+    check.dateChanged &&
+    ticketSalesState(current).kind === 'open' &&
+    ticketSalesState({ ...current, date }).kind === 'not_yet_open'
+  ) {
+    runAfterResponse(`Expire checkout sessions after moving show ${showId}`, async () => {
+      const { failed } = await expireOpenCheckoutSessions(showId)
+      if (failed > 0) {
+        console.error(`[Shows] Show ${showId} was moved, but ${failed} open checkout sessions could not be expired`)
+      }
+    })
+  }
 
   revalidatePath(`/admin-app/shows/${showId}`)
 }
@@ -1289,8 +1349,24 @@ export type StopTicketSalesResult =
 export type ResumeTicketSalesResult = { ok: true } | { error: string }
 
 export type RefundAllShowTicketsResult =
-  | { ok: true; total: number; refunded: number; failed: number; errors: string[] }
+  | {
+      ok: true
+      total: number
+      refunded: number
+      failed: number
+      errors: string[]
+      /** Ordrer som ikke ble forsøkt før tidsbudsjettet gikk ut. Dialogen kaller igjen. */
+      remaining: number
+    }
   | { error: string }
+
+/**
+ * Hvor lenge én «Refund all» holder på før den gir fra seg svaret. Kort med
+ * vilje: siden setter ingen `maxDuration` (en lav verdi ville kuttet andre
+ * handlinger på siden, som plakatgenerering), og korte runder holder seg
+ * innenfor enhver plattformgrense. Dialogen kaller igjen til alt er refundert.
+ */
+const REFUND_ALL_TIME_BUDGET_MS = 8_000
 
 function actionErrorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : 'Something went wrong. Please try again.'
@@ -1338,13 +1414,36 @@ export async function getShowSalesOverviewAction(showId: string): Promise<ShowSa
  * Avgjørelsen tas av `delete_show()` under lås på showraden, ikke her: et
  * kjøp som fullføres mens bookeren står i dialogen skal stoppe slettingen.
  * Et show med betalinger som ikke er refundert kan aldri slettes.
+ *
+ * Før slettingen stenges salget og påbegynte kjøp avbrytes — se
+ * `stopSalesBeforeDeletion`. Et show som alt er blokkert får ikke den
+ * bivirkningen: da svarer vi før noe endres.
  */
 export async function deleteShowAction(formData: FormData): Promise<{ error: string } | undefined> {
   const showId = String(formData.get('show_id') ?? '')
+  let slug: string | null = null
+  let salesStopped = false
+
+  // Stengte vi salget og slettingen likevel stoppet, skal bookeren vite det,
+  // og sidene skal vise det.
+  const failure = (message: string) => {
+    if (!salesStopped) return { error: message }
+    revalidateShowSales(showId, slug)
+    return { error: `${message} Ticket sales for the show have been stopped.` }
+  }
 
   try {
     await assertShowAccess(showId)
-    const [actorId, slug] = await Promise.all([currentProfileId(), showSlug(showId)])
+    const [actorId, loadedSlug, summary] = await Promise.all([
+      currentProfileId(),
+      showSlug(showId),
+      getShowSalesSummary(showId),
+    ])
+    slug = loadedSlug
+
+    if (hasOutstandingSales(summary)) return { error: deleteShowBlockedMessage(summary) }
+
+    salesStopped = (await stopSalesBeforeDeletion(showId, actorId)).salesStopped
 
     const { data, error } = await createAdminClient()
       .rpc('delete_show', { p_show_id: showId, p_actor_id: actorId })
@@ -1352,15 +1451,26 @@ export async function deleteShowAction(formData: FormData): Promise<{ error: str
 
     if (error || !data) {
       console.error(`[Shows] delete_show failed for ${showId}: ${error?.message ?? 'no result'}`)
-      return { error: `The show could not be deleted: ${error?.message ?? 'the database returned no result'}.` }
+      return failure(`The show could not be deleted: ${error?.message ?? 'the database returned no result'}.`)
     }
 
-    if (data.result === 'blocked') return { error: deleteShowBlockedMessage(data) }
+    if (data.result === 'blocked') {
+      // `delete_show()` teller ikke disputter i svaret sitt. Tallene hentes på
+      // nytt, så meldingen ikke ber bookeren refundere noe Stripe avviser.
+      const latest = await getShowSalesSummary(showId).catch(() => null)
+      return failure(
+        deleteShowBlockedMessage({
+          ...data,
+          open_dispute_orders: latest?.open_dispute_orders ?? 0,
+          pending_refund_orders: latest?.pending_refund_orders ?? 0,
+        }),
+      )
+    }
     if (data.result === 'not_found') return { error: 'This show no longer exists. It may already have been deleted.' }
 
     revalidateShowSales(showId, slug)
   } catch (error) {
-    return { error: actionErrorMessage(error) }
+    return failure(actionErrorMessage(error))
   }
 
   // Utenfor try/catch: `redirect` kaster, og catch-grenen ville gjort
@@ -1381,8 +1491,24 @@ export async function stopTicketSalesAction(formData: FormData): Promise<StopTic
     const [actorId, loadedSlug] = await Promise.all([currentProfileId(), showSlug(showId)])
     slug = loadedSlug
 
-    const { expiredCheckoutSessions } = await stopTicketSales(showId, actorId)
+    const { expiredCheckoutSessions, failedCheckoutSessions } = await stopTicketSales(showId, actorId)
     revalidateShowSales(showId, slug)
+
+    // Et kjøp Stripe ikke lot oss avbryte kan fortsatt betales. Databasen gir
+    // ingen billett for det og pengene refunderes, men bookeren skal ikke få
+    // høre at alt ble avbrutt når det ikke ble det.
+    if (failedCheckoutSessions > 0) {
+      const n = failedCheckoutSessions
+      return {
+        ok: true,
+        expiredCheckoutSessions,
+        warning:
+          `${n} ${n === 1 ? 'purchase' : 'purchases'} in progress couldn't be cancelled at Stripe. ` +
+          `If ${n === 1 ? 'that buyer' : 'those buyers'} still ${n === 1 ? 'pays' : 'pay'}, the payment is refunded ` +
+          'automatically and no ticket is issued.',
+      }
+    }
+
     return { ok: true, expiredCheckoutSessions }
   } catch (error) {
     // Salget er stengt i databasen — bare oppryddingen hos Stripe feilet.
@@ -1419,6 +1545,10 @@ export async function resumeTicketSalesAction(formData: FormData): Promise<Resum
  * Krever at salget er stengt, så ingen ny billett selges mens refusjonene
  * går, og at bookeren har skrevet inn showets tittel. Refusjonen kan ikke
  * angres og går rett på klubbens Stripe-saldo.
+ *
+ * Refunderer så mange som rekkes innenfor tidsbudsjettet og sier hvor mange
+ * som gjenstår. Hver ordre er idempotent mot Stripe, så neste kall tar bare
+ * de som ikke er refundert.
  */
 export async function refundAllShowTicketsAction(formData: FormData): Promise<RefundAllShowTicketsResult> {
   const showId = String(formData.get('show_id') ?? '')
@@ -1437,18 +1567,24 @@ export async function refundAllShowTicketsAction(formData: FormData): Promise<Re
     if (!confirmTitle || confirmTitle !== overview.title.trim()) {
       return { error: 'Type the exact show title to confirm the refund.' }
     }
+    // Ikke en feil: dialogen kaller igjen så lenge noe gjensto, og en
+    // webhook kan ha refundert de siste i mellomtiden.
     if (!hasRefundableSales(overview.summary)) {
-      return { error: 'There is nothing left to refund on this show.' }
+      return { ok: true, total: 0, refunded: 0, failed: 0, errors: [], remaining: 0 }
     }
 
     started = true
-    const result = await refundShow(showId)
+    // Én stor refusjon i ett kall ville nådd tidsgrensen på et stort show,
+    // og da blir svaret en generell feil uten tall. Med en frist stopper
+    // `refundShow` før, og dialogen fortsetter med resten.
+    const result = await refundShow(showId, { deadline: Date.now() + REFUND_ALL_TIME_BUDGET_MS })
     return {
       ok: true,
       total: result.total,
       refunded: result.refunded,
       failed: result.failed,
       errors: result.errors,
+      remaining: result.remaining,
     }
   } catch (error) {
     const message = actionErrorMessage(error)

@@ -1,121 +1,40 @@
 -- ============================================================
--- Migration 047: Betalingsløsningen gjøres produksjonsmoden
+-- Migration 048: Oppfølging av 047 (betalinger)
 --
--- Fem ting som hører sammen, fordi de alle handler om at
--- økonomiske rader aldri skal forsvinne eller bli feil:
+-- 047 ble lagt på databasen før gjennomgangen av den var ferdig, og filen
+-- ble utvidet etterpå. Migreringsverktøyet husker filnavn, ikke innhold, så
+-- utvidelsene når aldri en database som allerede har 047. Denne migrasjonen
+-- tar dem med. Alt er idempotent: på en ny database, der 047 allerede har
+-- alt, endrer den ingenting.
 --
---  1. Show med salg kan ikke slettes. Et show kan bare slettes
---     når alt er refundert, og har det salgshistorikk blir det
---     arkivert i stedet — ordrer og billetter står.
---  2. Billettsalg kan stenges uten å avpublisere showet.
---  3. Utbetalinger følger Stripes egen status (pending →
---     in_transit → paid/failed) i stedet for å merkes betalt
---     når forespørselen er godtatt.
---  4. Beløpet som frigis regnes og reserveres atomisk, slik at
---     to samtidige kjøringer ikke kan utbetale det samme.
---  5. Stripe-gebyret bokføres der Stripe faktisk trekker det:
---     på plattformkontoen. Klubbene er opprettet med
---     `fees_collector = application`, så gebyret har aldri
---     stått på klubbens transaksjon. «True-up»-modellen fra
---     032 bygget på motsatt antakelse og fjernes.
+--  * Disputter: status, tidspunkt og klubbens netto tap per ordre.
+--  * Refusjoner: status fra Stripe, forsøk og siste feil. En refusjon som
+--    ikke er fullført blokkerer sletting av showet.
+--  * complete_checkout_order: stengt salg gir `sales_closed` (ingen
+--    billetter, automatisk refusjon); gebyrstatus følger betalingen.
+--  * club_releasable_amount: realiserte tap (disputter, refusjoner uten
+--    tilbakeført provisjon) trekkes fra; ukjent provisjon holdes tilbake.
+--  * Plattformspeilet skiller test og live (`livemode`), og månedsvisningen
+--    holder bevegelser til og fra egen bank utenfor resultatet.
 -- ============================================================
 
 -- ─────────────────────────────────────────────────────────────
--- 1. shows — stengt salg og arkivering
--- ─────────────────────────────────────────────────────────────
-alter table shows
-  add column if not exists ticket_sales_closed_at timestamptz,
-  add column if not exists ticket_sales_closed_by uuid references profiles(id) on delete set null,
-  add column if not exists deleted_at             timestamptz,
-  add column if not exists deleted_by             uuid references profiles(id) on delete set null;
-
-comment on column shows.ticket_sales_closed_at is
-  'Satt = bookeren har stengt billettsalget. Showet er fortsatt synlig, '
-  'men ingen nye betalinger kan startes. Null = salget følger vanlige regler '
-  '(publisert, innenfor salgsvinduet på 90 dager).';
-comment on column shows.deleted_at is
-  'Satt = showet er slettet av bookeren, men hadde salgshistorikk og er '
-  'derfor arkivert i stedet for fjernet. Ordrer, billetter og fakturagrunnlag '
-  'står. Se delete_show().';
-
-create index if not exists idx_shows_not_deleted on shows(club_id, date) where deleted_at is null;
-
--- ─────────────────────────────────────────────────────────────
--- Økonomiske rader skal aldri forsvinne med et show.
---
--- 001 lot `tickets.show_id` kaskadere og `orders.show_id` bli null.
--- Det slettet billetter og gjorde ordrer foreldreløse, slik at
--- utbetalingen aldri fant pengene igjen. Nå nekter databasen.
--- Navnene på fremmednøklene er ikke garantert, så de slås opp.
--- ─────────────────────────────────────────────────────────────
-do $$
-declare
-  v_constraint record;
-begin
-  for v_constraint in
-    select con.conname, rel.relname as table_name
-    from pg_constraint con
-    join pg_class rel on rel.oid = con.conrelid
-    join pg_namespace nsp on nsp.oid = rel.relnamespace
-    join pg_class ref on ref.oid = con.confrelid
-    join pg_attribute att on att.attrelid = con.conrelid and att.attnum = any (con.conkey)
-    where con.contype = 'f'
-      and nsp.nspname = 'public'
-      and ref.relname = 'shows'
-      and rel.relname in ('orders', 'tickets', 'artist_fee_invoices')
-      and att.attname = 'show_id'
-  loop
-    execute format('alter table %I drop constraint %I', v_constraint.table_name, v_constraint.conname);
-  end loop;
-end;
-$$;
-
-alter table orders
-  add constraint orders_show_id_fkey
-    foreign key (show_id) references shows(id) on delete restrict;
-alter table tickets
-  add constraint tickets_show_id_fkey
-    foreign key (show_id) references shows(id) on delete restrict;
-alter table artist_fee_invoices
-  add constraint artist_fee_invoices_show_id_fkey
-    foreign key (show_id) references shows(id) on delete restrict;
-
--- ─────────────────────────────────────────────────────────────
--- 2. orders — refusjoner, refusjonskø og gebyrbokføring
+-- orders — nye kolonner
 -- ─────────────────────────────────────────────────────────────
 alter table orders
-  add column if not exists refunded_amount                 integer not null default 0,
-  add column if not exists application_fee_refunded_amount integer not null default 0,
-  add column if not exists cancellation_reason             text,
-  add column if not exists stripe_fee_tax_amount           integer,
-  add column if not exists stripe_fee_status               text not null default 'pending',
-  add column if not exists stripe_fee_reconciled_at        timestamptz,
-  add column if not exists dispute_status                  text,
-  add column if not exists disputed_at                     timestamptz,
-  add column if not exists dispute_net_amount              integer not null default 0,
-  add column if not exists refund_status                   text,
-  add column if not exists refund_attempts                 integer not null default 0,
-  add column if not exists last_refund_attempt_at          timestamptz,
-  add column if not exists last_refund_error               text;
+  add column if not exists dispute_status          text,
+  add column if not exists disputed_at             timestamptz,
+  add column if not exists dispute_net_amount      integer not null default 0,
+  add column if not exists refund_status           text,
+  add column if not exists refund_attempts         integer not null default 0,
+  add column if not exists last_refund_attempt_at  timestamptz,
+  add column if not exists last_refund_error       text;
 
-alter table orders
-  drop constraint if exists orders_cancellation_reason_check;
+alter table orders drop constraint if exists orders_cancellation_reason_check;
 alter table orders
   add constraint orders_cancellation_reason_check
     check (cancellation_reason is null or cancellation_reason in ('sold_out', 'invalid_show', 'sales_closed'));
 
-alter table orders
-  drop constraint if exists orders_stripe_fee_status_check;
-alter table orders
-  add constraint orders_stripe_fee_status_check
-    check (stripe_fee_status in ('pending', 'reconciled', 'not_applicable'));
-
-comment on column orders.refunded_amount is
-  'Sum refundert til kunden, fra charge.amount_refunded. Ordren står som '
-  '`refunded` først når hele beløpet er refundert — en delrefusjon i Stripe '
-  'endrer ikke status eller billetter.';
-comment on column orders.application_fee_refunded_amount is
-  'Den delen av formidlingsprovisjonen som er ført tilbake til klubben.';
 comment on column orders.cancellation_reason is
   'Hvorfor en betalt sesjon ikke ga billetter: utsolgt, showet ikke lenger i '
   'salg, eller salget stengt av bookeren før betalingen ble fullført. Slike '
@@ -134,40 +53,17 @@ comment on column orders.refund_status is
 comment on column orders.refund_attempts is
   'Antall refusjonsforsøk som har feilet eller blitt reversert av Stripe. '
   'Brukes til idempotency key per forsøk og til å slippe køen videre.';
-comment on column orders.stripe_fee_amount is
-  'Stripes behandlingsgebyr for betalingen, inkl. mva. Belastes Tickethalos '
-  'plattformkonto (fees_collector = application), ikke klubben. Hentes fra '
-  'Stripes gebyrrapport (incurred_by = charge). Påvirker ikke club_net_amount.';
-comment on column orders.stripe_fee_tax_amount is
-  'Mva-delen av stripe_fee_amount, slik Stripe rapporterer den.';
-comment on column orders.stripe_fee_status is
-  'pending = venter på Stripes gebyrrapport (tilgjengelig ~96 t etter betaling), '
-  'reconciled = gebyret er bokført fra rapporten, not_applicable = ingen '
-  'Stripe-betaling på plattformen (f.eks. eldre testordrer).';
-comment on column orders.club_net_amount is
-  'Klubbens andel: gross_amount − platform_fee_amount. Stripe-gebyret trekkes '
-  'ikke herfra — det betales av Tickethalo. Grunnlaget for utbetaling og '
-  'artisthonorar.';
 
--- Gebyr-oppgjøret fra 032 flyttet penger basert på en antakelse som ikke
--- stemmer for kontoene våre. Feltene har ingen gyldig betydning lenger.
-drop index if exists idx_orders_fee_trueup;
-alter table orders drop constraint if exists orders_fee_trueup_status_check;
-alter table orders
-  drop column if exists fee_trueup_amount,
-  drop column if exists fee_trueup_status;
-
+-- ─────────────────────────────────────────────────────────────
+-- Tilbakefylling
+-- ─────────────────────────────────────────────────────────────
+-- Stripe tar gebyr for alle betalinger på klubbkontoene, også når
+-- charge-ID-en mangler. Bare `not_applicable` flyttes; bokførte står.
 update orders
-set stripe_fee_status = case
-  when stripe_payment_intent_id is null or stripe_connected_account_id is null then 'not_applicable'
-  else 'pending'
-end;
-
--- Eldre ordrer uten Stripe-betaling har ikke noe gebyr å vente på.
--- Refunderte ordrer har refundert hele beløpet.
-update orders
-set refunded_amount = coalesce(amount_total, 0)
-where status = 'refunded' and refunded_amount = 0;
+set stripe_fee_status = 'pending'
+where stripe_fee_status = 'not_applicable'
+  and stripe_payment_intent_id is not null
+  and stripe_connected_account_id is not null;
 
 -- Refusjonene før 047 gikk gjennom refundOrder med `refund_application_fee`,
 -- så provisjonen ble ført tilbake til klubben. Uten dette ville
@@ -205,71 +101,9 @@ create index idx_orders_refund_queue
     and stripe_payment_intent_id is not null
     and stripe_connected_account_id is not null
     and refunded_at is null;
-create index if not exists idx_orders_fee_pending
-  on orders(created_at)
-  where stripe_fee_status = 'pending';
-create index if not exists idx_orders_show_status on orders(show_id, status);
 
 -- ─────────────────────────────────────────────────────────────
--- 3. clubs — utbetalingsplanen er en del av klarheten
--- ─────────────────────────────────────────────────────────────
-alter table clubs
-  add column if not exists payout_schedule_interval   text,
-  add column if not exists payout_schedule_checked_at timestamptz;
-
-comment on column clubs.payout_schedule_interval is
-  'Utbetalingsplanen slik Stripe Balance Settings rapporterer den. Må være '
-  '`manual` før klubben kan selge — ellers kan Stripe utbetale billettpenger '
-  'før showet er avholdt.';
-
--- Stripe-gebyret kan ikke velges per klubb: betaleren settes én gang når
--- kontoen opprettes, og alle klubbkontoer har Tickethalo som betaler.
-alter table clubs drop column if exists absorb_stripe_fee;
-
--- ─────────────────────────────────────────────────────────────
--- 4. club_payouts — Stripes statusmaskin
--- ─────────────────────────────────────────────────────────────
-alter table club_payouts
-  add column if not exists stripe_account_id text,
-  add column if not exists origin            text not null default 'tickethalo',
-  add column if not exists arrival_date      date,
-  add column if not exists failure_code      text,
-  add column if not exists failed_at         timestamptz,
-  add column if not exists cancelled_at      timestamptz,
-  add column if not exists status_synced_at  timestamptz;
-
-alter table club_payouts drop constraint if exists club_payouts_status_check;
-alter table club_payouts
-  add constraint club_payouts_status_check
-    check (status in ('creating', 'pending', 'in_transit', 'paid', 'failed', 'cancelled'));
-
-alter table club_payouts drop constraint if exists club_payouts_origin_check;
-alter table club_payouts
-  add constraint club_payouts_origin_check
-    check (origin in ('tickethalo', 'stripe'));
-
-comment on column club_payouts.status is
-  'creating = reservert i databasen, forespørselen til Stripe er ikke bekreftet. '
-  'pending/in_transit/paid/failed/cancelled speiler Stripe-utbetalingen og '
-  'oppdateres av payout.*-webhooks. En utbetaling kan gå fra paid til failed.';
-comment on column club_payouts.origin is
-  'tickethalo = opprettet av utbetalingsjobben, stripe = oppdaget via webhook '
-  '(f.eks. opprettet i Stripe-dashbordet). Begge teller mot det som er utbetalt.';
-
--- Maks én ubekreftet utbetaling per klubb. En kjøring som krasjer mellom
--- reservasjon og Stripe-kall blir stående her og gjenopptas med samme
--- idempotency key, i stedet for at en ny rad gir en ny utbetaling.
-create unique index if not exists idx_club_payouts_one_creating
-  on club_payouts(club_id) where status = 'creating';
-create index if not exists idx_club_payouts_open
-  on club_payouts(status, created_at) where status in ('creating', 'pending', 'in_transit', 'paid');
-
--- ─────────────────────────────────────────────────────────────
--- club_releasable_amount — én definisjon av «klar for utbetaling»
---
--- Betalte ordrer på avholdte show (showdato + klubbens hold-dager,
--- norsk dato), minus utbetalinger som ikke har feilet. Delrefusjoner
--- trekkes fra klubbens andel. Arkiverte/kansellerte show frigis ikke.
+-- Funksjoner
 -- ─────────────────────────────────────────────────────────────
 create or replace function club_releasable_amount(p_club_id uuid)
 returns table (
@@ -346,82 +180,6 @@ comment on function club_releasable_amount is
   'Hvor mye som kan utbetales til klubben nå, fra hovedboken. Brukes av både '
   'økonomisiden og reserve_club_payout, slik at de aldri kan være uenige.';
 
--- ─────────────────────────────────────────────────────────────
--- reserve_club_payout — atomisk reservasjon
---
--- Låser klubben, finner en eksisterende ubekreftet reservasjon
--- (gjenopptak) eller regner beløpet og skriver en ny rad i samme
--- transaksjon. To samtidige kjøringer serialiseres på låsen; den
--- andre ser den første sin rad og får den tilbake i stedet for å
--- lage en ny. Rad-ID-en er idempotency key mot Stripe.
--- ─────────────────────────────────────────────────────────────
-create or replace function reserve_club_payout(
-  p_club_id uuid,
-  p_available_amount integer,
-  p_currency text,
-  p_stripe_account_id text
-)
-returns table (
-  payout_id uuid,
-  amount integer,
-  resumed boolean,
-  created_at timestamptz,
-  releasable_amount bigint
-)
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_existing club_payouts%rowtype;
-  v_releasable bigint;
-  v_cutoff date;
-  v_amount integer;
-  v_row club_payouts%rowtype;
-begin
-  perform pg_advisory_xact_lock(hashtextextended('club_payout:' || p_club_id::text, 0));
-
-  select * into v_existing
-  from club_payouts p
-  where p.club_id = p_club_id
-    and p.status = 'creating'
-  limit 1;
-
-  if found then
-    return query select v_existing.id, v_existing.amount, true, v_existing.created_at, null::bigint;
-    return;
-  end if;
-
-  select r.releasable_amount, r.cutoff_date
-    into v_releasable, v_cutoff
-  from club_releasable_amount(p_club_id) r;
-
-  v_amount := least(coalesce(v_releasable, 0), greatest(coalesce(p_available_amount, 0), 0))::integer;
-
-  if v_amount <= 0 then
-    return;
-  end if;
-
-  insert into club_payouts (
-    club_id, amount, currency, period_end, status, stripe_account_id, origin
-  ) values (
-    p_club_id, v_amount, upper(coalesce(p_currency, 'NOK')), v_cutoff, 'creating',
-    p_stripe_account_id, 'tickethalo'
-  )
-  returning * into v_row;
-
-  return query select v_row.id, v_row.amount, false, v_row.created_at, v_releasable;
-end;
-$$;
-
-comment on function reserve_club_payout is
-  'Reserverer neste utbetaling for en klubb atomisk. Returnerer ingen rad når '
-  'det ikke er noe å utbetale, og en eksisterende `creating`-rad (resumed = true) '
-  'når en tidligere kjøring ikke fikk bekreftet sin.';
-
--- ─────────────────────────────────────────────────────────────
--- show_sales_summary — det bookeren må se før sletting/stenging
--- ─────────────────────────────────────────────────────────────
 drop function if exists show_sales_summary(uuid);
 create or replace function show_sales_summary(p_show_id uuid)
 returns table (
@@ -466,18 +224,6 @@ as $$
          and o.refund_status in ('pending', 'requires_action'));
 $$;
 
--- ─────────────────────────────────────────────────────────────
--- delete_show — den eneste veien et show forsvinner
---
--- Låser showet (samme lås som complete_checkout_order tar), slik at
--- et kjøp ikke kan smette inn mellom sjekken og slettingen.
---
---   blocked  = det finnes betalte ordrer, gyldige/brukte billetter
---              eller betalinger som ikke er refundert. Ingenting endres.
---   archived = alt er refundert, men showet har salgs- eller honorar-
---              historikk. Showet skjules og kanselleres; radene står.
---   deleted  = showet har aldri hatt en ordre eller et fakturagrunnlag.
--- ─────────────────────────────────────────────────────────────
 create or replace function delete_show(p_show_id uuid, p_actor_id uuid default null)
 returns table (
   result                 text,
@@ -541,21 +287,6 @@ begin
 end;
 $$;
 
-comment on function delete_show is
-  'Sletter et show bare når alle betalinger er refundert. Show med '
-  'salgshistorikk arkiveres (deleted_at) i stedet for å fjernes.';
-
--- ─────────────────────────────────────────────────────────────
--- complete_checkout_order — samme signatur som 036
---
--- Endringer:
---  * Et show som ikke finnes gir en ordre uten show_id (før: brudd på
---    fremmednøkkelen, 500 til Stripe og evige nye forsøk).
---  * Arkiverte show behandles som ugyldige.
---  * Ordrer uten billetter får `cancellation_reason` og havner i
---    refusjonskøen.
---  * Gebyrstatus i stedet for true-up-status.
--- ─────────────────────────────────────────────────────────────
 create or replace function complete_checkout_order(
   p_show_id uuid,
   p_session_id text,
@@ -765,101 +496,21 @@ begin
 end;
 $$;
 
-comment on function complete_checkout_order is
-  'Bokfører en betalt checkout-sesjon: kunde, ordre og én billett per '
-  'plass i bestillingen. Idempotent på sesjons-ID. Betalinger som ikke kan '
-  'gi billetter lagres som cancelled med cancellation_reason og refunderes.';
-
 -- ─────────────────────────────────────────────────────────────
--- 5. Plattformens egen hovedbok hos Stripe
+-- Plattformspeilet — test og live holdes adskilt
 --
--- Speiler plattformkontoens balansetransaksjoner: provisjon inn
--- (application_fee), provisjon tilbake (application_fee_refund) og
--- Stripe-gebyrer (reporting_category = fee). Dette er Tickethalos
--- faktiske inntekt og kostnad, og summerer eksakt til Stripe-saldoen.
+-- Tabellene er tomme på databasene som har 047, og det er testnøkler som
+-- har skrevet til dem. Eksisterende rader (om noen) regnes som test.
 -- ─────────────────────────────────────────────────────────────
-create table if not exists platform_balance_transactions (
-  id                   text primary key,
-  livemode             boolean not null,
-  type                 text not null,
-  reporting_category   text not null,
-  amount               integer not null,
-  fee                  integer not null default 0,
-  net                  integer not null,
-  currency             text not null,
-  source_id            text,
-  description          text,
-  connected_account_id text,
-  charge_id            text,
-  created_at_stripe    timestamptz not null,
-  available_on         timestamptz,
-  synced_at            timestamptz not null default now()
-);
+alter table platform_balance_transactions add column if not exists livemode boolean not null default false;
+alter table platform_balance_transactions alter column livemode drop default;
+alter table stripe_fee_entries add column if not exists livemode boolean not null default false;
+alter table stripe_fee_entries alter column livemode drop default;
+alter table stripe_fee_report_runs add column if not exists livemode boolean not null default false;
+alter table stripe_fee_report_runs alter column livemode drop default;
 
-comment on table platform_balance_transactions is
-  'Speil av Tickethalos egne Stripe-balansetransaksjoner. Stripe-gebyrer for '
-  'klubbenes betalinger kommer som samleposter (type stripe_fee) uten kobling '
-  'til betalingen — fordeling per ordre står i stripe_fee_entries.';
-
-create index if not exists idx_platform_bt_created on platform_balance_transactions(livemode, created_at_stripe desc);
-create index if not exists idx_platform_bt_category on platform_balance_transactions(reporting_category, created_at_stripe);
-
--- Stripes gebyrrapport (all_fees.*.itemized), én rad per gebyrlinje.
-create table if not exists stripe_fee_entries (
-  id                      uuid primary key default gen_random_uuid(),
-  livemode                boolean not null,
-  row_key                 text not null unique,
-  report_run_id           text not null,
-  balance_transaction_id  text,
-  fee_transaction_id      text,
-  incurred_by             text,
-  incurred_by_type        text,
-  incurred_at             timestamptz,
-  order_id                uuid references orders(id) on delete restrict,
-  amount                  integer not null,
-  tax_amount              integer not null default 0,
-  currency                text not null,
-  product                 text,
-  feature_name            text,
-  fee_description         text,
-  created_at              timestamptz not null default now()
-);
-
-comment on table stripe_fee_entries is
-  'Gebyrlinjer fra Stripes Fees report. incurred_by er objektet som utløste '
-  'gebyret (charge, refund, payout, dispute …). Linjer for en betaling knyttes '
-  'til ordren og summeres til orders.stripe_fee_amount.';
-
-create index if not exists idx_stripe_fee_entries_incurred_by on stripe_fee_entries(incurred_by);
-create index if not exists idx_stripe_fee_entries_order on stripe_fee_entries(order_id);
-
-create table if not exists stripe_fee_report_runs (
-  id              uuid primary key default gen_random_uuid(),
-  livemode        boolean not null,
-  report_run_id   text not null unique,
-  report_type     text not null,
-  interval_start  timestamptz not null,
-  interval_end    timestamptz not null,
-  status          text not null default 'pending'
-                    check (status in ('pending', 'processed', 'failed')),
-  error           text,
-  row_count       integer,
-  processed_at    timestamptz,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
-);
-
-create index if not exists idx_stripe_fee_report_runs_status on stripe_fee_report_runs(status, interval_end desc);
-
-do $$
-begin
-  if not exists (select 1 from pg_trigger where tgname = 'trg_stripe_fee_report_runs_updated_at') then
-    create trigger trg_stripe_fee_report_runs_updated_at
-      before update on stripe_fee_report_runs
-      for each row execute function update_updated_at();
-  end if;
-end;
-$$;
+drop index if exists idx_platform_bt_created;
+create index idx_platform_bt_created on platform_balance_transactions(livemode, created_at_stripe desc);
 
 -- Månedlig resultat for Tickethalo per valuta og modus, rett fra Stripe-saldoen.
 --
@@ -900,30 +551,8 @@ comment on view platform_ledger_monthly is
   'fra egen bank holdes utenfor. livemode skiller testdata fra ekte penger.';
 
 -- ─────────────────────────────────────────────────────────────
--- RLS og rettigheter
---
--- Appen bruker service role. Plattformtabellene er Tickethalos egne
--- tall og skal bare kunne leses av superadmin via RLS.
+-- Rettigheter — show_sales_summary er laget på nytt, så alle settes igjen
 -- ─────────────────────────────────────────────────────────────
-alter table platform_balance_transactions enable row level security;
-alter table stripe_fee_entries            enable row level security;
-alter table stripe_fee_report_runs        enable row level security;
-
-drop policy if exists "Superadmin reads platform balance transactions" on platform_balance_transactions;
-create policy "Superadmin reads platform balance transactions"
-  on platform_balance_transactions for select
-  using (is_superadmin());
-
-drop policy if exists "Superadmin reads stripe fee entries" on stripe_fee_entries;
-create policy "Superadmin reads stripe fee entries"
-  on stripe_fee_entries for select
-  using (is_superadmin());
-
-drop policy if exists "Superadmin reads stripe fee report runs" on stripe_fee_report_runs;
-create policy "Superadmin reads stripe fee report runs"
-  on stripe_fee_report_runs for select
-  using (is_superadmin());
-
 -- `security definer`-funksjoner kan ellers kalles av hvem som helst med den
 -- offentlige nøkkelen via PostgREST. complete_checkout_order ville da latt en
 -- anonym bruker lage betalte ordrer og gyldige billetter uten betaling.

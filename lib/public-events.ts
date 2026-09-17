@@ -1,7 +1,19 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { type ClubReadiness, isClubPayoutReady } from '@/lib/stripe-connect'
 import { osloDate, ticketSalesState } from '@/lib/ticket-sales'
 import { type PublicTicketSalesState, toPublicTicketSalesState } from '@/lib/ticket-sales-display'
-import type { Artist, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
+import type { Artist, Club, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
+
+// Rene formateringsfunksjoner, flyttet ut så klientkomponentene kan bruke dem
+// uten å dra denne modulen med seg. Se `lib/public-show-format.ts`.
+export {
+  formatShortDate,
+  formatShowDate,
+  formatShowTime,
+  formatTicketPrice,
+  remainingTickets,
+  ticketFillPercent,
+} from '@/lib/public-show-format'
 
 type PublicShowRow = Pick<Show, 'id' | 'title' | 'slug' | 'description' | 'date' | 'start_time' | 'end_time' | 'venue_name' | 'venue_address' | 'capacity' | 'ticket_price' | 'currency' | 'ticket_url' | 'poster_url' | 'status' | 'club_id' | 'ticket_sales_closed_at' | 'deleted_at'>
 
@@ -16,7 +28,9 @@ export type PublicShow = PublicShowRow & {
   soldTickets: number
   /**
    * Om billetten kan kjøpes nå, regnet ut på serveren da siden ble hentet.
-   * Knappen leser denne; checkout sjekker på nytt når kjøperen trykker.
+   * Tar med pris og klubbens Stripe-oppsett, ikke bare salgsvinduet — se
+   * `isPubliclySellable`. Knappen leser denne; checkout sjekker på nytt når
+   * kjøperen trykker.
    */
   salesState: PublicTicketSalesState
 }
@@ -30,6 +44,15 @@ export type PublicLineupItem = {
 /** `as const` er ikke pynt: supabase-js utleder radtypen fra selve strengen. */
 const SHOW_COLUMNS =
   'id, title, slug, description, date, start_time, end_time, venue_name, venue_address, capacity, ticket_price, currency, ticket_url, poster_url, status, club_id, ticket_sales_closed_at, deleted_at' as const
+
+/**
+ * Det sidene viser om klubben, pluss feltene klarheten avhenger av. Klarhetsfeltene
+ * brukes bare til salgsstatusen og sendes aldri videre til klienten.
+ */
+const CLUB_COLUMNS =
+  'id, name, slug, city, logo_url, legal_name, org_number, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval' as const
+
+type PublicClubRow = Pick<Club, 'id' | 'name' | 'slug' | 'city' | 'logo_url'> & ClubReadiness
 
 // Arkiverte show står som `cancelled` og faller bort på statusfilteret alene.
 // `deleted_at` sjekkes likevel i hver spørring: et slettet show skal ikke
@@ -136,35 +159,29 @@ export async function getPublicLineup(showId: string): Promise<PublicLineupItem[
   }))
 }
 
-export function formatShowDate(value: string) {
-  return new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(value))
-}
-
-export function formatShortDate(value: string) {
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(new Date(value))
-}
-
-export function formatShowTime(show: Pick<Show, 'start_time' | 'end_time'>) {
-  const start = show.start_time?.slice(0, 5)
-  const end = show.end_time?.slice(0, 5)
-  if (start && end) return `${start}-${end}`
-  return start ?? 'Time TBA'
-}
-
-export function formatTicketPrice(show: Pick<Show, 'ticket_price' | 'currency'>) {
-  if (!show.ticket_price) return 'Free'
-  // en-GB over en-US: the venues bill in NOK, and en-GB renders that as
-  // "NOK 270" rather than the US "NOK 270.00" with a dollar-shaped layout.
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: show.currency, maximumFractionDigits: 0 }).format(show.ticket_price / 100)
-}
-
-export function remainingTickets(show: Pick<Show, 'capacity'> & { soldTickets: number }) {
-  return show.capacity === null ? null : Math.max(show.capacity - show.soldTickets, 0)
-}
-
-export function ticketFillPercent(show: Pick<Show, 'capacity'> & { soldTickets: number }) {
-  if (!show.capacity) return 0
-  return Math.min(Math.round((show.soldTickets / show.capacity) * 100), 100)
+/**
+ * Om et kjøp av showet kan gå gjennom checkout, utover salgsvinduet.
+ *
+ * Salgsvinduet alene sa «åpent» også når checkout uansett ville avvist kjøpet:
+ * uten pris (`price_missing`), eller for en klubb som ikke er klar for salg
+ * (`club_not_payable`). Kjøperen fylte da ut navn for å få en feil. Et show med
+ * ekstern billettside går utenom Stripe (`app/events/actions.ts`), og da er det
+ * bare salgsvinduet som gjelder.
+ *
+ * Ukjent utbetalingsplan (null) teller som klar her. Checkout henter planen
+ * fra Stripe før den avgjør (`ensureClubPayoutScheduleKnown`), så klubber fra
+ * før planen ble lagret retter seg selv ved første kjøp — mens en plan Stripe
+ * har bekreftet som noe annet enn `manual`, stenger. Alt annet i klarheten
+ * vurderes likt med checkout, fra samme funksjon.
+ */
+export function isPubliclySellable(
+  show: Pick<Show, 'ticket_url' | 'ticket_price'>,
+  club: ClubReadiness | null | undefined,
+): boolean {
+  if (show.ticket_url) return true
+  if (!show.ticket_price || show.ticket_price <= 0) return false
+  if (!club) return false
+  return isClubPayoutReady({ ...club, payout_schedule_interval: club.payout_schedule_interval ?? 'manual' })
 }
 
 /**
@@ -188,18 +205,8 @@ async function withTicketCounts(shows: PublicShowRow[]): Promise<PublicShow[]> {
 
   const [{ data: clubs }, { data: ticketCounts }] = await Promise.all([
     clubIds.length > 0
-      ? db.from('clubs').select('id, name, slug, city, logo_url, legal_name, org_number').in('id', clubIds)
-      : Promise.resolve({
-        data: [] as Array<{
-          id: string
-          name: string
-          slug: string
-          city: string | null
-          logo_url: string | null
-          legal_name: string | null
-          org_number: string | null
-        }>,
-      }),
+      ? db.from('clubs').select(CLUB_COLUMNS).in('id', clubIds)
+      : Promise.resolve({ data: [] as PublicClubRow[] }),
     db.from('show_ticket_counts').select('show_id, sold_tickets').in('show_id', showIds),
   ])
 
@@ -218,7 +225,7 @@ async function withTicketCounts(shows: PublicShowRow[]): Promise<PublicShow[]> {
       clubLegalName: club?.legal_name ?? null,
       clubOrgNumber: club?.org_number ?? null,
       soldTickets: soldByShow.get(show.id) ?? 0,
-      salesState: toPublicTicketSalesState(ticketSalesState(show, now)),
+      salesState: toPublicTicketSalesState(ticketSalesState(show, now), isPubliclySellable(show, club)),
     }
   })
 }

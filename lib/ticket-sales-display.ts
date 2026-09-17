@@ -23,9 +23,18 @@ export type PublicTicketSalesState =
 /**
  * Tar bort det kjøperen ikke trenger. `opensAt` er en `Date` og kan ikke
  * sendes som prop, og når bookeren stengte salget er ikke kjøperens sak.
+ *
+ * `sellable` er om checkout faktisk kan ta imot kjøpet — pris og klubbens
+ * Stripe-oppsett (`isPubliclySellable` i `lib/public-events.ts`). Er vinduet
+ * åpent men kjøpet ville blitt avvist, får kjøperen «Not on sale» i stedet for
+ * en kjøpsknapp. Kjøperen skal ikke få høre hvorfor: det er klubbens oppsett,
+ * ikke noe hun kan gjøre noe med. Før salget åpner står datoen likevel —
+ * klubben har tid til å rette oppsettet, og datoen er det kjøperen trenger.
  */
-export function toPublicTicketSalesState(state: TicketSalesState): PublicTicketSalesState {
+export function toPublicTicketSalesState(state: TicketSalesState, sellable: boolean): PublicTicketSalesState {
   switch (state.kind) {
+    case 'open':
+      return sellable ? { kind: 'open' } : { kind: 'unavailable' }
     case 'not_yet_open':
       return { kind: 'not_yet_open', openDate: state.openDate }
     case 'closed':

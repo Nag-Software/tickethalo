@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { TicketOrder } from '@/components/public/ticket-order'
 import type { PublicShow } from '@/lib/public-events'
-import { formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-events'
+// Ikke fra `lib/public-events`: kortet rendres i en klientkomponent, og den
+// modulen drar med seg Stripe-SDK-en. Se `lib/public-show-format.ts`.
+import { formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-show-format'
 import { formatDayLabel } from '@/lib/event-filters'
 
 /**

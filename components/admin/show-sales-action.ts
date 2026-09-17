@@ -14,6 +14,8 @@ import { toast } from 'sonner'
  *
  * Siden oppdateres uansett utfall: en feil betyr ofte at noe har endret seg
  * siden siden ble tegnet, som et kjøp som kom inn mens dialogen sto åpen.
+ * Det gjelder også når handlingen kaster — et tidsavbrudd midt i «Refund all»
+ * kan ha refundert halve showet, og tallene i panelet skal vise det.
  */
 export function useShowSalesAction() {
   const router = useRouter()
@@ -27,6 +29,7 @@ export function useShowSalesAction() {
         onDone(result)
       } catch (error) {
         if (isNextControlFlowError(error)) throw error
+        router.refresh()
         toast.error(error instanceof Error && error.message ? error.message : 'Something went wrong. Please try again.')
       }
     })

@@ -507,6 +507,10 @@ export type Order = {
   /** Stripe-disputtens status. Åpen disputt = kan ikke refunderes, blokkerer sletting. */
   dispute_status: string | null
   disputed_at: string | null
+  /** Klubbens netto tap på disputter (trukket + gebyr − tilbakeført). */
+  dispute_net_amount: number
+  /** Siste refusjons status hos Stripe. pending/requires_action blokkerer sletting. */
+  refund_status: string | null
   /** Refusjonsforsøk som har feilet eller blitt reversert av Stripe. */
   refund_attempts: number
   last_refund_attempt_at: string | null
@@ -987,6 +991,8 @@ export type Database = {
           cancellation_reason?: OrderCancellationReason | null
           dispute_status?: string | null
           disputed_at?: string | null
+          dispute_net_amount?: number
+          refund_status?: string | null
           refund_attempts?: number
           last_refund_attempt_at?: string | null
           last_refund_error?: string | null
@@ -1418,6 +1424,7 @@ export type Database = {
           total_orders: number
           fee_invoices: number
           open_dispute_orders: number
+          pending_refund_orders: number
         }[]
       }
       /** Den eneste veien et show slettes. Se migrasjon 047. */

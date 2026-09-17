@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type Stripe from 'stripe'
-import { stripe } from '@/lib/stripe'
+import { repairMissingChargeFacts } from '@/lib/checkout/finalize'
+import { isStripeLiveMode, stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Database } from '@/types/database'
 
@@ -13,6 +14,8 @@ import type { Database } from '@/types/database'
  * `fee_details`. Gebyret og mvaen på det belastes plattformkontoen i stedet,
  * som daglige samleposter (`type = stripe_fee`, `reporting_category = fee`,
  * beskrivelse som «Card (2026-08-24)») uten noen ID som peker på betalingen.
+ * Mvaen kommer som en egen samlepost sekunder etter gebyret, med samme
+ * beskrivelse.
  *
  * Det gir tre regler:
  *
@@ -21,19 +24,25 @@ import type { Database } from '@/types/database'
  *    «true-up»-modellen (delrefusjon av provisjonen) bygget på motsatt
  *    antakelse og ga klubben penger den allerede hadde.
  *
- *  - Tickethalos regnskap er `platform_balance_transactions`: et eksakt speil
- *    av plattformkontoens balansetransaksjoner, som summerer til Stripe-saldoen.
- *    Provisjon inn, provisjon tilbake og gebyrer per måned står i viewet
- *    `platform_ledger_monthly`. Det tallet stemmer uansett om fordelingen
- *    under lykkes.
+ *  - Tickethalos regnskap er `platform_balance_transactions`: et speil av
+ *    plattformkontoens balansetransaksjoner, som summerer til Stripe-saldoen.
+ *    Hver rad er merket med `livemode` (avgjort av nøkkelen), slik at testdata
+ *    aldri blandes med ekte penger og hver modus har sin egen markør. Viewet
+ *    `platform_ledger_monthly` viser provisjon inn, provisjon tilbake,
+ *    gebyrer og margin (på `net`) per måned, modus og valuta; bevegelser til
+ *    og fra egen bank holdes utenfor. Det tallet stemmer uansett om
+ *    fordelingen under lykkes.
  *
  *  - Gebyret per ordre finnes bare i Stripes Fees report, som har
  *    `incurred_by` (charge-ID-en) på hver gebyrlinje. Linjene lagres i
- *    `stripe_fee_entries` og summeres til `orders.stripe_fee_amount`,
- *    `stripe_fee_tax_amount` og `stripe_fee_status`. Rapportdata kommer ~96 t
- *    etter at gebyret traff saldoen, og rapporten tilbys ikke på alle kontoer
- *    (bl.a. ikke i testmodus). Da blir ordrene stående `pending` — hovedboken
- *    over er komplett likevel.
+ *    `stripe_fee_entries` og summeres til `orders.stripe_fee_amount` (alltid
+ *    hele kostnaden inkl. mva), `stripe_fee_tax_amount` og
+ *    `stripe_fee_status`. Stripe dokumenterer ikke entydig om linjens `amount`
+ *    inkluderer mva, så linjene avstemmes mot hovedboken før noe føres (se
+ *    `detectFeeTaxTreatments`). Rapportdata kommer ~96 t etter at gebyret
+ *    traff saldoen, og rapporten tilbys ikke på alle kontoer (bl.a. ikke i
+ *    testmodus). Da blir ordrene stående `pending` — hovedboken over er
+ *    komplett likevel.
  *
  * Alt kjøres daglig av `app/api/cron/stripe-fees` via `reconcileStripeFees`.
  * Hvert steg er idempotent: overlappende kjøringer skriver de samme radene på
@@ -73,10 +82,36 @@ export const FEE_REPORT_UNAVAILABLE_REASON =
 const DAY_SECONDS = 24 * 60 * 60
 /** Transaksjoner kan dukke opp i listen litt etter `created`; overlappen tar dem igjen. */
 const BALANCE_SYNC_OVERLAP_SECONDS = 2 * DAY_SECONDS
+/** Ett vindu per liste-kall. Små vinduer lagres raskt og gir framdrift selv om kjøringen stopper. */
+export const BALANCE_SYNC_WINDOW_SECONDS = 7 * DAY_SECONDS
+/** Tomme perioder hoppes over med stadig større vinduer, opp til dette. */
+export const BALANCE_SYNC_MAX_WINDOW_SECONDS = 28 * DAY_SECONDS
+/**
+ * Speilet starter aldri før dette når tabellen er tom. Tickethalo fantes ikke
+ * før 2026; eldre historikk på en gjenbrukt plattformkonto er ikke vår, og å
+ * gå gjennom den ville brukt opp tidsbudsjettet uten å lagre noe.
+ */
+export const PLATFORM_LEDGER_FLOOR = Date.UTC(2026, 0, 1) / 1000
+/** Synkroniseringen får ikke spise hele cron-tiden; rapportene skal også rekke å kjøre. */
+const BALANCE_SYNC_BUDGET_MS = 30_000
+/** Hele avstemmingen, med margin til `maxDuration = 60` i cron-ruten. */
+const RECONCILE_BUDGET_MS = 50_000
+const CHARGE_REPAIR_BUDGET_MS = 10_000
+/** Tid som holdes av til å sjekke ventende ordrer etter synkroniseringen. */
+const REATTRIBUTION_RESERVE_MS = 5_000
 /** Korte intervaller holder rapportfilen liten nok til å behandles innenfor cron-tiden. */
 const MAX_REPORT_INTERVAL_SECONDS = 7 * DAY_SECONDS
 /** En kjøring som ikke kan lastes ned på så lenge, skal ikke blokkere nye forespørsler. */
 const STALE_REPORT_RUN_MS = 3 * DAY_SECONDS * 1000
+/**
+ * Gebyrposter skrevet innenfor dette av hverandre hører til samme samlepost
+ * (gebyret og mvaen på det kommer sekunder fra hverandre).
+ */
+export const FEE_BATCH_GAP_SECONDS = 60 * 60
+/** Hvor langt rundt en refererte gebyrpost hovedboken leses for å finne resten av samleposten. */
+const FEE_NEIGHBOURHOOD_SECONDS = 6 * 60 * 60
+/** En ordre som fortsatt ikke kan avstemmes etter så lenge, løser seg ikke av seg selv. */
+const STUCK_FEE_HOLD_MS = 3 * DAY_SECONDS * 1000
 const UPSERT_CHUNK_SIZE = 500
 /** `.in()` havner i URL-en; mange ID-er per kall gir for lange forespørsler. */
 const FILTER_CHUNK_SIZE = 100
@@ -314,8 +349,12 @@ export function feeEntryRowKey(row: FeesReportRow, occurrence: number): string {
   return createHash('sha256').update(JSON.stringify(identity)).digest('hex')
 }
 
-/** Rapportlinjer → rader for `stripe_fee_entries`, med beløp i minste enhet. */
-export function buildFeeEntries(rows: FeesReportRow[], reportRunId: string): FeeEntryInsert[] {
+/**
+ * Rapportlinjer → rader for `stripe_fee_entries`, med beløp i minste enhet.
+ * `livemode` er modusen rapporten ble bestilt i — linjene summeres bare mot
+ * ordrer og hovedbok i samme modus.
+ */
+export function buildFeeEntries(rows: FeesReportRow[], reportRunId: string, livemode: boolean): FeeEntryInsert[] {
   const occurrences = new Map<string, number>()
 
   return rows.map((row) => {
@@ -329,6 +368,7 @@ export function buildFeeEntries(rows: FeesReportRow[], reportRunId: string): Fee
     // kobling til ordren stå.
     return {
       row_key: occurrence === 0 ? firstKey : feeEntryRowKey(row, occurrence),
+      livemode,
       report_run_id: reportRunId,
       balance_transaction_id: row.balance_transaction_id,
       fee_transaction_id: row.fee_transaction_id,
@@ -345,22 +385,190 @@ export function buildFeeEntries(rows: FeesReportRow[], reportRunId: string): Fee
   })
 }
 
+// ─────────────────────────────────────────────────────────────
+// Mva: avstemming av gebyrlinjene mot hovedboken
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Hvordan linjene på en gebyrpost skal leses.
+ *
+ *  - `tax_included`: `amount` er hele kostnaden (eller det er ingen mva).
+ *  - `tax_excluded`: kostnaden er `amount + tax` — mvaen står i samme post
+ *    eller i en egen mvapost ved siden av.
+ *  - `missing_transaction`: posten er ikke speilet i hovedboken ennå.
+ *  - `ledger_incomplete`: hovedboken er ikke speilet langt nok rundt posten
+ *    til at hele samleposten kan sees.
+ *  - `mismatch`: ingen av lesningene går opp mot hovedboken.
+ */
+export type FeeTaxTreatment = 'tax_included' | 'tax_excluded' | 'missing_transaction' | 'ledger_incomplete' | 'mismatch'
+
+export type FeeHoldReason = Exclude<FeeTaxTreatment, 'tax_included' | 'tax_excluded'> | 'no_balance_transaction'
+
+export function isVerifiedFeeTaxTreatment(
+  treatment: FeeTaxTreatment | undefined,
+): treatment is 'tax_included' | 'tax_excluded' {
+  return treatment === 'tax_included' || treatment === 'tax_excluded'
+}
+
+/** Det avstemmingen trenger fra en rad i `platform_balance_transactions`. */
+export type LedgerFeeTransaction = {
+  id: string
+  reporting_category: string
+  amount: number
+  fee: number
+  currency: string
+  created_at_stripe: string
+}
+
+/** Summen av alle lagrede gebyrlinjer som peker på én balansetransaksjon. */
+export type FeeLineGroup = { amount: number; tax: number; lines: number }
+
+/**
+ * Hva transaksjonen kostet plattformen i gebyr. En gebyrpost (`reporting_category
+ * = fee`) er gebyret selv, med negativt beløp. Andre poster (f.eks. en eldre
+ * betaling på plattformkontoen) bærer gebyret i `fee`.
+ */
+export function feeTransactionCost(transaction: Pick<LedgerFeeTransaction, 'reporting_category' | 'amount' | 'fee'>): number {
+  return transaction.fee - (transaction.reporting_category === 'fee' ? transaction.amount : 0)
+}
+
+/**
+ * Avgjør per balansetransaksjon om rapportens `amount` inkluderer mva.
+ *
+ * Stripe sier to ting: Sigma-tabellen `itemized_fees` sier at `amount`
+ * ekskluderer mva, rapportens kolonnebeskrivelse sier bare «Tax on the fee».
+ * Og på plattformkontoen kommer mvaen som en egen gebyrpost sekunder etter
+ * gebyret (−6,78 og −1,69, samme beskrivelse). En linje med `amount` 6,78 og
+ * `tax` 1,69 som peker på gebyrposten, går da opp mot den posten alene selv om
+ * kostnaden er 8,47. Å sammenligne én post med linjene som peker på den er
+ * derfor ikke nok.
+ *
+ * I stedet samles gebyrpostene i samleposter (samme valuta, skrevet innenfor
+ * `FEE_BATCH_GAP_SECONDS` av hverandre), og hele samleposten avstemmes:
+ * summen av postenes kostnad (L) mot summen av `amount` (A) og `tax` (T) på
+ * alle linjer som peker på postene. Poster uten linjer — mvaposten — teller med
+ * i L. L = A betyr at `amount` er hele kostnaden; L = A + T at mvaen kommer i
+ * tillegg. Går ingen opp, eller begge, føres ingenting.
+ *
+ * Toleransen er én minste enhet per linje: Stripe runder mvaen på samleposten,
+ * rapporten per linje. Den er langt mindre enn mvaen, så de to lesningene kan
+ * ikke forveksles.
+ *
+ * Samleposten må være speilet i sin helhet: ligger den nærmere kanten av et
+ * tidsrom som er lest komplett (`complete`) enn `FEE_BATCH_GAP_SECONDS`, kan en
+ * del mangle, og da ventes det. Ren funksjon — testet i
+ * tests/unit/finance/stripe-fees.test.ts.
+ */
+export function detectFeeTaxTreatments(input: {
+  /** Linjesummer per balansetransaksjon. Nøklene er postene det svares for. */
+  groups: Map<string, FeeLineGroup>
+  /** De refererte postene og alle gebyrposter rundt dem. */
+  ledger: LedgerFeeTransaction[]
+  /** Unix-sekunder: tidsrommene hovedboken over er lest komplett for. */
+  complete: Array<{ from: number; through: number }>
+  batchGapSeconds?: number
+}): Map<string, FeeTaxTreatment> {
+  const gap = input.batchGapSeconds ?? FEE_BATCH_GAP_SECONDS
+  const treatments = new Map<string, FeeTaxTreatment>()
+  const created = (transaction: LedgerFeeTransaction) => isoToUnix(transaction.created_at_stripe)
+  const byId = new Map(input.ledger.map((transaction) => [transaction.id, transaction]))
+
+  for (const id of input.groups.keys()) {
+    if (!byId.has(id)) treatments.set(id, 'missing_transaction')
+  }
+
+  const batches: Array<{ transactions: LedgerFeeTransaction[]; batched: boolean }> = []
+  const feeTransactions = [...byId.values()]
+    .filter((transaction) => transaction.reporting_category === 'fee')
+    .sort((a, b) => a.currency.localeCompare(b.currency) || created(a) - created(b))
+
+  let current: LedgerFeeTransaction[] = []
+  for (const transaction of feeTransactions) {
+    const previous = current.at(-1)
+    if (previous && (previous.currency !== transaction.currency || created(transaction) - created(previous) > gap)) {
+      batches.push({ transactions: current, batched: true })
+      current = []
+    }
+    current.push(transaction)
+  }
+  if (current.length > 0) batches.push({ transactions: current, batched: true })
+
+  // Andre poster med gebyr i `fee` står for seg selv — de har ingen egen mvapost.
+  for (const transaction of byId.values()) {
+    if (transaction.reporting_category !== 'fee' && input.groups.has(transaction.id)) {
+      batches.push({ transactions: [transaction], batched: false })
+    }
+  }
+
+  for (const batch of batches) {
+    const referenced = batch.transactions.filter((transaction) => input.groups.has(transaction.id))
+    if (referenced.length === 0) continue
+
+    const first = created(batch.transactions[0])
+    const last = created(batch.transactions[batch.transactions.length - 1])
+    let treatment: FeeTaxTreatment
+
+    const covered = input.complete.some((window) => first - gap >= window.from && last + gap <= window.through)
+
+    if (batch.batched && !covered) {
+      treatment = 'ledger_incomplete'
+    } else {
+      let amount = 0
+      let tax = 0
+      let lines = 0
+      for (const transaction of referenced) {
+        const group = input.groups.get(transaction.id)!
+        amount += group.amount
+        tax += group.tax
+        lines += group.lines
+      }
+
+      const cost = batch.transactions.reduce((total, transaction) => total + feeTransactionCost(transaction), 0)
+      const tolerance = Math.max(lines, 1)
+      const includedFits = Math.abs(cost - amount) <= tolerance
+      const excludedFits = Math.abs(cost - (amount + tax)) <= tolerance
+
+      if (tax === 0) treatment = includedFits ? 'tax_included' : 'mismatch'
+      else if (excludedFits && !includedFits) treatment = 'tax_excluded'
+      else if (includedFits && !excludedFits) treatment = 'tax_included'
+      else treatment = 'mismatch'
+    }
+
+    for (const transaction of referenced) treatments.set(transaction.id, treatment)
+  }
+
+  return treatments
+}
+
 export type FeeLine = {
   incurred_by?: string | null
   incurred_by_type?: string | null
+  balance_transaction_id?: string | null
   amount: number
   tax_amount?: number | null
   currency: string
 }
 
-/** `currency` er null når linjene for samme betaling har ulik valuta. */
-export type ChargeFeeTotal = { amount: number; tax: number; currency: string | null; lines: number }
+export type ChargeFeeTotal = {
+  /** Hele kostnaden inkl. mva, lest slik avstemmingen sa. */
+  amount: number
+  tax: number
+  /** Null når linjene for samme betaling har ulik valuta. */
+  currency: string | null
+  lines: number
+  /** Satt når minst én linje ikke kan avstemmes mot hovedboken. Da føres ingenting. */
+  hold: FeeHoldReason | null
+}
 
 /**
  * Gebyr per betaling. Bare linjer utløst av en charge teller — gebyrer for
- * refusjoner, disputes og utbetalinger hører ikke til kjøpet.
+ * refusjoner, disputes og utbetalinger hører ikke til kjøpet. `treatments`
+ * kommer fra `detectFeeTaxTreatments` og sier om mvaen skal legges til.
  */
-export function sumFeesByCharge(entries: FeeLine[]): Map<string, ChargeFeeTotal> {
+export function sumFeesByCharge(
+  entries: FeeLine[],
+  treatments: Map<string, FeeTaxTreatment>,
+): Map<string, ChargeFeeTotal> {
   const totals = new Map<string, ChargeFeeTotal>()
 
   for (const entry of entries) {
@@ -368,16 +576,24 @@ export function sumFeesByCharge(entries: FeeLine[]): Map<string, ChargeFeeTotal>
 
     const currency = entry.currency.toUpperCase()
     const tax = entry.tax_amount ?? 0
+    const treatment = entry.balance_transaction_id ? treatments.get(entry.balance_transaction_id) : undefined
+    const hold: FeeHoldReason | null = !entry.balance_transaction_id
+      ? 'no_balance_transaction'
+      : isVerifiedFeeTaxTreatment(treatment)
+        ? null
+        : (treatment ?? 'missing_transaction')
+    const cost = entry.amount + (treatment === 'tax_excluded' ? tax : 0)
     const total = totals.get(entry.incurred_by)
 
     if (!total) {
-      totals.set(entry.incurred_by, { amount: entry.amount, tax, currency, lines: 1 })
+      totals.set(entry.incurred_by, { amount: cost, tax, currency, lines: 1, hold })
       continue
     }
 
-    total.amount += entry.amount
+    total.amount += cost
     total.tax += tax
     total.lines += 1
+    total.hold = total.hold ?? hold
     if (total.currency !== currency) total.currency = null
   }
 
@@ -410,6 +626,52 @@ export function nextFeeReportInterval(input: FeeReportIntervalInput): { start: n
   const end = Math.min(input.dataAvailableEnd, start + MAX_REPORT_INTERVAL_SECONDS)
 
   return end > start ? { start, end } : null
+}
+
+/**
+ * Idempotency key for en rapportforespørsel. Krasjer kjøringen mellom
+ * Stripe-kallet og innsettingen, gir neste forsøk samme rapportkjøring tilbake.
+ * Har en kjøring for intervallet feilet, må neste forsøk derimot få en ny —
+ * ellers gir Stripe den feilede tilbake innen 24 t.
+ */
+export function feeReportIdempotencyKey(interval: { start: number; end: number }, failedAttempts: number): string {
+  const key = `fee-report:${ALL_FEES_REPORT_TYPE}:${interval.start}:${interval.end}`
+  return failedAttempts > 0 ? `${key}:retry-${failedAttempts}` : key
+}
+
+export type BalanceSyncWindow = { gte: number; lt: number }
+
+/**
+ * Hvor synkroniseringen av hovedboken starter. Fortsetter fra nyeste lagrede
+ * transaksjon i modusen minus overlappen. Er modusen tom, starter den der
+ * plattformkontoen ble opprettet — men aldri før `PLATFORM_LEDGER_FLOOR`.
+ */
+export function balanceSyncStart(input: { latestCreated: number | null; accountCreated: number | null }): number {
+  if (input.latestCreated !== null) return input.latestCreated - BALANCE_SYNC_OVERLAP_SECONDS
+  return Math.max(input.accountCreated ?? PLATFORM_LEDGER_FLOOR, PLATFORM_LEDGER_FLOOR)
+}
+
+/**
+ * Neste vindu, eldst først og kant i kant. Etter et tomt vindu dobles
+ * bredden (opp til `BALANCE_SYNC_MAX_WINDOW_SECONDS`), slik at en tom periode
+ * ikke spiser tidsbudsjettet — markøren flytter seg bare når noe lagres, og
+ * en kjøring som stopper i en tom strekning ville ellers startet på samme sted
+ * i morgen. Null når vinduet ville startet etter `now`.
+ */
+export function nextBalanceSyncWindow(
+  previous: { window: BalanceSyncWindow; count: number } | null,
+  start: number,
+  now: number,
+): BalanceSyncWindow | null {
+  const gte = previous ? previous.window.lt : start
+  if (gte > now) return null
+
+  const size =
+    previous && previous.count === 0
+      ? Math.min((previous.window.lt - previous.window.gte) * 2, BALANCE_SYNC_MAX_WINDOW_SECONDS)
+      : BALANCE_SYNC_WINDOW_SECONDS
+
+  return { gte, lt: gte + size }
 }
 
 function idOf(value: string | { id: string } | null | undefined): string | null {
@@ -457,12 +719,15 @@ export function toPlatformBalanceTransaction(
   transaction: Stripe.BalanceTransaction,
   links: Map<string, ApplicationFeeLink>,
   syncedAt: string,
+  livemode: boolean,
 ): BalanceTransactionInsert {
   const feeId = applicationFeeIdOf(transaction)
   const link = feeId ? links.get(feeId) : undefined
 
   return {
     id: transaction.id,
+    // Balansetransaksjonen har ikke `livemode` selv; nøkkelen som listet den avgjør.
+    livemode,
     type: transaction.type,
     reporting_category: transaction.reporting_category,
     amount: transaction.amount,
@@ -530,10 +795,10 @@ async function collect<T>(items: AsyncIterable<T>): Promise<T[]> {
   return collected
 }
 
-async function listPlatformBalanceTransactions(gte: number | null): Promise<Stripe.BalanceTransaction[]> {
+async function listPlatformBalanceTransactions(window: BalanceSyncWindow): Promise<Stripe.BalanceTransaction[]> {
   const params: Stripe.BalanceTransactionListParams = {
     limit: 100,
-    ...(gte !== null ? { created: { gte } } : {}),
+    created: { gte: window.gte, lt: window.lt },
   }
 
   try {
@@ -556,6 +821,7 @@ async function listPlatformBalanceTransactions(gte: number | null): Promise<Stri
 async function resolveApplicationFeeLinks(
   db: AdminClient,
   transactions: Stripe.BalanceTransaction[],
+  livemode: boolean,
 ): Promise<Map<string, ApplicationFeeLink>> {
   const links = new Map<string, ApplicationFeeLink>()
   const wanted = new Set<string>()
@@ -580,6 +846,7 @@ async function resolveApplicationFeeLinks(
     const { data, error } = await db
       .from('platform_balance_transactions')
       .select('source_id, connected_account_id, charge_id')
+      .eq('livemode', livemode)
       .eq('type', 'application_fee')
       .in('source_id', ids)
       .not('connected_account_id', 'is', null)
@@ -614,58 +881,132 @@ async function resolveApplicationFeeLinks(
   return links
 }
 
-/**
- * Speiler plattformkontoens balansetransaksjoner inn i
- * `platform_balance_transactions`. Idempotent på transaksjons-ID.
- */
-export async function syncPlatformBalanceTransactions(): Promise<{ synced: number }> {
-  const db = createAdminClient()
-
-  const { data: latest, error: cursorError } = await db
+/** Nyeste speilede transaksjon i modusen, i Unix-sekunder. */
+async function latestMirroredTransaction(db: AdminClient, livemode: boolean): Promise<number | null> {
+  const { data, error } = await db
     .from('platform_balance_transactions')
     .select('created_at_stripe')
+    .eq('livemode', livemode)
     .order('created_at_stripe', { ascending: false })
     .limit(1)
     .maybeSingle()
 
-  if (cursorError) throw new Error(`Could not read the balance transaction cursor: ${cursorError.message}`)
+  if (error) throw new Error(`Could not read the balance transaction cursor: ${error.message}`)
+  return data ? isoToUnix(data.created_at_stripe) : null
+}
 
-  const gte = latest ? isoToUnix(latest.created_at_stripe) - BALANCE_SYNC_OVERLAP_SECONDS : null
-  const transactions = await listPlatformBalanceTransactions(gte)
-  if (transactions.length === 0) return { synced: 0 }
+async function platformAccountCreated(): Promise<number | null> {
+  try {
+    const account = await stripe.accounts.retrieve(null)
+    return typeof account.created === 'number' ? account.created : null
+  } catch (error) {
+    console.warn(`[Fees] Could not read the platform account (${errorMessage(error)}); starting the ledger at the floor.`)
+    return null
+  }
+}
 
-  const links = await resolveApplicationFeeLinks(db, transactions)
-  const syncedAt = new Date().toISOString()
+export type BalanceSyncResult = {
+  synced: number
+  windows: number
+  /** False når tidsbudsjettet stoppet kjøringen før den nådde nåtid. */
+  complete: boolean
+  /** Alt skapt før dette tidspunktet er listet (ISO). Null når ingenting ble listet. */
+  syncedThrough: string | null
+}
 
-  // Eldste først. Stopper kjøringen midtveis, ligger markøren fortsatt bak alt
-  // som mangler. Stripe lister nyeste først, og lagret i den rekkefølgen ville
-  // markøren hoppet forbi hullet for godt.
-  const rows = [...transactions]
-    .sort((a, b) => a.created - b.created)
-    .map((transaction) => toPlatformBalanceTransaction(transaction, links, syncedAt))
+/**
+ * Speiler plattformkontoens balansetransaksjoner inn i
+ * `platform_balance_transactions`. Idempotent på transaksjons-ID.
+ *
+ * Går vindu for vindu, eldst først, og lagrer hvert vindu før neste listes.
+ * Stopper kjøringen (tidsbudsjett eller at funksjonen blir drept), er alt før
+ * vinduet den var i lagret, og markøren — nyeste lagrede transaksjon — ligger
+ * bak hullet. Neste kjøring fortsetter derfra i stedet for å begynne på nytt.
+ */
+export async function syncPlatformBalanceTransactions(options: { deadline?: number } = {}): Promise<BalanceSyncResult> {
+  const db = createAdminClient()
+  const livemode = isStripeLiveMode()
+  const deadline = options.deadline ?? Date.now() + BALANCE_SYNC_BUDGET_MS
 
-  for (const rowsChunk of chunk(rows, UPSERT_CHUNK_SIZE)) {
-    const { error } = await db.from('platform_balance_transactions').upsert(rowsChunk, { onConflict: 'id' })
-    if (error) throw new Error(`Could not store platform balance transactions: ${error.message}`)
+  const latestCreated = await latestMirroredTransaction(db, livemode)
+  const start = balanceSyncStart({
+    latestCreated,
+    accountCreated: latestCreated === null ? await platformAccountCreated() : null,
+  })
+  const now = Math.floor(Date.now() / 1000)
+
+  const result: BalanceSyncResult = { synced: 0, windows: 0, complete: false, syncedThrough: null }
+  let previous: { window: BalanceSyncWindow; count: number } | null = null
+
+  for (
+    let window = nextBalanceSyncWindow(null, start, now);
+    window;
+    window = nextBalanceSyncWindow(previous, start, now)
+  ) {
+    if (Date.now() > deadline) {
+      console.warn(
+        `[Fees] Balance transaction sync stopped at ${unixToIso(window.gte)} (time budget); continuing next run.`,
+      )
+      return result
+    }
+
+    const transactions = await listPlatformBalanceTransactions(window)
+
+    if (transactions.length > 0) {
+      const links = await resolveApplicationFeeLinks(db, transactions, livemode)
+      const syncedAt = new Date().toISOString()
+
+      // Eldst først også innen vinduet. Stripe lister nyeste først, og lagret i
+      // den rekkefølgen ville markøren hoppet forbi et hull for godt.
+      const rows = [...transactions]
+        .sort((a, b) => a.created - b.created)
+        .map((transaction) => toPlatformBalanceTransaction(transaction, links, syncedAt, livemode))
+
+      for (const rowsChunk of chunk(rows, UPSERT_CHUNK_SIZE)) {
+        const { error } = await db.from('platform_balance_transactions').upsert(rowsChunk, { onConflict: 'id' })
+        if (error) throw new Error(`Could not store platform balance transactions: ${error.message}`)
+      }
+    }
+
+    result.synced += transactions.length
+    result.windows += 1
+    result.syncedThrough = unixToIso(Math.min(window.lt, now))
+    previous = { window, count: transactions.length }
   }
 
-  return { synced: rows.length }
+  result.complete = true
+  result.syncedThrough = unixToIso(now)
+  return result
 }
 
 // ─────────────────────────────────────────────────────────────
 // 2. Gebyrrapporten
 // ─────────────────────────────────────────────────────────────
 
+export type FeeReportRequest = {
+  requested: boolean
+  reason?: string
+  /**
+   * Satt når kjøringer for neste intervall har feilet. Intervallkjeden står da
+   * stille — ingen senere intervaller bestilles før dette lykkes — og det må
+   * meldes, ikke bare logges.
+   */
+  stalled?: { intervalStart: string; failedRuns: number; lastError: string | null }
+}
+
 /**
  * Ber Stripe kjøre Fees report for neste intervall. Én kjøring av gangen: en
- * ventende kjøring må behandles før neste intervall kan regnes ut.
+ * ventende kjøring må behandles før neste intervall kan regnes ut. Alt er
+ * avgrenset til modusen nøkkelen gjelder.
  */
-export async function requestFeeReportRun(): Promise<{ requested: boolean; reason?: string }> {
+export async function requestFeeReportRun(): Promise<FeeReportRequest> {
   const db = createAdminClient()
+  const livemode = isStripeLiveMode()
 
   const { data: pending, error: pendingError } = await db
     .from('stripe_fee_report_runs')
     .select('report_run_id')
+    .eq('livemode', livemode)
     .eq('status', 'pending')
     .limit(1)
 
@@ -685,6 +1026,7 @@ export async function requestFeeReportRun(): Promise<{ requested: boolean; reaso
   const { data: lastRun, error: lastRunError } = await db
     .from('stripe_fee_report_runs')
     .select('interval_end')
+    .eq('livemode', livemode)
     .eq('status', 'processed')
     .order('interval_end', { ascending: false })
     .limit(1)
@@ -715,6 +1057,25 @@ export async function requestFeeReportRun(): Promise<{ requested: boolean; reaso
 
   if (!interval) return { requested: false, reason: 'no new fee data yet' }
 
+  // Neste intervall regnes fra siste behandlede kjøring. Har kjøringer med
+  // samme start feilet, står kjeden fast der. Det prøves igjen (feilen kan
+  // være forbigående), men det meldes.
+  const { data: failedRuns, error: failedError } = await db
+    .from('stripe_fee_report_runs')
+    .select('error')
+    .eq('livemode', livemode)
+    .eq('status', 'failed')
+    .eq('interval_start', unixToIso(interval.start))
+    .order('updated_at', { ascending: false })
+
+  if (failedError) throw new Error(`Could not read failed fee report runs: ${failedError.message}`)
+
+  const failedAttempts = failedRuns?.length ?? 0
+  const stalled =
+    failedAttempts > 0
+      ? { intervalStart: unixToIso(interval.start), failedRuns: failedAttempts, lastError: failedRuns?.[0]?.error ?? null }
+      : undefined
+
   let run: Stripe.Reporting.ReportRun
   try {
     run = await stripe.reporting.reportRuns.create(
@@ -727,17 +1088,16 @@ export async function requestFeeReportRun(): Promise<{ requested: boolean; reaso
           columns: [...FEE_REPORT_COLUMNS],
         },
       },
-      // Krasjer kjøringen mellom Stripe-kallet og innsettingen, gir neste
-      // forsøk samme rapportkjøring tilbake i stedet for en ny.
-      { idempotencyKey: `fee-report:${ALL_FEES_REPORT_TYPE}:${interval.start}:${interval.end}` },
+      { idempotencyKey: feeReportIdempotencyKey(interval, failedAttempts) },
     )
   } catch (error) {
-    if (isReportUnavailableError(error)) return { requested: false, reason: FEE_REPORT_UNAVAILABLE_REASON }
+    if (isReportUnavailableError(error)) return { requested: false, reason: FEE_REPORT_UNAVAILABLE_REASON, stalled }
     throw error
   }
 
   const { error: insertError } = await db.from('stripe_fee_report_runs').insert({
     report_run_id: run.id,
+    livemode,
     report_type: ALL_FEES_REPORT_TYPE,
     interval_start: unixToIso(interval.start),
     interval_end: unixToIso(interval.end),
@@ -747,12 +1107,12 @@ export async function requestFeeReportRun(): Promise<{ requested: boolean; reaso
   if (insertError) {
     // Samme idempotency key innen 24 t gir en kjøring vi allerede har en rad for.
     if (insertError.code === '23505') {
-      return { requested: false, reason: `report run ${run.id} is already recorded` }
+      return { requested: false, reason: `report run ${run.id} is already recorded`, stalled }
     }
     throw new Error(`Could not record fee report run ${run.id}: ${insertError.message}`)
   }
 
-  return { requested: true }
+  return { requested: true, stalled }
 }
 
 /**
@@ -777,7 +1137,7 @@ async function downloadReportFile(url: string): Promise<string> {
   return response.text()
 }
 
-async function markRunFailed(db: AdminClient, rowId: string, message: string) {
+async function markRunFailed(db: AdminClient, rowId: string, message: string): Promise<string> {
   const { error } = await db
     .from('stripe_fee_report_runs')
     .update({ status: 'failed', error: message, processed_at: new Date().toISOString() })
@@ -785,15 +1145,80 @@ async function markRunFailed(db: AdminClient, rowId: string, message: string) {
 
   if (error) throw new Error(`Could not mark fee report run failed: ${error.message}`)
   console.error(`[Fees] Fee report run ${rowId} failed: ${message}`)
+  return message
 }
 
-async function loadChargeFeeLines(db: AdminClient, chargeIds: string[]) {
-  const lines: Array<FeeLine & { incurred_by: string | null; order_id: string | null }> = []
+// ── Fordeling per ordre ──────────────────────────────────────
+
+export type FeeAttributionOutcome = {
+  /** Ordrer som fikk nye gebyrverdier. */
+  reconciled: number
+  /** Ordrer med gebyrlinjer som ikke kunne avstemmes mot hovedboken, og står `pending`. */
+  held: number
+  /** Av dem: linjene har ligget i over `STUCK_FEE_HOLD_MS`. Løser seg ikke av seg selv. */
+  stuck: number
+  holdReasons: Partial<Record<FeeHoldReason | 'currency_mismatch' | 'multiple_orders', number>>
+  /** Betalinger med gebyrlinjer uten noen ordre (f.eks. andre betalinger på kontoen). */
+  unmatchedCharges: number
+}
+
+function emptyAttributionOutcome(): FeeAttributionOutcome {
+  return { reconciled: 0, held: 0, stuck: 0, holdReasons: {}, unmatchedCharges: 0 }
+}
+
+function mergeAttributionOutcome(target: FeeAttributionOutcome, source: FeeAttributionOutcome) {
+  target.reconciled += source.reconciled
+  target.held += source.held
+  target.stuck += source.stuck
+  target.unmatchedCharges += source.unmatchedCharges
+  for (const [reason, count] of Object.entries(source.holdReasons) as Array<[keyof FeeAttributionOutcome['holdReasons'], number]>) {
+    target.holdReasons[reason] = (target.holdReasons[reason] ?? 0) + count
+  }
+}
+
+type AttributionContext = {
+  db: AdminClient
+  livemode: boolean
+  /** Unix-sekunder: hovedboken i modusen er komplett til hit. Null = ingenting speilet. */
+  ledgerCompleteThrough: number | null
+  /** Linjesummer per balansetransaksjon; null = ingen lagrede linjer. Gjelder én kjøring. */
+  groups: Map<string, FeeLineGroup | null>
+}
+
+async function createAttributionContext(
+  db: AdminClient,
+  livemode: boolean,
+  ledgerCompleteThrough?: number | null,
+): Promise<AttributionContext> {
+  const completeThrough =
+    ledgerCompleteThrough !== undefined
+      ? ledgerCompleteThrough
+      : await latestMirroredTransaction(db, livemode).then((latest) =>
+          latest === null ? null : latest - BALANCE_SYNC_OVERLAP_SECONDS,
+        )
+
+  return { db, livemode, ledgerCompleteThrough: completeThrough, groups: new Map() }
+}
+
+type ChargeFeeLineRow = {
+  incurred_by: string | null
+  incurred_by_type: string | null
+  balance_transaction_id: string | null
+  amount: number
+  tax_amount: number
+  currency: string
+  order_id: string | null
+  created_at: string
+}
+
+async function loadChargeFeeLines(ctx: AttributionContext, chargeIds: string[]): Promise<ChargeFeeLineRow[]> {
+  const lines: ChargeFeeLineRow[] = []
 
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await db
+    const { data, error } = await ctx.db
       .from('stripe_fee_entries')
-      .select('incurred_by, incurred_by_type, amount, tax_amount, currency, order_id')
+      .select('incurred_by, incurred_by_type, balance_transaction_id, amount, tax_amount, currency, order_id, created_at')
+      .eq('livemode', ctx.livemode)
       .eq('incurred_by_type', 'charge')
       .in('incurred_by', chargeIds)
       .order('row_key', { ascending: true })
@@ -808,50 +1233,203 @@ async function loadChargeFeeLines(db: AdminClient, chargeIds: string[]) {
   return lines
 }
 
+const LEDGER_FEE_COLUMNS = 'id, reporting_category, amount, fee, currency, created_at_stripe'
+
+/**
+ * De refererte postene og alle gebyrposter rundt dem, med tidsrommene som er
+ * lest komplett. Mvaposten har ingen linjer og finnes bare slik. Tidsrommene
+ * slås sammen der de overlapper, slik at refererte poster langt fra hverandre
+ * ikke drar med seg alt som ligger mellom.
+ */
+async function loadLedgerAround(
+  ctx: AttributionContext,
+  transactionIds: string[],
+): Promise<{ ledger: LedgerFeeTransaction[]; complete: Array<{ from: number; through: number }> }> {
+  const ledger = new Map<string, LedgerFeeTransaction>()
+
+  for (const ids of chunk(transactionIds, FILTER_CHUNK_SIZE)) {
+    const { data, error } = await ctx.db
+      .from('platform_balance_transactions')
+      .select(LEDGER_FEE_COLUMNS)
+      .eq('livemode', ctx.livemode)
+      .in('id', ids)
+
+    if (error) throw new Error(`Could not read fee balance transactions: ${error.message}`)
+    for (const row of data ?? []) ledger.set(row.id, row)
+  }
+
+  const ranges: Array<{ from: number; to: number }> = []
+  for (const time of [...ledger.values()].map((transaction) => isoToUnix(transaction.created_at_stripe)).sort((a, b) => a - b)) {
+    const last = ranges.at(-1)
+    if (last && time - FEE_NEIGHBOURHOOD_SECONDS <= last.to) last.to = time + FEE_NEIGHBOURHOOD_SECONDS
+    else ranges.push({ from: time - FEE_NEIGHBOURHOOD_SECONDS, to: time + FEE_NEIGHBOURHOOD_SECONDS })
+  }
+
+  for (const range of ranges) {
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data, error } = await ctx.db
+        .from('platform_balance_transactions')
+        .select(LEDGER_FEE_COLUMNS)
+        .eq('livemode', ctx.livemode)
+        .eq('reporting_category', 'fee')
+        .gte('created_at_stripe', unixToIso(range.from))
+        .lte('created_at_stripe', unixToIso(range.to))
+        .order('created_at_stripe', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1)
+
+      if (error) throw new Error(`Could not read fee balance transactions: ${error.message}`)
+      for (const row of data ?? []) ledger.set(row.id, row)
+      if (!data || data.length < PAGE_SIZE) break
+    }
+  }
+
+  const syncedThrough = ctx.ledgerCompleteThrough ?? Number.NEGATIVE_INFINITY
+  return {
+    ledger: [...ledger.values()],
+    complete: ranges.map((range) => ({ from: range.from, through: Math.min(range.to, syncedThrough) })),
+  }
+}
+
+/** Linjesummer for postene, fra alle lagrede linjer i modusen — også andre betalingers. */
+async function loadFeeLineGroups(ctx: AttributionContext, transactionIds: string[]): Promise<Map<string, FeeLineGroup>> {
+  const unknown = transactionIds.filter((id) => !ctx.groups.has(id))
+
+  for (const ids of chunk(unknown, FILTER_CHUNK_SIZE)) {
+    const sums = new Map<string, FeeLineGroup>()
+
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await ctx.db
+        .from('stripe_fee_entries')
+        .select('balance_transaction_id, amount, tax_amount')
+        .eq('livemode', ctx.livemode)
+        .in('balance_transaction_id', ids)
+        .order('row_key', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1)
+
+      if (error) throw new Error(`Could not read fee entries by balance transaction: ${error.message}`)
+
+      for (const row of data ?? []) {
+        if (!row.balance_transaction_id) continue
+        const sum = sums.get(row.balance_transaction_id) ?? { amount: 0, tax: 0, lines: 0 }
+        sum.amount += row.amount
+        sum.tax += row.tax_amount
+        sum.lines += 1
+        sums.set(row.balance_transaction_id, sum)
+      }
+
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
+    for (const id of ids) ctx.groups.set(id, sums.get(id) ?? null)
+  }
+
+  const groups = new Map<string, FeeLineGroup>()
+  for (const id of transactionIds) {
+    const group = ctx.groups.get(id)
+    if (group) groups.set(id, group)
+  }
+  return groups
+}
+
+async function resolveFeeTaxTreatments(ctx: AttributionContext, transactionIds: string[]) {
+  if (transactionIds.length === 0) return new Map<string, FeeTaxTreatment>()
+
+  const { ledger, complete } = await loadLedgerAround(ctx, transactionIds)
+  const candidates = [...new Set([...transactionIds, ...ledger.map((transaction) => transaction.id)])]
+  const groups = await loadFeeLineGroups(ctx, candidates)
+
+  return detectFeeTaxTreatments({ groups, ledger, complete })
+}
+
 /**
  * Fører gebyret over på ordrene. Summen tas av alle lagrede linjer for
  * betalingen, ikke bare de i denne rapporten — et gebyr kan justeres i en
- * senere periode, og overlappende kjøringer skal gi samme tall. Returnerer
- * antall ordrer som fikk nye verdier.
+ * senere periode, og overlappende kjøringer skal gi samme tall.
+ *
+ * Linjer som ikke kan avstemmes mot hovedboken, føres ikke: ordren står
+ * `pending` (en tidligere avstemt ordre settes tilbake), og neste kjøring
+ * prøver igjen. Et halvt riktig gebyr er verre enn et som mangler.
  */
-async function attributeFeesToOrders(db: AdminClient, chargeIds: string[]): Promise<number> {
-  let reconciled = 0
+async function attributeFeesToOrders(
+  ctx: AttributionContext,
+  chargeIds: string[],
+  outcome: FeeAttributionOutcome,
+): Promise<void> {
+  const hold = (reason: keyof FeeAttributionOutcome['holdReasons'], lines: ChargeFeeLineRow[]) => {
+    outcome.held += 1
+    outcome.holdReasons[reason] = (outcome.holdReasons[reason] ?? 0) + 1
+    const newestLine = Math.max(...lines.map((line) => Date.parse(line.created_at)))
+    if (Date.now() - newestLine > STUCK_FEE_HOLD_MS) outcome.stuck += 1
+  }
 
-  for (const ids of chunk(chargeIds, FILTER_CHUNK_SIZE)) {
-    const { data: orders, error: ordersError } = await db
+  for (const ids of chunk([...new Set(chargeIds)], FILTER_CHUNK_SIZE)) {
+    const allLines = await loadChargeFeeLines(ctx, ids)
+    if (allLines.length === 0) continue
+
+    const chargesWithLines = [...new Set(allLines.flatMap((line) => (line.incurred_by ? [line.incurred_by] : [])))]
+
+    const { data: orders, error: ordersError } = await ctx.db
       .from('orders')
       .select('id, stripe_charge_id, currency, stripe_fee_amount, stripe_fee_tax_amount, stripe_fee_status')
-      .in('stripe_charge_id', ids)
+      .in('stripe_charge_id', chargesWithLines)
 
     if (ordersError) throw new Error(`Could not read orders for fee attribution: ${ordersError.message}`)
-    if (!orders || orders.length === 0) continue
 
-    const ordersByCharge = new Map<string, typeof orders>()
-    for (const order of orders) {
+    const ordersByCharge = new Map<string, NonNullable<typeof orders>>()
+    for (const order of orders ?? []) {
       if (!order.stripe_charge_id) continue
       ordersByCharge.set(order.stripe_charge_id, [...(ordersByCharge.get(order.stripe_charge_id) ?? []), order])
     }
 
-    const lines = await loadChargeFeeLines(db, [...ordersByCharge.keys()])
-    const totals = sumFeesByCharge(lines)
+    const unmatched = chargesWithLines.filter((chargeId) => !ordersByCharge.has(chargeId))
+    if (unmatched.length > 0) {
+      outcome.unmatchedCharges += unmatched.length
+      console.warn(
+        `[Fees] Fee lines for ${unmatched.length} charge(s) match no order, e.g. ${unmatched.slice(0, 3).join(', ')}`,
+      )
+    }
+    if (ordersByCharge.size === 0) continue
+
+    const lines = allLines.filter((line) => line.incurred_by && ordersByCharge.has(line.incurred_by))
+    const transactionIds = [
+      ...new Set(lines.flatMap((line) => (line.balance_transaction_id ? [line.balance_transaction_id] : []))),
+    ]
+    const treatments = await resolveFeeTaxTreatments(ctx, transactionIds)
+    const totals = sumFeesByCharge(lines, treatments)
     const reconciledAt = new Date().toISOString()
 
     for (const [chargeId, matches] of ordersByCharge) {
       const total = totals.get(chargeId)
       if (!total) continue
 
+      const chargeLines = lines.filter((line) => line.incurred_by === chargeId)
+
       // Samme gebyr på to ordrer ville dobbeltført kostnaden.
       if (matches.length > 1) {
         console.warn(`[Fees] Charge ${chargeId} matches ${matches.length} orders — fee not attributed.`)
+        hold('multiple_orders', chargeLines)
         continue
       }
 
       const order = matches[0]
+
+      if (total.hold) {
+        hold(total.hold, chargeLines)
+
+        if (order.stripe_fee_status === 'reconciled') {
+          const { error } = await ctx.db.from('orders').update({ stripe_fee_status: 'pending' }).eq('id', order.id)
+          if (error) throw new Error(`Could not reopen the Stripe fee on order ${order.id}: ${error.message}`)
+        }
+        continue
+      }
+
       if (total.currency === null || total.currency !== order.currency.toUpperCase()) {
         console.warn(
           `[Fees] Fee currency ${total.currency ?? 'mixed'} does not match order ${order.id} (${order.currency}) — ` +
             'fee not attributed.',
         )
+        hold('currency_mismatch', chargeLines)
         continue
       }
 
@@ -861,7 +1439,7 @@ async function attributeFeesToOrders(db: AdminClient, chargeIds: string[]): Prom
         order.stripe_fee_tax_amount === total.tax
 
       if (!unchanged) {
-        const { error } = await db
+        const { error } = await ctx.db
           .from('orders')
           .update({
             stripe_fee_amount: total.amount,
@@ -872,13 +1450,14 @@ async function attributeFeesToOrders(db: AdminClient, chargeIds: string[]): Prom
           .eq('id', order.id)
 
         if (error) throw new Error(`Could not book the Stripe fee on order ${order.id}: ${error.message}`)
-        reconciled += 1
+        outcome.reconciled += 1
       }
 
-      if (lines.some((line) => line.incurred_by === chargeId && line.order_id !== order.id)) {
-        const { error } = await db
+      if (chargeLines.some((line) => line.order_id !== order.id)) {
+        const { error } = await ctx.db
           .from('stripe_fee_entries')
           .update({ order_id: order.id })
+          .eq('livemode', ctx.livemode)
           .eq('incurred_by_type', 'charge')
           .eq('incurred_by', chargeId)
 
@@ -886,41 +1465,98 @@ async function attributeFeesToOrders(db: AdminClient, chargeIds: string[]): Prom
       }
     }
   }
+}
 
-  return reconciled
+/**
+ * Sjekker alle ordrer som fortsatt venter på gebyret mot lagrede linjer — ikke
+ * bare betalingene i dagens rapport. En ordre kan ha fått charge-ID-en etter
+ * at rapporten ble behandlet (se `repairMissingChargeFacts`), eller blitt holdt
+ * igjen fordi hovedboken ikke var speilet ennå.
+ */
+async function reattributePendingFees(options: {
+  deadline?: number
+  ledgerCompleteThrough?: number | null
+}): Promise<FeeAttributionOutcome & { checked: number; deferred: number }> {
+  const db = createAdminClient()
+  const livemode = isStripeLiveMode()
+  const outcome = emptyAttributionOutcome()
+
+  // Uten lagrede linjer i modusen (testmodus har ingen rapport) er det
+  // ingenting å sjekke mot.
+  const { data: anyEntry, error: entryError } = await db
+    .from('stripe_fee_entries')
+    .select('id')
+    .eq('livemode', livemode)
+    .limit(1)
+
+  if (entryError) throw new Error(`Could not read fee entries: ${entryError.message}`)
+  if (!anyEntry || anyEntry.length === 0) return { ...outcome, checked: 0, deferred: 0 }
+
+  // Alle ID-ene først: ordrer som avstemmes faller ut av filteret, og
+  // sidevis lesing samtidig ville hoppet over rader.
+  const chargeIds: string[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await db
+      .from('orders')
+      .select('id, stripe_charge_id')
+      .eq('stripe_fee_status', 'pending')
+      .not('stripe_charge_id', 'is', null)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) throw new Error(`Could not read orders awaiting fees: ${error.message}`)
+    for (const row of data ?? []) if (row.stripe_charge_id) chargeIds.push(row.stripe_charge_id)
+    if (!data || data.length < PAGE_SIZE) break
+  }
+
+  const unique = [...new Set(chargeIds)]
+  const ctx = await createAttributionContext(db, livemode, options.ledgerCompleteThrough)
+  let checked = 0
+
+  for (const ids of chunk(unique, FILTER_CHUNK_SIZE)) {
+    if (options.deadline !== undefined && Date.now() > options.deadline) {
+      return { ...outcome, checked, deferred: unique.length - checked }
+    }
+    await attributeFeesToOrders(ctx, ids, outcome)
+    checked += ids.length
+  }
+
+  return { ...outcome, checked, deferred: 0 }
 }
 
 type PendingRunRow = { id: string; report_run_id: string; created_at: string }
 
+type FeeReportRunOutcome =
+  | { status: 'pending' }
+  | { status: 'failed'; error: string }
+  | { status: 'processed'; entries: number; attribution: FeeAttributionOutcome }
+
 /**
- * Behandler én ventende kjøring. Null = ikke behandlet (fortsatt ventende hos
- * Stripe, eller merket som feilet). Kaster ved forbigående feil, slik at raden
+ * Behandler én ventende kjøring. Kaster ved forbigående feil, slik at raden
  * står `pending` og prøves igjen ved neste kjøring.
  */
-async function processFeeReportRun(
-  db: AdminClient,
-  row: PendingRunRow,
-): Promise<{ entries: number; ordersReconciled: number } | null> {
+async function processFeeReportRun(db: AdminClient, livemode: boolean, row: PendingRunRow): Promise<FeeReportRunOutcome> {
   let run: Stripe.Reporting.ReportRun
   try {
     run = await stripe.reporting.reportRuns.retrieve(row.report_run_id)
   } catch (error) {
     if (!isNotFoundError(error)) throw error
-    // Typisk etter bytte av nøkkel mellom test og live. Kjøringen kommer aldri.
-    await markRunFailed(db, row.id, `Stripe report run not found: ${errorMessage(error)}`)
-    return null
+    // Kjøringen finnes ikke for nøkkelen og kommer aldri.
+    return { status: 'failed', error: await markRunFailed(db, row.id, `Stripe report run not found: ${errorMessage(error)}`) }
   }
 
-  if (run.status === 'pending') return null
+  if (run.status === 'pending') return { status: 'pending' }
   if (run.status !== 'succeeded') {
-    await markRunFailed(db, row.id, run.error ?? `Stripe report run ended with status ${run.status}`)
-    return null
+    return {
+      status: 'failed',
+      error: await markRunFailed(db, row.id, run.error ?? `Stripe report run ended with status ${run.status}`),
+    }
   }
 
   const url = run.result?.url
   if (!url) {
-    await markRunFailed(db, row.id, 'Stripe report run succeeded without a result file')
-    return null
+    return { status: 'failed', error: await markRunFailed(db, row.id, 'Stripe report run succeeded without a result file') }
   }
 
   let text: string
@@ -930,18 +1566,17 @@ async function processFeeReportRun(
     // Nedlasting feiler som regel forbigående. Men en kjøring som aldri lar seg
     // hente, skal ikke blokkere nye rapporter for alltid.
     if (Date.now() - Date.parse(row.created_at) < STALE_REPORT_RUN_MS) throw error
-    await markRunFailed(db, row.id, `Could not download report file: ${errorMessage(error)}`)
-    return null
+    return { status: 'failed', error: await markRunFailed(db, row.id, `Could not download report file: ${errorMessage(error)}`) }
   }
 
   let entries: FeeEntryInsert[]
   try {
-    entries = buildFeeEntries(parseFeesReport(text), run.id)
+    entries = buildFeeEntries(parseFeesReport(text), run.id, livemode)
   } catch (error) {
-    // Samme fil gir samme feil neste gang. Intervallet bestilles på nytt,
-    // siden neste intervall regnes fra siste behandlede kjøring.
-    await markRunFailed(db, row.id, `Could not parse fees report: ${errorMessage(error)}`)
-    return null
+    // Samme fil gir samme feil neste gang. Kjøringen merkes feilet og meldes
+    // i cron-svaret; neste forespørsel for intervallet får ny idempotency key,
+    // så en rettet parser eller en ny fil fra Stripe plukkes opp.
+    return { status: 'failed', error: await markRunFailed(db, row.id, `Could not parse fees report: ${errorMessage(error)}`) }
   }
 
   for (const entriesChunk of chunk(entries, UPSERT_CHUNK_SIZE)) {
@@ -956,7 +1591,8 @@ async function processFeeReportRun(
   ]
   const unattributed = entries.filter((entry) => entry.incurred_by_type !== 'charge' || !entry.incurred_by).length
 
-  const ordersReconciled = await attributeFeesToOrders(db, chargeIds)
+  const attribution = emptyAttributionOutcome()
+  await attributeFeesToOrders(await createAttributionContext(db, livemode), chargeIds, attribution)
 
   const { error: updateError } = await db
     .from('stripe_fee_report_runs')
@@ -967,40 +1603,80 @@ async function processFeeReportRun(
 
   console.log(
     `[Fees] Report run ${run.id}: ${entries.length} fee lines, ${chargeIds.length} charges, ` +
-      `${ordersReconciled} orders reconciled, ${unattributed} lines not tied to a charge ` +
+      `${attribution.reconciled} orders reconciled, ${attribution.held} held, ${unattributed} lines not tied to a charge ` +
       '(refunds, disputes, payouts, account fees)',
   )
 
-  return { entries: entries.length, ordersReconciled }
+  return { status: 'processed', entries: entries.length, attribution }
+}
+
+export type FeeReportProcessing = {
+  processed: number
+  entries: number
+  ordersReconciled: number
+  ordersHeld: number
+  /** Kjøringer som feilet i denne omgangen — merket feilet, eller kastet og prøves igjen. */
+  failed: number
+  /** Kjøringer som ikke ble startet fordi tidsfristen var passert. */
+  deferred: number
+  errors: string[]
+  attribution: FeeAttributionOutcome
 }
 
 /**
  * Henter ferdige rapportkjøringer, lagrer gebyrlinjene og fører dem på
- * ordrene. Feil i én kjøring stopper ikke de andre.
+ * ordrene. Feil i én kjøring stopper ikke de andre, men telles og meldes.
  */
-export async function processFeeReportRuns(): Promise<{ processed: number; entries: number; ordersReconciled: number }> {
+export async function processFeeReportRuns(options: { deadline?: number } = {}): Promise<FeeReportProcessing> {
   const db = createAdminClient()
+  const livemode = isStripeLiveMode()
 
   const { data: runs, error } = await db
     .from('stripe_fee_report_runs')
     .select('id, report_run_id, created_at')
+    .eq('livemode', livemode)
     .eq('status', 'pending')
     .order('interval_start', { ascending: true })
 
   if (error) throw new Error(`Could not read pending fee report runs: ${error.message}`)
 
-  const result = { processed: 0, entries: 0, ordersReconciled: 0 }
+  const result: FeeReportProcessing = {
+    processed: 0,
+    entries: 0,
+    ordersReconciled: 0,
+    ordersHeld: 0,
+    failed: 0,
+    deferred: 0,
+    errors: [],
+    attribution: emptyAttributionOutcome(),
+  }
 
-  for (const row of runs ?? []) {
+  const pendingRuns = runs ?? []
+  for (const [index, row] of pendingRuns.entries()) {
+    if (options.deadline !== undefined && Date.now() > options.deadline) {
+      result.deferred = pendingRuns.length - index
+      break
+    }
+
     try {
-      const outcome = await processFeeReportRun(db, row)
-      if (!outcome) continue
+      const outcome = await processFeeReportRun(db, livemode, row)
+      if (outcome.status === 'pending') continue
+
+      if (outcome.status === 'failed') {
+        result.failed += 1
+        result.errors.push(`fee report run ${row.report_run_id} failed: ${outcome.error}`)
+        continue
+      }
 
       result.processed += 1
       result.entries += outcome.entries
-      result.ordersReconciled += outcome.ordersReconciled
+      result.ordersReconciled += outcome.attribution.reconciled
+      result.ordersHeld += outcome.attribution.held
+      mergeAttributionOutcome(result.attribution, outcome.attribution)
     } catch (runError) {
       console.error(`[Fees] Could not process fee report run ${row.report_run_id}: ${errorMessage(runError)}`)
+      result.failed += 1
+      result.errors.push(`fee report run ${row.report_run_id} could not be processed: ${errorMessage(runError)}`)
     }
   }
 
@@ -1011,49 +1687,149 @@ export async function processFeeReportRuns(): Promise<{ processed: number; entri
 // 3. Hele avstemmingen
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Hovedbok først, så ferdige rapporter, så bestilling av neste. Rekkefølgen
- * gjør at en rapport bestilt i dag behandles i morgen, når Stripe har kjørt
- * den. Hvert steg feiler for seg — en utilgjengelig rapport skal ikke stoppe
- * hovedboken.
- */
-export async function reconcileStripeFees(): Promise<{
+export type StripeFeeReconciliation = {
   balanceTransactions: number
+  balanceSyncComplete: boolean
+  balanceSyncedThrough: string | null
+  chargeFactsRepaired: number
   reportsProcessed: number
+  reportsFailed: number
   ordersReconciled: number
+  ordersHeld: number
   reportRequested: boolean
+  /** Noe stopper gebyrbokføringen og må følges opp. Cron-ruten svarer da 500. */
+  failed: boolean
   note?: string
-}> {
-  const summary = { balanceTransactions: 0, reportsProcessed: 0, ordersReconciled: 0, reportRequested: false }
+}
+
+function describeHolds(outcome: FeeAttributionOutcome): string {
+  return Object.entries(outcome.holdReasons)
+    .map(([reason, count]) => `${reason}: ${count}`)
+    .join(', ')
+}
+
+/**
+ * Rekkefølgen er valgt for at ingenting skal sulte ut noe annet:
+ *
+ *  1. Manglende charge-ID-er fylles inn, slik at gebyrlinjene har noe å treffe.
+ *  2. Ferdige rapporter behandles, og 3. neste bestilles. Begge er raske og
+ *     kommer før hovedboken — en treg synkronisering skal ikke stoppe dem.
+ *  4. Hovedboken synkroniseres innenfor sitt eget tidsbudsjett.
+ *  5. Alle ordrer som fortsatt venter, sjekkes mot lagrede linjer og den
+ *     ferske hovedboken.
+ *
+ * En rapport bestilt i dag behandles i morgen, når Stripe har kjørt den. Hvert
+ * steg feiler for seg. Feil som stopper bokføringen (feilede kjøringer, en
+ * intervallkjede som står fast, ordrer som ikke lar seg avstemme over tid)
+ * gir `failed`; resten er informasjon i `note`.
+ */
+export async function reconcileStripeFees(): Promise<StripeFeeReconciliation> {
+  const startedAt = Date.now()
+  const deadline = startedAt + RECONCILE_BUDGET_MS
+
+  const summary: Omit<StripeFeeReconciliation, 'failed' | 'note'> = {
+    balanceTransactions: 0,
+    balanceSyncComplete: false,
+    balanceSyncedThrough: null,
+    chargeFactsRepaired: 0,
+    reportsProcessed: 0,
+    reportsFailed: 0,
+    ordersReconciled: 0,
+    ordersHeld: 0,
+    reportRequested: false,
+  }
+  const failures: string[] = []
   const notes: string[] = []
 
   try {
-    summary.balanceTransactions = (await syncPlatformBalanceTransactions()).synced
+    const repair = await repairMissingChargeFacts({ deadline: Math.min(startedAt + CHARGE_REPAIR_BUDGET_MS, deadline) })
+    summary.chargeFactsRepaired = repair.repaired
+    if (repair.failed > 0) notes.push(`charge details could not be filled in for ${repair.failed} orders`)
   } catch (error) {
-    console.error(`[Fees] Platform balance transaction sync failed: ${errorMessage(error)}`)
-    notes.push(`balance transaction sync failed: ${errorMessage(error)}`)
+    console.error(`[Fees] Charge repair failed: ${errorMessage(error)}`)
+    failures.push(`charge repair failed: ${errorMessage(error)}`)
   }
 
+  let holds: FeeAttributionOutcome | null = null
+  let unmatchedCharges = 0
+
   try {
-    const processed = await processFeeReportRuns()
+    const processed = await processFeeReportRuns({ deadline })
     summary.reportsProcessed = processed.processed
-    summary.ordersReconciled = processed.ordersReconciled
+    summary.reportsFailed = processed.failed
+    summary.ordersReconciled += processed.ordersReconciled
+    failures.push(...processed.errors)
+    if (processed.deferred > 0) notes.push(`${processed.deferred} fee report runs deferred to the next run`)
+    holds = processed.attribution
+    unmatchedCharges = processed.attribution.unmatchedCharges
   } catch (error) {
     console.error(`[Fees] Fee report processing failed: ${errorMessage(error)}`)
-    notes.push(`fee report processing failed: ${errorMessage(error)}`)
+    failures.push(`fee report processing failed: ${errorMessage(error)}`)
   }
 
   try {
     const request = await requestFeeReportRun()
     summary.reportRequested = request.requested
+    if (request.stalled) {
+      failures.push(
+        `fee reports stalled at ${request.stalled.intervalStart} after ${request.stalled.failedRuns} failed run(s)` +
+          (request.stalled.lastError ? `: ${request.stalled.lastError}` : ''),
+      )
+    }
     if (!request.requested && request.reason) {
       console.log(`[Fees] No fee report requested: ${request.reason}`)
       if (request.reason === FEE_REPORT_UNAVAILABLE_REASON) notes.push(request.reason)
     }
   } catch (error) {
     console.error(`[Fees] Fee report request failed: ${errorMessage(error)}`)
-    notes.push(`fee report request failed: ${errorMessage(error)}`)
+    failures.push(`fee report request failed: ${errorMessage(error)}`)
   }
 
-  return notes.length > 0 ? { ...summary, note: notes.join('; ') } : summary
+  let ledgerCompleteThrough: number | undefined
+  try {
+    const sync = await syncPlatformBalanceTransactions({
+      deadline: Math.min(Date.now() + BALANCE_SYNC_BUDGET_MS, deadline - REATTRIBUTION_RESERVE_MS),
+    })
+    summary.balanceTransactions = sync.synced
+    summary.balanceSyncComplete = sync.complete
+    summary.balanceSyncedThrough = sync.syncedThrough
+    if (sync.complete && sync.syncedThrough) {
+      ledgerCompleteThrough = isoToUnix(sync.syncedThrough) - BALANCE_SYNC_OVERLAP_SECONDS
+    } else {
+      notes.push(`balance transaction sync reached ${sync.syncedThrough ?? 'nothing'} (time budget); continues next run`)
+    }
+  } catch (error) {
+    console.error(`[Fees] Platform balance transaction sync failed: ${errorMessage(error)}`)
+    failures.push(`balance transaction sync failed: ${errorMessage(error)}`)
+  }
+
+  try {
+    const recheck = await reattributePendingFees({ deadline, ledgerCompleteThrough })
+    summary.ordersReconciled += recheck.reconciled
+    if (recheck.deferred > 0) notes.push(`${recheck.deferred} pending charges not re-checked (time budget)`)
+    // Sjekken går gjennom alle ventende ordrer, også dem rapportbehandlingen holdt igjen.
+    if (recheck.checked > 0 || recheck.deferred === 0) holds = recheck
+  } catch (error) {
+    console.error(`[Fees] Pending fee re-check failed: ${errorMessage(error)}`)
+    failures.push(`pending fee re-check failed: ${errorMessage(error)}`)
+  }
+
+  if (holds) {
+    summary.ordersHeld = holds.held
+    if (holds.stuck > 0) {
+      failures.push(
+        `${holds.stuck} of ${holds.held} held orders' Stripe fees could not be booked for over 3 days (${describeHolds(holds)})`,
+      )
+    } else if (holds.held > 0) {
+      notes.push(`${holds.held} orders' Stripe fees are held until they match the platform ledger (${describeHolds(holds)})`)
+    }
+  }
+  if (unmatchedCharges > 0) notes.push(`fee lines for ${unmatchedCharges} charges match no order`)
+
+  const messages = [...failures, ...notes]
+  return {
+    ...summary,
+    failed: failures.length > 0,
+    ...(messages.length > 0 ? { note: messages.join('; ') } : {}),
+  }
 }

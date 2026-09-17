@@ -6,6 +6,7 @@ import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
 import { formatTicketCode } from '@/lib/tickets'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
+import type { OrderCancellationReason } from '@/types/database'
 
 export const metadata = { title: 'Thanks for your purchase — Tickethalo' }
 
@@ -47,7 +48,7 @@ function resolveOutcome(
   // Betalt, men ingen billett. Kom webhooken først, får denne siden
   // `duplicate` — da er det ordren som vet hvorfor, via `cancellationReason`.
   const noTicketReason =
-    completion?.result === 'sold_out' || completion?.result === 'invalid_show'
+    completion?.result === 'sold_out' || completion?.result === 'invalid_show' || completion?.result === 'sales_closed'
       ? completion.result
       : completion?.cancellationReason ?? null
 
@@ -106,24 +107,36 @@ function resolveOutcome(
  * automatically (see `finalizeCheckoutSession` and the refund queue), so the
  * copy says so instead of asking the buyer to chase us for their money — and
  * never suggests a ticket is on its way.
+ *
+ * `invalid_show` covers more than a cancelled show: an archived or unpublished
+ * show, and a payment that completed after midnight on show day, when sales
+ * had already ended. The copy stays neutral instead of claiming a cancellation.
  */
-function noTicketOutcome(reason: 'sold_out' | 'invalid_show', refunded: boolean): Outcome {
+function noTicketOutcome(reason: OrderCancellationReason, refunded: boolean): Outcome {
   const refund = refunded
     ? 'Your payment has been refunded automatically. It can take a few business days before it shows up in your account.'
     : 'Your payment will be refunded automatically within a few days — you do not need to do anything.'
 
-  if (reason === 'sold_out') {
-    return {
-      tone: 'error',
-      heading: 'The show sold out',
-      message: `The last tickets were taken before your purchase completed, so we could not issue you one. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
-    }
-  }
-
-  return {
-    tone: 'error',
-    heading: 'This show is no longer on sale',
-    message: `The show was cancelled or taken off sale before your purchase completed, so no ticket was issued. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
+  switch (reason) {
+    case 'sold_out':
+      return {
+        tone: 'error',
+        heading: 'The show sold out',
+        message: `The last tickets were taken before your purchase completed, so we could not issue you one. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
+      }
+    case 'sales_closed':
+      return {
+        tone: 'error',
+        heading: 'Ticket sales have closed',
+        message: `The organiser closed ticket sales for this show before your payment completed, so no ticket was issued. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
+      }
+    case 'invalid_show':
+    default:
+      return {
+        tone: 'error',
+        heading: 'No ticket was issued',
+        message: `Ticket sales for this show had ended before your payment completed, so no ticket was issued. ${refund} Questions? Contact us at ${SUPPORT_EMAIL}.`,
+      }
   }
 }
 

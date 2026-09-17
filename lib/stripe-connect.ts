@@ -17,6 +17,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * og speiles i `clubs.payout_schedule_interval`. Den er en del av klarheten:
  * en klubb kan ikke selge før Stripe har bekreftet `manual`. Utbetalingene
  * frigis av `lib/payouts.ts` (cron `app/api/cron/release-payouts`).
+ *
+ * Klubber som var onboardet før kolonnen fantes, står med planen som ukjent
+ * (null). Ingen webhook kommer av seg selv for dem, så guards som leser
+ * klubben spør Stripe én gang via `ensureClubPayoutScheduleKnown` i stedet
+ * for å stenge salget til noen trykker Refresh.
  */
 
 /** Feltene alt Connect-arbeid trenger. Hold listen i sync med `ConnectClub`. */
@@ -88,7 +93,8 @@ export type ClubReadiness = Pick<
  *
  * Utbetalingsplanen er med fordi Stripe ellers utbetaler billettpengene før
  * showet er avholdt. Bare en plan Stripe faktisk har bekreftet som `manual`
- * teller — ukjent (null) er ikke klar.
+ * teller — ukjent (null) er ikke klar. Funksjonen er ren og spør ikke Stripe;
+ * kall `ensureClubPayoutScheduleKnown` først der klubben kan være ukjent.
  */
 export function describeClubReadiness(club: ClubReadiness): ReadinessItem[] {
   return [
@@ -269,16 +275,30 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
  * Idempotent: står planen allerede på `manual`, blir det bare ett oppslag.
  */
 export async function ensureManualPayoutSchedule(accountId: string): Promise<string | null> {
+  return (await applyManualPayoutSchedule(accountId)).interval
+}
+
+type PayoutScheduleOutcome = {
+  /** Planen Stripe rapporterte, eller null når den ikke kunne leses. */
+  interval: string | null
+  /**
+   * Stripe svarte ikke (nettverk, 5xx, rate limit). Et nytt forsøk kan gi et
+   * annet svar, så webhooken skal be Stripe levere eventet på nytt.
+   */
+  transientFailure: boolean
+}
+
+async function applyManualPayoutSchedule(accountId: string): Promise<PayoutScheduleOutcome> {
   let current: string | null
   try {
     const settings = await stripe.balanceSettings.retrieve(undefined, { stripeAccount: accountId })
     current = payoutInterval(settings)
   } catch (error) {
     console.error(`[Connect] Could not read the payout schedule on ${accountId}: ${describeStripeError(error)}`)
-    return null
+    return { interval: null, transientFailure: !isDefinitiveStripeError(error) }
   }
 
-  if (current === 'manual') return current
+  if (current === 'manual') return { interval: current, transientFailure: false }
 
   try {
     const updated = await stripe.balanceSettings.update(
@@ -293,14 +313,44 @@ export async function ensureManualPayoutSchedule(accountId: string): Promise<str
           'The club cannot sell until Stripe confirms manual payouts.',
       )
     }
-    return interval
+    return { interval, transientFailure: false }
   } catch (error) {
     console.error(
       `[Connect] Could not set manual payout schedule on ${accountId} (currently ${current ?? 'unknown'}): ` +
         `${describeStripeError(error)}. The club cannot sell until Stripe confirms manual payouts.`,
     )
-    return current
+    return { interval: current, transientFailure: !isDefinitiveStripeError(error) }
   }
+}
+
+/**
+ * Stripe har endelig avvist forespørselen (ugyldig, ikke tillatt, feil
+ * nøkkel). Å prøve igjen gir samme svar. Alt annet — nettverksfeil, 5xx,
+ * rate limit, lås — kan gå over. Duck-typet på `type`, slik SDK-et setter den.
+ */
+function isDefinitiveStripeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const { type, code, statusCode } = error as { type?: unknown; code?: unknown; statusCode?: unknown }
+  if (type !== 'StripeInvalidRequestError' && type !== 'StripePermissionError' && type !== 'StripeAuthenticationError') {
+    return false
+  }
+  if (code === 'rate_limit' || code === 'lock_timeout') return false
+  return statusCode !== 409 && statusCode !== 429
+}
+
+/**
+ * Kastes av `syncAccountStatus` når Stripe ikke svarte på utbetalingsplanen.
+ * Det Stripe svarte på (charges, payouts, en kjent plan) er lagret før den
+ * kastes.
+ */
+export class PayoutScheduleSyncError extends Error {
+  constructor(accountId: string) {
+    super('Stripe did not respond when checking the payout schedule. Try again in a moment.')
+    this.name = 'PayoutScheduleSyncError'
+    this.accountId = accountId
+  }
+
+  readonly accountId: string
 }
 
 function payoutInterval(settings: Stripe.BalanceSettings): string | null {
@@ -389,8 +439,10 @@ export type AccountSyncResult = {
 
 /**
  * Speiler Stripes syn på kontoen inn i `clubs`. Kalles fra `account.updated`,
- * `balance_settings.updated` og fra økonomisiden, slik at guards kan lese
- * databasen i stedet for å spørre Stripe på hver checkout.
+ * `balance_settings.updated`, fra økonomisiden og — for klubber med ukjent
+ * plan — fra `ensureClubPayoutScheduleKnown`, slik at guards kan lese
+ * databasen i stedet for å spørre Stripe på hver checkout. Klubbraden leses
+ * bare for id-en, så en rad der planen fortsatt er null synkes som alle andre.
  *
  * Utbetalingsplanen håndheves og skrives i samme oppdatering. Er den endret
  * bort fra `manual` (f.eks. i Stripe-dashbordet), settes den tilbake her —
@@ -431,7 +483,7 @@ export async function syncAccountStatus(accountId: string): Promise<AccountSyncR
   const payoutsEnabled = capabilities?.stripe_balance?.payouts?.status === 'active'
   const complete = chargesEnabled && payoutsEnabled
 
-  const payoutScheduleInterval = await ensureManualPayoutSchedule(accountId)
+  const { interval: payoutScheduleInterval, transientFailure } = await applyManualPayoutSchedule(accountId)
   const now = new Date().toISOString()
 
   const { error } = await db
@@ -456,7 +508,93 @@ export async function syncAccountStatus(accountId: string): Promise<AccountSyncR
     throw new Error('Could not update the Stripe status. Try again in a moment.')
   }
 
+  // Svarte ikke Stripe på planen, kastes det etter lagringen. Webhooken svarer
+  // da 500 og Stripe leverer eventet på nytt — ellers kunne databasen stått
+  // med `manual` mens Stripe betaler ut daglig, uten at noen prøvde igjen.
+  // En endelig avvisning kastes ikke: den gir samme svar hver gang, og et
+  // endepunkt som feiler i dagevis blir slått av av Stripe.
+  if (transientFailure) throw new PayoutScheduleSyncError(accountId)
+
   return { clubId: club.id, chargesEnabled, payoutsEnabled, payoutScheduleInterval }
+}
+
+/**
+ * Etter et mislykket oppslag venter nye forsøk for samme konto så lenge.
+ * Stripe-klienten prøver selv på nytt med 20 sekunders tidsavbrudd, så uten
+ * pausen ville hver kjøper hos en klubb Stripe ikke svarer for, ventet på
+ * det samme feilende kallet.
+ */
+const UNKNOWN_SCHEDULE_RETRY_AFTER_MS = 60_000
+
+// Per serverinstans. Nok til å samle en kø av kjøpere på ett kall; en annen
+// instans kan gjøre det samme oppslaget, og det er ufarlig fordi synken er
+// idempotent.
+const unknownScheduleSyncs = new Map<string, Promise<AccountSyncResult | null>>()
+const unknownScheduleFailedAt = new Map<string, number>()
+
+/**
+ * Gjør en ukjent utbetalingsplan kjent før klarheten vurderes.
+ *
+ * Migrasjon 047 la til `payout_schedule_interval` uten verdi, og ingen webhook
+ * fyrer for en konto som allerede er onboardet. Uten dette ville hver klubb
+ * fra før migrasjonen stått som ikke klar — checkout, publisering og
+ * utbetaling stengt — til noen tilfeldigvis trykket Refresh. Kolonnen fylles
+ * ikke med `manual` i SQL: bare en plan Stripe har bekreftet teller.
+ *
+ * Bare null utløser et oppslag. En kjent plan som ikke er `manual` blokkerer
+ * uten nytt Stripe-kall — den rettes av webhooken eller Refresh. Etter første
+ * vellykkede synk står verdien i databasen, så senere kall er gratis.
+ *
+ * Kaster aldri: en feil logges, og klubben returneres uendret (fortsatt ikke
+ * klar). Det er den trygge feilen.
+ */
+export async function ensureClubPayoutScheduleKnown<
+  T extends { id: string; stripe_account_id: string | null; payout_schedule_interval: string | null },
+>(club: T): Promise<T> {
+  const accountId = club.stripe_account_id
+  if (!accountId || club.payout_schedule_interval !== null) return club
+
+  const failedAt = unknownScheduleFailedAt.get(accountId)
+  if (failedAt !== undefined && Date.now() - failedAt < UNKNOWN_SCHEDULE_RETRY_AFTER_MS) return club
+
+  let sync = unknownScheduleSyncs.get(accountId)
+  if (!sync) {
+    sync = syncUnknownPayoutSchedule(accountId).finally(() => unknownScheduleSyncs.delete(accountId))
+    unknownScheduleSyncs.set(accountId, sync)
+  }
+
+  const result = await sync
+  // En annen klubb på samme konto-ID skal aldri få denne klubbens plan.
+  if (!result || result.clubId !== club.id || result.payoutScheduleInterval === null) return club
+
+  // Synken skrev også ferske charges/payouts-flagg. Vaktene skal lese dem,
+  // ikke de som ble lest fra databasen før synken.
+  return {
+    ...club,
+    payout_schedule_interval: result.payoutScheduleInterval,
+    ...('charges_enabled' in club ? { charges_enabled: result.chargesEnabled } : {}),
+    ...('payouts_enabled' in club ? { payouts_enabled: result.payoutsEnabled } : {}),
+  }
+}
+
+async function syncUnknownPayoutSchedule(accountId: string): Promise<AccountSyncResult | null> {
+  try {
+    const result = await syncAccountStatus(accountId)
+    if (result.payoutScheduleInterval === null) {
+      // Detaljene er alt logget i `ensureManualPayoutSchedule`.
+      unknownScheduleFailedAt.set(accountId, Date.now())
+    } else {
+      unknownScheduleFailedAt.delete(accountId)
+    }
+    return result
+  } catch (error) {
+    unknownScheduleFailedAt.set(accountId, Date.now())
+    console.error(
+      `[Connect] Could not check the unknown payout schedule on ${accountId}: ${describeStripeError(error)}. ` +
+        'The club stays not ready until the schedule is confirmed.',
+    )
+    return null
+  }
 }
 
 /** Saldo på klubbens konto. `available` er det som kan utbetales nå. */
@@ -481,13 +619,18 @@ export function commissionFor(amount: number, club: Pick<ConnectClub, 'platform_
   return Math.round((amount * club.platform_fee_bps) / 10000)
 }
 
-/** Henter klubben bak et show, med feltene Connect-arbeidet trenger. */
+/**
+ * Henter klubben bak et show, med feltene Connect-arbeidet trenger. En ukjent
+ * utbetalingsplan sjekkes mot Stripe på veien, slik at guards som bygger på
+ * denne (publisering, fullbooket-automatikken) ikke avviser en klubb bare
+ * fordi planen aldri er speilet.
+ */
 export async function getClubForShow(showId: string): Promise<ConnectClub | null> {
   const db = createAdminClient()
   const { data: show } = await db.from('shows').select('club_id').eq('id', showId).single()
   if (!show?.club_id) return null
 
-  const { data: club } = await db
+  const { data } = await db
     .from('clubs')
     .select(CLUB_CONNECT_FIELDS)
     .eq('id', show.club_id)
@@ -495,13 +638,18 @@ export async function getClubForShow(showId: string): Promise<ConnectClub | null
 
   // Feltlisten er en konstant, ikke en literal, så Supabase-typene kan ikke
   // utlede raden. `ConnectClub` er kontrakten mot CLUB_CONNECT_FIELDS.
-  return (club as unknown as ConnectClub | null) ?? null
+  const club = (data as unknown as ConnectClub | null) ?? null
+  return club ? ensureClubPayoutScheduleKnown(club) : null
 }
 
 /**
  * Guard for publisering. Et show som legges ut for salg uten en ferdig
  * Connect-konto ville tatt imot penger uten mottaker — og uten selgeridentitet
  * på billetten.
+ *
+ * `getClubForShow` har allerede gjort en ukjent utbetalingsplan kjent, så en
+ * klubb fra før migrasjon 047 avvises bare hvis Stripe faktisk ikke bekrefter
+ * `manual` (eller ikke svarer).
  */
 export async function assertClubCanSell(showId: string) {
   const club = await getClubForShow(showId)

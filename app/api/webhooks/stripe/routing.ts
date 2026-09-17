@@ -10,6 +10,7 @@ export type WebhookRoute =
   | 'checkout_completed'
   | 'checkout_async_failed'
   | 'charge_refunded'
+  | 'refund'
   | 'payout'
   | 'account'
   | 'balance_settings'
@@ -29,6 +30,12 @@ const ROUTES: Readonly<Record<string, WebhookRoute>> = {
   'checkout.session.async_payment_succeeded': 'checkout_completed',
   'checkout.session.async_payment_failed': 'checkout_async_failed',
   'charge.refunded': 'charge_refunded',
+  // Selve refusjonen, ikke betalingen: en refusjon kan feile eller bli
+  // kansellert etter at `charge.refunded` er levert. `charge.refund.updated`
+  // bærer også et Refund-objekt.
+  'refund.updated': 'refund',
+  'refund.failed': 'refund',
+  'charge.refund.updated': 'refund',
   'charge.dispute.created': 'dispute',
   'charge.dispute.updated': 'dispute',
   'charge.dispute.closed': 'dispute',
@@ -58,6 +65,78 @@ export function routeFor(eventType: string): WebhookRoute {
  */
 export function isFeeReportType(reportType: string | null | undefined): boolean {
   return typeof reportType === 'string' && reportType.startsWith('all_fees.')
+}
+
+export type WebhookVerification<E> =
+  | { kind: 'event'; event: E }
+  /**
+   * Signaturen stemte, men innholdet er ikke et snapshot-event — i praksis et
+   * tynt v2-event (`v2.core.event`) fra en event destination som peker hit.
+   */
+  | { kind: 'unsupported_payload'; reason: string; payloadType: string | null }
+  /** Ingen secret verifiserte signaturen. `reason` er en ekte signaturfeil. */
+  | { kind: 'invalid_signature'; reason: string }
+  /** Noe annet enn signaturen feilet for et vanlig event. Bør prøves igjen. */
+  | { kind: 'failed'; reason: string }
+
+/**
+ * Prøver signaturen mot hver secret og skiller signaturfeil fra alt annet.
+ *
+ * `constructEvent` verifiserer signaturen først og tolker innholdet etterpå.
+ * Et tynt v2-event består signaturen, men kastes i tolkningen. Ble den feilen
+ * behandlet som en signaturfeil, prøvde vi neste secret, og den
+ * «No signatures found»-feilen overskrev den egentlige grunnen. Endepunktet
+ * svarte da 400 på hver levering til Stripe deaktiverte det, og loggen pekte
+ * på secreten. Et slikt event kvitteres i stedet: ruten håndterer bare
+ * snapshot-events, og å avvise det gir aldri et annet svar.
+ *
+ * En annen feil for et vanlig snapshot-event (`object: 'event'`) kvitteres
+ * derimot ikke. Den kan komme før signaturen er sjekket — f.eks. en
+ * kryptoleverandør som bare støtter async — og da skal Stripe prøve igjen
+ * i stedet for at billettkjøp forsvinner i stillhet.
+ *
+ * Stripe-klienten sendes inn, så funksjonen kan testes uten nettverk.
+ */
+export function verifyWebhookEvent<E>(
+  body: string,
+  secrets: readonly string[],
+  construct: (secret: string) => E,
+  isSignatureError: (error: unknown) => boolean,
+): WebhookVerification<E> {
+  let signatureError = 'no secret matched'
+
+  for (const secret of secrets) {
+    try {
+      return { kind: 'event', event: construct(secret) }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+
+      if (isSignatureError(error)) {
+        signatureError = reason
+        continue
+      }
+
+      const payload = payloadSummary(body)
+      if (payload.object === 'event') return { kind: 'failed', reason }
+      return { kind: 'unsupported_payload', reason, payloadType: payload.type }
+    }
+  }
+
+  return { kind: 'invalid_signature', reason: signatureError }
+}
+
+function payloadSummary(body: string): { object: string | null; type: string | null } {
+  try {
+    const parsed: unknown = JSON.parse(body)
+    if (!parsed || typeof parsed !== 'object') return { object: null, type: null }
+    const { object, type } = parsed as { object?: unknown; type?: unknown }
+    return {
+      object: typeof object === 'string' ? object : null,
+      type: typeof type === 'string' ? type : null,
+    }
+  } catch {
+    return { object: null, type: null }
+  }
 }
 
 /** Miljøvariablene webhooken verifiserer signaturen mot, i prøverekkefølge. */

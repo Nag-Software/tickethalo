@@ -6,7 +6,9 @@ import {
   availablePayoutBalance,
   canAdvancePayoutStatus,
   isDefinitivePayoutError,
+  isPastDeadline,
   mapStripePayoutStatus,
+  orderClubsForRelease,
   payoutFailureHoldReason,
   payoutIdempotencyKey,
   payoutRowPatch,
@@ -296,5 +298,88 @@ describe('payoutFailureHoldReason', () => {
   it('falls back to updated_at when failed_at is missing', () => {
     expect(payoutFailureHoldReason(failed({ failed_at: null, updated_at: '2026-09-16T00:00:00.000Z' }), NOW)).not.toBeNull()
     expect(payoutFailureHoldReason(failed({ failed_at: null, updated_at: '2026-09-01T00:00:00.000Z' }), NOW)).toBeNull()
+  })
+})
+
+describe('isPastDeadline', () => {
+  const deadline = NOW.getTime()
+
+  it('never passes without a deadline', () => {
+    expect(isPastDeadline(undefined, deadline + 60_000)).toBe(false)
+  })
+
+  it('lets work start up to and including the deadline', () => {
+    expect(isPastDeadline(deadline, deadline - 1)).toBe(false)
+    expect(isPastDeadline(deadline, deadline)).toBe(false)
+  })
+
+  it('stops new work after the deadline', () => {
+    expect(isPastDeadline(deadline, deadline + 1)).toBe(true)
+  })
+})
+
+describe('orderClubsForRelease', () => {
+  const club = (id: string, lastAttemptAt: string | null) => ({ id, lastAttemptAt })
+  const ids = (clubs: readonly { id: string }[]) => clubs.map((item) => item.id)
+
+  it('takes the club with the oldest last attempt first', () => {
+    const ordered = orderClubsForRelease(
+      [
+        club('paid-today', '2026-09-16T06:31:00.000Z'),
+        club('cut-off-last-week', '2026-09-09T06:40:00.000Z'),
+        club('paid-yesterday', '2026-09-15T06:35:00.000Z'),
+      ],
+      '2026-09-16',
+    )
+    expect(ids(ordered)).toEqual(['cut-off-last-week', 'paid-yesterday', 'paid-today'])
+  })
+
+  it('puts clubs that were never attempted before all others', () => {
+    const ordered = orderClubsForRelease(
+      [club('old', '2020-01-01T00:00:00.000Z'), club('never', null), club('recent', '2026-09-15T06:35:00.000Z')],
+      '2026-09-16',
+    )
+    expect(ids(ordered)).toEqual(['never', 'old', 'recent'])
+  })
+
+  it('treats an unreadable timestamp as never attempted', () => {
+    const ordered = orderClubsForRelease([club('recent', '2026-09-15T06:35:00.000Z'), club('broken', 'not a date')], 'x')
+    expect(ids(ordered)).toEqual(['broken', 'recent'])
+  })
+
+  it('moves a club that was paid to the back, and a club that was cut off to the front', () => {
+    const clubs = ['a', 'b', 'c', 'd'].map((id) => club(id, '2026-09-10T06:30:00.000Z'))
+    const firstRun = orderClubsForRelease(clubs, '2026-09-15')
+
+    // Budsjettet rakk to klubber, og begge fikk utbetaling.
+    const [first, second, ...cutOff] = firstRun
+    const paidAt = '2026-09-15T06:31:00.000Z'
+    const secondRun = orderClubsForRelease(
+      [{ ...first, lastAttemptAt: paidAt }, { ...second, lastAttemptAt: paidAt }, ...cutOff],
+      '2026-09-16',
+    )
+
+    expect(ids(secondRun.slice(0, 2)).sort()).toEqual(ids(cutOff).sort())
+  })
+
+  it('is stable for the same seed and does not mutate the input', () => {
+    const clubs = Object.freeze(['c', 'a', 'd', 'b'].map((id) => club(id, null)))
+    const once = orderClubsForRelease(clubs, '2026-09-16')
+
+    expect(ids(orderClubsForRelease(clubs, '2026-09-16'))).toEqual(ids(once))
+    expect(ids(clubs)).toEqual(['c', 'a', 'd', 'b'])
+    expect(ids(once).sort()).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('rotates ties between days, so the same never-attempted club is not always last', () => {
+    const clubs = Array.from({ length: 12 }, (_, index) => club(`club-${index}`, null))
+    const lastByDay = new Set(
+      Array.from({ length: 14 }, (_, day) => {
+        const ordered = orderClubsForRelease(clubs, `2026-09-${String(day + 1).padStart(2, '0')}`)
+        return ordered[ordered.length - 1].id
+      }),
+    )
+
+    expect(lastByDay.size).toBeGreaterThan(1)
   })
 })

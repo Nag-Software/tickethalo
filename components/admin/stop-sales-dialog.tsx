@@ -21,6 +21,11 @@ import { stopTicketSalesAction } from '@/app/admin-app/(protected)/shows/actions
 /**
  * Stenger billettsalget. Showet står publisert — dette er knappen for en
  * avlysning eller en pause, ikke for å ta showet ned.
+ *
+ * Løftet i teksten holder fordi databasen håndhever det: en betaling som
+ * fullføres etter stengingen gir ingen billett og refunderes automatisk. Å
+ * avbryte kjøp som er i gang sparer kjøperen for trekk og refusjon, men er
+ * ikke det som stopper salget.
  */
 export function StopSalesDialog({ showId, showTitle }: { showId: string; showTitle: string }) {
   const [open, setOpen] = useState(false)
@@ -41,10 +46,10 @@ export function StopSalesDialog({ showId, showTitle }: { showId: string; showTit
         const cancelled = result.expiredCheckoutSessions
         toast.success(
           cancelled > 0
-            ? `Ticket sales stopped. ${cancelled} ${cancelled === 1 ? 'checkout' : 'checkouts'} in progress ${cancelled === 1 ? 'was' : 'were'} cancelled.`
+            ? `Ticket sales stopped. ${cancelled} ${cancelled === 1 ? 'purchase' : 'purchases'} in progress ${cancelled === 1 ? 'was' : 'were'} cancelled.`
             : 'Ticket sales stopped.',
         )
-        if (result.warning) toast.warning(result.warning)
+        if (result.warning) toast.warning(result.warning, { duration: 15000 })
         setOpen(false)
       },
     )
@@ -73,8 +78,11 @@ export function StopSalesDialog({ showId, showTitle }: { showId: string; showTit
 
         <ul className="list-disc space-y-1.5 pl-5 text-sm">
           <li>Buyers can no longer start a purchase. The event page shows that sales are closed.</li>
-          <li>Checkouts already in progress are cancelled, so nobody can finish a payment they started.</li>
-          <li>Tickets already sold stay valid. Nobody is refunded automatically.</li>
+          <li>
+            Purchases in progress are cancelled. If a payment still goes through, it is refunded automatically — no
+            tickets are issued after you stop sales.
+          </li>
+          <li>Tickets already sold stay valid. Nobody who already has a ticket is refunded automatically.</li>
           <li>You can resume ticket sales later.</li>
         </ul>
 

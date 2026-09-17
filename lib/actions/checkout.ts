@@ -7,6 +7,7 @@ import {
   CLUB_CONNECT_FIELDS,
   type ConnectClub,
   commissionFor,
+  ensureClubPayoutScheduleKnown,
   isClubPayoutReady,
 } from '@/lib/stripe-connect'
 import {
@@ -25,7 +26,7 @@ type ShowForCheckout = {
   date: string
   ticket_price: number | null
   currency: string
-  stripe_price_id: string | null
+  stripe_product_id: string | null
 }
 
 /**
@@ -34,11 +35,17 @@ type ShowForCheckout = {
  * Stripes standard er 24 timer. Stenger bookeren salget, kunne en fane som
  * sto åpen fra i går da fortsatt betale — og slettes showet i mellomtiden,
  * må pengene refunderes fordi oppgjøret ikke kan gi billett. 30 minutter er
- * det korteste Stripe godtar, regnet fra når Stripe oppretter sesjonen. Det
- * ekstra minuttet dekker nettverkstid og klokkeforskjell: kommer vi ett
- * sekund under grensen, avviser Stripe forespørselen og ingen får kjøpt.
+ * det korteste Stripe godtar, regnet fra når Stripe mottar forespørselen.
+ *
+ * Fristen regnes ut én gang, før kallet, men SDK-en sender samme forespørsel
+ * på nytt når et forsøk henger (`timeout` og `maxNetworkRetries` i
+ * `lib/stripe.ts`). To forsøk som hang til tidsavbruddet uten å nå Stripe,
+ * gjør at det siste kommer fram nesten et minutt etter at fristen ble regnet
+ * ut — og ligger fristen da ett sekund under grensen, avviser Stripe sesjonen
+ * og kjøperen får en feil. Fem minutter dekker alle forsøkene med ventetid,
+ * pluss klokkeforskjell, og tåler at tidsavbruddet settes opp igjen.
  */
-const CHECKOUT_SESSION_TTL_SECONDS = 31 * 60
+const CHECKOUT_SESSION_TTL_SECONDS = 35 * 60
 
 export type TicketOrderInput = {
   quantity: number
@@ -66,7 +73,7 @@ export async function createCheckoutSession(
 
   const { data: show, error } = await admin
     .from('shows')
-    .select('id, title, slug, date, start_time, ticket_price, currency, stripe_price_id, capacity, status, club_id, ticket_sales_closed_at, deleted_at')
+    .select('id, title, slug, date, start_time, ticket_price, currency, stripe_product_id, capacity, status, club_id, ticket_sales_closed_at, deleted_at')
     .eq('id', showId)
     .single()
 
@@ -90,11 +97,17 @@ export async function createCheckoutSession(
   )
   if (salesError) throw salesError
 
-  if (!show.ticket_price) throw new CheckoutError('price_missing')
+  if (!show.ticket_price || show.ticket_price <= 0) throw new CheckoutError('price_missing')
 
-  const club = await loadClub(show.club_id)
+  // Klubber fra før migrasjon 047 har ingen kjent utbetalingsplan. Uten dette
+  // ville hver av dem vært «ikke klar» til noen trykket Oppdater under Økonomi
+  // — mens de offentlige sidene viser Kjøp. Oppslaget skjer bare mens planen er
+  // ukjent, og en Stripe-feil gir bare klubben tilbake uendret.
+  const loadedClub = await loadClub(show.club_id)
+  const club = loadedClub ? await ensureClubPayoutScheduleKnown(loadedClub) : null
   const clubDetail = club
-    ? `club=${club.id} charges=${club.charges_enabled} payouts=${club.payouts_enabled} org=${Boolean(club.org_number)}`
+    ? `club=${club.id} charges=${club.charges_enabled} payouts=${club.payouts_enabled} ` +
+      `schedule=${club.payout_schedule_interval ?? 'unknown'} org=${Boolean(club.org_number)}`
     : `show ${show.id} has no club`
 
   if (!isClubPayoutReady(club)) {
@@ -120,23 +133,24 @@ export async function createCheckoutSession(
   }
 
   const origin = new URL(requestUrl).origin
-  const cachedPriceId = show.stripe_price_id
-  const priceId = cachedPriceId ?? (await createPrice(show, account))
+  const cachedProductId = show.stripe_product_id
+  const productId = cachedProductId ?? (await createProduct(show, account))
 
   let session: Stripe.Checkout.Session
   try {
-    session = await createSession(show, club, priceId, origin, quantity, order.holderNames)
+    session = await createSession(show, club, productId, origin, quantity, order.holderNames)
   } catch (sessionError) {
-    // Pris-ID-er hører til én Stripe-konto. Etter overgangen til Connect ligger
-    // gamle ID-er på plattformkontoen og er ukjente for klubbens konto — samme
-    // symptom som en arkivert pris. Lag prisen på nytt én gang før vi gir opp.
-    if (!cachedPriceId || !isMissingStripeResource(sessionError, priceId)) {
+    // Produkt-ID-er hører til én Stripe-konto. Etter overgangen til Connect,
+    // eller om klubben har koblet til en ny konto, er den lagrede ID-en ukjent
+    // for kontoen vi selger på. Lag produktet på nytt én gang før vi gir opp.
+    if (!cachedProductId || !isMissingStripeResource(sessionError, productId)) {
       throw toCheckoutError(sessionError)
     }
 
-    console.warn(`[Checkout] Price ${priceId} for show ${show.id} is unknown to ${account} — creating a replacement`)
+    console.warn(`[Checkout] Product ${productId} for show ${show.id} is unknown to ${account} — creating a replacement`)
+    const replacementId = await createProduct(show, account)
     try {
-      session = await createSession(show, club, await createPrice(show, account), origin, quantity, order.holderNames)
+      session = await createSession(show, club, replacementId, origin, quantity, order.holderNames)
     } catch (retryError) {
       throw toCheckoutError(retryError)
     }
@@ -153,58 +167,70 @@ async function loadClub(clubId: string | null): Promise<ConnectClub | null> {
   return (data as unknown as ConnectClub | null) ?? null
 }
 
-/** Creates a product + one-off price on the club's account and caches the IDs on the show. */
-async function createPrice(show: ShowForCheckout, account: string) {
-  const admin = createAdminClient()
-
+/**
+ * Lager produktet for showet på klubbens konto og husker ID-en på showet.
+ *
+ * Bare produktet gjenbrukes, aldri en pris. En lagret pris ble ikke laget på
+ * nytt når bookeren endret billettprisen eller klubben byttet valuta: kjøperen
+ * betalte den gamle prisen, mens provisjonen ble regnet av den nye — og klubben
+ * satt igjen med noe annet enn 90 %. Beløpet settes nå i hver sesjon.
+ */
+async function createProduct(show: ShowForCheckout, account: string) {
+  let product: Stripe.Product
   try {
-    const product = await stripe.products.create(
+    product = await stripe.products.create(
       {
         name: show.title,
         metadata: { show_id: show.id, event_slug: show.slug },
       },
       { stripeAccount: account },
     )
-
-    const price = await stripe.prices.create(
-      {
-        unit_amount: show.ticket_price!,
-        currency: show.currency.toLowerCase(),
-        product: product.id,
-      },
-      { stripeAccount: account },
-    )
-
-    // Persist for reuse
-    await admin
-      .from('shows')
-      .update({ stripe_price_id: price.id, stripe_product_id: product.id })
-      .eq('id', show.id)
-
-    return price.id
   } catch (error) {
     throw toCheckoutError(error)
   }
+
+  // Ikke kastet: produktet virker for denne sesjonen uansett. Mislykkes
+  // lagringen, lages bare et nytt produkt ved neste kjøp.
+  const { error } = await createAdminClient()
+    .from('shows')
+    .update({ stripe_product_id: product.id })
+    .eq('id', show.id)
+  if (error) console.warn(`[Checkout] Could not store product ${product.id} for show ${show.id}: ${error.message}`)
+
+  return product.id
 }
 
 function createSession(
   show: ShowForCheckout,
   club: ConnectClub,
-  priceId: string,
+  productId: string,
   origin: string,
   quantity: number,
   holderNames: string[],
 ) {
+  // Beløpet og provisjonen leses av samme rad i samme kall. Da kan kjøperen
+  // aldri belastes en annen pris enn den provisjonen er regnet av, og klubben
+  // sitter alltid igjen med nøyaktig sin andel.
+  const unitAmount = show.ticket_price!
   // Provisjonen er per billett, så den skal ganges opp med antallet.
-  const commission = commissionFor(show.ticket_price!, club) * quantity
-  // Regnes her og ikke hos kalleren: prøves sesjonen på nytt med en ny pris,
-  // skal fristen gjelde fra det nye forsøket.
+  const commission = commissionFor(unitAmount, club) * quantity
+  // Regnes her og ikke hos kalleren: prøves sesjonen på nytt med et nytt
+  // produkt, skal fristen gjelde fra det nye forsøket.
   const expiresAt = Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_TTL_SECONDS
 
   return stripe.checkout.sessions.create(
     {
       mode: 'payment',
-      line_items: [{ price: priceId, quantity }],
+      line_items: [
+        {
+          quantity,
+          price_data: {
+            currency: show.currency.toLowerCase(),
+            unit_amount: unitAmount,
+            product: productId,
+          },
+        },
+      ],
       expires_at: expiresAt,
       // `s` lar suksesssiden finne fram til riktig Connect-konto. Sesjonen
       // finnes bare på klubbens konto, så uten den kan den ikke hentes.
@@ -219,6 +245,10 @@ function createSession(
         club_id: club.id,
         connected_account_id: club.stripe_account_id ?? '',
         quantity: String(quantity),
+        // Provisjonen for hele ordren, i minste valutaenhet. Oppgjøret faller
+        // tilbake på denne når betalingen ikke kan leses fra Stripe — ellers
+        // ville ordren stått uten klubbens andel, og klubben aldri fått den utbetalt.
+        application_fee_amount: String(commission),
         // Ett navn per nøkkel framfor én JSON-streng: Stripe tåler 50 nøkler
         // à 500 tegn, men en samlet streng ville sprengt grensen på lange navn.
         ...ticketNameMetadata(holderNames, quantity),

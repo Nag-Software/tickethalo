@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
-import { syncRefundFromCharge } from '@/lib/refunds'
+import { syncDisputeFromStripe, syncRefundFromCharge, syncRefundStatus } from '@/lib/refunds'
 import { syncPayoutFromStripe } from '@/lib/payouts'
 import { processFeeReportRuns } from '@/lib/stripe-fees'
 import { syncAccountStatus } from '@/lib/stripe-connect'
@@ -12,24 +12,32 @@ import {
   isFeeReportType,
   malformedWebhookSecretNames,
   routeFor,
+  verifyWebhookEvent,
 } from './routing'
 
 /**
  * 6.9 Stripe webhook endpoint: /api/webhooks/stripe
  *
  * To endepunkter i Stripe peker hit, hvert med sin signing secret. Signaturen
- * prøves mot begge, så det spiller ingen rolle hvilket som leverte.
+ * prøves mot begge, så det spiller ingen rolle hvilket som leverte. Begge må
+ * sende snapshot-events («Snapshot» payload). Tynne v2-events (`v2.core.*`)
+ * håndteres ikke; de kvitteres og logges som ignorert.
  *
  * «Connected accounts»-endepunktet (STRIPE_CONNECT_WEBHOOK_SECRET). Events fra
- * klubbenes kontoer, med `event.account` satt til klubbens konto-ID:
+ * klubbenes kontoer, med `event.account` satt til klubbens konto-ID. Slå på
+ * alle disse:
  *  - checkout.session.completed, checkout.session.async_payment_succeeded
- *      → billetter utstedes (`finalizeCheckoutSession`). Utsolgt eller ugyldig
- *        show refunderes automatisk der inne.
+ *      → billetter utstedes (`finalizeCheckoutSession`). Utsolgt, ugyldig show
+ *        eller stoppet billettsalg refunderes automatisk der inne.
  *  - checkout.session.async_payment_failed → logges; ingen ordre ble laget.
  *  - charge.refunded → refusjonen speiles på ordren (`lib/refunds.ts`), også
  *    delrefusjoner og refusjoner gjort i Stripe-dashbordet.
+ *  - refund.updated, refund.failed, charge.refund.updated → refusjonens egen
+ *    status følges (`syncRefundStatus`), så en refusjon som feiler eller
+ *    kanselleres etter `charge.refunded` ikke står som gjennomført.
  *  - charge.dispute.created/updated/closed/funds_withdrawn/funds_reinstated
- *      → logges for oppfølging.
+ *      → disputtstatus speiles på ordren (`syncDisputeFromStripe`) og logges
+ *        for oppfølging.
  *  - payment_intent.payment_failed → en ventende ordre merkes `failed`.
  *  - payout.created/updated/paid/failed/canceled → utbetalingsstatus følger
  *    Stripe (`lib/payouts.ts`).
@@ -64,7 +72,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing stripe-signature' }, { status: 400 })
   }
 
-  const secrets = WEBHOOK_SECRET_ENV_VARS.map((name) => process.env[name])
+  // Trimmes likt med sjekken ved oppstart: en hemmelighet lagt inn med
+  // linjeskift (`echo … | vercel env add`) ville ellers avvist alle events.
+  const secrets = WEBHOOK_SECRET_ENV_VARS.map((name) => process.env[name]?.trim())
     .filter((secret): secret is string => Boolean(secret))
 
   if (secrets.length === 0) {
@@ -74,24 +84,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  let event: Stripe.Event | null = null
-  let lastError = 'no secret matched'
+  const verification = verifyWebhookEvent(
+    body,
+    secrets,
+    (secret) => stripe.webhooks.constructEvent(body, sig, secret),
+    (error) => error instanceof Stripe.errors.StripeSignatureVerificationError,
+  )
 
-  for (const secret of secrets) {
-    try {
-      event = stripe.webhooks.constructEvent(body, sig, secret)
+  switch (verification.kind) {
+    case 'invalid_signature':
+      // Nesten alltid en secret fra feil Stripe-konto eller miljø. Uten denne
+      // loggen ser det ut som at ingen kjøp skjer.
+      console.error(`[Stripe Webhook] Signature verification failed: ${verification.reason}`)
+      return NextResponse.json({ error: verification.reason }, { status: 400 })
+
+    case 'unsupported_payload':
+      // Signaturen stemte, så avvisning gir bare nye forsøk til Stripe
+      // deaktiverer destinasjonen. Loggen sier hva som bør skrus av.
+      console.warn(
+        `[Stripe Webhook] Verified payload ignored (${verification.payloadType ?? 'unknown type'}): ` +
+          `${verification.reason} — point only snapshot event destinations at this endpoint.`,
+      )
+      return NextResponse.json({ received: true, ignored: true })
+
+    case 'failed':
+      // Ikke en signaturfeil og ikke et tynt event — oftest oppsettet rundt
+      // verifiseringen. 500 lar Stripe prøve igjen når det er rettet.
+      console.error(`[Stripe Webhook] Could not verify the event: ${verification.reason}`)
+      return NextResponse.json({ error: 'Webhook verification failed' }, { status: 500 })
+
+    case 'event':
       break
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : 'Invalid signature'
-    }
   }
 
-  if (!event) {
-    // Nesten alltid en secret fra feil Stripe-konto eller miljø. Uten denne
-    // loggen ser det ut som at ingen kjøp skjer.
-    console.error(`[Stripe Webhook] Signature verification failed: ${lastError}`)
-    return NextResponse.json({ error: lastError }, { status: 400 })
-  }
+  const event: Stripe.Event = verification.event
 
   // Tom for plattform-events, klubbens konto-ID for Connect-events.
   const account = event.account ?? null
@@ -106,6 +132,10 @@ export async function POST(req: NextRequest) {
         break
       case 'charge_refunded':
         await syncRefundFromCharge(event.data.object as Stripe.Charge, account)
+        break
+      case 'refund':
+        // `refund.*` og `charge.refund.updated` har begge et Refund-objekt.
+        await syncRefundStatus(event.data.object as Stripe.Refund, account)
         break
       case 'dispute':
         await handleDispute(event.data.object as Stripe.Dispute, account, event.type)
@@ -150,8 +180,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, account
 
   // `finalizeCheckoutSession` returnerer utfallet i stedet for å kaste. Bare
   // `failed` kastes videre: da får Stripe 500 og prøver igjen, som er ønsket
-  // for feil som kan gå over av seg selv — men ikke for utsolgt eller ugyldig
-  // show, der et nytt forsøk gir samme svar.
+  // for feil som kan gå over av seg selv — men ikke for utsolgt, ugyldig show
+  // eller stoppet salg, der et nytt forsøk gir samme svar.
   switch (completion.result) {
     case 'failed':
       throw new Error(
@@ -159,9 +189,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, account
       )
 
     case 'sold_out':
-    case 'invalid_show': {
-      // Betalt, men ingen billett. Refusjonen er forsøkt inne i finalize; lyktes
-      // den ikke, står ordren i refusjonskøen og cron prøver igjen.
+    case 'invalid_show':
+    case 'sales_closed': {
+      // Betalt, men ingen billett. `sales_closed` er en kunde som betalte i en
+      // Checkout-sesjon som var åpen da salget ble stoppet. Refusjonen er
+      // forsøkt inne i finalize; lyktes den ikke, står ordren i refusjonskøen
+      // og cron prøver igjen.
       const refunded = completion.refunded === true
       const log = refunded ? console.warn : console.error
       log(
@@ -263,8 +296,10 @@ async function handleReportRun(run: Stripe.Reporting.ReportRun, account: string 
 
 /**
  * Disputen trekkes fra klubbens saldo (direct charge), men Tickethalo hefter
- * hvis saldoen går negativ (`losses_collector = application`). Den logges
- * slik at den kan følges opp — hele livsløpet, ikke bare opprettelsen.
+ * hvis saldoen går negativ (`losses_collector = application`). Statusen
+ * speiles på ordren (`syncDisputeFromStripe`), som blant annet holder showet
+ * fra å bli slettet mens disputten er åpen. Den logges i tillegg slik at den
+ * kan følges opp — hele livsløpet, ikke bare opprettelsen.
  */
 async function handleDispute(dispute: Stripe.Dispute, account: string | null, eventType: string) {
   const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge.id
@@ -277,7 +312,8 @@ async function handleDispute(dispute: Stripe.Dispute, account: string | null, ev
     .maybeSingle()
 
   if (error) {
-    // Bare logging står på spill, så eventet kvitteres likevel.
+    // Oppslaget er bare for loggen. Synken under slår opp ordren selv og
+    // kaster hvis databasen faktisk er nede.
     console.error(`[Stripe Webhook] Could not look up the order for dispute ${dispute.id}: ${error.message}`)
   }
 
@@ -285,9 +321,13 @@ async function handleDispute(dispute: Stripe.Dispute, account: string | null, ev
     ? console.error
     : console.warn
 
+  // Logges før synken, så disputten er synlig selv om synken feiler og Stripe
+  // må prøve igjen.
   log(
     `[Stripe Webhook] ${eventType}: dispute ${dispute.id} (${dispute.reason}, ${dispute.amount} ${dispute.currency}, ` +
       `status=${dispute.status}) on account ${account ?? 'platform'} — ` +
       `order=${order?.id ?? 'unknown'} club=${order?.club_id ?? 'unknown'}`,
   )
+
+  await syncDisputeFromStripe(dispute, account)
 }

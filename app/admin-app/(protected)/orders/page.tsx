@@ -3,7 +3,7 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { getClubAccess } from '@/lib/club-auth'
 import { CircleHelp, CreditCard } from 'lucide-react'
 import { refundOrderAction } from '@/lib/actions/refund'
-import { isAwaitingRefund } from '@/lib/refunds'
+import { isAwaitingRefund, isDisputeOpen } from '@/lib/refunds'
 import { RefundOrderButton } from '@/components/admin/refund-order-button'
 import type { OrderCancellationReason } from '@/types/database'
 
@@ -36,6 +36,7 @@ const statusLabels: Record<string, string> = {
 const cancellationLabels: Record<OrderCancellationReason, string> = {
   sold_out: 'Sold out — no ticket issued',
   invalid_show: 'Show not on sale — no ticket issued',
+  sales_closed: 'Sales stopped — no ticket issued',
 }
 
 /**
@@ -99,7 +100,7 @@ export default async function OrdersPage() {
   const { data: orders, error: ordersError } = clubAccess.clubIds.length
     ? await db
         .from('orders')
-        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, created_at, payment_method_type, platform_fee_amount, club_net_amount, refunded_amount, refunded_at, stripe_payment_intent_id, cancellation_reason')
+        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, created_at, payment_method_type, platform_fee_amount, club_net_amount, refunded_amount, refunded_at, refund_reason, stripe_payment_intent_id, cancellation_reason, dispute_status, last_refund_error')
         .in('club_id', clubAccess.clubIds)
         .order('created_at', { ascending: false })
         .limit(100)
@@ -151,6 +152,10 @@ export default async function OrdersPage() {
               {(orders ?? []).map((o) => {
                 const show = o.show_id ? showMap[o.show_id] : null
                 const awaitingRefund = isAwaitingRefund(o)
+                // Banken avgjør en åpen disputt. Stripe avviser refusjonen
+                // uansett, så knappen skjules i stedet for å gi en feil.
+                const disputeOpen = isDisputeOpen(o.dispute_status)
+                const canRefund = (o.status === 'paid' || awaitingRefund) && !disputeOpen
                 const partiallyRefunded = o.status === 'paid' && (o.refunded_amount ?? 0) > 0
                 const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }
                 const isCheckedIn = ticketSummary.total > 0 && ticketSummary.checkedIn === ticketSummary.total
@@ -206,6 +211,11 @@ export default async function OrdersPage() {
                             {statusLabels[o.status] ?? o.status}
                           </span>
                         )}
+                        {disputeOpen && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                            Disputed
+                          </span>
+                        )}
                         {partiallyRefunded && (
                           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
                             Partially refunded {money(o.refunded_amount)}
@@ -222,6 +232,21 @@ export default async function OrdersPage() {
                           {cancellationLabels[o.cancellation_reason] ?? 'No ticket issued'}
                         </div>
                       )}
+                      {o.refund_reason === 'dispute_lost' && (
+                        <div className="mt-1 text-xs text-muted-foreground">Refunded by the buyer&apos;s bank — dispute lost</div>
+                      )}
+                      {disputeOpen && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          The buyer disputed the payment. It can be refunded once the dispute is resolved.
+                        </div>
+                      )}
+                      {/* Et forsøk som feilet, eller en refusjon Stripe senere
+                          avviste. Uten dette ser ordren bare betalt ut. */}
+                      {canRefund && o.last_refund_error && (
+                        <div className="mt-1 max-w-xs text-xs text-destructive">
+                          Last refund attempt failed: {o.last_refund_error}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <PaymentMethodBadge method={paymentMethod} />
@@ -231,7 +256,7 @@ export default async function OrdersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">
-                        {o.status === 'paid' || awaitingRefund ? (
+                        {canRefund ? (
                           <RefundOrderButton
                             action={refundOrderAction}
                             orderId={o.id}

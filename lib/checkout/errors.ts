@@ -24,7 +24,9 @@ export type CheckoutErrorCode =
 
 const MESSAGES: Record<CheckoutErrorCode, string> = {
   show_not_found: 'We could not find this show. Reload the page and try again.',
-  show_not_published: 'This show is not on sale yet.',
+  // Uten «yet»: koden gjelder også kansellerte og arkiverte show, og der kommer
+  // det ingen billetter. Teksten må stemme for alle, og lover derfor ingenting.
+  show_not_published: 'This show is not on sale.',
   show_past: 'This show has already happened, so tickets can no longer be bought.',
   sold_out: 'This show is sold out.',
   sales_closed: 'Ticket sales for this show are closed.',
@@ -99,8 +101,9 @@ export function checkoutErrorMessage(code: CheckoutErrorCode, params: CheckoutEr
  * Salgsstatusen som checkout-feil, eller null når salget er åpent.
  *
  * Reglene bor i `ticketSalesState`; her bestemmes bare hva kjøperen får høre.
- * Et arkivert eller kansellert show er «ikke publisert» for kjøperen — at det
- * finnes salgshistorikk bak, er ikke noe å fortelle.
+ * Et utkast, et kansellert og et arkivert show er alle «ikke publisert» for
+ * kjøperen — at det finnes salgshistorikk bak, er ikke noe å fortelle. Derfor
+ * kan meldingen heller ikke si at salget kommer.
  */
 export function checkoutErrorForSalesState(state: TicketSalesState, detail?: string): CheckoutError | null {
   switch (state.kind) {
@@ -167,6 +170,14 @@ export function toCheckoutError(error: unknown): CheckoutError {
     ]
       .filter(Boolean)
       .join(' | ')
+
+    // Checkout-fristen regnes ut før kallet. Kommer et nytt forsøk fra SDK-en
+    // fram så sent at fristen er under Stripes minimum, er det nettverket som
+    // har sviktet og ikke oppsettet — kjøperen kan bare prøve igjen, og ingen
+    // skal varsles om feil konfigurasjon. Se `CHECKOUT_SESSION_TTL_SECONDS`.
+    if (stripeError.type === 'StripeInvalidRequestError' && stripeError.param === 'expires_at') {
+      return new CheckoutError('stripe_unavailable', { detail, cause: error })
+    }
 
     switch (stripeError.type) {
       // A 4xx from Stripe means our request was wrong: a missing key, the wrong

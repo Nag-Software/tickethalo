@@ -1,4 +1,12 @@
-import { TICKET_SALES_TIME_ZONE, startOfDayInZone, type TicketSalesState } from '@/lib/ticket-sales'
+import {
+  TICKET_SALES_TIME_ZONE,
+  TICKET_SALES_WINDOW_DAYS,
+  osloDate,
+  startOfDayInZone,
+  ticketSalesOpenDate,
+  ticketSalesOpensAt,
+  type TicketSalesState,
+} from '@/lib/ticket-sales'
 import type { Database } from '@/types/database'
 
 /**
@@ -54,17 +62,27 @@ type SalesKind = { kind: TicketSalesState['kind'] }
  * mellom visningen og klikket stopper den likevel.
  */
 export function deletionOutcome(summary: ShowSalesSummary): ShowDeletionOutcome {
-  if (
+  // En refusjon som ikke er fullført hos Stripe kan fortsatt feile, og da
+  // skal ordren ikke ligge under et arkivert show.
+  if (hasOutstandingSales(summary) || summary.pending_refund_orders > 0) return 'blocked'
+  if (summary.total_orders > 0 || summary.fee_invoices > 0) return 'archive'
+  return 'delete'
+}
+
+/**
+ * Showet har salg som ikke er gjort opp: betalte ordrer, billetter som gjelder
+ * eller er skannet, betalinger som venter på refusjon, eller en åpen disputt.
+ * Så lenge dette er sant ligger det penger for showet på klubbens saldo, og
+ * showet kan verken slettes, flyttes fritt eller bytte valuta.
+ */
+export function hasOutstandingSales(summary: ShowSalesSummary): boolean {
+  return (
     summary.paid_orders > 0 ||
     summary.valid_tickets > 0 ||
     summary.used_tickets > 0 ||
-    summary.awaiting_refund_orders > 0
-  ) {
-    return 'blocked'
-  }
-
-  if (summary.total_orders > 0 || summary.fee_invoices > 0) return 'archive'
-  return 'delete'
+    summary.awaiting_refund_orders > 0 ||
+    summary.open_dispute_orders > 0
+  )
 }
 
 /** Salget er stengt av bookeren, showet er over, eller showet selger ikke. */
@@ -89,6 +107,105 @@ export function canRefundAllTickets(sales: SalesKind, summary: ShowSalesSummary)
 /** Solgte billetter som ikke er refundert: gyldige og allerede skannede. */
 export function soldTicketCount(summary: Pick<ShowSalesSummary, 'valid_tickets' | 'used_tickets'>): number {
   return summary.valid_tickets + summary.used_tickets
+}
+
+export type ShowDetailsChange = {
+  show: { date: string; currency: string; status: string; deleted_at: string | null }
+  /** Datoen fra skjemaet, `YYYY-MM-DD`. */
+  date: string
+  /** Klubbens valuta, allerede normalisert. `null` når klubben ikke har satt en. */
+  clubCurrency: string | null
+  /** `hasOutstandingSales` for showet. Trenger bare være lest når dato eller valuta endres. */
+  hasSales: boolean
+  /** `created_at` på den eldste betalingen som fortsatt ligger på klubbens saldo. */
+  earliestSaleAt: string | null
+}
+
+export type ShowDetailsChangeResult =
+  | { ok: true; currency: string; dateChanged: boolean }
+  | { ok: false; error: string }
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+function isCalendarDate(date: string): boolean {
+  const match = ISO_DATE.exec(date)
+  if (!match) return false
+  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+  return utc.toISOString().slice(0, 10) === date
+}
+
+function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day) + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/**
+ * Om detaljene på et show kan lagres, og med hvilken valuta.
+ *
+ * Et show med salg som ikke er gjort opp har penger på klubbens saldo, og da
+ * kan datoen og valutaen ikke lenger endres fritt:
+ *
+ *  - Datoen kan ikke flyttes så langt fram at det første salget havner før
+ *    salgsvinduet på 90 dager for den nye datoen. Vinduet finnes fordi Stripe
+ *    betaler ut penger på klubbens konto etter høyst 90 dager — flyttes et
+ *    show med salg et halvt år fram, er pengene utbetalt lenge før showet, og
+ *    en avlysning møter en tom saldo. Tickethalo dekker da tapet.
+ *  - Datoen kan ikke flyttes til en dag som er passert: et avholdt show
+ *    frigir klubbens penger til utbetaling, før noen har spilt.
+ *  - Et avlyst show med salg skal refunderes, ikke flyttes.
+ *  - Valutaen står. Billettene er solgt i den, og refusjoner, beløp og
+ *    honorarer regnes i den.
+ *
+ * Valutaen avvises ikke, den bare står: den velges ikke i skjemaet, men
+ * følger klubben. En avvisning ville stoppet hver eneste lagring av showet
+ * etter at klubben byttet valuta, uten at bookeren hadde rørt feltet.
+ *
+ * Et arkivert show endrer aldri dato, med eller uten salg.
+ */
+export function checkShowDetailsChange(change: ShowDetailsChange, now: Date = new Date()): ShowDetailsChangeResult {
+  const { show, date } = change
+  const currency = change.hasSales ? show.currency : (change.clubCurrency ?? show.currency)
+
+  if (date === show.date.slice(0, 10)) return { ok: true, currency, dateChanged: false }
+
+  if (!isCalendarDate(date)) return { ok: false, error: 'Pick a valid date for the show.' }
+  if (show.deleted_at) return { ok: false, error: "This show has been deleted, so its date can't be changed." }
+  if (!change.hasSales) return { ok: true, currency, dateChanged: true }
+
+  if (show.status === 'cancelled') {
+    return {
+      ok: false,
+      error:
+        "This show is cancelled and still has ticket sales that aren't refunded, so its date can't be changed. " +
+        'Refund all tickets first.',
+    }
+  }
+
+  if (date < osloDate(now)) {
+    return {
+      ok: false,
+      error:
+        `Tickets have been sold for this show, so it can't be moved to ${formatSalesDate(date)}, ` +
+        'a date that has already passed.',
+    }
+  }
+
+  const firstSale = change.earliestSaleAt ? new Date(change.earliestSaleAt) : null
+  if (firstSale && !Number.isNaN(firstSale.getTime()) && firstSale < ticketSalesOpensAt(date)) {
+    const firstSaleDate = osloDate(firstSale)
+    const latestDate = addDays(firstSaleDate, TICKET_SALES_WINDOW_DAYS - 1)
+
+    return {
+      ok: false,
+      error:
+        `Tickets for this show were first sold on ${formatSalesDate(firstSaleDate)}. ` +
+        `For a show on ${formatSalesDate(date)}, ticket sales can't open before ${formatSalesDate(ticketSalesOpenDate(date))}, ` +
+        `${TICKET_SALES_WINDOW_DAYS} days before the show. Pick a date on or before ${formatSalesDate(latestDate)}, ` +
+        'or refund all tickets first.',
+    }
+  }
+
+  return { ok: true, currency, dateChanged: true }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -156,7 +273,24 @@ export function describeDeletionBlockers(summary: ShowSalesSummary, currency: st
     )
   }
 
+  // En betaling i disputt kan ikke refunderes — Stripe avviser det til
+  // disputten er lukket. Den står for seg, så bookeren ikke prøver igjen.
+  if (summary.open_dispute_orders > 0) {
+    blockers.push(disputeBlocker(summary.open_dispute_orders))
+  }
+
+  if (summary.pending_refund_orders > 0) {
+    blockers.push(pendingRefundBlocker(summary.pending_refund_orders))
+  }
+
   return blockers
+}
+
+function disputeBlocker(disputes: number) {
+  return (
+    `${count(disputes, 'payment')} ${isAre(disputes)} disputed in Stripe — ` +
+    `wait for the ${disputes === 1 ? 'dispute' : 'disputes'} to close`
+  )
 }
 
 /**
@@ -164,27 +298,50 @@ export function describeDeletionBlockers(summary: ShowSalesSummary, currency: st
  * databasens egen sjekk under lås, ikke fra det bookeren så i dialogen.
  */
 export function deleteShowBlockedMessage(
-  counts: Pick<ShowSalesSummary, 'paid_orders' | 'valid_tickets' | 'used_tickets' | 'awaiting_refund_orders'>,
+  counts: Pick<ShowSalesSummary, 'paid_orders' | 'valid_tickets' | 'used_tickets' | 'awaiting_refund_orders'> &
+    Partial<Pick<ShowSalesSummary, 'open_dispute_orders' | 'pending_refund_orders'>>,
 ): string {
   const steps = 'Stop ticket sales and refund all tickets before deleting.'
   const tickets = soldTicketCount(counts)
+  const disputes = counts.open_dispute_orders ?? 0
+  // `delete_show()` returnerer ikke disputter. Handlingen legger dem til fra
+  // `show_sales_summary`, og uten dem sier meldingen bare det den vet.
+  const pending = counts.pending_refund_orders ?? 0
+  const disputeNote =
+    (disputes > 0 ? ` ${capitalize(disputeBlocker(disputes))}.` : '') +
+    (pending > 0 ? ` ${capitalize(pendingRefundBlocker(pending))}.` : '')
 
   if (tickets > 0) {
-    return `This show has ${count(tickets, 'sold ticket')} that ${isAre(tickets)} not refunded. ${steps}`
+    return `This show has ${count(tickets, 'sold ticket')} that ${isAre(tickets)} not refunded. ${steps}${disputeNote}`
   }
 
   if (counts.paid_orders > 0) {
-    return `This show has ${count(counts.paid_orders, 'paid order')} that ${isAre(counts.paid_orders)} not refunded. ${steps}`
+    return `This show has ${count(counts.paid_orders, 'paid order')} that ${isAre(counts.paid_orders)} not refunded. ${steps}${disputeNote}`
   }
 
   if (counts.awaiting_refund_orders > 0) {
     return (
       `This show has ${count(counts.awaiting_refund_orders, 'payment')} waiting to be refunded. ` +
-      'Refund all tickets before deleting.'
+      `Refund all tickets before deleting.${disputeNote}`
     )
   }
 
+  if (disputes > 0 || pending > 0) {
+    return `This show can't be deleted yet.${disputeNote}`
+  }
+
   return `This show has payments that are not refunded. ${steps}`
+}
+
+function pendingRefundBlocker(refunds: number) {
+  return (
+    `${count(refunds, 'refund')} ${isAre(refunds)} still being processed by Stripe — ` +
+    'wait until the buyers have received the money'
+  )
+}
+
+function capitalize(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 // Måneden skrives ut: kortformen på britisk er «Sep» eller «Sept» avhengig av
@@ -324,5 +481,7 @@ export function normalizeShowSalesSummary(row: Partial<Record<keyof ShowSalesSum
     awaiting_refund_amount: toNumber(row.awaiting_refund_amount),
     total_orders: toNumber(row.total_orders),
     fee_invoices: toNumber(row.fee_invoices),
+    open_dispute_orders: toNumber(row.open_dispute_orders),
+    pending_refund_orders: toNumber(row.pending_refund_orders),
   }
 }

@@ -130,13 +130,19 @@ export function DeleteShowDialog({
           ) : overview.deletion === 'archive' ? (
             <ArchiveLayout
               title={overview.title}
+              salesOpen={!isTicketSalesStopped(overview.sales)}
               understood={understood}
               onUnderstoodChange={setUnderstood}
               pending={isPending}
               onConfirm={() => submit('archive')}
             />
           ) : (
-            <DeleteLayout title={overview.title} pending={isPending} onConfirm={() => submit('delete')} />
+            <DeleteLayout
+              title={overview.title}
+              salesOpen={!isTicketSalesStopped(overview.sales)}
+              pending={isPending}
+              onConfirm={() => submit('delete')}
+            />
           )
         ) : loadError && !isLoading ? (
           <>
@@ -169,6 +175,7 @@ export function DeleteShowDialog({
 
 function BlockedLayout({ overview, onNavigate }: { overview: ShowSalesOverviewDto; onNavigate: () => void }) {
   const salesStopped = isTicketSalesStopped(overview.sales)
+  const disputes = overview.summary.open_dispute_orders
 
   return (
     <>
@@ -202,9 +209,22 @@ function BlockedLayout({ overview, onNavigate }: { overview: ShowSalesOverviewDt
           number={2}
           done={false}
           title="Refund all tickets"
-          detail="Every buyer gets a full refund and all tickets become invalid."
+          detail={
+            disputes > 0
+              ? "Every buyer gets a full refund and all tickets become invalid. Disputed payments can't be refunded until the dispute closes."
+              : 'Every buyer gets a full refund and all tickets become invalid.'
+          }
         />
-        <Step number={3} done={false} title="Delete the show" detail="Come back here once everything is refunded." />
+        <Step
+          number={3}
+          done={false}
+          title="Delete the show"
+          detail={
+            disputes > 0
+              ? 'Come back here once everything is refunded and no dispute is open.'
+              : 'Come back here once everything is refunded.'
+          }
+        />
       </ol>
 
       <DialogFooter>
@@ -246,14 +266,30 @@ function Step({ number, done, title, detail }: { number: number; done: boolean; 
   )
 }
 
+/**
+ * Slettingen stenger salget og avbryter kjøp som er i gang før showet
+ * fjernes (se `deleteShowAction`). Bookeren skal vite det når salget står
+ * åpent.
+ */
+function SalesStopNote() {
+  return (
+    <li>
+      Ticket sales stop and purchases in progress are cancelled. If a payment still goes through, it is refunded
+      automatically.
+    </li>
+  )
+}
+
 function ArchiveLayout({
   title,
+  salesOpen,
   understood,
   onUnderstoodChange,
   pending,
   onConfirm,
 }: {
   title: string
+  salesOpen: boolean
   understood: boolean
   onUnderstoodChange: (value: boolean) => void
   pending: boolean
@@ -272,6 +308,7 @@ function ArchiveLayout({
           The show has sales history, so it is archived
         </p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
+          {salesOpen && <SalesStopNote />}
           <li>It disappears from your show lists and from the public event pages.</li>
           <li>Orders, refunds and invoice history are kept for accounting.</li>
           <li>Pending booking offers and confirmed lineup spots are cancelled.</li>
@@ -305,7 +342,17 @@ function ArchiveLayout({
   )
 }
 
-function DeleteLayout({ title, pending, onConfirm }: { title: string; pending: boolean; onConfirm: () => void }) {
+function DeleteLayout({
+  title,
+  salesOpen,
+  pending,
+  onConfirm,
+}: {
+  title: string
+  salesOpen: boolean
+  pending: boolean
+  onConfirm: () => void
+}) {
   return (
     <>
       <DialogHeader>
@@ -314,8 +361,15 @@ function DeleteLayout({ title, pending, onConfirm }: { title: string; pending: b
       </DialogHeader>
 
       <div role="alert" className={WARNING_BOX}>
-        This permanently deletes the show together with its lineup, booking offers and marketing material. You
-        can&apos;t undo this.
+        <p>
+          This permanently deletes the show together with its lineup, booking offers and marketing material. You
+          can&apos;t undo this.
+        </p>
+        {salesOpen && (
+          <ul className="mt-1.5 list-disc space-y-1 pl-4">
+            <SalesStopNote />
+          </ul>
+        )}
       </div>
 
       <DialogFooter>

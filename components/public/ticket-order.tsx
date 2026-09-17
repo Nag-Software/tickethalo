@@ -28,7 +28,9 @@ import { cn } from '@/lib/utils'
  *
  * Salgsstatusen kommer ferdig utregnet fra serveren. Er salget ikke åpent,
  * står det på knappen hvorfor — ingen skal fylle ut navn for så å få nei i
- * checkout. Checkout sjekker uansett på nytt når kjøperen trykker.
+ * checkout. Det gjelder også show uten pris og klubber som ikke er klare for
+ * salg: de får «Not on sale» (`isPubliclySellable`). Checkout sjekker uansett
+ * på nytt når kjøperen trykker.
  */
 export function TicketOrder({
   showId,

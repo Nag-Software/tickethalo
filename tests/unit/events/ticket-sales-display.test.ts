@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { isPubliclySellable } from '@/lib/public-events'
+import type { ClubReadiness } from '@/lib/stripe-connect'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import {
   formatSalesOpenDate,
@@ -20,14 +22,14 @@ describe('toPublicTicketSalesState', () => {
   const now = new Date('2026-09-16T10:00:00Z')
 
   it('keeps only serializable fields', () => {
-    const state = toPublicTicketSalesState(ticketSalesState(show('2026-12-15'), now))
+    const state = toPublicTicketSalesState(ticketSalesState(show('2026-12-15'), now), true)
     expect(state).toEqual({ kind: 'not_yet_open', openDate: '2026-09-17' })
     expect(JSON.parse(JSON.stringify(state))).toEqual(state)
   })
 
   it('drops when the booker closed sales', () => {
     const state = ticketSalesState(show('2026-10-01', { ticket_sales_closed_at: '2026-09-15T08:00:00Z' }), now)
-    expect(toPublicTicketSalesState(state)).toEqual({ kind: 'closed' })
+    expect(toPublicTicketSalesState(state, true)).toEqual({ kind: 'closed' })
   })
 
   it.each([
@@ -35,7 +37,70 @@ describe('toPublicTicketSalesState', () => {
     [show('2026-09-15'), 'ended'],
     [show('2026-10-01', { status: 'cancelled' }), 'unavailable'],
   ] as const)('passes %# through as %s', (input, kind) => {
-    expect(toPublicTicketSalesState(ticketSalesState(input, now))).toEqual({ kind })
+    expect(toPublicTicketSalesState(ticketSalesState(input, now), true)).toEqual({ kind })
+  })
+
+  it('shows an open window as not on sale when checkout would refuse the purchase', () => {
+    const state = toPublicTicketSalesState(ticketSalesState(show('2026-10-01'), now), false)
+    expect(state).toEqual({ kind: 'unavailable' })
+    expect(ticketSalesButtonLabel(state)).toBe('Not on sale')
+  })
+
+  it.each([
+    [show('2026-12-15'), { kind: 'not_yet_open', openDate: '2026-09-17' }],
+    [show('2026-10-01', { ticket_sales_closed_at: '2026-09-15T08:00:00Z' }), { kind: 'closed' }],
+    [show('2026-09-15'), { kind: 'ended' }],
+  ] as const)('keeps the window state %# for a show checkout cannot sell yet', (input, expected) => {
+    expect(toPublicTicketSalesState(ticketSalesState(input, now), false)).toEqual(expected)
+  })
+})
+
+describe('isPubliclySellable', () => {
+  const readyClub: ClubReadiness = {
+    stripe_account_id: 'acct_123',
+    charges_enabled: true,
+    payouts_enabled: true,
+    payout_schedule_interval: 'manual',
+    legal_name: 'Comedy AS',
+    org_number: '123456789',
+    support_email: 'club@example.com',
+  }
+  const priced = { ticket_url: null, ticket_price: 25000 }
+
+  it('sells a priced show from a ready club', () => {
+    expect(isPubliclySellable(priced, readyClub)).toBe(true)
+  })
+
+  it.each([null, 0, -100])('refuses a show with price %s', (ticket_price) => {
+    expect(isPubliclySellable({ ticket_url: null, ticket_price }, readyClub)).toBe(false)
+  })
+
+  it('refuses a show without a club', () => {
+    expect(isPubliclySellable(priced, null)).toBe(false)
+    expect(isPubliclySellable(priced, undefined)).toBe(false)
+  })
+
+  it.each([
+    ['no Stripe account', { stripe_account_id: null }],
+    ['charges disabled', { charges_enabled: false }],
+    ['payouts disabled', { payouts_enabled: false }],
+    ['automatic payouts confirmed by Stripe', { payout_schedule_interval: 'daily' }],
+    ['missing legal name', { legal_name: ' ' }],
+    ['missing org number', { org_number: null }],
+  ] as const)('refuses a club with %s', (_label, overrides) => {
+    expect(isPubliclySellable(priced, { ...readyClub, ...overrides })).toBe(false)
+  })
+
+  it('accepts an unknown payout schedule, which checkout looks up before deciding', () => {
+    expect(isPubliclySellable(priced, { ...readyClub, payout_schedule_interval: null })).toBe(true)
+    // Ukjent plan redder ikke en klubb som mangler noe annet.
+    expect(
+      isPubliclySellable(priced, { ...readyClub, payout_schedule_interval: null, charges_enabled: false }),
+    ).toBe(false)
+  })
+
+  it('leaves an external ticket page to the sales window alone', () => {
+    expect(isPubliclySellable({ ticket_url: 'https://tickets.example.com/x', ticket_price: null }, null)).toBe(true)
   })
 })
 

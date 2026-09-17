@@ -1,11 +1,20 @@
 // @vitest-environment node
 import type Stripe from 'stripe'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   ALL_FEES_REPORT_TYPE,
+  BALANCE_SYNC_MAX_WINDOW_SECONDS,
+  BALANCE_SYNC_WINDOW_SECONDS,
+  FEE_BATCH_GAP_SECONDS,
+  PLATFORM_LEDGER_FLOOR,
+  balanceSyncStart,
   buildFeeEntries,
+  detectFeeTaxTreatments,
   feeEntryRowKey,
+  feeReportIdempotencyKey,
+  feeTransactionCost,
   isReportUnavailableError,
+  nextBalanceSyncWindow,
   nextFeeReportInterval,
   parseCsv,
   parseFeesReport,
@@ -14,15 +23,22 @@ import {
   toMinorUnits,
   toPlatformBalanceTransaction,
   type ApplicationFeeLink,
+  type BalanceSyncWindow,
+  type FeeLineGroup,
+  type FeeTaxTreatment,
   type FeesReportRow,
+  type LedgerFeeTransaction,
 } from '@/lib/stripe-fees'
 
+// Modulen kaller reparasjonen i avstemmingen; de rene hjelperne trenger den ikke.
+vi.mock('@/lib/checkout/finalize', () => ({ repairMissingChargeFacts: vi.fn() }))
+
 /**
- * Utdrag av en Fees report (all_fees.balance_transaction_created.itemized.2)
- * kjørt med Etc/UTC. ch_3Club1 har gebyret som én linje inkl. mva; ch_3Club2
- * har det samme gebyret delt i gebyr og en egen mva-linje, slik
- * balansetransaksjonene på plattformen viser det (−6,78 og −1,69). `suite` er
- * en kolonne vi ikke ber om og skal ignoreres.
+ * Konstruert utdrag av en Fees report (all_fees.balance_transaction_created.itemized.2)
+ * kjørt med Etc/UTC — ikke en ekte fil; rapporten finnes ikke i testmodus. Den
+ * dekker linjeformene parseren må tåle. Hvordan mvaen skal leses, avgjøres av
+ * `detectFeeTaxTreatments` mot hovedboken, ikke av filen. `suite` er en kolonne
+ * vi ikke ber om og skal ignoreres.
  */
 const FIXTURE = [
   'balance_transaction_id,balance_transaction_created,fee_transaction_id,incurred_at,incurred_by,incurred_by_type,amount,tax,currency,product,feature_name,fee_description,suite',
@@ -215,11 +231,12 @@ describe('feeEntryRowKey', () => {
 
 describe('buildFeeEntries', () => {
   it('converts report lines to stored entries in minor units', () => {
-    const entries = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1')
+    const entries = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1', true)
 
     expect(entries).toHaveLength(4)
     expect(entries[0]).toEqual({
       row_key: expect.stringMatching(/^[0-9a-f]{64}$/),
+      livemode: true,
       report_run_id: 'frr_1',
       balance_transaction_id: 'txn_1Card',
       fee_transaction_id: null,
@@ -239,59 +256,223 @@ describe('buildFeeEntries', () => {
   })
 
   it('defaults missing tax to zero', () => {
-    const [entry] = buildFeeEntries(parseFeesReport('amount,currency,incurred_by,incurred_by_type\n3.00,nok,ch_1,charge\n'), 'frr_1')
+    const [entry] = buildFeeEntries(parseFeesReport('amount,currency,incurred_by,incurred_by_type\n3.00,nok,ch_1,charge\n'), 'frr_1', false)
     expect(entry.tax_amount).toBe(0)
+  })
+
+  it('marks every entry with the mode the report was requested in', () => {
+    expect(buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1', false).every((entry) => entry.livemode === false)).toBe(true)
   })
 
   it('keeps identical duplicate lines as separate entries', () => {
     const line = 'ch_1,charge,1.00,0.00,nok,Card fee'
     const report = `incurred_by,incurred_by_type,amount,tax,currency,fee_description\n${line}\n${line}\n`
-    const entries = buildFeeEntries(parseFeesReport(report), 'frr_1')
+    const entries = buildFeeEntries(parseFeesReport(report), 'frr_1', true)
 
     expect(entries).toHaveLength(2)
     expect(entries[0].row_key).not.toBe(entries[1].row_key)
   })
 
   it('gives the same keys when an overlapping run reports the same lines', () => {
-    const first = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1').map((entry) => entry.row_key)
-    const second = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_2').map((entry) => entry.row_key)
+    const first = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1', true).map((entry) => entry.row_key)
+    const second = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_2', true).map((entry) => entry.row_key)
     expect(second).toEqual(first)
   })
 
   it('fails on an unparseable amount instead of dropping the fee', () => {
     const rows: FeesReportRow[] = parseFeesReport('amount,currency\n1.00,nok\n')
-    expect(() => buildFeeEntries([{ ...rows[0], amount: 'n/a' }], 'frr_1')).toThrow(/Invalid amount/)
+    expect(() => buildFeeEntries([{ ...rows[0], amount: 'n/a' }], 'frr_1', true)).toThrow(/Invalid amount/)
+  })
+})
+
+describe('feeTransactionCost', () => {
+  it('reads a fee posting from its negative amount and other postings from their fee', () => {
+    expect(feeTransactionCost({ reporting_category: 'fee', amount: -678, fee: 0 })).toBe(678)
+    expect(feeTransactionCost({ reporting_category: 'fee', amount: 50, fee: 0 })).toBe(-50)
+    expect(feeTransactionCost({ reporting_category: 'charge', amount: 19_900, fee: 847 })).toBe(847)
+  })
+})
+
+describe('detectFeeTaxTreatments', () => {
+  const at = (iso: string) => `${iso}.000Z`
+  const unix = (iso: string) => Date.parse(at(iso)) / 1000
+  const fee = (id: string, amount: number, created: string, currency = 'NOK'): LedgerFeeTransaction => ({
+    id,
+    reporting_category: 'fee',
+    amount,
+    fee: 0,
+    currency,
+    created_at_stripe: at(created),
+  })
+  const groups = (entries: Array<[string, number, number, number?]>) =>
+    new Map<string, FeeLineGroup>(entries.map(([id, amount, tax, lines = 1]) => [id, { amount, tax, lines }]))
+  const complete = [{ from: unix('2026-08-20T00:00:00'), through: unix('2026-08-30T00:00:00') }]
+
+  // Slik plattformkontoen faktisk viser det: gebyret og mvaen som to poster
+  // med samme beskrivelse, tre sekunder fra hverandre.
+  const cardFee = fee('txn_card', -678, '2026-08-24T19:17:16')
+  const cardVat = fee('txn_vat', -169, '2026-08-24T19:17:19')
+
+  const detect = (groupsById: Map<string, FeeLineGroup>, ledger: LedgerFeeTransaction[], window = complete) =>
+    Object.fromEntries(detectFeeTaxTreatments({ groups: groupsById, ledger, complete: window })) as Record<
+      string,
+      FeeTaxTreatment
+    >
+
+  it('adds the VAT when a line excludes it and the VAT is a separate posting without lines', () => {
+    expect(detect(groups([['txn_card', 678, 169]]), [cardFee, cardVat])).toEqual({ txn_card: 'tax_excluded' })
+  })
+
+  it('treats amount as the full cost when the posting already contains the VAT', () => {
+    expect(detect(groups([['txn_all', 847, 169]]), [fee('txn_all', -847, '2026-08-24T19:17:16')])).toEqual({
+      txn_all: 'tax_included',
+    })
+  })
+
+  it('adds the VAT when a single posting holds fee and VAT but lines exclude it', () => {
+    expect(detect(groups([['txn_all', 678, 169]]), [fee('txn_all', -847, '2026-08-24T19:17:16')])).toEqual({
+      txn_all: 'tax_excluded',
+    })
+  })
+
+  it('handles separate VAT lines that point at the VAT posting', () => {
+    // VAT-linjen med beløp = mva, og VAT-linjen med beløp 0 og mva i `tax`.
+    expect(detect(groups([['txn_card', 678, 0], ['txn_vat', 169, 169]]), [cardFee, cardVat])).toEqual({
+      txn_card: 'tax_included',
+      txn_vat: 'tax_included',
+    })
+    expect(detect(groups([['txn_card', 678, 0], ['txn_vat', 0, 169]]), [cardFee, cardVat])).toEqual({
+      txn_card: 'tax_excluded',
+      txn_vat: 'tax_excluded',
+    })
+  })
+
+  it('tolerates rounding of one minor unit per line, but not a missing VAT posting', () => {
+    // Tre betalinger med mva rundet per linje (57 × 3 = 171) mot 169 på samleposten.
+    expect(detect(groups([['txn_card', 678, 171, 3]]), [cardFee, cardVat])).toEqual({ txn_card: 'tax_excluded' })
+    expect(detect(groups([['txn_card', 678, 169]]), [cardFee, cardVat, fee('txn_other', -500, '2026-08-24T19:20:00')])).toEqual(
+      { txn_card: 'mismatch' },
+    )
+  })
+
+  it('keeps unrelated batches apart by time and currency', () => {
+    const nextDay = fee('txn_card_2', -300, '2026-08-25T19:17:16')
+    const nextDayVat = fee('txn_vat_2', -75, '2026-08-25T19:17:18')
+    const euro = fee('txn_eur', -40, '2026-08-24T19:17:17', 'EUR')
+
+    expect(
+      detect(groups([['txn_card', 678, 169], ['txn_card_2', 300, 75], ['txn_eur', 40, 10]]), [
+        cardFee,
+        cardVat,
+        nextDay,
+        nextDayVat,
+        euro,
+      ]),
+    ).toEqual({ txn_card: 'tax_excluded', txn_card_2: 'tax_excluded', txn_eur: 'tax_included' })
+
+    expect(unix('2026-08-25T19:17:16') - unix('2026-08-24T19:17:19')).toBeGreaterThan(FEE_BATCH_GAP_SECONDS)
+  })
+
+  it('waits when a posting is not mirrored yet', () => {
+    expect(detect(groups([['txn_card', 678, 169]]), [])).toEqual({ txn_card: 'missing_transaction' })
+  })
+
+  it('waits when the ledger is not complete around the batch', () => {
+    // Mvaposten kan komme etter det som er speilet.
+    expect(
+      detect(groups([['txn_card', 678, 169]]), [cardFee], [{ from: complete[0].from, through: unix('2026-08-24T19:30:00') }]),
+    ).toEqual({ txn_card: 'ledger_incomplete' })
+    expect(
+      detect(groups([['txn_card', 678, 169]]), [cardFee, cardVat], [{ from: unix('2026-08-24T19:00:00'), through: complete[0].through }]),
+    ).toEqual({ txn_card: 'ledger_incomplete' })
+    // Et parti må ligge helt inne i ett av tidsrommene som er lest.
+    expect(
+      detect(groups([['txn_card', 678, 169]]), [cardFee, cardVat], [
+        { from: unix('2026-08-24T00:00:00'), through: unix('2026-08-24T19:17:17') },
+        { from: unix('2026-08-24T19:17:17'), through: unix('2026-08-25T00:00:00') },
+      ]),
+    ).toEqual({ txn_card: 'ledger_incomplete' })
+  })
+
+  it('never books when both readings or neither fit', () => {
+    expect(detect(groups([['txn_card', 678, 1, 2]]), [fee('txn_card', -678, '2026-08-24T19:17:16')])).toEqual({
+      txn_card: 'mismatch',
+    })
+    expect(detect(groups([['txn_card', 500, 0]]), [cardFee])).toEqual({ txn_card: 'mismatch' })
+  })
+
+  it('reads a legacy platform charge from its fee column on its own', () => {
+    const charge: LedgerFeeTransaction = {
+      id: 'txn_charge',
+      reporting_category: 'charge',
+      amount: 19_900,
+      fee: 847,
+      currency: 'NOK',
+      created_at_stripe: at('2026-08-24T19:17:17'),
+    }
+    expect(detect(groups([['txn_charge', 678, 169]]), [charge, cardFee, cardVat])).toEqual({ txn_charge: 'tax_excluded' })
   })
 })
 
 describe('sumFeesByCharge', () => {
-  it('sums fee and tax per charge and skips non-charge lines', () => {
-    const totals = sumFeesByCharge(buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1'))
+  const lines = buildFeeEntries(parseFeesReport(FIXTURE), 'frr_1', true)
 
-    expect(totals.get('ch_3Club1')).toEqual({ amount: 847, tax: 169, currency: 'NOK', lines: 1 })
-    // Gebyr og egen mva-linje summerer til det samme som én linje inkl. mva.
-    expect(totals.get('ch_3Club2')).toEqual({ amount: 847, tax: 169, currency: 'NOK', lines: 2 })
+  it('sums the full cost per charge using the detected treatment and skips non-charge lines', () => {
+    const totals = sumFeesByCharge(
+      lines,
+      new Map<string, FeeTaxTreatment>([
+        ['txn_1Card', 'tax_excluded'],
+        ['txn_1Vat', 'tax_included'],
+      ]),
+    )
+
+    expect(totals.get('ch_3Club1')).toEqual({ amount: 1016, tax: 169, currency: 'NOK', lines: 1, hold: null })
+    expect(totals.get('ch_3Club2')).toEqual({ amount: 847, tax: 169, currency: 'NOK', lines: 2, hold: null })
     expect(totals.has('po_1Payout')).toBe(false)
     expect(totals.size).toBe(2)
   })
 
-  it('includes negative adjustments and treats missing tax as zero', () => {
-    const totals = sumFeesByCharge([
-      { incurred_by: 'ch_1', incurred_by_type: 'charge', amount: 500, tax_amount: 100, currency: 'NOK' },
-      { incurred_by: 'ch_1', incurred_by_type: 'charge', amount: -50, tax_amount: null, currency: 'nok' },
-      { incurred_by: null, incurred_by_type: 'charge', amount: 999, currency: 'NOK' },
-    ])
+  it('holds a charge when any of its lines cannot be verified', () => {
+    const totals = sumFeesByCharge(
+      lines,
+      new Map<string, FeeTaxTreatment>([
+        ['txn_1Card', 'tax_included'],
+        ['txn_1Vat', 'mismatch'],
+      ]),
+    )
 
-    expect(totals.get('ch_1')).toEqual({ amount: 450, tax: 100, currency: 'NOK', lines: 2 })
-    expect(totals.size).toBe(1)
+    expect(totals.get('ch_3Club1')?.hold).toBeNull()
+    expect(totals.get('ch_3Club2')?.hold).toBe('mismatch')
+    expect(sumFeesByCharge(lines, new Map()).get('ch_3Club1')?.hold).toBe('missing_transaction')
+  })
+
+  it('includes negative adjustments, treats missing tax as zero and holds lines without a balance transaction', () => {
+    const treatments = new Map<string, FeeTaxTreatment>([['txn_1', 'tax_excluded']])
+    const totals = sumFeesByCharge(
+      [
+        { incurred_by: 'ch_1', incurred_by_type: 'charge', balance_transaction_id: 'txn_1', amount: 500, tax_amount: 100, currency: 'NOK' },
+        { incurred_by: 'ch_1', incurred_by_type: 'charge', balance_transaction_id: 'txn_1', amount: -50, tax_amount: null, currency: 'nok' },
+        { incurred_by: null, incurred_by_type: 'charge', balance_transaction_id: 'txn_1', amount: 999, currency: 'NOK' },
+        { incurred_by: 'ch_2', incurred_by_type: 'charge', balance_transaction_id: null, amount: 10, currency: 'NOK' },
+      ],
+      treatments,
+    )
+
+    expect(totals.get('ch_1')).toEqual({ amount: 550, tax: 100, currency: 'NOK', lines: 2, hold: null })
+    expect(totals.get('ch_2')?.hold).toBe('no_balance_transaction')
+    expect(totals.size).toBe(2)
   })
 
   it('flags mixed currencies for the same charge', () => {
-    const totals = sumFeesByCharge([
-      { incurred_by: 'ch_1', incurred_by_type: 'charge', amount: 500, currency: 'NOK' },
-      { incurred_by: 'ch_1', incurred_by_type: 'charge', amount: 40, currency: 'EUR' },
-      { incurred_by: 'ch_1', incurred_by_type: 'charge', amount: 10, currency: 'NOK' },
-    ])
+    const treatments = new Map<string, FeeTaxTreatment>([['txn_1', 'tax_included']])
+    const totals = sumFeesByCharge(
+      [
+        { incurred_by: 'ch_1', incurred_by_type: 'charge', balance_transaction_id: 'txn_1', amount: 500, currency: 'NOK' },
+        { incurred_by: 'ch_1', incurred_by_type: 'charge', balance_transaction_id: 'txn_1', amount: 40, currency: 'EUR' },
+        { incurred_by: 'ch_1', incurred_by_type: 'charge', balance_transaction_id: 'txn_1', amount: 10, currency: 'NOK' },
+      ],
+      treatments,
+    )
 
     expect(totals.get('ch_1')?.currency).toBeNull()
   })
@@ -352,6 +533,71 @@ describe('nextFeeReportInterval', () => {
   })
 })
 
+describe('feeReportIdempotencyKey', () => {
+  const interval = { start: 1_787_529_600, end: 1_788_134_400 }
+
+  it('repeats the key for a retry after a crash, so Stripe returns the same run', () => {
+    expect(feeReportIdempotencyKey(interval, 0)).toBe(`fee-report:${ALL_FEES_REPORT_TYPE}:1787529600:1788134400`)
+  })
+
+  it('gives a new key after each failed run for the interval', () => {
+    const keys = [0, 1, 2].map((failed) => feeReportIdempotencyKey(interval, failed))
+    expect(new Set(keys).size).toBe(3)
+    expect(keys[1]).toMatch(/:retry-1$/)
+  })
+})
+
+describe('balance transaction sync windows', () => {
+  const day = 86_400
+
+  it('continues from the newest mirrored transaction minus the overlap', () => {
+    expect(balanceSyncStart({ latestCreated: 1_788_000_000, accountCreated: 1_700_000_000 })).toBe(1_788_000_000 - 2 * day)
+  })
+
+  it('starts an empty mode at the platform account, never before the floor', () => {
+    const accountCreated = Date.UTC(2026, 4, 7) / 1000
+    expect(balanceSyncStart({ latestCreated: null, accountCreated })).toBe(accountCreated)
+    expect(balanceSyncStart({ latestCreated: null, accountCreated: Date.UTC(2019, 0, 1) / 1000 })).toBe(PLATFORM_LEDGER_FLOOR)
+    expect(balanceSyncStart({ latestCreated: null, accountCreated: null })).toBe(PLATFORM_LEDGER_FLOOR)
+    expect(new Date(PLATFORM_LEDGER_FLOOR * 1000).toISOString()).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('walks oldest first in seven-day windows that touch', () => {
+    const start = 1_780_000_000
+    const first = nextBalanceSyncWindow(null, start, start + 30 * day)
+    expect(first).toEqual({ gte: start, lt: start + BALANCE_SYNC_WINDOW_SECONDS })
+
+    const second = nextBalanceSyncWindow({ window: first!, count: 12 }, start, start + 30 * day)
+    expect(second).toEqual({ gte: first!.lt, lt: first!.lt + 7 * day })
+  })
+
+  it('widens the window across empty stretches, up to the cap, and narrows again on data', () => {
+    const start = PLATFORM_LEDGER_FLOOR
+    const now = start + 365 * day
+    const sizes: number[] = []
+    let previous: { window: BalanceSyncWindow; count: number } | null = null
+
+    for (let index = 0; index < 5; index += 1) {
+      const window: BalanceSyncWindow = nextBalanceSyncWindow(previous, start, now)!
+      sizes.push((window.lt - window.gte) / day)
+      previous = { window, count: 0 }
+    }
+    expect(sizes).toEqual([7, 14, 28, 28, 28])
+    expect(BALANCE_SYNC_MAX_WINDOW_SECONDS).toBe(28 * day)
+
+    const busy = nextBalanceSyncWindow({ window: previous!.window, count: 3 }, start, now)!
+    expect(busy.lt - busy.gte).toBe(7 * day)
+  })
+
+  it('stops once the next window would start after now', () => {
+    const start = 1_780_000_000
+    const last = { gte: start, lt: start + 7 * day }
+    expect(nextBalanceSyncWindow({ window: last, count: 1 }, start, start + 7 * day - 1)).toBeNull()
+    expect(nextBalanceSyncWindow(null, start + 1, start)).toBeNull()
+    expect(nextBalanceSyncWindow(null, start, start)).toEqual({ gte: start, lt: start + 7 * day })
+  })
+})
+
 describe('toPlatformBalanceTransaction', () => {
   const syncedAt = '2026-09-16T05:00:00.000Z'
   const base = {
@@ -377,8 +623,9 @@ describe('toPlatformBalanceTransaction', () => {
       description: 'Card (2026-08-24)',
     } as unknown as Stripe.BalanceTransaction
 
-    expect(toPlatformBalanceTransaction(transaction, new Map(), syncedAt)).toEqual({
+    expect(toPlatformBalanceTransaction(transaction, new Map(), syncedAt, true)).toEqual({
       id: 'txn_1Fee',
+      livemode: true,
       type: 'stripe_fee',
       reporting_category: 'fee',
       amount: -678,
@@ -414,9 +661,11 @@ describe('toPlatformBalanceTransaction', () => {
       } as unknown as Stripe.BalanceTransaction,
       links,
       syncedAt,
+      false,
     )
 
     expect(commission).toMatchObject({
+      livemode: false,
       source_id: 'fee_1',
       connected_account_id: 'acct_1U80L52MJ1TrM8Nl',
       charge_id: 'ch_3Club1',
@@ -436,6 +685,7 @@ describe('toPlatformBalanceTransaction', () => {
       } as unknown as Stripe.BalanceTransaction,
       links,
       syncedAt,
+      false,
     )
 
     expect(refund).toMatchObject({

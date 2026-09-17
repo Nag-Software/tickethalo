@@ -12,7 +12,33 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * Refusjoner regnes på det tidspunktet de skjer, ikke på salgsmåneden. En
  * refusjon i august av en billett solgt i juli trekkes fra augustnotaen —
  * julinotaen er allerede utstedt og skal ikke skrives om.
+ *
+ * Kjent hull: en delrefusjon gjort i Stripe-dashbordet lar ordren stå som
+ * `paid` uten `refunded_at`, og ordren har ikke noe tidspunkt for når
+ * delrefusjonen skjedde. Den kan derfor ikke plasseres i riktig periode og
+ * trekkes ikke fra her — utbetalingen (`club_releasable_amount`) trekker den
+ * fra med en gang. Blir ordren senere fullt refundert, trekkes hele det
+ * refunderte beløpet fra i den perioden, og summen over tid stemmer igjen.
+ * Å lukke hullet krever et tidsstempel per refusjon (egen migrasjon).
  */
+
+type RefundedOrder = {
+  club_net_amount: number | null
+  refunded_amount: number | null
+  application_fee_refunded_amount: number | null
+}
+
+/**
+ * Hva en refusjon tok fra klubben: det som gikk tilbake til kunden, minus
+ * provisjonen Tickethalo førte tilbake. Samme formel som utbetalingen bruker,
+ * slik at en refusjon i dashbordet uten tilbakeført provisjon også stemmer.
+ * Eldre ordrer uten refusjonsbeløp faller tilbake på klubbens andel.
+ */
+export function refundedClubAmount(order: RefundedOrder): number {
+  const refunded = order.refunded_amount ?? 0
+  if (refunded <= 0) return order.club_net_amount ?? 0
+  return refunded - (order.application_fee_refunded_amount ?? 0)
+}
 
 type SettlementRow = {
   club_id: string
@@ -62,26 +88,33 @@ export async function generateSettlements(period = previousMonthPeriod()) {
   for (const club of clubs ?? []) {
     // Salg i perioden. Refunderte ordrer teller med som salg — refusjonen
     // føres for seg, slik at begge sider av transaksjonen er synlige.
+    //
+    // Ordrer med `cancellation_reason` ga aldri billetter (utsolgt, showet
+    // borte, salget stengt) og refunderes automatisk. De var aldri et salg, og
+    // hører verken hjemme blant salg eller refusjoner — ellers står provisjonen
+    // som inntekt og klubben med penger den aldri fikk beholde.
     const { data: sales } = await db
       .from('orders')
       .select('gross_amount, platform_fee_amount')
       .eq('club_id', club.id)
       .in('status', ['paid', 'refunded'])
+      .is('cancellation_reason', null)
       .gte('created_at', from)
       .lte('created_at', to)
 
     // Refusjoner utført i perioden, uansett når salget skjedde.
     const { data: refunds } = await db
       .from('orders')
-      .select('club_net_amount')
+      .select('club_net_amount, refunded_amount, application_fee_refunded_amount')
       .eq('club_id', club.id)
       .eq('status', 'refunded')
+      .is('cancellation_reason', null)
       .gte('refunded_at', from)
       .lte('refunded_at', to)
 
     const gross = (sales ?? []).reduce((total, row) => total + (row.gross_amount ?? 0), 0)
     const commission = (sales ?? []).reduce((total, row) => total + (row.platform_fee_amount ?? 0), 0)
-    const refunded = (refunds ?? []).reduce((total, row) => total + (row.club_net_amount ?? 0), 0)
+    const refunded = (refunds ?? []).reduce((total, row) => total + refundedClubAmount(row), 0)
 
     if (gross === 0 && refunded === 0) continue
 

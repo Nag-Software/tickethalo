@@ -5,7 +5,7 @@ import {
   formatMinor,
   normalizeFeeInvoiceReference,
 } from '@/lib/fee-invoices'
-import { previousMonthPeriod } from '@/lib/settlements'
+import { previousMonthPeriod, refundedClubAmount } from '@/lib/settlements'
 
 describe('fee invoice recipients', () => {
   it('prefers legal identity and invoice email', () => {
@@ -66,5 +66,25 @@ describe('settlement periods', () => {
     ['2026-01-01T00:00:00Z', { start: '2025-12-01', end: '2025-12-31' }],
   ] as const)('returns previous complete month for %s', (date, expected) => {
     expect(previousMonthPeriod(new Date(date))).toEqual(expected)
+  })
+})
+
+describe('settlement refunds', () => {
+  it('takes what went back to the buyer minus the commission Tickethalo returned', () => {
+    expect(refundedClubAmount({ club_net_amount: 45_000, refunded_amount: 50_000, application_fee_refunded_amount: 5_000 })).toBe(
+      45_000,
+    )
+  })
+
+  it('charges the club the kept commission when a dashboard refund did not return it', () => {
+    // Samme tap som utbetalingen trekker: klubben betalte provisjon på et salg som ble borte.
+    expect(refundedClubAmount({ club_net_amount: 45_000, refunded_amount: 50_000, application_fee_refunded_amount: 0 })).toBe(
+      50_000,
+    )
+  })
+
+  it('falls back to the club share for refunded orders without a refunded amount', () => {
+    expect(refundedClubAmount({ club_net_amount: 45_000, refunded_amount: 0, application_fee_refunded_amount: 0 })).toBe(45_000)
+    expect(refundedClubAmount({ club_net_amount: null, refunded_amount: null, application_fee_refunded_amount: null })).toBe(0)
   })
 })
