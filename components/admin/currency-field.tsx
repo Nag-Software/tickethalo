@@ -2,6 +2,8 @@
 
 import { useId, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Search } from 'lucide-react'
+import { FIELD_ADDON_CLASS, FIELD_HINT_CLASS, FIELD_TRIGGER_CLASS } from '@/components/admin/form-fields'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   CURRENCIES,
@@ -10,6 +12,7 @@ import {
   formatCurrencyLabel,
   normalizeCurrency,
 } from '@/lib/currencies'
+import { cn } from '@/lib/utils'
 
 /**
  * Currency picker with search.
@@ -17,9 +20,21 @@ import {
  * Som lokasjonsfeltet ligger selve verdien i et skjult felt utenfor popoveren:
  * Radix flytter innholdet ut av skjemaet i DOM-en, og et felt som havner der
  * blir aldri sendt med.
+ *
+ * Symbolet står i et eget felt-segment foran, som `/events/` og valutaen i
+ * Show details, så navnet begynner på samme sted som teksten i de andre feltene.
  */
-export function CurrencyField({ value }: { value: string | null }) {
+export function CurrencyField({
+  value,
+  className,
+}: {
+  value: string | null
+  /** Kolonnene feltet tar i `FieldSection`-rutenettet. */
+  className?: string
+}) {
   const fieldId = useId()
+  const labelId = `${fieldId}-label`
+  const valueId = `${fieldId}-value`
   const [selected, setSelected] = useState(() => normalizeCurrency(value))
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -38,12 +53,12 @@ export function CurrencyField({ value }: { value: string | null }) {
   }
 
   return (
-    <div className="space-y-2">
+    <Field className={cn('col-span-12 min-w-0 gap-1.5', className)}>
       <input type="hidden" name="currency" value={selected} />
 
-      <label htmlFor={fieldId} className="text-sm font-medium text-foreground">
+      <FieldLabel id={labelId} htmlFor={fieldId}>
         Currency
-      </label>
+      </FieldLabel>
 
       <Popover
         open={open}
@@ -56,16 +71,25 @@ export function CurrencyField({ value }: { value: string | null }) {
           <button
             id={fieldId}
             type="button"
-            className="flex h-11 w-full items-center gap-2.5 rounded-2xl bg-zinc-100/80 px-4 text-left text-sm transition-colors hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+            aria-labelledby={`${labelId} ${valueId}`}
+            className={cn(FIELD_TRIGGER_CLASS, 'items-stretch gap-0 overflow-hidden p-0')}
           >
-            <span className="w-6 shrink-0 text-center text-muted-foreground">{current?.symbol}</span>
-            <span className="flex-1 truncate">{current ? formatCurrencyLabel(current) : selected}</span>
-            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span aria-hidden className={cn(FIELD_ADDON_CLASS, 'w-11 justify-center border-r px-0')}>
+              {current?.symbol}
+            </span>
+            <span className="flex min-w-0 flex-1 items-center px-3">
+              <span id={valueId} className="truncate">
+                {current ? formatCurrencyLabel(current) : selected}
+              </span>
+            </span>
+            <span aria-hidden className="flex shrink-0 items-center pr-3 text-muted-foreground">
+              <ChevronDown className="size-4" />
+            </span>
           </button>
         </PopoverTrigger>
 
         <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] gap-0 p-0">
-          <div className="flex items-center gap-2 border-b border-zinc-100 px-3.5">
+          <div className="flex items-center gap-2 border-b px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             <input
               autoFocus
@@ -86,7 +110,8 @@ export function CurrencyField({ value }: { value: string | null }) {
                 }
               }}
               placeholder="Search by currency or code"
-              className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              aria-label="Search currencies"
+              className="h-10 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
             />
           </div>
 
@@ -95,7 +120,7 @@ export function CurrencyField({ value }: { value: string | null }) {
               No currency matches “{query}”.
             </p>
           ) : (
-            <ul ref={listRef} className="max-h-64 overflow-y-auto p-2">
+            <ul ref={listRef} className="max-h-64 overflow-y-auto p-1.5">
               {matches.map((currency) => {
                 const active = currency.code === selected
 
@@ -104,7 +129,7 @@ export function CurrencyField({ value }: { value: string | null }) {
                     <button
                       type="button"
                       onClick={() => choose(currency.code)}
-                      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-zinc-50 focus-visible:bg-zinc-50 focus-visible:outline-none"
+                      className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted"
                     >
                       <span className="w-6 shrink-0 text-center text-muted-foreground">{currency.symbol}</span>
                       <span className="min-w-0 flex-1">
@@ -121,7 +146,7 @@ export function CurrencyField({ value }: { value: string | null }) {
         </PopoverContent>
       </Popover>
 
-      <p className="text-xs text-muted-foreground">Default currency for new shows in the club.</p>
-    </div>
+      <FieldDescription className={FIELD_HINT_CLASS}>Default currency for new shows in the club.</FieldDescription>
+    </Field>
   )
 }

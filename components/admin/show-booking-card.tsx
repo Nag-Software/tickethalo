@@ -166,7 +166,7 @@ export function ShowBookingCard({
       )}
 
       <div className="flex flex-1 flex-col gap-3">
-        <section className="@container overflow-hidden rounded-xl border">
+        <section className="@container overflow-hidden border-y">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Booking status</p>
@@ -213,7 +213,7 @@ export function ShowBookingCard({
         )}
 
         {deletable && (
-          <div className="mt-auto flex items-center justify-between gap-3 pt-1">
+          <div className="mt-autop p-2 flex items-center justify-between gap-3">
             <Link
               href={showDetailHref}
               className="rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors hover:bg-muted"

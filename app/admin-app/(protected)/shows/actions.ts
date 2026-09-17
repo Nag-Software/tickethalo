@@ -1083,6 +1083,9 @@ export async function movePendingOfferAction(formData: FormData) {
     .update({
       show_requirement_id: newReqId,
       fee_amount: requirement.compensation_type === 'fixed' ? requirement.compensation_amount : null,
+      // Bookeren har plassert komikeren selv. Passer hen ikke kravene på den
+      // nye plassen, skal motoren ikke trekke tilbudet — se lib/booking-rules.ts.
+      source: 'manual',
     })
     .eq('id', offerId)
     .eq('show_id', showId)

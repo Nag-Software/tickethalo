@@ -133,7 +133,7 @@ export default async function OrdersPage() {
   return (
     <div>
       <AdminHeader title="Orders" description={`${orders?.length ?? 0} orders`} />
-      <div className="p-6">
+      <div className="flex max-w-6xl mx-auto flex-col gap-6 p-6">
         <div className="rounded-lg border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

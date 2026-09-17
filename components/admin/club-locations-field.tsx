@@ -1,8 +1,18 @@
 'use client'
 
-import { useId, useState } from 'react'
-import { ChevronDown, MapPin, Plus, X } from 'lucide-react'
+import { Fragment, useId, useState } from 'react'
+import { ChevronDown, Plus, X } from 'lucide-react'
+import {
+  FIELD_GROUP_CLASS,
+  FIELD_HINT_CLASS,
+  FIELD_INPUT_CLASS,
+  FIELD_TRIGGER_CLASS,
+} from '@/components/admin/form-fields'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
 import type { ClubLocation } from '@/types/database'
 
 type LocationDraft = {
@@ -24,10 +34,15 @@ type LocationDraft = {
  */
 export function ClubLocationsField({
   locations,
+  className,
 }: {
   locations: Array<Pick<ClubLocation, 'id' | 'name' | 'address_line'>>
+  /** Kolonnene feltet tar i `FieldSection`-rutenettet. */
+  className?: string
 }) {
   const fieldId = useId()
+  const labelId = `${fieldId}-label`
+  const summaryId = `${fieldId}-summary`
   const [drafts, setDrafts] = useState<LocationDraft[]>(() =>
     locations.map((location) => ({
       key: location.id,
@@ -74,33 +89,33 @@ export function ClubLocationsField({
         : `${drafts[0].name} +${drafts.length - 1}`
 
   return (
-    <div className="space-y-2">
-      {/* The values actually submitted. The order here is the order they get. */}
+    <Field className={cn('col-span-12 min-w-0 gap-1.5', className)}>
+      {/* The values actually submitted. The order here is the order they get.
+          No wrapper element: the field is a flex column, and empty wrappers
+          would each add a gap. */}
       {drafts.map((draft) => (
-        <div key={draft.key}>
+        <Fragment key={draft.key}>
           <input type="hidden" name="locationId" value={draft.id ?? ''} />
           <input type="hidden" name="locationName" value={draft.name} />
           <input type="hidden" name="locationAddress" value={draft.addressLine} />
-        </div>
+        </Fragment>
       ))}
 
-      <label htmlFor={fieldId} className="text-sm font-medium text-foreground">
+      <FieldLabel id={labelId} htmlFor={fieldId}>
         Locations
-      </label>
+      </FieldLabel>
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             id={fieldId}
             type="button"
-            className="flex h-11 w-full items-center gap-2.5 rounded-2xl bg-zinc-100/80 px-4 text-left text-sm transition-colors hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+            // The label alone would name the button "Locations" without saying which.
+            aria-labelledby={`${labelId} ${summaryId}`}
+            className={FIELD_TRIGGER_CLASS}
           >
-            <MapPin className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className={drafts.length === 0 ? 'flex-1 truncate text-muted-foreground' : 'flex-1 truncate'}>
+            <span id={summaryId} className={cn('min-w-0 flex-1 truncate', drafts.length === 0 && 'text-muted-foreground')}>
               {summary}
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {drafts.length > 0 && `${drafts.length}`}
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           </button>
@@ -108,64 +123,62 @@ export function ClubLocationsField({
 
         <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] gap-0 p-0">
           {drafts.length > 0 && (
-            <ul className="max-h-64 overflow-y-auto p-2">
+            <ul className="max-h-64 overflow-y-auto p-1.5">
               {drafts.map((draft) => (
-                <li
-                  key={draft.key}
-                  className="flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-zinc-50"
-                >
+                <li key={draft.key} className="flex items-center gap-3 rounded-lg px-2.5 py-2 hover:bg-muted/50">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{draft.name}</span>
                     {draft.addressLine && (
                       <span className="block truncate text-xs text-muted-foreground">{draft.addressLine}</span>
                     )}
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => removeLocation(draft.key)}
-                    className="grid size-7 shrink-0 place-content-center rounded-full text-muted-foreground transition-colors hover:bg-zinc-200 hover:text-foreground"
+                    className="text-muted-foreground"
                   >
-                    <X className="size-3.5" aria-hidden />
+                    <X aria-hidden />
                     <span className="sr-only">Remove {draft.name}</span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
 
-          <div className={drafts.length > 0 ? 'border-t border-zinc-100 p-3' : 'p-3'}>
-            <div className="space-y-2">
-              <input
+          <div className={cn('space-y-2 p-3', drafts.length > 0 && 'border-t')}>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
                 onKeyDown={submitOnEnter}
                 placeholder="Location name"
-                className="h-9 w-full rounded-xl bg-zinc-100/80 px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100"
+                aria-label="Location name"
+                className={FIELD_INPUT_CLASS}
               />
-              <input
+            </div>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
                 value={newAddress}
                 onChange={(event) => setNewAddress(event.target.value)}
                 onKeyDown={submitOnEnter}
                 placeholder="Address (optional)"
-                className="h-9 w-full rounded-xl bg-zinc-100/80 px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100"
+                aria-label="Address"
+                className={FIELD_INPUT_CLASS}
               />
-              <button
-                type="button"
-                onClick={addLocation}
-                disabled={newName.trim().length === 0}
-                className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-foreground text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-30"
-              >
-                <Plus className="size-4" aria-hidden />
-                Add location
-              </button>
             </div>
+            <Button type="button" onClick={addLocation} disabled={newName.trim().length === 0} className="w-full">
+              <Plus data-icon="inline-start" />
+              Add location
+            </Button>
           </div>
         </PopoverContent>
       </Popover>
 
-      <p className="text-xs text-muted-foreground">
+      <FieldDescription className={FIELD_HINT_CLASS}>
         The venues the club plays. Shown on the club page with a map link.
-      </p>
-    </div>
+      </FieldDescription>
+    </Field>
   )
 }

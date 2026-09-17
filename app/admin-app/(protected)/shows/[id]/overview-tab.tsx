@@ -3,6 +3,7 @@ import { InteractiveBookingCard } from '@/components/admin/interactive-booking-c
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ShowDetailsForm } from './show-details-form'
+import { appPath } from '@/lib/app-url'
 import type { LineupArtist } from '@/components/admin/interactive-lineup'
 import type { BookingSpot } from '@/lib/booking-spots'
 import { ticketSalesNote, toTicketSalesStateDto } from '@/lib/show-sales-shared'
@@ -75,6 +76,9 @@ export function OverviewTab({
         <ShowDetailsForm
           showId={show.id}
           currency={show.currency}
+          // Domenet leses på serveren (`APP_URL`), så lenken i feltet er den
+          // samme som i e-postene — og lik i server- og klientrenderingen.
+          eventsBaseUrl={appPath('/events/')}
           action={updateShowDetailsAction}
           initialValues={{
             title: show.title,

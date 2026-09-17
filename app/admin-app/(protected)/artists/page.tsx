@@ -90,7 +90,7 @@ export default async function ArtistsPage({
     <div>
       <AdminHeader title="Comedians" description={`${rows.length} ${rows.length === 1 ? 'comedian' : 'comedians'}`} />
 
-      <div className="flex max-w-6xl flex-col gap-5 p-6">
+      <div className="flex max-w-6xl mx-auto flex-col gap-5 p-6">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Comedians</h2>
           <p className="mt-1 text-sm text-muted-foreground">

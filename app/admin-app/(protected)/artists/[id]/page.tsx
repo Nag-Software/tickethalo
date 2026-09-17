@@ -69,7 +69,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
     <div>
       <AdminHeader title={artist.full_name} />
 
-      <div className="flex max-w-6xl flex-col gap-6 p-6">
+      <div className="flex max-w-6xl mx-auto flex-col gap-6 p-6">
         <Button variant="ghost" size="sm" asChild className="-ml-2 w-fit text-muted-foreground">
           <Link href="/admin-app/artists">
             <ChevronLeft data-icon="inline-start" />

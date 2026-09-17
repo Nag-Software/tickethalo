@@ -1,27 +1,31 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { format, isValid, parseISO } from 'date-fns'
 import { toast } from 'sonner'
-import { Check, LoaderCircle, MapPin, TriangleAlert, Users } from 'lucide-react'
+import { CalendarDays, Check, Clock, Copy, LoaderCircle, TriangleAlert } from 'lucide-react'
+import {
+  FIELD_ADDON_BUTTON_CLASS,
+  FIELD_ADDON_CLASS,
+  FIELD_GROUP_CLASS,
+  FIELD_HINT_CLASS,
+  FIELD_INPUT_CLASS,
+  FIELD_TEXTAREA_CLASS,
+  FIELD_TRIGGER_CLASS,
+  FieldFrame,
+  FieldIcon,
+  FieldSection,
+  NUMBER_INPUT_CLASS,
+  TIME_INPUT_CLASS,
+} from '@/components/admin/form-fields'
+import { Calendar } from '@/components/ui/calendar'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
-
-/**
- * Feltformen i dette skjemaet.
- *
- * `Input` er pilleformet for hele appen. Show details er et registreringsskjema
- * med korte tall- og datofelt ved siden av hverandre, og der leser den runde
- * formen som knapper — så feltene får en rolig radius her, på stedet, uten at
- * primitiven flyttes under resten av appen.
- */
-const CONTROL_CLASS = 'h-10 rounded-xl border-input bg-background px-3.5 text-sm shadow-xs'
-
-/** Tallfelt uten piler: de endrer verdien på et uhell ved scroll. */
-const NUMBER_CLASS = '[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [appearance:textfield]'
 
 /**
  * Long enough that a saved row is not written on every keystroke, short enough
@@ -84,14 +88,27 @@ function missingRequiredField(values: ShowDetailsValues) {
   return REQUIRED_FIELDS.find((field) => !values[field.key].trim())?.label ?? null
 }
 
+/** `https://tickethalo.com/events/` → `tickethalo.com` og `/events/`. */
+function splitEventsBaseUrl(url: string) {
+  try {
+    const { host, pathname } = new URL(url)
+    return { host, path: pathname.endsWith('/') ? pathname : `${pathname}/` }
+  } catch {
+    return { host: '', path: '/events/' }
+  }
+}
+
 export function ShowDetailsForm({
   showId,
   currency,
+  eventsBaseUrl,
   initialValues,
   action,
 }: {
   showId: string
   currency: string
+  /** Adressen eventsidene ligger under, med skråstrek til slutt: `https://tickethalo.com/events/`. */
+  eventsBaseUrl: string
   initialValues: ShowDetailsValues
   action: (formData: FormData) => Promise<{ error?: string } | void>
 }) {
@@ -109,6 +126,7 @@ export function ShowDetailsForm({
   }, [values])
 
   const missingField = missingRequiredField(values)
+  const events = splitEventsBaseUrl(eventsBaseUrl)
 
   const persist = useCallback(
     (next: ShowDetailsValues) => {
@@ -161,9 +179,19 @@ export function ShowDetailsForm({
     setValues((previous) => ({ ...previous, [key]: value }))
   }
 
+  /** Lenken slik den står i feltet — det bookeren ser, er det som kopieres. */
+  async function copyEventLink() {
+    try {
+      await navigator.clipboard.writeText(`${eventsBaseUrl}${values.slug.trim()}`)
+      toast.success('Link copied.')
+    } catch {
+      toast.error('Could not copy the link.')
+    }
+  }
+
   return (
     <form
-      className="space-y-6"
+      className="space-y-5"
       onSubmit={(event) => {
         // No submit button — Enter just means "save it now".
         event.preventDefault()
@@ -181,99 +209,105 @@ export function ShowDetailsForm({
         <AutosaveStatus status={status} missingField={missingField} />
       </div>
 
-      <FieldGroup className="gap-6">
-        {/* ── Basics ── */}
-        <GroupHeading>Basics</GroupHeading>
-
-        <Field className="gap-1.5">
-          <FieldLabel htmlFor="show-title">Title</FieldLabel>
-          <Input
-            id="show-title"
-            value={values.title}
-            onChange={(event) => update('title', event.target.value)}
-            aria-invalid={!values.title.trim()}
-            placeholder="Backstage Stand Up"
-            className={cn(CONTROL_CLASS, 'h-11 text-base font-semibold md:text-base')}
-          />
-        </Field>
-
-        <Field className="gap-1.5">
-          <FieldLabel htmlFor="show-slug">Web address</FieldLabel>
-          {/* Prefikset står i feltet, så bookeren ser hele adressen mens den skrives. */}
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-muted-foreground">
-              /events/
-            </span>
-            <Input
-              id="show-slug"
-              value={values.slug}
-              onChange={(event) => update('slug', event.target.value)}
-              aria-invalid={!values.slug.trim()}
-              spellCheck={false}
-              className={cn(CONTROL_CLASS, 'pl-[4.4rem]')}
-            />
-          </div>
-        </Field>
-
-        {/* ── When & where ── */}
-        <GroupHeading>When &amp; where</GroupHeading>
-
-        <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_1fr]">
-          <Field className="gap-1.5">
-            <FieldLabel htmlFor="show-date">Date</FieldLabel>
-            <Input
-              id="show-date"
-              type="date"
-              value={values.date}
-              onChange={(event) => update('date', event.target.value)}
-              aria-invalid={!values.date.trim()}
-              className={CONTROL_CLASS}
-            />
+      <FieldFrame>
+        <FieldSection id="show-details-basics" title="Basics">
+          <Field className="col-span-12 min-w-0 gap-1.5">
+            <FieldLabel htmlFor="show-title">Title</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="show-title"
+                value={values.title}
+                onChange={(event) => update('title', event.target.value)}
+                aria-invalid={!values.title.trim()}
+                placeholder="Backstage Stand Up"
+                className={FIELD_INPUT_CLASS}
+              />
+            </div>
           </Field>
-          <Field className="gap-1.5">
+
+          <Field className="col-span-12 min-w-0 gap-1.5">
+            <FieldLabel htmlFor="show-slug">Web address</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              {/* Hele adressen står i feltet, så bookeren ser lenken mens den
+                  skrives. Domenet faller bort når rammen blir smal. */}
+              <span className={cn(FIELD_ADDON_CLASS, 'border-r')}>
+                <span className="hidden @lg:inline">{events.host}</span>
+                {events.path}
+              </span>
+              <Input
+                id="show-slug"
+                value={values.slug}
+                onChange={(event) => update('slug', event.target.value)}
+                aria-invalid={!values.slug.trim()}
+                spellCheck={false}
+                className={FIELD_INPUT_CLASS}
+              />
+              <button
+                type="button"
+                aria-label="Copy link"
+                title="Copy link"
+                disabled={!values.slug.trim()}
+                onClick={copyEventLink}
+                className={FIELD_ADDON_BUTTON_CLASS}
+              >
+                <Copy className="size-4" />
+              </button>
+            </div>
+            {/* Gamle adresser videresendes ikke, så en endring gjør delte lenker døde. */}
+            <FieldDescription className={FIELD_HINT_CLASS}>Changing it breaks links you have already shared.</FieldDescription>
+          </Field>
+        </FieldSection>
+
+        <FieldSection id="show-details-when" title="When & where">
+          <Field className="col-span-12 min-w-0 gap-1.5 @lg:col-span-6">
+            <FieldLabel id="show-date-label" htmlFor="show-date">Date</FieldLabel>
+            <DateField id="show-date" labelId="show-date-label" value={values.date} onChange={(value) => update('date', value)} />
+          </Field>
+          <Field className="col-span-6 min-w-0 gap-1.5 @lg:col-span-3">
             <FieldLabel htmlFor="show-start">Start</FieldLabel>
-            <Input
-              id="show-start"
-              type="time"
-              value={values.start_time}
-              onChange={(event) => update('start_time', event.target.value)}
-              className={CONTROL_CLASS}
-            />
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="show-start"
+                type="time"
+                value={values.start_time}
+                onChange={(event) => update('start_time', event.target.value)}
+                className={cn(FIELD_INPUT_CLASS, TIME_INPUT_CLASS)}
+              />
+              <FieldIcon icon={Clock} />
+            </div>
           </Field>
-          <Field className="gap-1.5">
+          <Field className="col-span-6 min-w-0 gap-1.5 @lg:col-span-3">
             <FieldLabel htmlFor="show-end">End</FieldLabel>
-            <Input
-              id="show-end"
-              type="time"
-              value={values.end_time}
-              onChange={(event) => update('end_time', event.target.value)}
-              className={CONTROL_CLASS}
-            />
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="show-end"
+                type="time"
+                value={values.end_time}
+                onChange={(event) => update('end_time', event.target.value)}
+                className={cn(FIELD_INPUT_CLASS, TIME_INPUT_CLASS)}
+              />
+              <FieldIcon icon={Clock} />
+            </div>
           </Field>
-        </div>
 
-        <Field className="gap-1.5">
-          <FieldLabel htmlFor="show-venue">Venue / address</FieldLabel>
-          <div className="relative">
-            <MapPin className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="show-venue"
-              value={values.venue_address}
-              onChange={(event) => update('venue_address', event.target.value)}
-              placeholder="Venue TBA"
-              className={cn(CONTROL_CLASS, 'pl-10')}
-            />
-          </div>
-        </Field>
+          <Field className="col-span-12 min-w-0 gap-1.5">
+            <FieldLabel htmlFor="show-venue">Venue / address</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="show-venue"
+                value={values.venue_address}
+                onChange={(event) => update('venue_address', event.target.value)}
+                placeholder="Venue TBA"
+                className={FIELD_INPUT_CLASS}
+              />
+            </div>
+          </Field>
+        </FieldSection>
 
-        {/* ── Tickets ── */}
-        <GroupHeading>Tickets</GroupHeading>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field className="gap-1.5">
+        <FieldSection id="show-details-tickets" title="Tickets">
+          <Field className="col-span-12 min-w-0 gap-1.5 @md:col-span-6">
             <FieldLabel htmlFor="show-capacity">Capacity</FieldLabel>
-            <div className="relative">
-              <Users className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <div className={FIELD_GROUP_CLASS}>
               <Input
                 id="show-capacity"
                 type="number"
@@ -281,13 +315,15 @@ export function ShowDetailsForm({
                 value={values.capacity}
                 onChange={(event) => update('capacity', event.target.value)}
                 placeholder="Unlimited"
-                className={cn(CONTROL_CLASS, NUMBER_CLASS, 'pl-10')}
+                className={cn(FIELD_INPUT_CLASS, NUMBER_INPUT_CLASS)}
               />
+              <span className={cn(FIELD_ADDON_CLASS, 'border-l')}>seats</span>
             </div>
+            <FieldDescription className={FIELD_HINT_CLASS}>Leave empty for unlimited.</FieldDescription>
           </Field>
-          <Field className="gap-1.5">
+          <Field className="col-span-12 min-w-0 gap-1.5 @md:col-span-6">
             <FieldLabel htmlFor="show-price">Ticket price</FieldLabel>
-            <div className="relative">
+            <div className={FIELD_GROUP_CLASS}>
               <Input
                 id="show-price"
                 type="number"
@@ -296,47 +332,90 @@ export function ShowDetailsForm({
                 value={values.ticket_price}
                 onChange={(event) => update('ticket_price', event.target.value)}
                 placeholder="0"
-                className={cn(CONTROL_CLASS, NUMBER_CLASS, 'pr-16')}
+                className={cn(FIELD_INPUT_CLASS, NUMBER_INPUT_CLASS)}
               />
-              <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-xs font-medium text-muted-foreground">
-                {currency}
-              </span>
+              <span className={cn(FIELD_ADDON_CLASS, 'border-l')}>{currency}</span>
             </div>
-            <FieldDescription>
+            <FieldDescription className={FIELD_HINT_CLASS}>
               Currency is set under <Link href="/admin-app/my-club">My club</Link>.
             </FieldDescription>
           </Field>
-        </div>
+        </FieldSection>
 
-        {/* ── About ── */}
-        <GroupHeading>About</GroupHeading>
-
-        <Field className="gap-1.5">
-          <FieldLabel htmlFor="show-description" className="sr-only">Description</FieldLabel>
-          <Textarea
-            id="show-description"
-            rows={4}
-            value={values.description}
-            onChange={(event) => update('description', event.target.value)}
-            placeholder="A few lines about the night — what the audience can expect."
-            className="rounded-xl border-input bg-background px-3.5 py-2.5 text-sm shadow-xs"
-          />
-          <FieldDescription>Shown on the event page, under the poster.</FieldDescription>
-        </Field>
-      </FieldGroup>
+        <FieldSection id="show-details-about" title="About">
+          <Field className="col-span-12 min-w-0 gap-1.5">
+            <FieldLabel htmlFor="show-description">Description</FieldLabel>
+            <Textarea
+              id="show-description"
+              rows={4}
+              value={values.description}
+              onChange={(event) => update('description', event.target.value)}
+              placeholder="A few lines about the night — what the audience can expect."
+              className={FIELD_TEXTAREA_CLASS}
+            />
+            <FieldDescription className={FIELD_HINT_CLASS}>Shown on the event page, under the poster.</FieldDescription>
+          </Field>
+        </FieldSection>
+      </FieldFrame>
     </form>
   )
 }
 
-/** Gruppeoverskriften: liten etikett, og en hårstrek ut til kanten. */
-function GroupHeading({ children }: { children: ReactNode }) {
+/**
+ * Datoen velges i en kalender, ikke i nettleserens eget datofelt: det ser
+ * forskjellig ut fra nettleser til nettleser (17.10.2026, 10/17/2026) og viser
+ * ikke ukedagen. Verdien er fortsatt `yyyy-MM-dd`, som kolonnen.
+ */
+function DateField({
+  id,
+  labelId,
+  value,
+  onChange,
+}: {
+  id: string
+  labelId: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const parsed = value ? parseISO(value) : null
+  const date = parsed && isValid(parsed) ? parsed : undefined
+  const valueId = `${id}-value`
+
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {children}
-      </span>
-      <span className="h-px flex-1 bg-border" />
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          id={id}
+          type="button"
+          // Etiketten alene ville gitt knappen navnet «Date» uten selve datoen.
+          aria-labelledby={`${labelId} ${valueId}`}
+          // Mangler datoen, sier statusen over skjemaet det; her er det bare fargen.
+          data-invalid={!date}
+          className={FIELD_TRIGGER_CLASS}
+        >
+          <span id={valueId} className={cn('truncate', !date && 'text-muted-foreground')}>
+            {date ? format(date, 'EEE d MMM yyyy') : 'Pick a date'}
+          </span>
+          <CalendarDays aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      {/* Kalenderen flytter fokus til valgt dag selv; Radix skal ikke ta det først. */}
+      <PopoverContent align="start" className="w-auto p-0" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <Calendar
+          mode="single"
+          required
+          autoFocus
+          selected={date}
+          defaultMonth={date}
+          weekStartsOn={1}
+          onSelect={(next) => {
+            onChange(format(next, 'yyyy-MM-dd'))
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   )
 }
 

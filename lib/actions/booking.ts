@@ -13,6 +13,7 @@ import { generateShowPoster } from '@/lib/actions/ai'
 import { resolvePalette } from '@/lib/marketing/palette'
 import { artistMatchesRole, normalizeArtistRole } from '@/lib/artist-roles'
 import { requirementFeeLabel } from '@/lib/booking-spots'
+import { matchesHardRequirements, offerQuota, pendingOffersToWithdraw } from '@/lib/booking-rules'
 import type { ArtistGender, ArtistType, EnergyLevel, RequirementCompensationType } from '@/types/database'
 import { MIN_BOOKABLE_SCORE } from '@/lib/artist-readiness'
 import { assertArtistBookableForShow } from '@/lib/club-artists'
@@ -220,13 +221,6 @@ function strictFilter(
   return true
 }
 
-function matchesHardRequirements(artist: ArtistRow, req: RequirementRow): boolean {
-  if (!artistMatchesRole(req.role_name, artist)) return false
-  if (req.energy_level !== 'any' && artist.admin_energy_level !== req.energy_level) return false
-  if (req.required_gender && req.required_gender !== 'any' && artist.gender !== req.required_gender) return false
-  return true
-}
-
 function requirementRolePriority(roleName: string | null | undefined) {
   const role = normalizeArtistRole(roleName)
   if (role === 'konferansier') return 0
@@ -282,6 +276,10 @@ const publicAppUrl = appUrl
  *   3. effectiveInvolved grows as artists are assigned, so each artist only gets
  *      one active opportunity per show.
  * Falls back to relaxed criteria only when no strict candidates remain for a requirement.
+ *
+ * Offers the booker sent themselves (`source: 'manual'`) hold their seat: the
+ * engine does not withdraw them for failing the spot's criteria, and does not
+ * send the seat to others while they wait. See lib/booking-rules.ts.
  */
 export async function bookShow(showId: string) {
   const admin = createAdminClient()
@@ -331,7 +329,11 @@ export async function bookShow(showId: string) {
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
 
-  const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
+  const [
+    { data: existingOffers, error: offersError },
+    { data: existingSpots, error: spotsError },
+    { data: excludedArtists, error: exclusionsError },
+  ] = await Promise.all([
     // 'declined' må være med. Uten den faller en artist som nettopp takket
     // nei rett tilbake i kandidatlisten, og siden declineBookingOffer kjører
     // motoren med én gang, fikk de det samme showet tilbudt på nytt umiddelbart.
@@ -343,20 +345,28 @@ export async function bookShow(showId: string) {
     //
     // Statusene her mates inn i `alreadyInvolved`, som både strictFilter og
     // selectFallbackCandidates sjekker.
-    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined', 'expired']),
+    admin.from('booking_offers').select('id, artist_id, show_requirement_id, status, source').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined', 'expired']),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
 
+  // Uten disse radene vet motoren ikke hvem som allerede har tilbud, plass
+  // eller er tatt av showet — og ville sendt det til dem på nytt. Da er det
+  // bedre å stå over denne runden.
+  const lookupError = offersError ?? spotsError ?? exclusionsError
+  if (lookupError) {
+    console.error(`[Booking] Could not load offers, spots or exclusions for show ${showId}: ${lookupError.message}`)
+    return { offersCreated, candidatesMatched }
+  }
+
   const excludedArtistIds = new Set((excludedArtists ?? []).map(row => row.artist_id))
   const artistById = new Map(allArtists.map(artist => [artist.id, artist]))
   const requirementById = new Map((requirements ?? []).map(req => [req.id, req]))
-  const invalidPendingOfferIds = (existingOffers ?? []).flatMap((offer) => {
-    if (offer.status !== 'sent' || !offer.show_requirement_id) return []
-    if (excludedArtistIds.has(offer.artist_id)) return [offer.id]
-    const artist = artistById.get(offer.artist_id)
-    const req = requirementById.get(offer.show_requirement_id)
-    return artist && req && matchesHardRequirements(artist, req) ? [] : [offer.id]
+  const invalidPendingOfferIds = pendingOffersToWithdraw({
+    offers: existingOffers ?? [],
+    bookableArtists: artistById,
+    requirements: requirementById,
+    excludedArtistIds,
   })
 
   if (invalidPendingOfferIds.length > 0) {
@@ -376,13 +386,13 @@ export async function bookShow(showId: string) {
     ...excludedArtistIds,
   ])
 
-  const pendingOffersByRequirement = new Map<string, number>()
+  // Motorens egne tilbud og bookerens telles hver for seg — se `offerQuota`.
+  const pendingAutoByRequirement = new Map<string, number>()
+  const pendingManualByRequirement = new Map<string, number>()
   for (const offer of activeExistingOffers) {
     if (offer.status !== 'sent' || !offer.show_requirement_id) continue
-    pendingOffersByRequirement.set(
-      offer.show_requirement_id,
-      (pendingOffersByRequirement.get(offer.show_requirement_id) ?? 0) + 1,
-    )
+    const counts = offer.source === 'manual' ? pendingManualByRequirement : pendingAutoByRequirement
+    counts.set(offer.show_requirement_id, (counts.get(offer.show_requirement_id) ?? 0) + 1)
   }
 
   const reqEntries: Array<{
@@ -408,13 +418,14 @@ export async function bookShow(showId: string) {
       .eq('show_requirement_id', req.id)
       .in('status', ['confirmed', 'completed', 'paid'])
 
-    const slotsNeeded = req.quantity - (filled ?? 0)
-    if (slotsNeeded <= 0) continue
-
-    const targetPendingOffers = slotsNeeded * config.offers_per_slot
-    const currentPendingOffers = pendingOffersByRequirement.get(req.id) ?? 0
-    const maxNewOffers = Math.max(0, targetPendingOffers - currentPendingOffers)
-    if (maxNewOffers <= 0) continue
+    const { slotsNeeded, currentPendingOffers, maxNewOffers } = offerQuota({
+      quantity: req.quantity,
+      filled: filled ?? 0,
+      pendingAuto: pendingAutoByRequirement.get(req.id) ?? 0,
+      pendingManual: pendingManualByRequirement.get(req.id) ?? 0,
+      offersPerSlot: config.offers_per_slot,
+    })
+    if (slotsNeeded <= 0 || maxNewOffers <= 0) continue
 
     const initialStrictCount = allArtists.filter(a => strictFilter(a, req, alreadyInvolved)).length
     reqEntries.push({ req, slotsNeeded, currentPendingOffers, initialStrictCount, maxNewOffers })
@@ -1033,12 +1044,23 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
   const availableSet = new Set((availableRows ?? []).map(r => r.artist_id))
   const busyMap = await buildBusyMap(admin, config.busy_window_days)
 
-  const [{ data: existingOffers }, { data: existingSpots }, { data: excludedArtists }] = await Promise.all([
+  const [
+    { data: existingOffers, error: offersError },
+    { data: existingSpots, error: spotsError },
+    { data: excludedArtists, error: exclusionsError },
+  ] = await Promise.all([
     // Samme statussett som bookShow — se kommentaren der.
     admin.from('booking_offers').select('artist_id').eq('show_id', showId).in('status', ['sent', 'accepted', 'declined', 'expired']),
     admin.from('confirmed_spots').select('artist_id').eq('show_id', showId).in('status', ['confirmed', 'completed', 'paid']),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
   ])
+  // Samme grunn som i bookShow: uten radene sendes plassen til folk som
+  // allerede er involvert.
+  const lookupError = offersError ?? spotsError ?? exclusionsError
+  if (lookupError) {
+    console.error(`[Booking] Could not load offers, spots or exclusions for show ${showId}: ${lookupError.message}`)
+    return
+  }
   const alreadyInvolved = new Set([
     ...(existingOffers ?? []).map(o => o.artist_id),
     ...(existingSpots ?? []).map(s => s.artist_id),
@@ -1097,6 +1119,10 @@ export async function sendOffersForReopenedRequirement(showId: string, requireme
  * Brukes av "+ Send tilbud" i admin-appen: bookeren velger komiker selv
  * i stedet for å la scoringsmotoren plukke kandidater. Komikeren må
  * fortsatt takke ja før plassen fylles.
+ *
+ * Tilbudet merkes `manual`. Da trekker motoren det ikke fordi komikeren
+ * ikke matcher plassens krav, og sender ikke setet til andre mens det
+ * venter på svar — se lib/booking-rules.ts.
  */
 export async function sendManualBookingOffer(
   showId: string,
@@ -1153,6 +1179,7 @@ export async function sendManualBookingOffer(
       artist_id: artistId,
       show_requirement_id: requirementId,
       status: 'sent',
+      source: 'manual',
       sent_at: new Date().toISOString(),
       expires_at: offerExpiry(show.date),
       fee_amount: details.feeAmount,

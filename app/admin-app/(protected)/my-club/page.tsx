@@ -47,7 +47,7 @@ export default async function MyClubPage() {
         }
       />
 
-      <div className="max-w-xl px-6 py-10 md:py-12">
+      <div className="max-w-4xl mx-auto px-6 py-10 md:py-12">
         <ClubProfileForm club={club} locations={locations ?? []} clubUrl={`${origin}/clubs/${club.slug}`} />
       </div>
     </div>

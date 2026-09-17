@@ -1,11 +1,23 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Building2, Trash2 } from 'lucide-react'
+import { Building2, Trash2, Upload } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { ClubLocationsField } from '@/components/admin/club-locations-field'
-import { CurrencyField } from '@/components/admin/currency-field'
 import { CopyLink } from '@/components/admin/copy-link'
+import { CurrencyField } from '@/components/admin/currency-field'
+import {
+  FIELD_GROUP_CLASS,
+  FIELD_HINT_CLASS,
+  FIELD_INPUT_CLASS,
+  FIELD_TEXTAREA_CLASS,
+  FieldFrame,
+  FieldSection,
+} from '@/components/admin/form-fields'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { saveClubProfileAction } from '@/app/admin-app/(protected)/my-club/actions'
 import type { Club, ClubLocation } from '@/types/database'
 
@@ -16,43 +28,14 @@ type ClubProfileFormProps = {
   clubUrl: string
 }
 
-/** Shared look for the fields: a filled surface instead of a border. */
-const inputClass =
-  'w-full rounded-2xl bg-zinc-100/80 px-4 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-foreground/20'
-
-function TextField({
-  name,
-  label,
-  hint,
-  defaultValue,
-  placeholder,
-  required,
-}: {
-  name: string
-  label: string
-  hint?: string
-  defaultValue?: string
-  placeholder?: string
-  required?: boolean
-}) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor={`club-${name}`} className="text-sm font-medium text-foreground">
-        {label}
-      </label>
-      <input
-        id={`club-${name}`}
-        name={name}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        required={required}
-        className={`h-11 ${inputClass}`}
-      />
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  )
-}
-
+/**
+ * The club profile — what the audience sees on the club page.
+ *
+ * Samme feltform som Show details (`components/admin/form-fields`): én ramme
+ * delt i grupper, og felt som er like høye enten de har en knapp, et symbol
+ * eller ingenting i seg. Skjemaet lagres med knappen, ikke automatisk: logoen
+ * lastes opp og fargen trekkes ut av den først når profilen lagres.
+ */
 export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormProps) {
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
@@ -75,7 +58,7 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
     <ToastActionForm
       action={saveClubProfileAction}
       successMessage="Club profile saved."
-      className="space-y-8"
+      className="space-y-5"
     >
       <input
         ref={logoInputRef}
@@ -92,99 +75,112 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
         value={logoPreview && logoPreview === club.logo_url ? club.logo_url ?? '' : ''}
       />
 
-      {/* Logo */}
-      <div className="flex items-center gap-5">
-        <button
-          type="button"
-          onClick={() => logoInputRef.current?.click()}
-          className="grid size-20 shrink-0 place-content-center overflow-hidden rounded-3xl bg-zinc-100 transition-colors hover:bg-zinc-200/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
-        >
-          {logoPreview ? (
-            // Blob URL right after picking, so next/image buys us nothing here.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoPreview} alt="" className="size-full object-contain p-2" />
-          ) : (
-            <Building2 className="size-6 text-muted-foreground" aria-hidden />
-          )}
-          <span className="sr-only">Upload logo</span>
-        </button>
-
-        <div className="space-y-1">
-          <div className="text-sm font-medium text-foreground">Logo</div>
-          <p className="text-xs text-muted-foreground">
-            A square mark or a simple logotype. The club page colour is taken from this.
-          </p>
-          <div className="flex items-center gap-3 pt-1">
+      <FieldFrame>
+        <FieldSection id="club-profile-basics" title="Basics">
+          <div className="col-span-12 flex items-center gap-4">
             <button
               type="button"
               onClick={() => logoInputRef.current?.click()}
-              className="text-xs font-medium text-foreground underline-offset-4 hover:underline"
+              className="grid size-20 shrink-0 place-content-center overflow-hidden rounded-xl border border-input bg-muted/50 shadow-xs outline-none transition-[color,box-shadow] hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
-              {logoPreview ? 'Replace logo' : 'Upload'}
+              {logoPreview ? (
+                // Blob URL right after picking, so next/image buys us nothing here.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoPreview} alt="" className="size-full object-contain p-2" />
+              ) : (
+                <Building2 className="size-6 text-muted-foreground" aria-hidden />
+              )}
+              <span className="sr-only">{logoPreview ? 'Replace logo' : 'Upload logo'}</span>
             </button>
-            {logoPreview && (
-              <button
-                type="button"
-                onClick={() => replaceLogo(null)}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Trash2 className="size-3.5" aria-hidden />
-                Remove
-              </button>
-            )}
+
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium leading-snug">Logo</p>
+              <p className="text-xs text-muted-foreground">
+                A square mark or a simple logotype. The club page colour is taken from this.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()}>
+                  <Upload data-icon="inline-start" />
+                  {logoPreview ? 'Replace logo' : 'Upload'}
+                </Button>
+                {logoPreview && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => replaceLogo(null)}
+                    className="text-muted-foreground"
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Fields */}
-      <div className="space-y-6">
-        <TextField
-          name="name"
-          label="Club name"
-          defaultValue={club.name}
-          placeholder="Latter Oslo"
-          required
-        />
+          {/* Korte felt står to og to når rammen har bredde til det, ellers under hverandre. */}
+          <Field className="col-span-12 min-w-0 gap-1.5 @xl:col-span-6">
+            <FieldLabel htmlFor="club-name">Club name</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="club-name"
+                name="name"
+                defaultValue={club.name}
+                placeholder="Latter Oslo"
+                required
+                className={FIELD_INPUT_CLASS}
+              />
+            </div>
+          </Field>
 
-        <TextField
-          name="city"
-          label="City"
-          defaultValue={club.city ?? ''}
-          placeholder="Oslo"
-          hint="Used in filters and on the events."
-        />
+          <CopyLink url={clubUrl} className="@xl:col-span-6" />
+        </FieldSection>
 
-        <ClubLocationsField locations={locations} />
+        <FieldSection id="club-profile-location" title="Location">
+          <Field className="col-span-12 min-w-0 gap-1.5 @xl:col-span-6">
+            <FieldLabel htmlFor="club-city">City</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="club-city"
+                name="city"
+                defaultValue={club.city ?? ''}
+                placeholder="Oslo"
+                className={FIELD_INPUT_CLASS}
+              />
+            </div>
+            <FieldDescription className={FIELD_HINT_CLASS}>Used in filters and on the events.</FieldDescription>
+          </Field>
 
-        <CurrencyField value={club.currency} />
+          <ClubLocationsField locations={locations} className="@xl:col-span-6" />
+        </FieldSection>
 
-        <div className="space-y-2">
-          <label htmlFor="club-description" className="text-sm font-medium text-foreground">
-            About the club
-          </label>
-          <textarea
-            id="club-description"
-            name="description"
-            defaultValue={club.description ?? ''}
-            rows={5}
-            placeholder="A little about the vibe, the audience and what makes the club special."
-            className={`resize-y py-3 ${inputClass}`}
-          />
-          <p className="text-xs text-muted-foreground">A few sentences. Shown at the top of the club page.</p>
-        </div>
-      </div>
+        <FieldSection id="club-profile-tickets" title="Tickets">
+          <CurrencyField value={club.currency} className="@xl:col-span-6" />
+        </FieldSection>
 
-      <div className="space-y-6 border-t pt-6">
-        <CopyLink url={clubUrl} />
+        <FieldSection id="club-profile-about" title="About">
+          <Field className="col-span-12 min-w-0 gap-1.5">
+            <FieldLabel htmlFor="club-description">About the club</FieldLabel>
+            <Textarea
+              id="club-description"
+              name="description"
+              defaultValue={club.description ?? ''}
+              rows={5}
+              placeholder="A little about the vibe, the audience and what makes the club special."
+              className={FIELD_TEXTAREA_CLASS}
+            />
+            <FieldDescription className={FIELD_HINT_CLASS}>
+              A few sentences. Shown at the top of the club page.
+            </FieldDescription>
+          </Field>
+        </FieldSection>
+      </FieldFrame>
 
-        <div className="flex items-center justify-end">
-          <button
-            type="submit"
-            className="inline-flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background transition-opacity hover:opacity-90"
-          >
-            Save
-          </button>
-        </div>
+      <div className="flex justify-end">
+        <Button type="submit" size="lg" className="px-6">
+          Save
+        </Button>
       </div>
     </ToastActionForm>
   )

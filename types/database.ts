@@ -15,6 +15,11 @@ export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'com
 export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
 export type RequirementCompensationType = 'fixed' | 'percent'
 export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 'filled_by_other' | 'cancelled'
+/**
+ * `auto` = sendt av bookingmotoren. `manual` = bookeren valgte komikeren selv,
+ * og motoren trekker ikke tilbudet for å ikke matche plassen. Se migrasjon 050.
+ */
+export type BookingOfferSource = 'auto' | 'manual'
 export type ConfirmedSpotStatus = 'confirmed' | 'cancelled' | 'completed' | 'paid'
 
 /** Hvem som får søke på et shows åpne plasser. Se migrasjon 045. */
@@ -434,6 +439,7 @@ export type BookingOffer = {
   show_requirement_id: string
   token: string
   status: BookingOfferStatus
+  source: BookingOfferSource
   fee_amount: number | null
   currency: string
   sent_at: string | null
@@ -915,6 +921,7 @@ export type Database = {
           show_requirement_id: string
           token?: string
           status?: BookingOfferStatus
+          source?: BookingOfferSource
           fee_amount?: number | null
           currency?: string
           sent_at?: string | null
