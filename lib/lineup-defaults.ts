@@ -22,7 +22,6 @@ export type DefaultLineupSpot = {
   role_name: string
   quantity: number
   lineup_position: number
-  min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   compensation_type: RequirementCompensationType
@@ -45,7 +44,6 @@ export function defaultLineupSpots(): DefaultLineupSpot[] {
         role_name: spot.roleName,
         quantity: 1,
         lineup_position: position,
-        min_score: null,
         energy_level: 'any' as RequirementEnergy,
         required_gender: 'any' as RequirementGender,
         compensation_type: 'percent' as RequirementCompensationType,

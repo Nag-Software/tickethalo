@@ -71,11 +71,43 @@ export async function clubArtistReviews(
   return new Map((data ?? []).map((row) => [row.artist_id as string, toReview(row)]))
 }
 
-const ROSTER_ARTIST_FIELDS = 'id, full_name, stage_name, email, profile_image_url, status, created_at'
+/**
+ * Vurderingene for flere klubber i én spørring, gruppert per klubb.
+ *
+ * Showoversikten regner varsler for hver klubb brukeren har tilgang til, og
+ * superadmin har tilgang til alle. Ett oppslag per klubb der ble en runde
+ * til databasen per klubb på plattformen, hver gang siden ble åpnet.
+ */
+export async function clubArtistReviewsByClub(
+  db: Db,
+  clubIds: string[],
+): Promise<Map<string, Map<string, ClubArtistReview>>> {
+  const byClub = new Map<string, Map<string, ClubArtistReview>>()
+  for (const clubId of clubIds) byClub.set(clubId, new Map())
+  if (clubIds.length === 0) return byClub
+
+  const { data, error } = await db
+    .from('club_artists')
+    .select(`club_id, ${REVIEW_FIELDS}`)
+    .in('club_id', clubIds)
+
+  if (error) throw new Error(error.message)
+
+  for (const row of data ?? []) {
+    const clubId = row.club_id as string
+    const reviews = byClub.get(clubId)
+    if (!reviews) continue
+    reviews.set(row.artist_id as string, toReview(row))
+  }
+
+  return byClub
+}
+
+const ROSTER_ARTIST_FIELDS = 'id, full_name, stage_name, email, profile_image_url, status, admin_score, created_at'
 
 export type ClubRosterArtist = Pick<
   Artist,
-  'id' | 'full_name' | 'stage_name' | 'email' | 'profile_image_url' | 'status' | 'created_at'
+  'id' | 'full_name' | 'stage_name' | 'email' | 'profile_image_url' | 'status' | 'admin_score' | 'created_at'
 >
 
 export type ClubRosterEntry = { artist: ClubRosterArtist; review: ClubArtistReview }

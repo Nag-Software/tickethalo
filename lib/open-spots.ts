@@ -17,6 +17,7 @@ import type { ArtistStatus, SubmissionStatus, SubmissionsAudience } from '@/type
  *   5. klubben har ikke flagget komikeren
  *   6. plassen er ikke allerede fylt
  *   7. komikeren har ikke plass på showet fra før
+ *   8. komikeren har ikke markert dagen som opptatt
  *
  * Punkt 7 er ikke en høflighet: migrasjon 007 har en unik indeks på
  * (show_id, artist_id) blant aktive plasser. En komiker kan ikke ha to
@@ -108,6 +109,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
     { data: myActiveSpots },
     { data: submissions },
     { data: invitations },
+    { data: unavailableDates },
   ] = await Promise.all([
     clubIds.length
       ? db.from('clubs').select('id, name').in('id', clubIds)
@@ -133,6 +135,11 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
       .select('show_id')
       .eq('artist_id', artistId)
       .in('show_id', liveShowIds),
+    // Punkt 8 — dagene komikeren selv har sagt at hen ikke kan.
+    db.from('artist_unavailable_dates')
+      .select('unavailable_date')
+      .eq('artist_id', artistId)
+      .in('unavailable_date', [...new Set(shows.map((show) => show.date))]),
   ])
 
   // Søkertellingen er delt av alle som ser plassen, så den hentes for seg.
@@ -147,6 +154,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
   const mySubmission = new Map((submissions ?? []).map((row) => [row.show_requirement_id, row]))
   const invitedShows = new Set((invitations ?? []).map((row) => row.show_id))
   const bookedShows = new Set((myActiveSpots ?? []).map((row) => row.show_id))
+  const unavailable = new Set((unavailableDates ?? []).map((row) => row.unavailable_date))
 
   const filledByRequirement = countBy(filledSpots ?? [], (row) => row.show_requirement_id)
   const applicantsByRequirement = countBy(allSubmissions ?? [], (row) => row.show_requirement_id)
@@ -156,6 +164,9 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
   for (const show of shows) {
     // Punkt 7 — hen står allerede på plakaten.
     if (bookedShows.has(show.id)) continue
+    // Punkt 8 — hen har sagt at dagen ikke går. Da skal plassen ikke stå der
+    // og se søkbar ut; søknaden ville blitt avvist av samme grunn.
+    if (unavailable.has(show.date)) continue
 
     const review = show.club_id ? membership.get(show.club_id) : undefined
     // Punkt 5 — flagget hos denne klubben, uansett publikum.
@@ -266,6 +277,19 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
   if (review?.is_flagged) throw new Error('You cannot apply for spots at this club.')
   if (audience === 'roster' && !review) {
     throw new Error('This show is only open to comedians the club already works with.')
+  }
+
+  // Komikeren har selv markert dagen. Plassen vises ikke i listen av samme
+  // grunn, men handlingen er et kallbart endepunkt og må si det selv.
+  const { data: unavailable } = await db
+    .from('artist_unavailable_dates')
+    .select('id')
+    .eq('artist_id', artistId)
+    .eq('unavailable_date', show.date)
+    .maybeSingle()
+
+  if (unavailable) {
+    throw new Error('You have marked that date as unavailable. Clear it in your calendar first.')
   }
 
   const [{ count: filled }, { data: ownSpot }] = await Promise.all([

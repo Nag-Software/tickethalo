@@ -197,16 +197,16 @@ export default async function ConfirmedBookingsPage({
   )
 }
 
+const STATUS_MESSAGES: Record<string, string> = {
+  accepted: 'You are confirmed for the show. Details are under upcoming bookings.',
+  filled_by_other: 'The spot was filled by another comedian before you could confirm.',
+  already_booked: 'You are already confirmed for this show.',
+  conflict: 'You have already accepted another show that evening, so this spot could not be confirmed.',
+  declined: 'The offer is declined.',
+}
+
 function StatusMessage({ status }: { status: string }) {
-  const text = status === 'accepted'
-    ? 'You are confirmed for the show. Details are under upcoming bookings.'
-    : status === 'filled_by_other'
-      ? 'The spot was filled by another comedian before you could confirm.'
-      : status === 'already_booked'
-        ? 'You are already confirmed for this show.'
-        : status === 'declined'
-          ? 'The offer is declined.'
-          : 'Status is updated.'
+  const text = STATUS_MESSAGES[status] ?? 'Status is updated.'
 
   return (
     <p className="bg-[var(--ev-card)] px-5 py-4 text-[14px] font-medium" style={{ borderRadius: 'var(--ev-r-art)' }}>

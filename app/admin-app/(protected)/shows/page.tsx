@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminHeader } from '@/components/admin/admin-header'
+import { AttentionTable } from '@/components/admin/attention-table'
 import { DeleteShowDialog } from '@/components/admin/delete-show-dialog'
 import { ShowBookingCard, SHOW_STATUS_LABELS } from '@/components/admin/show-booking-card'
 import { buildBookingSpots, type BookingSpot } from '@/lib/booking-spots'
@@ -8,6 +9,7 @@ import { ticketSalesNote, toTicketSalesStateDto } from '@/lib/show-sales-shared'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import type { Artist, BookingOffer, ConfirmedSpot, Show, ShowRequirement, ShowStatus } from '@/types/database'
 import { getClubAccess } from '@/lib/club-auth'
+import { loadBookingAttention } from '@/lib/booking-attention-data'
 
 type ShowRow = Pick<Show, 'id' | 'title' | 'date' | 'venue_name' | 'venue_address' | 'status' | 'capacity' | 'ticket_price' | 'currency' | 'published_at' | 'slug' | 'poster_url' | 'ticket_sales_closed_at'>
 type RequirementRow = Pick<ShowRequirement, 'id' | 'show_id' | 'role_name' | 'quantity' | 'lineup_position' | 'compensation_type' | 'compensation_amount' | 'compensation_percent'>
@@ -57,6 +59,10 @@ export default async function ShowsPage({
   }
 
   const { data: allShows } = await showsQuery
+
+  // Alt automatikken ikke klarer alene, samlet øverst. Uten denne måtte
+  // bookeren åpne hvert show for å se at et av dem står fast.
+  const attention = await loadBookingAttention(db, clubAccess.clubIds)
 
   const showIds = (allShows ?? []).map((show) => show.id)
   const [{ data: requirementRows }, { data: spotRows }, { data: offerRows }, { data: ticketRows }] = await Promise.all([
@@ -165,6 +171,8 @@ export default async function ShowsPage({
         }
       />
       <div className="p-6 space-y-4">
+        <AttentionTable alerts={attention} />
+
         <div className="flex flex-wrap gap-2">
           <Link href="/admin-app/shows"
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!activeStatus ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'}`}>

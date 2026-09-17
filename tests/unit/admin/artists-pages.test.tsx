@@ -5,6 +5,7 @@ import ArtistDetailPage from '@/app/admin-app/(protected)/artists/[id]/page'
 import { clubArtistReview, clubArtistRoster, EMPTY_REVIEW } from '@/lib/club-artist-profile'
 import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { reviewCounts } from '@/lib/artist-reviews'
 
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(() => {
@@ -17,6 +18,12 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/components/admin/admin-header', () => ({ AdminHeader: () => null }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/club-auth', () => ({ getClubAccess: vi.fn(), getDefaultClubIdForAdmin: vi.fn() }))
+// Scoren og antall vurderinger leses rett fra databasen; her holder det å
+// vite at kolonnen får tallene sine et sted fra.
+vi.mock('@/lib/artist-reviews', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/artist-reviews')>()),
+  reviewCounts: vi.fn(),
+}))
 vi.mock('@/lib/club-artist-profile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/club-artist-profile')>()),
   clubArtistReview: vi.fn(),
@@ -26,8 +33,8 @@ vi.mock('@/lib/club-artist-profile', async (importOriginal) => ({
 const ID_ADA = '0e174ad9-7ee7-4b4b-979f-30e0a54180e9'
 const ID_TOM = '6a468c78-3b98-45d0-9bf7-fdc933411bb6'
 
-function artist(id: string, fullName: string) {
-  return { id, full_name: fullName, stage_name: null, email: `${id}@example.com`, profile_image_url: null, status: 'approved' as const, created_at: '2026-05-11T21:28:43.761Z' }
+function artist(id: string, fullName: string, adminScore: number | null = 7.5) {
+  return { id, full_name: fullName, stage_name: null, email: `${id}@example.com`, profile_image_url: null, status: 'approved' as const, admin_score: adminScore, created_at: '2026-05-11T21:28:43.761Z' }
 }
 
 describe('club comedian list', () => {
@@ -35,10 +42,23 @@ describe('club comedian list', () => {
     vi.clearAllMocks()
     vi.mocked(getDefaultClubIdForAdmin).mockResolvedValue('club-1')
     vi.mocked(createAdminClient).mockReturnValue({} as never)
+    vi.mocked(reviewCounts).mockResolvedValue(new Map([[ID_ADA, 6]]))
     vi.mocked(clubArtistRoster).mockResolvedValue([
       { artist: artist(ID_ADA, 'Ada Lovelace'), review: { ...EMPTY_REVIEW, category: ['headliner'] } },
       { artist: artist(ID_TOM, 'Thomas Søyland'), review: { ...EMPTY_REVIEW, category: ['konferansier'] } },
     ])
+  })
+
+  // Scoren avgjør rekkefølgen i køen når motoren sender tilbud. Står den
+  // ikke i lista, er det ingen måte for bookeren å se hvorfor den
+  // prioriterer som den gjør.
+  it('shows the score and how many reviews it rests on', async () => {
+    const { container } = render(await ArtistsPage({ searchParams: Promise.resolve({}) }))
+    const rows = [...container.querySelectorAll('tbody tr')]
+
+    expect(rows[0].textContent).toContain('7,5')
+    expect(rows[0].textContent).toContain('6 reviews')
+    expect(rows[1].textContent).toContain('0 reviews')
   })
 
   it('passes the search to the roster query', async () => {

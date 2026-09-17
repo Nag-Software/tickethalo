@@ -41,7 +41,6 @@ type Requirement = {
   id: string
   lineup_position: number
   role_name: string
-  min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   submissions_open: boolean
@@ -53,7 +52,6 @@ type Requirement = {
 type ReqState = {
   lineup_position: number
   role_name: string
-  min_score: string
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   submissions_open: boolean
@@ -62,7 +60,7 @@ type ReqState = {
   compensation_percent: string
 }
 
-type WizardStep = 0 | 1 | 2 | 3 | 4 | 5 | 6
+type WizardStep = 0 | 1 | 2 | 3 | 4 | 5
 
 type WizardState = ReqState & { step: WizardStep }
 
@@ -94,7 +92,6 @@ const WIZARD_INITIAL: WizardState = {
   step: 0,
   lineup_position: 0,
   role_name: '',
-  min_score: '',
   energy_level: 'any',
   required_gender: 'any',
   submissions_open: false,
@@ -111,8 +108,6 @@ const WIZARD_INITIAL: WizardState = {
  * skal få plass på skjermen uten å scrolle.
  */
 const FIELD_CONTROL_CLASS = 'h-[30px] w-full rounded-lg border border-input bg-background px-2.5 text-[13px] shadow-none'
-
-const SCORE_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
 
 const ENERGY_OPTIONS: { value: RequirementEnergy; label: string; icon: string }[] = [
   { value: 'any', label: 'Any', icon: '∞' },
@@ -191,7 +186,6 @@ function stateFromRequirement(requirement: Requirement): ReqState {
   return {
     lineup_position: requirement.lineup_position,
     role_name: canonicalRoleLabel(requirement.role_name) ?? ARTIST_ROLE_LABEL_OPTIONS[0],
-    min_score: requirement.min_score != null ? String(requirement.min_score) : '',
     energy_level: requirement.energy_level,
     required_gender: requirement.required_gender,
     submissions_open: requirement.submissions_open,
@@ -208,7 +202,6 @@ function buildFormData(showId: string, reqId: string, state: ReqState): FormData
   fd.set('lineup_position', String(state.lineup_position))
   fd.set('role_name', state.role_name)
   fd.set('quantity', '1')
-  fd.set('min_score', state.min_score)
   fd.set('energy_level', state.energy_level)
   fd.set('required_gender', state.required_gender)
   fd.set('submissions_open', String(state.submissions_open))
@@ -221,7 +214,6 @@ function buildFormData(showId: string, reqId: string, state: ReqState): FormData
 function isSameReqState(left: ReqState, right: ReqState) {
   return left.lineup_position === right.lineup_position
     && left.role_name === right.role_name
-    && left.min_score === right.min_score
     && left.energy_level === right.energy_level
     && left.required_gender === right.required_gender
     && left.submissions_open === right.submissions_open
@@ -610,7 +602,6 @@ export function RequirementsTab({
     fd.set('show_id', showId)
     fd.set('role_name', state.role_name)
     fd.set('quantity', '1')
-    fd.set('min_score', state.min_score)
     fd.set('energy_level', state.energy_level)
     fd.set('required_gender', state.required_gender)
     fd.set('submissions_open', String(state.submissions_open))
@@ -656,7 +647,6 @@ export function RequirementsTab({
     fd.set('show_id', showId)
     fd.set('role_name', "Stand-up")
     fd.set('quantity', '1')
-    fd.set('min_score', '')
     fd.set('energy_level', "any")
     fd.set('required_gender', "any")
     fd.set('submissions_open', 'false')
@@ -681,7 +671,6 @@ export function RequirementsTab({
     fd.set('show_id', showId)
     fd.set('role_name', wizard.role_name)
     fd.set('quantity', '1')
-    fd.set('min_score', wizard.min_score)
     fd.set('energy_level', wizard.energy_level)
     fd.set('required_gender', wizard.required_gender)
     fd.set('submissions_open', String(wizard.submissions_open))
@@ -1046,7 +1035,7 @@ function AddWizard({
   existingPercentTotal: number
 }) {
   const roleInputRef = React.useRef<HTMLInputElement>(null)
-  const TOTAL_STEPS = 6
+  const TOTAL_STEPS = 5
 
   React.useEffect(() => {
     if (wizard.step === 1) {
@@ -1060,7 +1049,7 @@ function AddWizard({
   function back() {
     setWizard((prev) => ({
       ...prev,
-      step: prev.step === 6 && prev.compensation_type === '' ? 4 : (Math.max(prev.step - 1, 1) as WizardStep),
+      step: prev.step === 5 && prev.compensation_type === '' ? 3 : (Math.max(prev.step - 1, 1) as WizardStep),
     }))
   }
 
@@ -1070,7 +1059,7 @@ function AddWizard({
       compensation_type: value,
       compensation_amount: value === 'fixed' ? prev.compensation_amount : '',
       compensation_percent: value === 'percent' ? prev.compensation_percent : '',
-      step: value === '' ? 6 : 5,
+      step: value === '' ? 5 : 4,
     }))
   }
 
@@ -1087,9 +1076,8 @@ function AddWizard({
   // Breadcrumb trail of already-answered steps
   const trail = [
     wizard.step > 1 && wizard.role_name,
-    wizard.step > 2 && (wizard.min_score ? `score ≥ ${wizard.min_score}` : 'any score'),
-    wizard.step > 3 && ENERGY_LABELS[wizard.energy_level],
-    wizard.step > 4 && (wizard.compensation_type === 'fixed'
+    wizard.step > 2 && ENERGY_LABELS[wizard.energy_level],
+    wizard.step > 3 && (wizard.compensation_type === 'fixed'
       ? 'fixed amount'
       : wizard.compensation_type === 'percent'
         ? 'percentage'
@@ -1168,40 +1156,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 2: Score ───────────────────────────────────────────────── */}
+        {/* ── Step 2: Energy ──────────────────────────────────────────────── */}
         {wizard.step === 2 && (
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-base font-semibold mb-1">Minimum score?</h3>
-              <p className="text-sm text-muted-foreground">Admin score for the artist (1–10)</p>
-            </div>
-            <Select
-              value={wizard.min_score || '__none'}
-              onValueChange={(v) => {
-                setWizard((prev) => ({ ...prev, min_score: v === '__none' ? '' : v }))
-                next()
-              }}
-            >
-              <SelectTrigger className="w-full h-10">
-                <SelectValue placeholder="Select min. score" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">No requirement</SelectItem>
-                {SCORE_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>≥ {s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex justify-between pt-1">
-              <Button variant="ghost" size="sm" onClick={back}>
-                ← Back
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 3: Energy ──────────────────────────────────────────────── */}
-        {wizard.step === 3 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">Energy level?</h3>
@@ -1235,8 +1191,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 4: Compensation type ───────────────────────────────────── */}
-        {wizard.step === 4 && (
+        {/* ── Step 3: Compensation type ───────────────────────────────────── */}
+        {wizard.step === 3 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">How is the comedian paid?</h3>
@@ -1271,8 +1227,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 5: Compensation value ─────────────────────────────────── */}
-        {wizard.step === 5 && (
+        {/* ── Step 4: Compensation value ─────────────────────────────────── */}
+        {wizard.step === 4 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">
@@ -1330,8 +1286,8 @@ function AddWizard({
           </div>
         )}
 
-        {/* ── Step 6: Gender + confirm ───────────────────────────────────── */}
-        {wizard.step === 6 && (
+        {/* ── Step 5: Gender + confirm ───────────────────────────────────── */}
+        {wizard.step === 5 && (
           <div className="space-y-5">
             <div>
               <h3 className="text-base font-semibold mb-1">Gender requirement?</h3>
@@ -1362,7 +1318,6 @@ function AddWizard({
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="text-muted-foreground">Role: <strong className="text-foreground">{wizard.role_name}</strong></span>
-                <span className="text-muted-foreground">Score: <strong className="text-foreground">{wizard.min_score ? `≥ ${wizard.min_score}` : '—'}</strong></span>
                 <span className="text-muted-foreground">Energy: <strong className="text-foreground">{ENERGY_LABELS[wizard.energy_level]}</strong></span>
                 <span className="text-muted-foreground">Fee: <strong className="text-foreground">{compensationSummary(wizard, showCurrency)}</strong></span>
                 <span className="text-muted-foreground">Gender: <strong className="text-foreground">{GENDER_LABELS[wizard.required_gender]}</strong></span>

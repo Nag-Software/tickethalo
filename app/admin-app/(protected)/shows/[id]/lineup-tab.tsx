@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { RoleIcon } from '@/components/admin/show-booking-card'
-import { LineupCallout, SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
+import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
 import { cn } from '@/lib/utils'
 import {
   addRequirementAction,
@@ -25,7 +25,6 @@ import {
   swapArtistAction,
   addArtistToRequirementAction,
   sendOfferToArtistAction,
-  publishLineupAction,
   cancelOfferAction,
   updateOfferStatusAction,
   openRequirementEnergyLevelsAction,
@@ -52,7 +51,6 @@ type Requirement = {
   role_name: string
   quantity: number
   lineup_position: number
-  min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   submissions_open: boolean
@@ -155,7 +153,6 @@ function requirementSummary(requirement: Requirement, currency: string) {
   const fee = requirementFee(requirement, currency)
 
   return [
-    `Score ${requirement.min_score ?? 'any'}`,
     `Energy ${ENERGY_LABELS[requirement.energy_level] ?? requirement.energy_level}`,
     `Gender ${GENDER_LABELS[requirement.required_gender] ?? requirement.required_gender}`,
     fee,
@@ -326,7 +323,6 @@ export function LineupTab({
       fd.set('show_id', showId)
       fd.set('role_name', req.role_name)
       fd.set('quantity', String(req.quantity))
-      fd.set('min_score', req.min_score == null ? '' : String(req.min_score))
       fd.set('energy_level', req.energy_level)
       fd.set('required_gender', req.required_gender)
       fd.set('compensation_type', req.compensation_type ?? '')
@@ -343,14 +339,27 @@ export function LineupTab({
     })
   }
 
-  function handleRemoveSpot(spotId: string) {
+  /**
+   * `cancelled` skiller komikerens eget avbud fra at klubben ombestemte seg.
+   * Bare avbudet teller på scoren — se `savePerformanceReview`.
+   */
+  function handleRemoveSpot(spotId: string, reason: 'club' | 'cancelled' = 'club') {
+    // Et avbud teller dobbelt på komikerens score, og vurderingen kan ikke
+    // rettes fra lineupen etterpå — plassen er da borte fra den.
+    if (reason === 'cancelled' && !window.confirm(
+      'Mark this as the comedian cancelling? It counts against their score and cannot be undone here.'
+    )) return
+
     startTransition(async () => {
       const fd = new FormData()
       fd.set('spot_id', spotId)
       fd.set('show_id', showId)
+      if (reason === 'cancelled') fd.set('artist_cancelled', 'true')
       try {
         await removeSpotAndReopenAction(fd)
-        toast.success('Artist removed. A new offer round starts automatically.')
+        toast.success(reason === 'cancelled'
+          ? 'Marked as a cancellation. A new offer round starts automatically.'
+          : 'Artist removed. A new offer round starts automatically.')
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
@@ -393,20 +402,6 @@ export function LineupTab({
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
-      }
-    })
-  }
-
-  function handlePublishLineup() {
-    startTransition(async () => {
-      const fd = new FormData()
-      fd.set('show_id', showId)
-      try {
-        await publishLineupAction(fd)
-        toast.success('The lineup is published.')
-        router.refresh()
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not publish the lineup')
       }
     })
   }
@@ -820,7 +815,7 @@ export function LineupTab({
                           <MoreVertical className="size-4" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem
                           onClick={() => {
                             setSwapSpotId(isSwapping ? null : spot.id)
@@ -828,6 +823,12 @@ export function LineupTab({
                           }}
                         >
                           Swap comedian
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => handleRemoveSpot(spot.id, 'cancelled')}
+                        >
+                          Comedian cancelled
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
@@ -942,7 +943,7 @@ export function LineupTab({
                             <MoreVertical className="size-4" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuContent align="end" className="w-48">
                           <DropdownMenuItem onClick={() => handleApproveOffer(offer.id)}>
                             Approve
                           </DropdownMenuItem>
@@ -971,7 +972,7 @@ export function LineupTab({
                       </p>
                       <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
                         {energySuggestion.candidates > 0
-                          ? `${energySuggestion.candidates} candidate${energySuggestion.candidates === 1 ? '' : 's'} match the role, gender and score if energy is set to Any.`
+                          ? `${energySuggestion.candidates} candidate${energySuggestion.candidates === 1 ? '' : 's'} match the role and gender if energy is set to Any.`
                           : 'Opens up the energy requirement for this spot and starts a new offer round.'}
                       </p>
                     </div>
@@ -1144,35 +1145,25 @@ export function LineupTab({
         </div>
       )}
 
-      {/* Manual publish — booker decides when the lineup is good enough */}
+      {/* Ingen publiser-knapp lenger: showet publiserer seg selv i det siste
+          plassen er bekreftet. Vil klubben kjøre kortere lineup, sletter
+          bookeren plassen — da er lineupen full. */}
       {requirements.length > 0 && !allSlotsFilled && ['draft', 'booking', 'fullbooked'].includes(showStatus) && (
-        <LineupCallout
-          title="Publish lineup now"
-          action={
-            <button
-              type="button"
-              onClick={handlePublishLineup}
-              disabled={isPending || filledSlots === 0}
-              className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              Publish lineup
-            </button>
-          }
-        >
+        <div className={cn(spotCardClass, 'px-4 py-4 sm:px-5')}>
           <p className="text-sm text-muted-foreground">
-            {filledSlots === 0
-              ? 'At least one comedian has to accept before the lineup can be published.'
-              : `${filledSlots} of ${totalSlots} spots are filled. Publish when you are happy — pending offers keep running, and comedians who accept later are added to the lineup.`}
+            {filledSlots} of {totalSlots} spots are filled. The show publishes itself as soon as every
+            spot has a confirmed comedian. To run a shorter lineup, delete a spot — then the lineup is full.
           </p>
-        </LineupCallout>
+        </div>
       )}
 
-      {/* Published with open slots */}
+      {/* Publisert, og så ble en plass ledig igjen — et frafall. Showet blir
+          stående publisert: billettene er solgt, og motoren fyller plassen. */}
       {requirements.length > 0 && !allSlotsFilled && showStatus === 'published' && (
         <div className="rounded-2xl border border-emerald-300 bg-emerald-50/50 p-5 dark:bg-emerald-950/20">
-          <h3 className="font-bold text-emerald-900 dark:text-emerald-300">Published with open spots</h3>
+          <h3 className="font-bold text-emerald-900 dark:text-emerald-300">A spot has opened up again</h3>
           <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">
-            {filledSlots} of {totalSlots} spots are filled. The event page is live, and the lineup updates as more comedians accept.{' '}
+            {filledSlots} of {totalSlots} spots are filled. The event page stays live, and booking keeps running until the spot is filled again.{' '}
             <Link href={`/admin-app/shows/${showId}?tab=marketing`} className="underline underline-offset-2">
               Regenerate the poster
             </Link>{' '}
@@ -1186,7 +1177,8 @@ export function LineupTab({
         <div className="rounded-2xl border-2 border-purple-300 bg-purple-50/50 p-5 dark:bg-purple-950/20">
           <h3 className="font-bold text-purple-900 dark:text-purple-300">The lineup is ready! 🎉</h3>
           <p className="text-sm text-purple-700 dark:text-purple-400 mt-0.5">
-            Every spot is filled. The system generates the lineup poster, publishes the event page and starts marketing automatically.
+            Every spot is filled. The event page publishes itself and the marketing tasks start automatically.
+            A poster is only generated if “Generate an AI poster when the lineup publishes” is on under Marketing.
           </p>
         </div>
       )}

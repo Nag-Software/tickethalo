@@ -5,7 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { assertRequirementAccess, assertShowAccess } from '@/lib/club-auth'
 import { clubIdForShow } from '@/lib/club-artists'
 import { canonicalRoleValues } from '@/lib/artist-roles'
-import { sendManualBookingOffer } from '@/lib/actions/booking'
+import { runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
+import { runAfterResponse } from '@/lib/background'
 import type { SubmissionStatus, SubmissionsAudience } from '@/types/database'
 
 /**
@@ -110,8 +111,22 @@ export async function toggleRequirementSubmissionsAction(formData: FormData) {
 
   if (error) throw new Error(error.message)
 
-  // Ingen `scheduleShowAutomation` her, med vilje: en åpnet plass skal
-  // nettopp *ikke* bookes av motoren. Se `bookShow()`.
+  // Åpner bookeren plassen, skal motoren holde seg unna — derfor ingen
+  // kjøring her. Se `bookShow()`.
+  //
+  // Lukker hen den, er det motstatt: nå er det motoren som skal fylle
+  // plassen, og bølgen begynner å telle. Uten dette ble en plass som var
+  // åpen for søknader da bookingen startet, stående uten `auto_started_at`
+  // for alltid — motoren så den aldri igjen, og plassen kunne bare fylles
+  // for hånd.
+  if (!open) {
+    await startAutoBooking(showId, requirementId, { restart: true })
+    runAfterResponse(`submissions-closed-${requirementId}`, async () => {
+      await runAutomaticBookingForShow(showId)
+      revalidateShow(showId)
+    })
+  }
+
   revalidateShow(showId)
 }
 

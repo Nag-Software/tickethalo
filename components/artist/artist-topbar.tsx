@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 const navItems = [
   { label: 'Overview', href: '/artist-app', exact: true },
   { label: 'Open spots', href: '/artist-app/open-spots' },
+  { label: 'Availability', href: '/artist-app/availability' },
   { label: 'Bookings', href: '/artist-app/bookings' },
   { label: 'Payouts', href: '/artist-app/economy' },
   { label: 'Profile', href: '/artist-app/profile' },

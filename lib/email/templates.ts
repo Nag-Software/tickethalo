@@ -31,7 +31,7 @@ const MUTED = '#6d5147'
 const ACCENT = '#ff5b24'
 
 const PORTAL_BOOKINGS = appPath('/artist-app/bookings')
-const PORTAL_DATES = appPath('/artist-app/available-dates')
+const PORTAL_DATES = appPath('/artist-app/availability')
 
 /**
  * Beløp i minste valutaenhet. Formateres som i portalen (`nb-NO`) selv om
@@ -120,14 +120,14 @@ function shell(opts: {
 export function artistApprovedTemplate(opts: { full_name: string; portal_url: string }): EmailTemplate {
   return {
     subject: 'You are approved as a comedian',
-    text: `Hi ${opts.full_name}\n\nYou are approved. Sign in and pick the dates you are available: ${opts.portal_url}`,
+    text: `Hi ${opts.full_name}\n\nYou are approved. Offers will start coming. Mark the evenings you cannot do here: ${opts.portal_url}`,
     html: shell({
       eyebrow: 'Profile approved',
       heading: `Congratulations, ${opts.full_name}!`,
       body:
-        paragraph('You are approved as a comedian. Pick the dates you are actually available, and offers will start coming.') +
-        paragraph('The booking team uses those dates together with your score and energy level when shows are matched.', true) +
-        button(opts.portal_url, 'Pick your dates'),
+        paragraph('You are approved as a comedian. Offers will start coming — you do not have to do anything to get them.') +
+        paragraph('Mark the evenings you cannot do in the calendar, and you will never be offered those dates.', true) +
+        button(opts.portal_url, 'Mark the dates you cannot do'),
     }),
   }
 }
@@ -142,6 +142,22 @@ export type OfferTemplateInput = {
   role_name?: string | null
   /** Ferdig formatert honorar — samme etikett som lineup-plassen viser. */
   fee_label?: string | null
+  /**
+   * Når tilbudet går ut, som ISO-tid. Fristen er ikke alltid sju dager:
+   * den kortes ned mot lineup-fristen og showdagen, så teksten må lese den
+   * faktiske datoen i stedet for å love en lengde. Se lib/booking-schedule.ts.
+   */
+  expires_at?: string | null
+}
+
+/** «Friday 14 March» — fristen slik komikeren leser den. */
+function deadlineLabel(expiresAt: string | null | undefined): string | null {
+  if (!expiresAt) return null
+  const at = new Date(expiresAt)
+  if (Number.isNaN(at.getTime())) return null
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Oslo',
+  }).format(at)
 }
 
 function offerBody(opts: OfferTemplateInput, intro: string) {
@@ -155,12 +171,17 @@ function offerBody(opts: OfferTemplateInput, intro: string) {
       ['Fee', opts.fee_label],
     ]) +
     button(opts.response_url, 'See the offer and reply') +
-    paragraph('Open for 7 days. First to accept gets the spot.', true)
+    paragraph(
+      deadlineLabel(opts.expires_at)
+        ? `Reply by ${escapeHtml(deadlineLabel(opts.expires_at)!)}. First to accept gets the spot.`
+        : 'First to accept gets the spot.',
+      true,
+    )
   )
 }
 
 function offerText(opts: OfferTemplateInput, intro: string) {
-  return `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${opts.show_date}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\nOpen for 7 days. First to accept gets the spot.`
+  return `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${opts.show_date}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\n${deadlineLabel(opts.expires_at) ? `Reply by ${deadlineLabel(opts.expires_at)}. ` : ''}First to accept gets the spot.`
 }
 
 export function bookingOfferTemplate(opts: OfferTemplateInput): EmailTemplate {
@@ -241,7 +262,7 @@ export function offerDeclinedTemplate(opts: {
       body:
         paragraph(`Hi ${escapeHtml(opts.full_name)}, we have registered that <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(opts.show_date)} does not work for you.`) +
         paragraph('The spot goes to another comedian. Saying no changes nothing for you — the offers keep coming.', true) +
-        button(portal, 'Update your available dates', 'ghost'),
+        button(portal, 'Mark the dates you cannot do', 'ghost'),
     }),
   }
 }
@@ -261,6 +282,69 @@ export function spotFilledTemplate(opts: { full_name: string; show_title?: strin
 }
 
 
+/**
+ * Påminnelsen om at fristen løper ut.
+ *
+ * Et tilbud som ingen svarer på, holder plassen låst til det går ut. For
+ * komikeren er det som regel ikke et nei — e-posten er lest og glemt. Én
+ * påminnelse tett på fristen henter inn de fleste av dem, og den sendes
+ * bare én gang per tilbud.
+ */
+export function offerReminderTemplate(opts: OfferTemplateInput): EmailTemplate {
+  const deadline = deadlineLabel(opts.expires_at)
+  const intro = deadline
+    ? `your offer for this show expires ${deadline}.`
+    : 'your offer for this show is about to expire.'
+
+  return {
+    subject: `Reminder: ${opts.show_title}`,
+    text: `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${opts.show_date}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\nA no is just as useful to us as a yes — then the spot goes on.`,
+    html: shell({
+      eyebrow: 'Reminder',
+      heading: opts.show_title,
+      body:
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, ${escapeHtml(intro)}`) +
+        details([
+          ['Date', opts.show_date],
+          ['Time', opts.show_time],
+          ['Venue', opts.venue],
+          ['Role', opts.role_name],
+          ['Fee', opts.fee_label],
+        ]) +
+        button(opts.response_url, 'Reply now') +
+        paragraph('A no is just as useful to us as a yes — then the spot goes on to the next comedian.', true),
+    }),
+  }
+}
+
+/**
+ * Tilbudet er trukket fordi komikeren tok en annen kveld som kolliderer.
+ *
+ * Uten denne forsvinner tilbudet i stillhet, og komikeren sitter igjen med
+ * en e-post som ikke virker lenger og ingen forklaring på hvorfor.
+ */
+export function offerWithdrawnConflictTemplate(opts: {
+  full_name: string
+  show_title: string
+  show_date: string
+  booked_show_title?: string | null
+}): EmailTemplate {
+  const because = opts.booked_show_title
+    ? `you accepted ${opts.booked_show_title} the same evening`
+    : 'you accepted another show the same evening'
+
+  return {
+    subject: `Offer withdrawn: ${opts.show_title}`,
+    text: `Hi ${opts.full_name}\n\nWe have withdrawn your offer for ${opts.show_title} on ${opts.show_date}, because ${because}. Nobody can be in two places at once.\n\nThe spot goes to another comedian, and you keep getting offers as usual.`,
+    html: shell({
+      eyebrow: 'Offer withdrawn',
+      heading: 'You are booked that evening',
+      body:
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, we have withdrawn your offer for <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(opts.show_date)}, because ${escapeHtml(because)}.`) +
+        paragraph('Nothing is held against you — this is the system making sure you are never double-booked. Offers keep coming as usual.', true),
+    }),
+  }
+}
 
 /**
  * Honoraret etter showet — én setning og en lenke.

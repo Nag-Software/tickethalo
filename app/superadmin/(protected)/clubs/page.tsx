@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Building2, Inbox, Plus } from 'lucide-react'
+import { Building2, Inbox, Plus, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { describeClubReadiness } from '@/lib/stripe-connect'
 
@@ -58,6 +58,12 @@ export default async function ClubsPage() {
           <span className="text-sm text-muted-foreground">Tickethalo superadmin</span>
         </div>
         <div className="flex items-center gap-3">
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/superadmin/booking">
+              <SlidersHorizontal className="size-4" />
+              Bookingmotoren
+            </Link>
+          </Button>
           <Button asChild variant="ghost" size="sm">
             <Link href="/superadmin/beta-requests">
               <Inbox className="size-4" />

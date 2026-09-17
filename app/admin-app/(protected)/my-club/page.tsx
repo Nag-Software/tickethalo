@@ -5,15 +5,16 @@ import { ClubProfileForm } from '@/components/admin/club-profile-form'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { appUrl } from '@/lib/app-url'
+import { loadBookingSettings } from '@/lib/booking-settings-store'
 
 export default async function MyClubPage() {
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
 
-  const [{ data: club, error: clubError }, { data: locations }] = await Promise.all([
+  const [{ data: club, error: clubError }, { data: locations }, settings] = await Promise.all([
     db
       .from('clubs')
-      .select('id, name, slug, description, logo_url, city, currency')
+      .select('id, name, slug, description, logo_url, city, currency, lineup_deadline_days')
       .eq('id', clubId)
       .single(),
     db
@@ -22,6 +23,7 @@ export default async function MyClubPage() {
       .eq('club_id', clubId)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true }),
+    loadBookingSettings(db),
   ])
 
   if (clubError || !club) {
@@ -48,7 +50,12 @@ export default async function MyClubPage() {
       />
 
       <div className="max-w-4xl mx-auto px-6 py-10 md:py-12">
-        <ClubProfileForm club={club} locations={locations ?? []} clubUrl={`${origin}/clubs/${club.slug}`} />
+        <ClubProfileForm
+          club={club}
+          locations={locations ?? []}
+          clubUrl={`${origin}/clubs/${club.slug}`}
+          defaultLineupDeadlineDays={settings.lineup_deadline_days}
+        />
       </div>
     </div>
   )

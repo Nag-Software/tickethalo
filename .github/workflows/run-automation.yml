@@ -2,17 +2,18 @@ name: Run automation
 
 on:
   schedule:
-    - cron: "0 9 * * *"
+    # 06:00 UTC: tilbudene lander til frokost i norsk tid, ikke midt på natten.
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  publish-fullbooked:
+  booking:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger publish-fullbooked automation
+      - name: Trigger daily booking automation
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -20,4 +21,4 @@ jobs:
           APP_URL="${APP_URL%/}"
           curl --fail --show-error --silent \
             --header "Authorization: Bearer ${CRON_SECRET}" \
-            "${APP_URL}/api/cron/publish-fullbooked"
+            "${APP_URL}/api/cron/booking"

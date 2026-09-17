@@ -288,3 +288,59 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Tilgjengelighetskalenderen i komikerportalen
+
+   react-day-picker leverer rutenettet; utseendet er portalens eget.
+   Dagene er trykkflater man kan dra over, så de er store nok til en
+   tommel og har ingen egen ramme — fargen sier alt.
+   ───────────────────────────────────────────────────────────── */
+.ev-calendar [data-cal-date] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ev-text);
+  background: transparent;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.ev-calendar [data-cal-date]:hover:not(:disabled) {
+  background: var(--ev-card-hover);
+}
+
+.ev-calendar [data-cal-date]:disabled {
+  color: var(--ev-faint);
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Dagen komikeren ikke kan. Fylt, fordi det er den eneste tilstanden
+   hen setter selv — resten er noe systemet forteller. */
+.ev-calendar .rdp-unavailable [data-cal-date],
+.ev-calendar [data-cal-date][aria-pressed='true'] {
+  background: var(--ev-text);
+  color: var(--ev-bg);
+}
+
+/* Bekreftet booking. Kan ikke markeres — avtalen er inngått. */
+.ev-calendar .rdp-booked [data-cal-date] {
+  background: var(--ev-accent-fill);
+  color: var(--ev-accent-ink);
+}
+
+/* Ubesvart tilbud. Stiplet, fordi kvelden ennå ikke er avgjort. */
+.ev-calendar .rdp-offer [data-cal-date] {
+  box-shadow: inset 0 0 0 2px var(--ev-muted);
+}
+
+.ev-calendar .rdp-today [data-cal-date] {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

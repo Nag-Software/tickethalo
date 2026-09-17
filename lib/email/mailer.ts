@@ -8,6 +8,8 @@ import {
   bookingOfferTemplate,
   escapeHtml,
   offerDeclinedTemplate,
+  offerReminderTemplate,
+  offerWithdrawnConflictTemplate,
   spotAvailableTemplate,
   spotFilledTemplate,
   type EmailTemplate,
@@ -56,6 +58,24 @@ export async function sendSpotAvailableEmail(opts: OfferTemplateInput & {
   token: string
 }): Promise<EmailResult> {
   return sendArtistEmail(opts.email, spotAvailableTemplate(opts))
+}
+
+/** Én påminnelse per tilbud, tett på fristen. Se lib/booking-schedule.ts. */
+export async function sendOfferReminderEmail(opts: OfferTemplateInput & {
+  email: string
+}): Promise<EmailResult> {
+  return sendArtistEmail(opts.email, offerReminderTemplate(opts))
+}
+
+/** Tilbudet er trukket fordi komikeren tok en kolliderende kveld. */
+export async function sendOfferWithdrawnConflictEmail(opts: {
+  email: string
+  full_name: string
+  show_title: string
+  show_date: string
+  booked_show_title?: string | null
+}): Promise<EmailResult> {
+  return sendArtistEmail(opts.email, offerWithdrawnConflictTemplate(opts))
 }
 
 export async function sendBookingConfirmedEmail(opts: {

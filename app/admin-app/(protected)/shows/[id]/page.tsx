@@ -15,10 +15,12 @@ import { LineupTab } from './lineup-tab'
 import { MarketingTab } from './marketing/marketing-tab'
 import { SubmissionsTab } from './submissions-tab'
 import { loadSubmissionGroups } from './submissions-data'
-import { artistMatchesRole } from '@/lib/artist-roles'
+import { matchesHardRequirements } from '@/lib/booking-rules'
+import { canReviewShow, reviewCounts, reviewsForShow } from '@/lib/artist-reviews'
+import { LineupReviewPanel, type ReviewableSpot } from '@/components/admin/lineup-review-panel'
 import { assertShowAccess } from '@/lib/club-auth'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
+import type { ArtistGender, RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'submissions' | 'marketing' | 'tickets'
 
@@ -97,7 +99,7 @@ export default async function ShowDetailPage({
         .in('id', roster)
         .order('full_name')
         .limit(250)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; gender: string | null }> }),
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; gender: ArtistGender | null }> }),
     shouldLoadSelectableArtists
       ? db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', id)
       : Promise.resolve({ data: [] as Array<{ artist_id: string }> }),
@@ -156,13 +158,16 @@ export default async function ShowDetailPage({
       const status = reqFillStatus.find((row) => row.id === requirement.id)
       if (!status || status.isFull || status.pendingOffers > 0 || requirement.energy_level === 'any') return []
 
-      const minScore = Math.max(requirement.min_score ?? 6, 6)
-      const baseMatches = automationCandidates.filter((artist) => {
-        if (!artistMatchesRole(requirement.role_name, artist)) return false
-        if ((artist.admin_score ?? 0) < minScore) return false
-        if (requirement.required_gender && requirement.required_gender !== 'any' && artist.gender !== requirement.required_gender) return false
-        return true
-      })
+      // Kravene til *plassen*, med energien åpnet. Kveldens krav — opptatt,
+      // og kollisjon med et annet show — er ikke med, så tallet er et øvre
+      // anslag. Varsellisten på showoversikten regner med alt, og er den
+      // som teller riktig.
+      const openEnergy = {
+        role_name: requirement.role_name,
+        energy_level: 'any',
+        required_gender: requirement.required_gender ?? 'any',
+      }
+      const baseMatches = automationCandidates.filter((artist) => matchesHardRequirements(artist, openEnergy))
       const strictCount = baseMatches.filter((artist) => artist.admin_energy_level === requirement.energy_level).length
       const anyEnergyCount = baseMatches.length
 
@@ -244,6 +249,35 @@ export default async function ShowDetailPage({
     })
     : []
 
+  // Etter showet: «Hvordan gikk det?». Vurderingen endrer scoren, og scoren
+  // avgjør hvem som får tilbud på neste show — se lib/artist-reviews.ts.
+  const reviewable = tab === 'lineup' && canReviewShow(show.date)
+  const reviewRows: ReviewableSpot[] = reviewable ? await (async () => {
+    const reviews = await reviewsForShow(db, id)
+    const artistIds = activeLineup.map((spot) => spot.artist_id)
+    const [counts, { data: scoreRows }] = await Promise.all([
+      reviewCounts(db, artistIds),
+      artistIds.length > 0
+        ? db.from('artists').select('id, full_name, stage_name, admin_score').in('id', artistIds)
+        : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; admin_score: number | null }> }),
+    ])
+    const scoreById = new Map((scoreRows ?? []).map((row) => [row.id, row]))
+
+    return activeLineup.map((spot) => {
+      const artist = scoreById.get(spot.artist_id)
+      const requirement = (requirements ?? []).find((req) => req.id === spot.show_requirement_id)
+      return {
+        spotId: spot.id,
+        artistName: artist ? artist.stage_name ?? artist.full_name : 'Unknown comedian',
+        roleName: requirement?.role_name ?? null,
+        rating: reviews.get(spot.id)?.rating ?? null,
+        notes: reviews.get(spot.id)?.notes ?? null,
+        score: artist?.admin_score != null ? Number(artist.admin_score) : null,
+        reviewCount: counts.get(spot.artist_id) ?? 0,
+      }
+    })
+  })() : []
+
   const showLocation = show.venue_address ?? show.venue_name
 
   return (
@@ -309,6 +343,10 @@ export default async function ShowDetailPage({
         )}
 
         {/* ══════════════════ LINEUP ══════════════════ */}
+        {tab === 'lineup' && reviewRows.length > 0 && (
+          <LineupReviewPanel showId={show.id} spots={reviewRows} />
+        )}
+
         {tab === 'lineup' && (
           show.status === 'draft'
             ? <RequirementsTab
@@ -316,7 +354,6 @@ export default async function ShowDetailPage({
                   r.id,
                   r.lineup_position,
                   r.role_name,
-                  r.min_score ?? '',
                   r.energy_level,
                   r.required_gender ?? 'any',
                   r.compensation_type ?? '',
@@ -330,7 +367,6 @@ export default async function ShowDetailPage({
                   id: r.id,
                   lineup_position: r.lineup_position,
                   role_name: r.role_name,
-                  min_score: r.min_score ?? null,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
                   submissions_open: Boolean(r.submissions_open),
@@ -352,7 +388,6 @@ export default async function ShowDetailPage({
                   role_name: r.role_name,
                   quantity: r.quantity,
                   lineup_position: r.lineup_position,
-                  min_score: r.min_score ?? null,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
                   submissions_open: Boolean(r.submissions_open),

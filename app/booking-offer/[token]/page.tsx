@@ -215,6 +215,11 @@ const RESULTS: Record<string, { tone: 'success' | 'neutral' | 'error'; title: st
     title: 'The spot was taken',
     message: 'Someone else got there first. You will keep getting offers for other shows.',
   },
+  conflict: {
+    tone: 'neutral',
+    title: 'You are booked that evening',
+    message: 'You have already accepted another show that starts too close to this one, so we could not put you on this lineup. Nobody can be in two places at once.',
+  },
   declined: {
     tone: 'neutral',
     title: 'Reply registered',

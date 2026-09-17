@@ -179,6 +179,18 @@ export async function saveClubProfileAction(formData: FormData) {
   const currency = normalizeCurrency(getOptionalText(formData, 'currency'))
   const locations = getLocations(formData)
 
+  // Tomt felt betyr «følg plattformens standard», ikke null dager. Grensene
+  // er de samme som i databasen (migrasjon 056).
+  const deadlineText = getOptionalText(formData, 'lineup_deadline_days')
+  let lineupDeadlineDays: number | null = null
+  if (deadlineText) {
+    const parsed = Number(deadlineText)
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120) {
+      throw new Error('The lineup deadline has to be a whole number of days between 1 and 120.')
+    }
+    lineupDeadlineDays = parsed
+  }
+
   const logoFile = getLogoFile(formData)
   // Tomt felt betyr at logoen ble fjernet i grensesnittet.
   const keepsExistingLogo = getOptionalText(formData, 'existingLogoUrl') === currentClub.logo_url
@@ -203,6 +215,7 @@ export async function saveClubProfileAction(formData: FormData) {
       city,
       description,
       currency,
+      lineup_deadline_days: lineupDeadlineDays,
       logo_url: logoUrl,
       ...(brandColor === undefined ? {} : { brand_color: brandColor }),
     })

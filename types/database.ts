@@ -22,6 +22,12 @@ export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 
 export type BookingOfferSource = 'auto' | 'manual'
 export type ConfirmedSpotStatus = 'confirmed' | 'cancelled' | 'completed' | 'paid'
 
+/**
+ * Kvelden slik klubben så den. `no_show` er avlyst eller ikke møtt opp, og
+ * teller som to svake kvelder — se lib/artist-score.ts.
+ */
+export type PerformanceRating = 'weak' | 'medium' | 'strong' | 'no_show'
+
 /** Hvem som får søke på et shows åpne plasser. Se migrasjon 045. */
 export type SubmissionsAudience = 'roster' | 'everyone'
 /** Om komikeren fant plassen selv, eller ble invitert til den. */
@@ -119,6 +125,11 @@ export type Club = {
   payout_hold_days: number
   /** Komikernes samlede andel av klubbens netto på et show. 9000 = 90 %. */
   artist_share_bps: number
+  /**
+   * Dager før showet lineupen skal være klar. Null = plattformens standard
+   * i `booking_scoring_config`. Se lib/booking-settings.ts.
+   */
+  lineup_deadline_days: number | null
   /**
    * Utbetalingsplanen fra Stripe Balance Settings. Må være `manual` før
    * klubben kan selge. Null = ikke sjekket ennå. Se migrasjon 047.
@@ -273,10 +284,14 @@ export type Artist = {
   updated_at: string
 }
 
-export type ArtistAvailability = {
+/**
+ * En dag komikeren ikke kan. Et hardt krav: motoren sender aldri tilbud på
+ * datoen. Erstattet «tre ledige datoer» i migrasjon 054.
+ */
+export type ArtistUnavailableDate = {
   id: string
   artist_id: string
-  available_date: string
+  unavailable_date: string
   created_at: string
 }
 
@@ -380,7 +395,6 @@ export type ShowRequirement = {
   role_name: string
   quantity: number
   lineup_position: number
-  min_score: number | null
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   /**
@@ -389,6 +403,12 @@ export type ShowRequirement = {
    * `bookShow()` i lib/actions/booking.ts.
    */
   submissions_open: boolean
+  /**
+   * Når bookingmotoren begynte å jobbe på plassen. Styrer bølgen: dag 1 gir
+   * to tilbud per ledig sete, dag 2 fire, opp til taket. Null = motoren
+   * rører den ikke. Se lib/booking-schedule.ts.
+   */
+  auto_started_at: string | null
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -445,6 +465,8 @@ export type BookingOffer = {
   sent_at: string | null
   responded_at: string | null
   expires_at: string | null
+  /** Når påminnelsen om fristen gikk. Null = ikke sendt. Én gang per tilbud. */
+  reminded_at: string | null
   created_at: string
   updated_at: string
 }
@@ -662,15 +684,37 @@ export type MarketingTask = {
   updated_at: string
 }
 
+/**
+ * Innstillingene bookingmotoren kjører på. Én rad, `id = 'default'`.
+ * Redigeres av superadmin; grensene står i lib/booking-settings.ts.
+ */
 export type BookingScoringConfig = {
   id: string
   quality_weight: number
-  availability_bonus: number
-  role_match_bonus: number
-  busy_penalty_per_booking: number
-  busy_window_days: number
+  rotation_penalty: number
+  rotation_window_days: number
+  conflict_window_hours: number
+  offers_per_day: number
   offers_per_slot: number
-  fallback_limit: number
+  offer_response_days: number
+  late_offer_response_hours: number
+  rush_days: number
+  reminder_hours: number
+  lineup_deadline_days: number
+  updated_at: string
+}
+
+/** Klubbens vurdering av én komiker etter én kveld. Én per bekreftet plass. */
+export type ArtistPerformanceReview = {
+  id: string
+  confirmed_spot_id: string
+  artist_id: string
+  show_id: string
+  club_id: string | null
+  rating: PerformanceRating
+  notes: string | null
+  reviewed_by: string | null
+  created_at: string
   updated_at: string
 }
 
@@ -751,15 +795,32 @@ export type Database = {
         Update: Partial<ClubArtist>
         Relationships: []
       }
-      artist_availability: {
-        Row: ArtistAvailability
+      artist_unavailable_dates: {
+        Row: ArtistUnavailableDate
         Insert: {
           id?: string
           artist_id: string
-          available_date: string
+          unavailable_date: string
           created_at?: string
         }
-        Update: Partial<ArtistAvailability>
+        Update: Partial<ArtistUnavailableDate>
+        Relationships: []
+      }
+      artist_performance_reviews: {
+        Row: ArtistPerformanceReview
+        Insert: {
+          id?: string
+          confirmed_spot_id: string
+          artist_id: string
+          show_id: string
+          club_id?: string | null
+          rating: PerformanceRating
+          notes?: string | null
+          reviewed_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ArtistPerformanceReview>
         Relationships: []
       }
       shows: {
@@ -865,10 +926,10 @@ export type Database = {
           role_name: string
           quantity: number
           lineup_position?: number
-          min_score?: number | null
           energy_level?: RequirementEnergy
           required_gender?: RequirementGender
           submissions_open?: boolean
+          auto_started_at?: string | null
           compensation_type?: RequirementCompensationType | null
           compensation_amount?: number | null
           compensation_percent?: number | null
@@ -927,6 +988,7 @@ export type Database = {
           sent_at?: string | null
           responded_at?: string | null
           expires_at?: string | null
+          reminded_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1063,12 +1125,16 @@ export type Database = {
         Insert: {
           id?: string
           quality_weight?: number
-          availability_bonus?: number
-          role_match_bonus?: number
-          busy_penalty_per_booking?: number
-          busy_window_days?: number
+          rotation_penalty?: number
+          rotation_window_days?: number
+          conflict_window_hours?: number
+          offers_per_day?: number
           offers_per_slot?: number
-          fallback_limit?: number
+          offer_response_days?: number
+          late_offer_response_hours?: number
+          rush_days?: number
+          reminder_hours?: number
+          lineup_deadline_days?: number
           updated_at?: string
         }
         Update: Partial<Omit<BookingScoringConfig, 'id'>>
@@ -1114,6 +1180,7 @@ export type Database = {
           commission_vat_bps?: number
           payout_hold_days?: number
           artist_share_bps?: number
+          lineup_deadline_days?: number | null
           payout_schedule_interval?: string | null
           payout_schedule_checked_at?: string | null
           created_at?: string

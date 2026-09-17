@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { runAutomaticBookingForClub } from '@/lib/actions/booking'
+import { runAfterResponse } from '@/lib/background'
 
 /**
  * Katalogen skriver bare én ting: koblingen mellom klubben og komikeren.
@@ -41,6 +43,14 @@ export async function connectArtistAction(formData: FormData): Promise<{ error?:
     }
 
     for (const path of PATHS) revalidatePath(path)
+
+    // En ny komiker på listen kan være den som mangler på et show som står
+    // fast akkurat nå. Bare klubbens egne show — komikeren er ikke kandidat
+    // noe annet sted.
+    runAfterResponse(`club-roster-added-${artistId}`, async () => {
+      await runAutomaticBookingForClub(clubId)
+      for (const path of PATHS) revalidatePath(path)
+    })
   } catch (error) {
     console.error('[Discover]', error)
     return { error: 'Could not add the comedian right now.' }
@@ -67,6 +77,14 @@ export async function disconnectArtistAction(formData: FormData): Promise<{ erro
     }
 
     for (const path of PATHS) revalidatePath(path)
+
+    // Komikeren er ikke lenger klubbens, så ubesvarte tilbud skal trekkes og
+    // plassene tilbys videre. Motoren gjør begge deler — se
+    // `pendingOffersToWithdraw`.
+    runAfterResponse(`club-roster-removed-${artistId}`, async () => {
+      await runAutomaticBookingForClub(clubId)
+      for (const path of PATHS) revalidatePath(path)
+    })
   } catch (error) {
     console.error('[Discover]', error)
     return { error: 'Could not remove the comedian right now.' }

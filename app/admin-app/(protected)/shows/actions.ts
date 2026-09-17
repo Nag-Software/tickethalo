@@ -3,15 +3,18 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createShow, updateShowStatus } from '@/lib/actions/shows'
-import { acceptBookingOfferById, automateFullbookedShow, bookShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendFallbackOffersForShow, sendManualBookingOffer, sendOffersForReopenedRequirement } from '@/lib/actions/booking'
+import { createShow } from '@/lib/actions/shows'
+import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { canReviewShow, savePerformanceReview } from '@/lib/artist-reviews'
+import { rollBackIfSeatWasTaken } from '@/lib/booking-seats'
+import { PERFORMANCE_RATINGS } from '@/lib/artist-score'
+import type { PerformanceRating } from '@/types/database'
 import { assertArtistBookableForShow } from '@/lib/club-artists'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
 import { defaultLineupSpots } from '@/lib/lineup-defaults'
 import { normalizeCurrency } from '@/lib/currencies'
-import { assertClubCanSell } from '@/lib/stripe-connect'
 import { MARKETING_DESIGN_BUCKET, sanitizeStorageFileName } from '@/lib/marketing/storage'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
 import { refundShow } from '@/lib/refunds'
@@ -33,7 +36,7 @@ import {
   type ShowSalesOverviewDto,
 } from '@/lib/show-sales'
 import { ticketSalesState } from '@/lib/ticket-sales'
-import type { BookingOfferStatus, ConfirmedSpotStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, ShowStatus } from '@/types/database'
+import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 export type ManualSpotActionState = {
   status: 'idle' | 'success' | 'error'
@@ -194,7 +197,6 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     role_name: canonicalRoleLabel(String(formData.get('role_name') ?? '').trim()) ?? '',
     quantity: Math.max(1, Number(formData.get('quantity') ?? 1)),
     lineup_position: Math.max(1, Number(formData.get('lineup_position') ?? (await nextLineupPosition(showId)))),
-    min_score: optionalInteger(formData.get('min_score')),
     energy_level: ((formData.get('energy_level') as RequirementEnergy | null) ?? 'any'),
     required_gender: ((formData.get('required_gender') as RequirementGender | null) ?? 'any'),
     // Står som streng i skjemaet — en avslått checkbox sender ingenting, og
@@ -419,7 +421,6 @@ export async function cloneShowAction(formData: FormData) {
     role_name: string
     quantity: number
     lineup_position: number
-    min_score: number | null
     energy_level: RequirementEnergy
     required_gender: RequirementGender
     compensation_type: RequirementCompensationType | null
@@ -437,7 +438,6 @@ export async function cloneShowAction(formData: FormData) {
         role_name: roleName,
         quantity: Math.max(1, Number(formData.get(`req_${i}_quantity`) ?? 1)),
         lineup_position: Math.max(1, Number(formData.get(`req_${i}_lineup_position`) ?? (i + 1))),
-        min_score: optionalInteger(formData.get(`req_${i}_min_score`)),
         energy_level: ((formData.get(`req_${i}_energy_level`) as RequirementEnergy | null) ?? 'any'),
         required_gender: ((formData.get(`req_${i}_required_gender`) as RequirementGender | null) ?? 'any'),
         compensation_type: compensationType,
@@ -452,7 +452,7 @@ export async function cloneShowAction(formData: FormData) {
   if (newReqs.length === 0) {
     const { data: templateReqs } = await db
       .from('show_requirements')
-      .select('role_name, quantity, lineup_position, min_score, energy_level, required_gender, compensation_type, compensation_amount, compensation_percent')
+      .select('role_name, quantity, lineup_position, energy_level, required_gender, compensation_type, compensation_amount, compensation_percent')
       .eq('show_id', templateId)
       .order('lineup_position')
       .order('created_at')
@@ -462,7 +462,6 @@ export async function cloneShowAction(formData: FormData) {
         role_name: canonicalRoleLabel(r.role_name) ?? r.role_name,
         quantity: r.quantity,
         lineup_position: r.lineup_position,
-        min_score: r.min_score,
         energy_level: r.energy_level as RequirementEnergy,
         required_gender: ((r as { required_gender?: string }).required_gender as RequirementGender | undefined) ?? 'any',
         compensation_type: (r.compensation_type as RequirementCompensationType | null) ?? null,
@@ -493,12 +492,19 @@ export async function addRequirementAction(formData: FormData) {
 
   await ensurePercentAllocationWithinLimit(showId, input.compensation_percent)
 
+  // En plass som legges til i et show som allerede er i gang, skal ikke
+  // vente på neste Start booking. Bølgen begynner nå, på dag 1.
+  const { data: show } = await db.from('shows').select('status').eq('id', showId).maybeSingle()
+  const live = show?.status === 'booking' || show?.status === 'fullbooked' || show?.status === 'published'
+
   const { error } = await db.from('show_requirements').insert({
     show_id: showId,
     ...input,
+    auto_started_at: live && !input.submissions_open ? new Date().toISOString() : null,
   })
 
   if (error) throw new Error(error.message)
+  if (live) scheduleShowAutomation(showId, 'requirement-added')
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -528,19 +534,22 @@ export async function startBookingAction(formData: FormData) {
     throw new Error(`Percentage allocation exceeds ${percentLimit}% of ticket sales (${percentTotal}%).`)
   }
 
-  await db.from('shows').update({ status: 'booking' }).eq('id', showId).eq('status', 'draft')
-  scheduleShowAutomation(showId, 'manual-start')
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
+  const { data: started } = await db
+    .from('shows')
+    .update({ status: 'booking' })
+    .eq('id', showId)
+    .eq('status', 'draft')
+    .select('id')
 
-export async function sendFallbackOffersAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
-  runAfterResponse(`fallback-offers-${showId}`, async () => {
-    await sendFallbackOffersForShow(showId)
-    revalidatePath(`/admin-app/shows/${showId}`)
-    revalidatePath('/admin-app/bookings')
-  })
+  // Dag 1 i bølgen. Uten dette rører motoren ingen av plassene — se
+  // `startAutoBooking` i lib/actions/booking.ts.
+  //
+  // Gikk showet faktisk ut av utkast nå, nullstilles klokken på alle
+  // plassene: Start booking *er* dag 1. Var showet allerede i gang (to
+  // klikk), fylles bare plasser som mangler stempel, så pågående bølger
+  // ikke settes tilbake til start.
+  await startAutoBooking(showId, undefined, { restart: (started ?? []).length > 0 })
+  scheduleShowAutomation(showId, 'manual-start')
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -643,6 +652,13 @@ export async function updateRequirementAction(formData: FormData) {
   const { error } = await db.from('show_requirements').update(input).eq('id', reqId)
 
   if (error) throw new Error(error.message)
+
+  // Ingen bølge herfra. Denne handlingen hører til veiviseren, som bare
+  // vises på utkast, og et utkast har ikke startet. Stemplet vi `auto_started_at`
+  // her, ville Start booking arvet en dato fra da plassen sist ble endret —
+  // og et utkast som hadde ligget i ti dager sendte hele taket med tilbud på
+  // dag én. Bølgen settes i gang av Start booking og av
+  // `toggleRequirementSubmissionsAction`.
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -864,43 +880,6 @@ export async function deleteSpotAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
-export async function bookShowAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
-  const result = await bookShow(showId)
-  if (result.offersCreated === 0) {
-    throw new Error(result.candidatesMatched === 0
-      ? 'Found no approved artists matching the score and energy requirements.'
-      : 'No new booking offers were sent. Matching artists have already been offered a spot or are in the lineup.')
-  }
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
-export async function publishShowAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
-  // Publishing is what opens ticket sales. Without a finished Connect account
-  // there is no seller to receive the money on behalf of.
-  await assertClubCanSell(showId)
-  const db = createAdminClient()
-  await db.from('shows').update({
-    status: 'published',
-    published_at: new Date().toISOString(),
-  }).eq('id', showId)
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
-export async function updateShowStatusAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  const status = formData.get('status') as ShowStatus
-  await assertShowAccess(showId)
-  // Samme guard som publisering: `published` er det som åpner billettsalget,
-  // uansett hvilken vei showet kommer dit.
-  if (status === 'published') await assertClubCanSell(showId)
-  await updateShowStatus(showId, status)
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
 export async function updateOfferStatusAction(formData: FormData) {
   const offerId = formData.get('offer_id') as string
   const showId = formData.get('show_id') as string
@@ -951,20 +930,15 @@ export async function cancelOfferAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
-export async function removeSpotAction(formData: FormData) {
-  const spotId = formData.get('spot_id') as string
-  const showId = formData.get('show_id') as string
-  await assertSpotAccess(showId, spotId)
-  const db = createAdminClient()
-  await db.from('confirmed_spots').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', spotId).eq('show_id', showId)
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
 export async function removeSpotAndReopenAction(formData: FormData) {
   const spotId = formData.get('spot_id') as string
   const showId = formData.get('show_id') as string
+  // Bookeren sier om komikeren selv avlyste. Det er en helt annen sak enn at
+  // klubben ombestemte seg, og den eneste som skal telle på scoren.
+  const artistCancelled = String(formData.get('artist_cancelled') ?? '') === 'true'
   const db = createAdminClient()
 
+  const show = await assertShowAccess(showId)
   await assertSpotAccess(showId, spotId)
 
   const { data: spot } = await db
@@ -975,6 +949,18 @@ export async function removeSpotAndReopenAction(formData: FormData) {
     .single()
 
   if (!spot) throw new Error('Spot not found.')
+
+  if (artistCancelled) {
+    await savePerformanceReview(db, {
+      confirmedSpotId: spot.id,
+      artistId: spot.artist_id,
+      showId,
+      clubId: show?.club_id ?? null,
+      rating: 'no_show',
+      notes: 'Avlyste plassen.',
+      reviewedBy: await currentProfileId(),
+    })
+  }
 
   // Cancel active offers for this requirement so the slot re-opens cleanly
   await db
@@ -1003,9 +989,13 @@ export async function removeSpotAndReopenAction(formData: FormData) {
 
   await excludeArtistFromAutomaticBooking(db, showId, spot.artist_id, 'admin_removed_spot')
 
-  // Send new offers with "Ledig spot" email in background
+  // Bølgen starter forfra på plassen: også andre gangen skal de beste få
+  // sjansen først. Motoren ser at plassen har hatt en komiker som falt fra,
+  // og bruker «Ledig spot»-e-posten i stedet for det vanlige tilbudet.
+  await startAutoBooking(showId, spot.show_requirement_id, { restart: true })
+
   runAfterResponse(`reopen-spot-${spotId}`, async () => {
-    await sendOffersForReopenedRequirement(showId, spot.show_requirement_id)
+    await runAutomaticBookingForShow(showId)
     revalidatePath(`/admin-app/shows/${showId}`)
     revalidatePath('/admin-app/bookings')
   })
@@ -1175,7 +1165,7 @@ export async function addArtistToRequirementAction(formData: FormData) {
 
   const feeAmount = requirement?.compensation_type === 'fixed' ? requirement.compensation_amount : null
 
-  const { error } = await db.from('confirmed_spots').insert({
+  const { data: added, error } = await db.from('confirmed_spots').insert({
     show_id: showId,
     artist_id: artistId,
     show_requirement_id: requirementId,
@@ -1183,9 +1173,11 @@ export async function addArtistToRequirementAction(formData: FormData) {
     currency,
     status: 'confirmed',
     confirmed_at: new Date().toISOString(),
-  })
+  }).select('id').single()
 
   if (error) throw new Error(error.message)
+  // Tellingen over og innsettingen her er to omganger — se lib/booking-seats.ts.
+  await rollBackIfSeatWasTaken(db, { requirementId, spotId: added.id })
 
   // Mark pending offers for this requirement as filled
   await db
@@ -1253,7 +1245,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
     return manualSpotState('error', 'This role is already filled. Add more spots or remove an artist first.')
   }
 
-  const { error } = await db.from('confirmed_spots').insert({
+  const { data: added, error } = await db.from('confirmed_spots').insert({
     show_id: showId,
     artist_id: artistId,
     show_requirement_id: requirementId,
@@ -1261,9 +1253,16 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
     currency,
     status: 'confirmed',
     confirmed_at: new Date().toISOString(),
-  })
+  }).select('id').single()
 
   if (error) return manualSpotState('error', error.message)
+
+  // Tellingen over og innsettingen her er to omganger — se lib/booking-seats.ts.
+  try {
+    await rollBackIfSeatWasTaken(db, { requirementId, spotId: added.id })
+  } catch (raceError) {
+    return manualSpotState('error', (raceError as Error).message)
+  }
 
   await clearArtistBookingExclusion(db, showId, artistId)
 
@@ -1273,65 +1272,51 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
   return manualSpotState('success', 'The artist was added to the lineup.')
 }
 
-export async function updateSpotAction(formData: FormData) {
-  const spotId = formData.get('spot_id') as string
-  const showId = formData.get('show_id') as string
-  const status = formData.get('status') as ConfirmedSpotStatus
-  const feeAmount = optionalMoneyToMinor(formData.get('fee_amount'))
+/**
+ * Vurderer én komiker etter showet.
+ *
+ * Ett trykk per komiker, og scoren endrer seg med en gang. Det er denne
+ * sløyfen som gjør køen bedre over tid: uten vurderinger står alle likt, og
+ * motoren har ingenting å prioritere etter.
+ *
+ * Vurderingen kan endres i 30 dager. Etter det er kvelden for langt unna til
+ * at noen husker den godt nok.
+ */
+export async function saveLineupReviewAction(formData: FormData) {
+  const showId = String(formData.get('show_id') ?? '')
+  const spotId = String(formData.get('spot_id') ?? '')
+  const rating = String(formData.get('rating') ?? '') as PerformanceRating
+  const notes = optionalText(formData.get('notes'))
+
+  if (!PERFORMANCE_RATINGS.includes(rating)) throw new Error('Pick how the evening went.')
+
+  const show = await assertShowAccess(showId)
   await assertSpotAccess(showId, spotId)
-  await assertRequirementAccess(showId, formData.get('show_requirement_id') as string)
   const db = createAdminClient()
 
-  const { error } = await db.from('confirmed_spots').update({
-    show_requirement_id: formData.get('show_requirement_id') as string,
-    fee_amount: feeAmount,
-    currency: optionalText(formData.get('currency')) ?? 'NOK',
-    status,
-    cancelled_at: status === 'cancelled' ? new Date().toISOString() : null,
-    confirmed_at: status === 'confirmed' ? new Date().toISOString() : undefined,
-  }).eq('id', spotId).eq('show_id', showId)
-
-  if (error) throw new Error(error.message)
-  scheduleFullbookedAutomation(showId, 'update-spot')
-  revalidatePath(`/admin-app/shows/${showId}`)
-}
-
-/**
- * Confirm the show lineup:
- * 1. Verify all requirement slots are filled
- * 2. Create marketing tasks and publish
- * 3. Redirect to marketing tab
- *
- * Plakaten lages ikke her. Den er markedsføringsfanens jobb, og den lages bare
- * automatisk når showet har `auto_poster_enabled`.
- */
-export async function confirmLineupAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
-
-  const result = await automateFullbookedShow(showId)
-  if (!result.fullbooked) {
-    throw new Error(result.message ?? 'The lineup is not fully booked yet.')
+  const { data: showRow } = await db.from('shows').select('date').eq('id', showId).maybeSingle()
+  if (!showRow || !canReviewShow(showRow.date)) {
+    throw new Error('This show can no longer be reviewed.')
   }
 
-  revalidatePath(`/admin-app/shows/${showId}`)
-  redirect(`/admin-app/shows/${showId}?tab=marketing`)
-}
+  const { data: spot } = await db
+    .from('confirmed_spots')
+    .select('id, artist_id')
+    .eq('id', spotId)
+    .eq('show_id', showId)
+    .maybeSingle()
 
-/**
- * Publiserer lineupen selv om ikke alle plasser er fylt.
- *
- * The club's booker decides when the lineup is good enough — pending offers
- * are not withdrawn, so spots can still be filled afterwards.
- */
-export async function publishLineupAction(formData: FormData) {
-  const showId = formData.get('show_id') as string
-  await assertShowAccess(showId)
+  if (!spot) throw new Error('Spot not found.')
 
-  const result = await automateFullbookedShow(showId, { force: true })
-  if (!result.published) {
-    throw new Error(result.message ?? 'Could not publish the lineup.')
-  }
+  await savePerformanceReview(db, {
+    confirmedSpotId: spot.id,
+    artistId: spot.artist_id,
+    showId,
+    clubId: show?.club_id ?? null,
+    rating,
+    notes,
+    reviewedBy: await currentProfileId(),
+  })
 
   revalidatePath(`/admin-app/shows/${showId}`)
   revalidatePath('/admin-app/shows')

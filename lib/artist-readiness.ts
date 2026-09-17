@@ -8,21 +8,20 @@ import { normalizeArtistRoleList } from '@/lib/artist-roles'
  * show-krav (`artistMatchesRole` i lib/artist-roles) og blir usynlig i
  * booking uten at noe sier hvorfor.
  *
- * Score står ikke lenger på lista. Den er systemsatt med en default over
- * terskelen (migrasjon 041), så den kan ikke være grunnen til at noen
- * mangler — og bookeren kan uansett ikke gjøre noe med den.
+ * Score står ikke på lista, og kan ikke komme til å gjøre det. Den er en
+ * prioriteringsindikator, ikke en kvalifikasjon: den avgjør rekkefølgen i
+ * køen, aldri hvem som kan stå i den. Se `candidatePoints` i
+ * lib/booking-rules.ts.
  */
-export const MIN_BOOKABLE_SCORE = 6
 
 /**
- * Scoren en godkjent komiker får uten at noen setter den.
+ * Scoren en komiker starter på, midt på skalaen.
  *
- * Bookeren verken setter eller ser score lenger, men motoren er fortsatt
- * bygget på den — så alle må ha en verdi over terskelen. Ligger den på NULL,
- * leses den som 0 og komikeren får aldri tilbud. Samme tall står som default
- * på kolonnen i migrasjon 041.
+ * Den endrer seg bare gjennom vurderinger etter show — se
+ * lib/artist-score.ts. Samme tall står som default på kolonnen i
+ * migrasjon 057.
  */
-export const DEFAULT_ARTIST_SCORE = 7
+export const DEFAULT_ARTIST_SCORE = 5
 
 export type ArtistReadinessInput = {
   /** Plattformstatus fra `artists`. Settes av superadmin. */

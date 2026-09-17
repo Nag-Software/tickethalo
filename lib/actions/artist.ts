@@ -2,7 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendArtistApprovedEmail } from '@/lib/email/mailer'
-import { runAutomaticBookingForOpenShows } from '@/lib/actions/booking'
+
 import { runAfterResponse } from '@/lib/background'
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import type { ArtistGender } from '@/types/database'
@@ -94,22 +94,21 @@ export async function registerArtist(input: RegisterArtistInput) {
     }).select('id').single()
     if (artistError || !artist) throw new Error(artistError?.message ?? 'Failed to create artist')
 
-    // 5. Komikeren er inne og kan velge datoer med det samme, så e-posten
-    //    er portalenken — ikke en kvittering på en søknad ingen behandler.
+    // 5. Komikeren er inne med det samme, så e-posten er portalenken — ikke
+    //    en kvittering på en søknad ingen behandler. Lenken går til
+    //    kalenderen, der hen markerer dagene hen ikke kan.
+    //
+    //    Motoren kjøres ikke herfra. En ny komiker er ikke på noen klubbs
+    //    liste ennå, så det ville vært en full runde over alle show på
+    //    plattformen uten en eneste ny kandidat. Motoren kjøres i stedet når
+    //    en klubb legger komikeren på listen sin — se `connectArtistAction`.
     const artistAppUrl = process.env.ARTIST_APP_URL ?? appPath('/artist-app')
     runAfterResponse(`register-artist-${artist.id}`, async () => {
       await sendArtistApprovedEmail({
         email: normalizedEmail,
         full_name: input.full_name,
-        portal_url: `${artistAppUrl.replace(/\/$/, '')}/available-dates`,
+        portal_url: `${artistAppUrl.replace(/\/$/, '')}/availability`,
       })
-
-      // En ny komiker kan passe et show som står ubesatt akkurat nå.
-      try {
-        await runAutomaticBookingForOpenShows()
-      } catch (bookingError) {
-        console.error('[BookingAutomation] Failed after artist registration:', bookingError)
-      }
     })
 
     return { artistId: artist.id }

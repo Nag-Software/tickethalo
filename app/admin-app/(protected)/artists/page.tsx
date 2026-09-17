@@ -7,6 +7,8 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { RemoveFromClubButton } from '@/components/admin/remove-from-club-button'
 import { artistReadinessBlockers, READINESS_BLOCKER_LABELS } from '@/lib/artist-readiness'
 import { clubArtistRoster } from '@/lib/club-artist-profile'
+import { formatScore } from '@/lib/artist-score'
+import { reviewCounts } from '@/lib/artist-reviews'
 import { formatArtistRoleList } from '@/lib/artist-roles'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge } from '@/components/admin/artist-badges'
@@ -52,7 +54,9 @@ export default async function ArtistsPage({
   // Komikerne og klubbens vurdering av dem — roller, energi og flagg ligger på
   // koblingen, ikke på komikeren — kommer i én runde, søket medregnet. Se
   // `clubArtistRoster`.
-  const roster = await clubArtistRoster(createAdminClient(), clubId, { search: searchQuery })
+  const db = createAdminClient()
+  const roster = await clubArtistRoster(db, clubId, { search: searchQuery })
+  const reviewCountById = await reviewCounts(db, roster.map(({ artist }) => artist.id))
 
   // Blokkeringene leses av flere kolonner, så «ikke klar» avgjøres her og ikke
   // i spørringen. Tellingen bruker samme sett som tabellen viser.
@@ -167,6 +171,7 @@ export default async function ArtistsPage({
                   <th className="px-5 py-3 text-left font-medium">Role</th>
                   <th className="px-5 py-3 text-left font-medium">Status</th>
                   <th className="px-5 py-3 text-left font-medium">Energy</th>
+                  <th className="px-5 py-3 text-left font-medium">Score</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -218,6 +223,16 @@ export default async function ArtistsPage({
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
+                        <RowLink href={href} />
+                      </td>
+                      {/* Scoren avgjør rekkefølgen i køen når motoren sender
+                          tilbud. Den står her så bookeren ser hvorfor den
+                          prioriterer som den gjør — se lib/artist-score.ts. */}
+                      <td className="relative px-5 py-3">
+                        <span className="font-medium">{formatScore(artist.admin_score)}</span>
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {reviewCountById.get(artist.id) ?? 0} reviews
+                        </span>
                         <RowLink href={href} />
                       </td>
                       <td className="relative px-5 py-3 text-right">

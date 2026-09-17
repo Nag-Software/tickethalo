@@ -6,6 +6,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { saveClubArtistReview, type ClubArtistReview } from '@/lib/club-artist-profile'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { runAutomaticBookingForClub } from '@/lib/actions/booking'
+import { runAfterResponse } from '@/lib/background'
 import type { ArtistStatus, ArtistType, EnergyLevel } from '@/types/database'
 
 /**
@@ -68,6 +70,17 @@ export async function saveClubArtistReviewAction(formData: FormData) {
   }
 
   await saveClubArtistReview(db, clubId, artistId, patch)
+
+  // Rolle, energi og flagg avgjør hvilke plasser komikeren matcher. Endres
+  // de, har klubbens show en ny kandidatliste — eller én kandidat mindre,
+  // og da skal motoren trekke tilbudene hens.
+  if (patch.category !== undefined || patch.admin_energy_level !== undefined || patch.is_flagged !== undefined) {
+    runAfterResponse(`club-review-${artistId}`, async () => {
+      await runAutomaticBookingForClub(clubId)
+      revalidatePath(`/admin-app/artists/${artistId}`)
+    })
+  }
+
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
 

@@ -22,7 +22,9 @@ import { saveClubProfileAction } from '@/app/admin-app/(protected)/my-club/actio
 import type { Club, ClubLocation } from '@/types/database'
 
 type ClubProfileFormProps = {
-  club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency'>
+  club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency' | 'lineup_deadline_days'>
+  /** Plattformens standard, som klubben følger når feltet står tomt. */
+  defaultLineupDeadlineDays: number
   locations: Array<Pick<ClubLocation, 'id' | 'name' | 'address_line'>>
   /** Full address of the club page, ready to share. */
   clubUrl: string
@@ -36,7 +38,7 @@ type ClubProfileFormProps = {
  * eller ingenting i seg. Skjemaet lagres med knappen, ikke automatisk: logoen
  * lastes opp og fargen trekkes ut av den først når profilen lagres.
  */
-export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormProps) {
+export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlineDays }: ClubProfileFormProps) {
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
 
@@ -157,6 +159,31 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
 
         <FieldSection id="club-profile-tickets" title="Tickets">
           <CurrencyField value={club.currency} className="@xl:col-span-6" />
+        </FieldSection>
+
+        <FieldSection id="club-profile-booking" title="Booking">
+          <Field className="col-span-12 min-w-0 gap-1.5 @xl:col-span-6">
+            <FieldLabel htmlFor="club-lineup-deadline">Lineup deadline</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="club-lineup-deadline"
+                name="lineup_deadline_days"
+                type="number"
+                min={1}
+                max={120}
+                step={1}
+                defaultValue={club.lineup_deadline_days ?? ''}
+                placeholder={String(defaultLineupDeadlineDays)}
+                className={FIELD_INPUT_CLASS}
+              />
+              <span className="shrink-0 pr-3 text-sm text-muted-foreground">days before the show</span>
+            </div>
+            <FieldDescription className={FIELD_HINT_CLASS}>
+              When the lineup should be settled, so the poster and the marketing have time. As the deadline
+              gets close, booking sends every offer at once instead of waiting for the best comedians to
+              reply. Leave it empty to follow the platform default of {defaultLineupDeadlineDays} days.
+            </FieldDescription>
+          </Field>
         </FieldSection>
 
         <FieldSection id="club-profile-about" title="About">

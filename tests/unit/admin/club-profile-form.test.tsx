@@ -19,12 +19,14 @@ function renderForm() {
         description: 'Stand-up every Thursday.',
         logo_url: 'https://example.com/logo.png',
         currency: 'NOK',
+        lineup_deadline_days: null,
       }}
       locations={[
         { id: 'loc-1', name: 'Latter', address_line: 'Aker Brygge 1' },
         { id: 'loc-2', name: 'Chat Noir', address_line: null },
       ]}
       clubUrl={CLUB_URL}
+      defaultLineupDeadlineDays={14}
     />,
   )
 }
@@ -78,6 +80,9 @@ describe('club profile form', () => {
     expect(values.getAll('locationId')).toEqual(['loc-1', 'loc-2'])
     expect(values.getAll('locationName')).toEqual(['Latter', 'Chat Noir'])
     expect(values.getAll('locationAddress')).toEqual(['Aker Brygge 1', ''])
+    // Tomt felt betyr «følg plattformens standard», ikke null dager. Se
+    // `saveClubProfileAction`.
+    expect(values.get('lineup_deadline_days')).toBe('')
   })
 
   it('does not submit the club page link', () => {

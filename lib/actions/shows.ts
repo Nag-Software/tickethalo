@@ -1,7 +1,6 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { ShowStatus } from '@/types/database'
 
 /**
  * 6.4 Create show (draft)
@@ -45,11 +44,12 @@ export async function createShow(input: {
   return data
 }
 
-/**
- * Update show status
+/*
+ * `updateShowStatus` er fjernet.
+ *
+ * Den satte hvilken som helst status på et show, og var dermed en vei til
+ * `published` utenom `automateFullbookedShow` — altså utenom kravet om full
+ * lineup og ferdig Connect-oppsett. Ingenting i grensesnittet brukte den.
+ * Vakten i migrasjon 053 stopper den veien i databasen, men funksjonen selv
+ * hadde ingen jobb igjen.
  */
-export async function updateShowStatus(showId: string, status: ShowStatus) {
-  const admin = createAdminClient()
-  const { error } = await admin.from('shows').update({ status }).eq('id', showId)
-  if (error) throw new Error(error.message)
-}

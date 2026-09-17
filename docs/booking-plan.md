@@ -12,6 +12,33 @@ Planen er delt i sju faser som kan rulles ut hver for seg. Hver fase sier hva so
 4. **Et show publiseres bare med full lineup.**
 5. **Bookerens valg vinner.** Et tilbud bookeren har sendt selv, holder setet.
 
+## Status
+
+**Alle sju fasene er implementert.** Koden ligger i arbeidskopien, sammen med
+migrasjon 051–058. `docs/booking-pipeline.md` beskriver oppsettet slik det nå
+faktisk er, og `docs/booking-algoritmen.md` det samme uten filnavn.
+
+Tre avvik fra planen under, alle bevisste:
+
+1. **`clubs.lineup_deadline_days` er nullbar** i stedet for `not null default
+   14`. Null betyr «følg plattformens standard», som ligger i
+   `booking_scoring_config` og redigeres i superadmin. Da slår en justering av
+   standarden gjennom for alle klubber som ikke har valgt noe selv.
+2. **Kalenderen i komikerportalen bygger på `react-day-picker` direkte**, ikke
+   på `components/ui/calendar.tsx`. Den komponenten er tegnet for admin-appen
+   (`bg-background`, `Button`), og portalen har sitt eget språk i `--ev-*`.
+   Male-logikken trenger dessuten pointer events på hver dag.
+3. **Kollisjonssjekken trekker komikerens ubesvarte tilbud på kolliderende
+   show fra appkoden**, ikke fra databasefunksjonen. Komikeren skal ha en
+   e-post som sier hvorfor tilbudet forsvant, og motoren må kjøre for de
+   showene etterpå — ingen av delene hører hjemme i en plpgsql-funksjon.
+
+I tillegg er **innstillingene fra punkt 13 i algoritmedokumentet lagt under
+superadmin**, på `/superadmin/booking`, med grenser per felt som håndheves
+både i skjemaet og når motoren leser raden.
+
+**Migrasjonene er ikke kjørt i produksjon.** Se «Før vi starter» under.
+
 ## Allerede gjort
 
 - Migrasjonene fra branchen `new-poster` ligger i repoet, så `main` kan gjenskape produksjonsbasen.
