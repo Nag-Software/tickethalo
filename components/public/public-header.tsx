@@ -52,25 +52,24 @@ export function PublicHeader({ transparent, tone = 'light' }: { transparent?: bo
       data-tone={tone}
       style={{ animationFillMode: 'both' }}
     >
-      {/* Logoen står rett på flaten nå som den er ett ordmerke og ikke et ikon
-          med sidens egen skrift ved siden av. Den oransje pillen som lå under
-          før gjorde to jobber: den holdt de to delene sammen, og den ga merket
-          et underlag når headeren lå over innhold. Den første trengs ikke
-          lenger — og den kostet: ordmerket sto hvitt på #ff5b24, altså 3.0:1
-          på 12px, mot 11:1 for mørkt blekk på cream. Den andre gjør `stuck`
-          nå, med samme underlag som lenkepillen ved siden av; i toppen av
-          siden er det bare `--ev-bg` bak headeren uansett, siden hver side
-          setter av `pt-24`.
+      {/* Logo — oransje, ikke brun: merket er det eneste fargede i headeren,
+          og chippen gir det samtidig et underlag når headeren ligger over
+          innhold lenger nede på siden.
+
+          `tone="dark"` og ikke `tone={tone}`: varianten følger chippen, ikke
+          siden. Fyllet er `--ev-accent-fill`, som er mørkt nok til hvitt blekk
+          — og på klubbsidene bytter den token til klubbens egen farge, så et
+          veldig lyst klubbmerke gir et blekt merke her. Det er samme oppførsel
+          som da ordmerket var `text-white`.
 
           Under 360px vises bare ikonet — se BrandLogoResponsive. */}
       <Link
         href="/"
-        className={cn(
-          'flex h-10 items-center rounded-full px-2.5 transition-[background-color,transform] duration-200 hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] md:h-9',
-          stuck && 'bg-[var(--ev-bg)]/80 ring-1 ring-inset ring-[var(--ev-line)] backdrop-blur-md'
-        )}
+        // Fokusringen er `--ev-text` og ikke aksenten: ringen ville vært
+        // usynlig i samme farge som fyllet den ligger rundt.
+        className="flex h-10 items-center rounded-full bg-[var(--ev-accent-fill)] px-3 transition-transform duration-200 hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-text)] md:h-9"
       >
-        <BrandLogoResponsive tone={tone} priority className="h-6" />
+        <BrandLogoResponsive tone="dark" priority className="h-6" />
       </Link>
 
       {/* The links as one segmented pill */}
