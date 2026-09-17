@@ -121,7 +121,7 @@ export function ClubLocationsField({
           </button>
         </PopoverTrigger>
 
-        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] gap-0 p-0">
+        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] rounded-xl gap-0 p-0">
           {drafts.length > 0 && (
             <ul className="max-h-64 overflow-y-auto p-1.5">
               {drafts.map((draft) => (

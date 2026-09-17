@@ -15,6 +15,7 @@ import {
   Video,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { BrandLogo } from "@/components/brand/brand-logo"
 import { MAX_UPLOAD_BYTES, compressImageFile } from "@/lib/image-compress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -181,7 +182,14 @@ export function ArtistSignupForm({
       <div className="grid lg:grid-cols-[280px_1fr]">
         <aside className="border-b border-[var(--ev-line)] p-6 lg:border-b-0 lg:border-r">
           <div className="lg:sticky lg:top-6">
-            <Link href="/" className="text-[13px] text-[var(--ev-faint)] transition-colors hover:text-[var(--ev-text)]">Tickethalo</Link>
+            {/* Sto som ordet «Tickethalo» i `--ev-faint`. Logoen har sin egen
+                farge, så dempingen gjøres med opacity i stedet. */}
+            <Link
+              href="/"
+              className="inline-flex opacity-70 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
+            >
+              <BrandLogo className="h-5" />
+            </Link>
             <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">Application</h2>
             <p className="mt-2 text-[14px] leading-relaxed text-[var(--ev-muted)]">
               Your application is sent to the booking team for review.

@@ -177,8 +177,8 @@ export function ClubProfileForm({ club, locations, clubUrl }: ClubProfileFormPro
         </FieldSection>
       </FieldFrame>
 
-      <div className="flex justify-end">
-        <Button type="submit" size="lg" className="px-6">
+      <div className="flex justify-end mt-2">
+        <Button type="submit" size="lg" className="px-6 text-lg">
           Save
         </Button>
       </div>

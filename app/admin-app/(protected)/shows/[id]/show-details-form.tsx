@@ -401,7 +401,7 @@ function DateField({
         </button>
       </PopoverTrigger>
       {/* Kalenderen flytter fokus til valgt dag selv; Radix skal ikke ta det først. */}
-      <PopoverContent align="start" className="w-auto p-0" onOpenAutoFocus={(event) => event.preventDefault()}>
+      <PopoverContent align="start" className="w-auto rounded-xl p-0" onOpenAutoFocus={(event) => event.preventDefault()}>
         <Calendar
           mode="single"
           required

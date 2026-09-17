@@ -114,7 +114,7 @@ export function ShowBookingCard({
         <>
         <header className="flex items-start gap-4 p-4 bg-card">
           <Wrapper href={showDetailHref} className="shrink-0 text-center">
-            <span className="flex size-14 flex-col items-center justify-center rounded-xl bg-[var(--ev-accent-fill)] leading-none text-white">
+            <span className="flex size-14 flex-col items-center justify-center rounded-xl bg-[var(--ev-accent-fill)]/8 outline outline-1 outline-[var(--ev-accent-fill)] text-[var(--ev-accent-fill)] leading-none">
               <span className="text-2xl font-black tabular-nums">{day}</span>
               <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.16em]">{month}</span>
             </span>
@@ -134,7 +134,7 @@ export function ShowBookingCard({
             </p>
           </div>
 
-          <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium', SHOW_STATUS_CHIP[show.status])}>
+          <span className={cn('shrink-0 rounded-lg px-3 py-1 text-sm font-medium', SHOW_STATUS_CHIP[show.status])}>
             {SHOW_STATUS_LABELS[show.status]}
           </span>
         </header>

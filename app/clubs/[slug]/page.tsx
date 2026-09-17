@@ -88,12 +88,14 @@ export default async function ClubPage({ params }: Props) {
         style={{ background: 'linear-gradient(180deg, var(--club-wash), transparent 85%)' }}
       >
         <div className="mx-auto max-w-5xl">
+          {/* Trenger ikke å være her, skal være klubbsiden.
           <Link
             href="/events"
             className="-ml-2 mb-7 inline-flex h-11 w-fit items-center gap-2 rounded-full px-2 text-[15px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:ml-0 sm:h-auto sm:px-0 sm:text-[13px] sm:font-normal"
           >
             <ArrowLeft className="size-4" aria-hidden /> All shows
           </Link>
+          */}
 
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-7">
             <ClubMark name={club.name} logoUrl={club.logo_url} />

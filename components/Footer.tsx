@@ -1,5 +1,7 @@
 import Link from 'next/link'
 
+import { BrandLogo } from '@/components/brand/brand-logo'
+
 /**
  * The fallback values keep the footer intact on pages that are not yet
  * inside an `.ev-surface` scope (e.g. /artists).
@@ -14,7 +16,12 @@ export function Footer() {
       }}
     >
       <div className="flex flex-wrap items-center justify-center gap-2 px-4 sm:mb-2">
-        <span style={{ color: 'var(--ev-text, #000)' }}>Tickethalo</span>™
+        {/* Merket som bilde. Footeren står på en lys flate på alle sider som
+            bruker den, så light-varianten holder — se brand-logo.tsx. */}
+        <span className="inline-flex items-center gap-0.5">
+          <BrandLogo className="h-6" />
+          <span aria-hidden>™</span>
+        </span>
         <span aria-hidden style={{ color: 'var(--ev-faint, #d4d4d8)' }}>|</span>
         <span>The world&rsquo;s funniest nights</span>
       </div>

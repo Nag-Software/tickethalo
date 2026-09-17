@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { LogOut } from 'lucide-react'
+import { BrandLogo } from '@/components/brand/brand-logo'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -35,7 +36,9 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
           href="/artist-app"
           className="flex h-9 shrink-0 items-center gap-2 rounded-full bg-[var(--ev-text)] pl-3 pr-3.5 text-[var(--ev-bg)] transition-transform duration-200 hover:scale-[1.02]"
         >
-          <span className="text-[12.5px] font-semibold tracking-[-0.01em]">Tickethalo</span>
+          {/* Pillen er `--ev-text`, altså mørk, så merket hentes fra dark-settet
+              — det hvite blekket. Se components/brand/brand-logo.tsx. */}
+          <BrandLogo tone="dark" className="h-6" alt="Tickethalo" />
           <span className="text-[11px] text-[var(--ev-bg)]/60">Portal</span>
         </Link>
 

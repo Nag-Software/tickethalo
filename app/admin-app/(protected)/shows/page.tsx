@@ -158,7 +158,7 @@ export default async function ShowsPage({
         actions={
           <Link
             href="/admin-app/shows/new"
-            className="px-3 py-1.5 rounded-lg bg-[var(--ev-accent-fill)] text-primary-foreground text-md font-semibold hover:bg-primary/90 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-[var(--ev-accent-fill)] shadow-md text-primary-foreground text-md font-semibold hover:bg-primary/90 transition-colors"
           >
             + New show
           </Link>

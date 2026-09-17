@@ -88,7 +88,7 @@ export function CurrencyField({
           </button>
         </PopoverTrigger>
 
-        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] gap-0 p-0">
+        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] rounded-xl gap-0 p-0">
           <div className="flex items-center gap-2 border-b px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             <input

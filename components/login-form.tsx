@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { BrandLogo } from "@/components/brand/brand-logo"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -47,6 +48,7 @@ export function LoginForm({
   action?: string
   errorMessage?: string
   successMessage?: string
+  /** Merket over kortet. Teksten selv vises ikke — den blir alt-tekst på logoen. */
   brandLabel?: string
   brandHref?: string
   showSignupLink?: boolean
@@ -80,16 +82,16 @@ export function LoginForm({
         !isPoster && !isPortal && 'rounded-lg',
       )}>
         <CardHeader className={cn('space-y-0', isPoster && 'border-b-2 border-zinc-950 px-6 py-5')}>
+          {/* Merket er et bilde nå, ikke ordet i en farget chip. Chipen fantes
+              for å gi teksten en flate å stå på; logoen har sin egen form.
+              Alle tre kortvariantene er lyse, så light-settet gjelder uansett
+              tema. `brandLabel` lever videre som alt-teksten på lenken. */}
           {brandLabel && (
-            <Link href={brandHref} className={cn(
-              'mb-3 mx-auto inline-flex text-sm font-bold',
-              isPoster
-                ? 'border border-zinc-950 px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-zinc-950'
-                : isPortal
-                  ? 'rounded-full bg-[var(--ev-bg)] px-3 py-1 text-[12px] font-semibold text-[var(--ev-muted)]'
-                  : 'rounded-full bg-amber-100 px-2.5 py-1 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
-            )}>
-              {brandLabel}
+            <Link
+              href={brandHref}
+              className="mb-3 mx-auto inline-flex focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
+            >
+              <BrandLogo className="h-6" alt={brandLabel} />
             </Link>
           )}
           <CardTitle className={cn(

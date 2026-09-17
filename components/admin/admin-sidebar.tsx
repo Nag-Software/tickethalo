@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { BrandMark } from '@/components/brand/brand-logo'
 import { ClubSwitcher } from '@/components/admin/club-switcher'
 import {
   Building2,
@@ -62,7 +63,10 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
                     {user.clubLogoUrl ? (
                       <Image src={user.clubLogoUrl} alt="" width={32} height={32} className="h-full w-full object-cover" />
                     ) : (
-                      <Image src="/icon.svg" alt="" width={32} height={32} className="rounded-full p-0" />
+                      // Flisen er `bg-primary`, altså svart i klubbportalen,
+                      // så merket hentes fra dark-settet. Den gamle icon.svg
+                      // sto med mørkebrunt blekk rett på svart.
+                      <BrandMark tone="dark" className="size-8 p-1" />
                     )}
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">
