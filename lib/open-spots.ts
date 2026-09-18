@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import type { ArtistStatus, SubmissionStatus, SubmissionsAudience } from '@/types/database'
+import { showVenue } from '@/lib/show-venue'
 
 /**
  * Plassene én komiker kan søke på.
@@ -202,7 +203,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
       title: show.title,
       date: show.date,
       startTime: show.start_time,
-      venue: show.venue_name ?? show.venue_address,
+      venue: showVenue(show).venue,
       clubName: show.club_id ? clubName.get(show.club_id) ?? null : null,
       audience,
       closeAt: show.submissions_close_at,

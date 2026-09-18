@@ -109,7 +109,7 @@ export function hasScheduleConflict({
 /** Komikeren slik rangeringen ser hen. */
 export type RankedCandidate = {
   id: string
-  /** `artists.admin_score`, 0–10. Snittet av vurderingene etter fase 6. */
+  /** `club_artists.score`, 0–10. Snittet av klubbens egne vurderinger. */
   score: number
   /** Bekreftede plasser i *denne* klubben innenfor rotasjonsvinduet. */
   clubBookingsInWindow: number

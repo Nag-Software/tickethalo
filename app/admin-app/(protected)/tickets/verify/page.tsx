@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getClubAccess } from '@/lib/club-auth'
 import { extractTicketCode, formatTicketCode, ticketCodeCandidates } from '@/lib/tickets'
 import { checkInFromVerifyAction } from './actions'
+import { venueSuffix } from '@/lib/show-venue'
 
 /**
  * Siden QR-koden på billetten peker på.
@@ -37,7 +38,7 @@ export default async function VerifyTicketPage({
 
   const access = await getClubAccess()
   const { data: show } = ticket
-    ? await db.from('shows').select('id, title, date, venue_name, club_id').eq('id', ticket.show_id).single()
+    ? await db.from('shows').select('id, title, date, venue_name, venue_address, club_id').eq('id', ticket.show_id).single()
     : { data: null }
 
   // Klubbadmin ser bare sine egne show. En superadmin ser alle.
@@ -73,7 +74,7 @@ export default async function VerifyTicketPage({
                   <p className="mt-1 truncate text-sm text-muted-foreground">
                     {show?.title}
                     {show?.date ? ` · ${new Date(show.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
-                    {show?.venue_name ? ` · ${show.venue_name}` : ''}
+                    {venueSuffix(show)}
                   </p>
                 </div>
                 <StatusPill status={ticket.status} />

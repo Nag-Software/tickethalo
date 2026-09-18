@@ -18,6 +18,7 @@ import { cn, shouldBypassImageOptimization } from '@/lib/utils'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 import { NaturalPosterImage } from '@/components/public/natural-poster-image'
+import { showVenue } from '@/lib/show-venue'
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -29,7 +30,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const show = await getPublishedShowBySlug(slug)
   if (!show) return { title: 'Event not found — Tickethalo' }
-  const description = show.description ?? `${show.title} at ${show.venue_name ?? show.venue_address ?? 'Tickethalo'} on ${formatShowDate(show.date)}.`
+  const description = show.description ?? `${show.title} at ${showVenue(show).venue ?? 'Tickethalo'} on ${formatShowDate(show.date)}.`
   const canonical = `/events/${show.slug}`
 
   return {
@@ -58,7 +59,8 @@ export default async function EventDetailPage({ params }: Props) {
   const remaining = remainingTickets(show)
   const soldOut = remaining === 0
   const fillPercent = ticketFillPercent(show)
-  const showLocation = show.venue_name ?? show.venue_address
+  // Navn og adresse: kjøperen skal finne fram, ikke bare vite hva stedet heter.
+  const showLocation = showVenue(show).line
   // Worked out on the server when the page was fetched — see `withTicketCounts`.
   const salesOpen = show.salesState.kind === 'open'
 

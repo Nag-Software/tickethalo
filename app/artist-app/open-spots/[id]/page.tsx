@@ -4,6 +4,7 @@ import { getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 import { updateSubmissionMessageAction, withdrawSubmissionAction } from '../actions'
+import { showVenue } from '@/lib/show-venue'
 
 export const metadata = { title: 'Your application — Tickethalo' }
 export const dynamic = 'force-dynamic'
@@ -107,7 +108,8 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
           <DataRow label="Club" value={club?.name ?? '—'} />
           <DataRow label="Date" value={show?.date ? formatDate(show.date) : '—'} />
           <DataRow label="Time" value={show?.start_time ? show.start_time.slice(0, 5) : '—'} />
-          <DataRow label="Venue" value={show?.venue_name ?? show?.venue_address ?? '—'} />
+          <DataRow label="Venue" value={showVenue(show).venue ?? '—'} />
+          {showVenue(show).address && <DataRow label="Address" value={showVenue(show).address ?? ''} />}
           <DataRow label="The fee if you get it" value={feeLabel} />
           <DataRow
             label="Others applying"

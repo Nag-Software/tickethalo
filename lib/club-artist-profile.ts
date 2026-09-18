@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { NEUTRAL_SCORE } from '@/lib/artist-score'
 import type { Artist, ArtistType, ClubArtist, EnergyLevel } from '@/types/database'
 
 type Db = ReturnType<typeof createAdminClient>
@@ -6,19 +7,19 @@ type Db = ReturnType<typeof createAdminClient>
 /**
  * Klubbens vurdering av en komiker.
  *
- * Roller, energi, notater og flagg er klubbens mening og ligger på
- * `club_artists` (migrasjon 043). De samme kolonnene står fortsatt på
+ * Roller, energi, notater, flagg og score er klubbens mening og ligger på
+ * `club_artists` (migrasjon 043 og 061). De samme kolonnene står fortsatt på
  * `artists`, men de er komikerens egen beskrivelse — leser man dem for å
  * avgjøre hva klubben mener, er man tilbake til én delt sannhet for alle.
  *
  * Derfor går alle klubbflater gjennom denne modulen.
  */
 
-const REVIEW_FIELDS = 'artist_id, category, admin_energy_level, admin_notes, is_flagged, flag_reason, flagged_at'
+const REVIEW_FIELDS = 'artist_id, category, admin_energy_level, admin_notes, is_flagged, flag_reason, flagged_at, score'
 
 export type ClubArtistReview = Pick<
   ClubArtist,
-  'category' | 'admin_energy_level' | 'admin_notes' | 'is_flagged' | 'flag_reason' | 'flagged_at'
+  'category' | 'admin_energy_level' | 'admin_notes' | 'is_flagged' | 'flag_reason' | 'flagged_at' | 'score'
 >
 
 /** Det en komiker har før klubben har vurdert hen. */
@@ -29,6 +30,7 @@ export const EMPTY_REVIEW: ClubArtistReview = {
   is_flagged: false,
   flag_reason: null,
   flagged_at: null,
+  score: NEUTRAL_SCORE,
 }
 
 /** Klubbens vurdering av én komiker. Null = ikke knyttet til klubben. */
@@ -103,11 +105,11 @@ export async function clubArtistReviewsByClub(
   return byClub
 }
 
-const ROSTER_ARTIST_FIELDS = 'id, full_name, stage_name, email, profile_image_url, status, admin_score, created_at'
+const ROSTER_ARTIST_FIELDS = 'id, full_name, stage_name, email, profile_image_url, status, created_at'
 
 export type ClubRosterArtist = Pick<
   Artist,
-  'id' | 'full_name' | 'stage_name' | 'email' | 'profile_image_url' | 'status' | 'admin_score' | 'created_at'
+  'id' | 'full_name' | 'stage_name' | 'email' | 'profile_image_url' | 'status' | 'created_at'
 >
 
 export type ClubRosterEntry = { artist: ClubRosterArtist; review: ClubArtistReview }
@@ -157,12 +159,17 @@ export async function clubArtistRoster(
   return rows.map((row) => ({ artist: row.artists, review: toReview(row) }))
 }
 
-/** Skriver klubbens vurdering. Bare feltene som faktisk sendes inn. */
+/**
+ * Skriver klubbens vurdering. Bare feltene som faktisk sendes inn.
+ *
+ * Scoren er ikke med: den er avledet av vurderingene etter showene og settes
+ * bare av `recalculateClubArtistScore`.
+ */
 export async function saveClubArtistReview(
   db: Db,
   clubId: string,
   artistId: string,
-  patch: Partial<ClubArtistReview>,
+  patch: Partial<Omit<ClubArtistReview, 'score'>>,
 ) {
   if (Object.keys(patch).length === 0) return
 
@@ -190,6 +197,8 @@ function toReview(row: Record<string, unknown>): ClubArtistReview {
     is_flagged: Boolean(row.is_flagged),
     flag_reason: (row.flag_reason as string | null) ?? null,
     flagged_at: (row.flagged_at as string | null) ?? null,
+    // numeric kommer som tekst fra PostgREST.
+    score: row.score != null ? Number(row.score) : NEUTRAL_SCORE,
   }
 }
 
@@ -197,17 +206,18 @@ function toReview(row: Record<string, unknown>): ClubArtistReview {
  * Legger klubbens vurdering over komikerradene motoren matcher på.
  *
  * Rollene og energien som avgjør om noen passer et show-krav skal være
- * klubbens, ikke komikerens egen beskrivelse. Komikere klubben har flagget
+ * klubbens, ikke komikerens egen beskrivelse — og scoren som avgjør
+ * rekkefølgen i køen, skal være den klubben selv har gitt. Komikere klubben har flagget
  * faller ut her — flagget gjelder bare denne klubben, så det kan ikke
  * filtreres i spørringen mot `artists`.
  */
 export function withClubReview<T extends { id: string }>(
   artists: T[],
   reviews: Map<string, ClubArtistReview>,
-): Array<T & { category: ArtistType[] | null; admin_energy_level: EnergyLevel | null }> {
+): Array<T & { category: ArtistType[] | null; admin_energy_level: EnergyLevel | null; score: number }> {
   return artists.flatMap((artist) => {
     const review = reviews.get(artist.id)
     if (!review || review.is_flagged) return []
-    return [{ ...artist, category: review.category, admin_energy_level: review.admin_energy_level }]
+    return [{ ...artist, category: review.category, admin_energy_level: review.admin_energy_level, score: review.score }]
   })
 }

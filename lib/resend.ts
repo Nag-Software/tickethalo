@@ -5,6 +5,12 @@ export const resend = new Resend(process.env.RESEND_API_KEY || 're_missing')
 export const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com'
 
 /**
+ * Hvor et svar havner. Avsenderen er `noreply@`, men malene sier «reply to this
+ * email» — uten denne gikk svaret til en adresse ingen leser.
+ */
+export const REPLY_TO_EMAIL = process.env.RESEND_REPLY_TO_EMAIL ?? 'hei@tickethalo.com'
+
+/**
  * Avsendernavn med klubbens navn foran vår adresse.
  *
  * Klubben er selger av billetten — da skal den også stå som avsender av den.

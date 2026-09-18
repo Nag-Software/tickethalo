@@ -117,8 +117,8 @@ export async function loadBookingAttention(
 
   const allRosterIds = [...new Set([...rosterByClub.values()].flatMap((reviews) => [...reviews.keys()]))]
   const { data: artistRows } = allRosterIds.length > 0
-    ? await db.from('artists').select('id, admin_score, gender').eq('status', 'approved').in('id', allRosterIds)
-    : { data: [] as Array<{ id: string; admin_score: number | null; gender: ArtistGender | null }> }
+    ? await db.from('artists').select('id, gender').eq('status', 'approved').in('id', allRosterIds)
+    : { data: [] as Array<{ id: string; gender: ArtistGender | null }> }
 
   // ── Kveldene: hvem er opptatt, og hvem står på en annen scene ────────────
   const [{ data: unavailableRows }, { data: sameDateShows }] = await Promise.all([

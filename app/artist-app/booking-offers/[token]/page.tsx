@@ -5,6 +5,7 @@ import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, Panel, portalButton } from '@/components/artist/portal-ui'
 import { OfferButtons } from '@/components/artist/offer-buttons'
+import { showVenue } from '@/lib/show-venue'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
   sent: 'Awaiting response',
@@ -35,7 +36,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   ])
 
   const isOpen = offer.status === 'sent'
-  const venue = [show?.venue_name, show?.venue_address].filter(Boolean).join(', ')
+  const venue = showVenue(show).line
 
   /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
      som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet. */

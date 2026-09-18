@@ -6,6 +6,7 @@ import { ShowDetailsForm } from './show-details-form'
 import { appPath } from '@/lib/app-url'
 import type { LineupArtist } from '@/components/admin/interactive-lineup'
 import type { BookingSpot } from '@/lib/booking-spots'
+import type { VenueLocation } from '@/lib/show-venue'
 import { ticketSalesNote, toTicketSalesStateDto } from '@/lib/show-sales-shared'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import type { ShowStatus } from '@/types/database'
@@ -17,7 +18,9 @@ type OverviewShow = {
   date: string
   start_time: string | null
   end_time: string | null
+  venue_name: string | null
   venue_address: string | null
+  club_location_id: string | null
   description: string | null
   capacity: number | null
   ticket_price: number | null
@@ -39,16 +42,19 @@ export function OverviewTab({
   ticketsSold,
   hasRequirements,
   allSlotsFilled,
+  locations,
   updateShowDetailsAction,
 }: {
   show: OverviewShow
+  /** Klubbens lagrede lokasjoner, til Venue-feltet. */
+  locations: VenueLocation[]
   spots: BookingSpot[]
   /** Artists the booking card can offer or add to an open spot. */
   bookingCandidates: LineupArtist[]
   ticketsSold: number
   hasRequirements: boolean
   allSlotsFilled: boolean
-  updateShowDetailsAction: (formData: FormData) => Promise<{ error?: string } | void>
+  updateShowDetailsAction: React.ComponentProps<typeof ShowDetailsForm>['action']
 }) {
   // Solgt-tallet alene sier ikke om salget står stille fordi det ikke har
   // åpnet ennå, eller fordi bookeren har stengt det.
@@ -80,13 +86,17 @@ export function OverviewTab({
           // samme som i e-postene — og lik i server- og klientrenderingen.
           eventsBaseUrl={appPath('/events/')}
           action={updateShowDetailsAction}
+          locations={locations}
           initialValues={{
             title: show.title,
             slug: show.slug,
             date: show.date,
             start_time: (show.start_time ?? '').slice(0, 5),
             end_time: (show.end_time ?? '').slice(0, 5),
+            venue_name: show.venue_name ?? '',
             venue_address: show.venue_address ?? '',
+            club_location_id: show.club_location_id ?? '',
+            save_location: '',
             capacity: show.capacity == null ? '' : String(show.capacity),
             ticket_price: show.ticket_price == null ? '' : String(show.ticket_price / 100),
             description: show.description ?? '',

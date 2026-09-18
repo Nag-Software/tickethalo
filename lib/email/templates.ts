@@ -51,6 +51,24 @@ function money(amount: number, currency: string) {
   }).format(amount / 100)
 }
 
+/**
+ * «Saturday 17 October 2026» — datoen slik den leses, ikke slik den lagres.
+ *
+ * Malene fikk `shows.date` rått, og komikeren leste «2026-10-17». Alt som ikke
+ * ser ut som en ISO-dato slippes uendret gjennom, så en ferdig formatert tekst
+ * ikke blir ødelagt. Datoen bygges i UTC midt på dagen: en showdato har ingen
+ * tidssone, og skal ikke kunne tippe over til dagen før.
+ */
+export function showDateLabel(value: string | null | undefined, locale: 'en-GB' | 'nb-NO' = 'en-GB'): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '')
+  if (!match) return value ?? ''
+  const at = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12))
+  if (Number.isNaN(at.getTime())) return value ?? ''
+  return new Intl.DateTimeFormat(locale, {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+  }).format(at)
+}
+
 function button(href: string, label: string, tone: 'primary' | 'ghost' = 'primary') {
   const style = tone === 'primary'
     ? `background:${INK};color:${BG};border:1px solid ${INK}`
@@ -164,7 +182,7 @@ function offerBody(opts: OfferTemplateInput, intro: string) {
   return (
     paragraph(`Hi ${escapeHtml(opts.full_name)}, ${intro}`) +
     details([
-      ['Date', opts.show_date],
+      ['Date', showDateLabel(opts.show_date)],
       ['Time', opts.show_time],
       ['Venue', opts.venue],
       ['Role', opts.role_name],
@@ -181,7 +199,7 @@ function offerBody(opts: OfferTemplateInput, intro: string) {
 }
 
 function offerText(opts: OfferTemplateInput, intro: string) {
-  return `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${opts.show_date}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\n${deadlineLabel(opts.expires_at) ? `Reply by ${deadlineLabel(opts.expires_at)}. ` : ''}First to accept gets the spot.`
+  return `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\n${deadlineLabel(opts.expires_at) ? `Reply by ${deadlineLabel(opts.expires_at)}. ` : ''}First to accept gets the spot.`
 }
 
 export function bookingOfferTemplate(opts: OfferTemplateInput): EmailTemplate {
@@ -220,18 +238,24 @@ export function bookingConfirmedTemplate(opts: {
   venue?: string | null
   fee_label?: string | null
   portal_url?: string | null
+  /**
+   * Klubben satte komikeren rett inn i lineupen. Da har hen ikke svart på noe,
+   * og «the club has been told» ville vært en rar ting å lese.
+   */
+  added_by_club?: boolean
 }): EmailTemplate {
   const portal = opts.portal_url || PORTAL_BOOKINGS
+  const how = opts.added_by_club ? 'The club has put you on the lineup.' : 'The club has been told.'
   return {
     subject: `Booking confirmed: ${opts.show_title}`,
-    text: `Hi ${opts.full_name}\n\nYou are booked for ${opts.show_title}.\n\nDate: ${opts.show_date}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the portal'}\n\nYour bookings: ${portal}`,
+    text: `Hi ${opts.full_name}\n\nYou are booked for ${opts.show_title}. ${how}\n\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the portal'}\n\nYour bookings: ${portal}`,
     html: shell({
       eyebrow: 'Booking confirmed',
       heading: 'You are on the lineup',
       body:
-        paragraph(`Hi ${escapeHtml(opts.full_name)}, you are booked for <strong>${escapeHtml(opts.show_title)}</strong>. The club has been told.`) +
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, you are booked for <strong>${escapeHtml(opts.show_title)}</strong>. ${how}`) +
         details([
-          ['Date', opts.show_date],
+          ['Date', showDateLabel(opts.show_date)],
           ['Time', opts.show_time],
           ['Venue', opts.venue],
           ['Fee', opts.fee_label],
@@ -255,12 +279,12 @@ export function offerDeclinedTemplate(opts: {
   const portal = opts.portal_url || PORTAL_DATES
   return {
     subject: `Reply registered: ${opts.show_title}`,
-    text: `Hi ${opts.full_name}\n\nWe have registered that ${opts.show_title} on ${opts.show_date} does not work for you. The spot goes to someone else, and you will keep getting offers.`,
+    text: `Hi ${opts.full_name}\n\nWe have registered that ${opts.show_title} on ${showDateLabel(opts.show_date)} does not work for you. The spot goes to someone else, and you will keep getting offers.`,
     html: shell({
       eyebrow: 'Reply registered',
       heading: 'Thanks for the reply',
       body:
-        paragraph(`Hi ${escapeHtml(opts.full_name)}, we have registered that <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(opts.show_date)} does not work for you.`) +
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, we have registered that <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(showDateLabel(opts.show_date))} does not work for you.`) +
         paragraph('The spot goes to another comedian. Saying no changes nothing for you — the offers keep coming.', true) +
         button(portal, 'Mark the dates you cannot do', 'ghost'),
     }),
@@ -298,14 +322,14 @@ export function offerReminderTemplate(opts: OfferTemplateInput): EmailTemplate {
 
   return {
     subject: `Reminder: ${opts.show_title}`,
-    text: `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${opts.show_date}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\nA no is just as useful to us as a yes — then the spot goes on.`,
+    text: `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\nA no is just as useful to us as a yes — then the spot goes on.`,
     html: shell({
       eyebrow: 'Reminder',
       heading: opts.show_title,
       body:
         paragraph(`Hi ${escapeHtml(opts.full_name)}, ${escapeHtml(intro)}`) +
         details([
-          ['Date', opts.show_date],
+          ['Date', showDateLabel(opts.show_date)],
           ['Time', opts.show_time],
           ['Venue', opts.venue],
           ['Role', opts.role_name],
@@ -335,13 +359,89 @@ export function offerWithdrawnConflictTemplate(opts: {
 
   return {
     subject: `Offer withdrawn: ${opts.show_title}`,
-    text: `Hi ${opts.full_name}\n\nWe have withdrawn your offer for ${opts.show_title} on ${opts.show_date}, because ${because}. Nobody can be in two places at once.\n\nThe spot goes to another comedian, and you keep getting offers as usual.`,
+    text: `Hi ${opts.full_name}\n\nWe have withdrawn your offer for ${opts.show_title} on ${showDateLabel(opts.show_date)}, because ${because}. Nobody can be in two places at once.\n\nThe spot goes to another comedian, and you keep getting offers as usual.`,
     html: shell({
       eyebrow: 'Offer withdrawn',
       heading: 'You are booked that evening',
       body:
-        paragraph(`Hi ${escapeHtml(opts.full_name)}, we have withdrawn your offer for <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(opts.show_date)}, because ${escapeHtml(because)}.`) +
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, we have withdrawn your offer for <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(showDateLabel(opts.show_date))}, because ${escapeHtml(because)}.`) +
         paragraph('Nothing is held against you — this is the system making sure you are never double-booked. Offers keep coming as usual.', true),
+    }),
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Når klubben endrer noe komikeren regner med
+//
+// Ingen av de tre fantes: et show kunne slettes, en komiker tas ut av lineupen
+// og et tilbud trekkes uten at den det gjaldt fikk et ord. Komikeren satt
+// igjen med en bekreftelse i innboksen og en kveld holdt av til ingenting.
+// ─────────────────────────────────────────────────────────────
+
+type ClubNoticeInput = {
+  full_name: string
+  show_title: string
+  show_date: string
+  club_name?: string | null
+}
+
+const clubLabel = (name: string | null | undefined) => name?.trim() || 'The club'
+
+/** Showet er avlyst. `booked` skiller lineupen fra dem som bare hadde et tilbud. */
+export function showCancelledTemplate(opts: ClubNoticeInput & { booked: boolean }): EmailTemplate {
+  const club = clubLabel(opts.club_name)
+  const date = showDateLabel(opts.show_date)
+  const consequence = opts.booked
+    ? 'Your spot on the lineup is cancelled with it, and the evening is free again.'
+    : 'The offer we sent you no longer applies, and you do not need to reply.'
+
+  return {
+    subject: `Show cancelled: ${opts.show_title}`,
+    text: `Hi ${opts.full_name}\n\n${club} has cancelled ${opts.show_title} on ${date}. ${consequence}\n\nNothing is held against you, and offers keep coming as usual.`,
+    html: shell({
+      eyebrow: 'Show cancelled',
+      heading: opts.booked ? 'This show is cancelled' : 'This offer no longer applies',
+      body:
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, ${escapeHtml(club)} has cancelled <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(date)}. ${escapeHtml(consequence)}`) +
+        paragraph('Nothing is held against you, and offers keep coming as usual.', true) +
+        button(PORTAL_BOOKINGS, 'See your bookings', 'ghost'),
+    }),
+  }
+}
+
+/** Klubben tok komikeren ut av lineupen. Showet går som planlagt. */
+export function removedFromLineupTemplate(opts: ClubNoticeInput): EmailTemplate {
+  const club = clubLabel(opts.club_name)
+  const date = showDateLabel(opts.show_date)
+
+  return {
+    subject: `Lineup change: ${opts.show_title}`,
+    text: `Hi ${opts.full_name}\n\n${club} has changed the lineup for ${opts.show_title} on ${date}, and your spot has been removed. The evening is free again.\n\nThis was the club's decision and does not affect your profile. If it comes as a surprise, reply to this email and we will look into it.`,
+    html: shell({
+      eyebrow: 'Lineup change',
+      heading: 'You are no longer on this lineup',
+      body:
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, ${escapeHtml(club)} has changed the lineup for <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(date)}, and your spot has been removed. The evening is free again.`) +
+        paragraph('This was the club&#39;s decision and does not affect your profile. If it comes as a surprise, reply to this email and we will look into it.', true) +
+        button(PORTAL_BOOKINGS, 'See your bookings', 'ghost'),
+    }),
+  }
+}
+
+/** Klubben trakk et tilbud som ikke var besvart. Lenken i den første e-posten virker ikke lenger. */
+export function offerWithdrawnByClubTemplate(opts: ClubNoticeInput): EmailTemplate {
+  const club = clubLabel(opts.club_name)
+  const date = showDateLabel(opts.show_date)
+
+  return {
+    subject: `Offer withdrawn: ${opts.show_title}`,
+    text: `Hi ${opts.full_name}\n\n${club} has withdrawn the offer for ${opts.show_title} on ${date}. You do not need to reply, and the link in the earlier email no longer works.\n\nNothing is held against you, and offers keep coming as usual.`,
+    html: shell({
+      eyebrow: 'Offer withdrawn',
+      heading: 'This offer is no longer open',
+      body:
+        paragraph(`Hi ${escapeHtml(opts.full_name)}, ${escapeHtml(club)} has withdrawn the offer for <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(date)}. You do not need to reply, and the link in the earlier email no longer works.`) +
+        paragraph('Nothing is held against you, and offers keep coming as usual.', true),
     }),
   }
 }
@@ -376,7 +476,7 @@ export function artistFeeTemplate(opts: {
     text: [
       `Hi ${opts.full_name}`,
       '',
-      `${opts.show_title} on ${opts.show_date} is settled, and your fee is ${amount}.`,
+      `${opts.show_title} on ${showDateLabel(opts.show_date)} is settled, and your fee is ${amount}.`,
       '',
       'Everything you need to invoice us — the amount, the reference and who to send it to — is here:',
       opts.invoice_url,

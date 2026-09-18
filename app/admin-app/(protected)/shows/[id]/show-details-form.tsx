@@ -25,6 +25,8 @@ import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
+import { VenuePicker } from '@/components/admin/venue-picker'
+import type { VenueLocation } from '@/lib/show-venue'
 import { cn } from '@/lib/utils'
 
 /**
@@ -40,11 +42,19 @@ export type ShowDetailsValues = {
   date: string
   start_time: string
   end_time: string
+  venue_name: string
   venue_address: string
+  /** Tom streng = ikke lenket til en lokasjon under My club. */
+  club_location_id: string
+  /** 'true' mens bookeren har krysset av for å lagre stedet under My club. */
+  save_location: string
   capacity: string
   ticket_price: string
   description: string
 }
+
+/** Det serveren faktisk lagret som sted — se `resolveShowVenue`. */
+type SavedVenue = { venue_name: string | null; venue_address: string | null; club_location_id: string | null }
 
 const FIELD_KEYS = [
   'title',
@@ -52,7 +62,10 @@ const FIELD_KEYS = [
   'date',
   'start_time',
   'end_time',
+  'venue_name',
   'venue_address',
+  'club_location_id',
+  'save_location',
   'capacity',
   'ticket_price',
   'description',
@@ -103,14 +116,17 @@ export function ShowDetailsForm({
   currency,
   eventsBaseUrl,
   initialValues,
+  locations,
   action,
 }: {
   showId: string
+  /** Lokasjonene klubben har ført under My club — det Venue-feltet søker i. */
+  locations: VenueLocation[]
   currency: string
   /** Adressen eventsidene ligger under, med skråstrek til slutt: `https://tickethalo.com/events/`. */
   eventsBaseUrl: string
   initialValues: ShowDetailsValues
-  action: (formData: FormData) => Promise<{ error?: string } | void>
+  action: (formData: FormData) => Promise<{ error?: string; venue?: SavedVenue } | void>
 }) {
   const router = useRouter()
   const [values, setValues] = useState(initialValues)
@@ -146,7 +162,22 @@ export function ShowDetailsForm({
             return
           }
 
-          savedRef.current = next
+          // Serveren har siste ord om stedet: et navn skrevet for hånd kan ha
+          // blitt lenket til en lagret lokasjon, et nytt sted kan ha fått en id,
+          // og en lenke kan ha falt bort. Feltene følger det som ble lagret —
+          // men bare hvis bookeren ikke har skrevet videre i mellomtiden.
+          const saved: ShowDetailsValues = returned?.venue
+            ? {
+                ...next,
+                venue_name: returned.venue.venue_name ?? '',
+                venue_address: returned.venue.venue_address ?? '',
+                club_location_id: returned.venue.club_location_id ?? '',
+                save_location: '',
+              }
+            : next
+          if (isSameValues(valuesRef.current, next)) setValues(saved)
+
+          savedRef.current = saved
           setStatus('saved')
           // The header and the booking card read the same row, so they follow
           // the edit rather than showing the old title until the next visit.
@@ -290,18 +321,17 @@ export function ShowDetailsForm({
             </div>
           </Field>
 
-          <Field className="col-span-12 min-w-0 gap-1.5">
-            <FieldLabel htmlFor="show-venue">Venue / address</FieldLabel>
-            <div className={FIELD_GROUP_CLASS}>
-              <Input
-                id="show-venue"
-                value={values.venue_address}
-                onChange={(event) => update('venue_address', event.target.value)}
-                placeholder="Venue TBA"
-                className={FIELD_INPUT_CLASS}
-              />
-            </div>
-          </Field>
+          <VenuePicker
+            className="col-span-12 @md:col-span-6"
+            locations={locations}
+            value={{
+              venue_name: values.venue_name,
+              venue_address: values.venue_address,
+              club_location_id: values.club_location_id,
+              save_location: values.save_location,
+            }}
+            onChange={(venue) => setValues((previous) => ({ ...previous, ...venue }))}
+          />
         </FieldSection>
 
         <FieldSection id="show-details-tickets" title="Tickets">

@@ -7,6 +7,7 @@ import type { PublicShow } from '@/lib/public-events'
 // modulen drar med seg Stripe-SDK-en. Se `lib/public-show-format.ts`.
 import { formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-show-format'
 import { formatDayLabel } from '@/lib/event-filters'
+import { showVenue } from '@/lib/show-venue'
 
 /**
  * One card for one show — used both on the front page (dark) and on /events (light).
@@ -46,7 +47,7 @@ export function EventCard({
   const href = `/events/${show.slug ?? show.id}`
   const soldOut = remainingTickets(show) === 0
   const capacity = capacityNote(show)
-  const venue = show.venue_name ?? show.venue_address
+  const { venue } = showVenue(show)
   const place = [venue, show.clubCity].filter(Boolean).join(', ')
 
   return (

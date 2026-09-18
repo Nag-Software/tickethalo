@@ -56,7 +56,7 @@ export default async function ArtistsPage({
   // `clubArtistRoster`.
   const db = createAdminClient()
   const roster = await clubArtistRoster(db, clubId, { search: searchQuery })
-  const reviewCountById = await reviewCounts(db, roster.map(({ artist }) => artist.id))
+  const reviewCountById = await reviewCounts(db, clubId, roster.map(({ artist }) => artist.id))
 
   // Blokkeringene leses av flere kolonner, så «ikke klar» avgjøres her og ikke
   // i spørringen. Tellingen bruker samme sett som tabellen viser.
@@ -226,10 +226,10 @@ export default async function ArtistsPage({
                         <RowLink href={href} />
                       </td>
                       {/* Scoren avgjør rekkefølgen i køen når motoren sender
-                          tilbud. Den står her så bookeren ser hvorfor den
-                          prioriterer som den gjør — se lib/artist-score.ts. */}
+                          tilbud, og er klubbens egen. Den står her så bookeren ser
+                          hvorfor motoren prioriterer som den gjør — se lib/artist-score.ts. */}
                       <td className="relative px-5 py-3">
-                        <span className="font-medium">{formatScore(artist.admin_score)}</span>
+                        <span className="font-medium">{formatScore(review.score)}</span>
                         <span className="ml-1.5 text-xs text-muted-foreground">
                           {reviewCountById.get(artist.id) ?? 0} reviews
                         </span>

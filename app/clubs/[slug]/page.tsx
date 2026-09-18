@@ -11,6 +11,7 @@ import { formatClubLocation, getPublicClubBySlug, mapsUrl } from '@/lib/public-c
 import { formatShortDate, formatShowTime, getClubShows, type PublicShow } from '@/lib/public-events'
 import { formatDayLabel, getOsloToday } from '@/lib/event-filters'
 import { shouldBypassImageOptimization } from '@/lib/utils'
+import { showVenue } from '@/lib/show-venue'
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -207,7 +208,7 @@ export default async function ClubPage({ params }: Props) {
 
             <ul className="flex flex-col">
               {past.map((show) => {
-                const venue = show.venue_name ?? show.venue_address
+                const { venue } = showVenue(show)
                 const row = (
                   <>
                     <span className="w-[68px] shrink-0 tabular-nums text-[var(--ev-faint)]">

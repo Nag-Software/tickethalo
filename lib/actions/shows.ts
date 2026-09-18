@@ -12,7 +12,10 @@ export async function createShow(input: {
   description?: string
   start_time?: string
   end_time?: string
-  venue_address?: string
+  /** Stedet slik `resolveShowVenue` avgjorde det — se lib/show-venue-write.ts. */
+  venue_name?: string | null
+  venue_address?: string | null
+  club_location_id?: string | null
   capacity?: number
   ticket_price?: number
   currency?: string
@@ -29,8 +32,9 @@ export async function createShow(input: {
       description: input.description ?? null,
       start_time: input.start_time ?? null,
       end_time: input.end_time ?? null,
-      venue_name: null,
+      venue_name: input.venue_name ?? null,
       venue_address: input.venue_address ?? null,
+      club_location_id: input.club_location_id ?? null,
       capacity: input.capacity ?? null,
       ticket_price: input.ticket_price ?? null,
       currency: input.currency ?? 'NOK',

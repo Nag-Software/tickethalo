@@ -10,6 +10,7 @@ import { ticketSalesState } from '@/lib/ticket-sales'
 import type { Artist, BookingOffer, ConfirmedSpot, Show, ShowRequirement, ShowStatus } from '@/types/database'
 import { getClubAccess } from '@/lib/club-auth'
 import { loadBookingAttention } from '@/lib/booking-attention-data'
+import { showVenue } from '@/lib/show-venue'
 
 type ShowRow = Pick<Show, 'id' | 'title' | 'date' | 'venue_name' | 'venue_address' | 'status' | 'capacity' | 'ticket_price' | 'currency' | 'published_at' | 'slug' | 'poster_url' | 'ticket_sales_closed_at'>
 type RequirementRow = Pick<ShowRequirement, 'id' | 'show_id' | 'role_name' | 'quantity' | 'lineup_position' | 'compensation_type' | 'compensation_amount' | 'compensation_percent'>
@@ -264,7 +265,7 @@ function ShowsTable({ rows }: { rows: ShowRow[] }) {
               <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                 {new Date(show.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
               </td>
-              <td className="px-4 py-3 text-muted-foreground">{show.venue_name ?? show.venue_address ?? '—'}</td>
+              <td className="px-4 py-3 text-muted-foreground">{showVenue(show).venue ?? '—'}</td>
               <td className="px-4 py-3">
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[show.status]}`}>
                   {SHOW_STATUS_LABELS[show.status]}

@@ -24,6 +24,7 @@ import type {
   MarketingPalette,
   ShowMarketingDesign,
 } from '@/types/database'
+import { showVenue } from '@/lib/show-venue'
 
 /**
  * Server actions for markedsføringsfanen.
@@ -424,7 +425,7 @@ export async function generatePosterAction(formData: FormData) {
     title: show.title,
     date: show.date,
     startTime: show.start_time,
-    venue: show.venue_address ?? show.venue_name ?? '',
+    venue: showVenue(show).line ?? '',
     artists: slots.flatMap((slot) => (
       slot.artistId && slot.artistName
         ? [{ name: slot.artistName, profile_image_url: slot.imageUrl, role_name: slot.roleLabel }]

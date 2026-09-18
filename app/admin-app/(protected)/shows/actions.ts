@@ -18,6 +18,15 @@ import { normalizeCurrency } from '@/lib/currencies'
 import { MARKETING_DESIGN_BUCKET, sanitizeStorageFileName } from '@/lib/marketing/storage'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
 import { refundShow } from '@/lib/refunds'
+import { resolveShowVenue, venueSelectionFromForm } from '@/lib/show-venue-write'
+import {
+  collectShowCancellationNotice,
+  notifyAddedToLineup,
+  notifyOfferWithdrawn,
+  notifyRemovedFromLineup,
+  requirementOccupants,
+  sendShowCancellationNotices,
+} from '@/lib/lineup-notices'
 import {
   CheckoutSessionExpiryError,
   checkShowDetailsChange,
@@ -417,6 +426,7 @@ async function seedDefaultLineup(showId: string) {
 
 export async function createShowAction(formData: FormData) {
   const clubId = await getDefaultClubIdForAdmin()
+  const venue = await resolveShowVenue(createAdminClient(), clubId, venueSelectionFromForm(formData))
   const input = {
     title: formData.get('title') as string,
     slug: formData.get('slug') as string,
@@ -424,7 +434,7 @@ export async function createShowAction(formData: FormData) {
     date: formData.get('date') as string,
     start_time: (formData.get('start_time') as string) || undefined,
     end_time: (formData.get('end_time') as string) || undefined,
-    venue_address: (formData.get('venue_address') as string) || undefined,
+    ...venue,
     capacity: formData.get('capacity') ? Number(formData.get('capacity')) : undefined,
     ticket_price: formData.get('ticket_price') ? Math.round(Number(formData.get('ticket_price')) * 100) : undefined,
     currency: (formData.get('currency') as string) || 'NOK',
@@ -442,6 +452,7 @@ export async function cloneShowAction(formData: FormData) {
   await assertShowAccess(templateId)
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
+  const venue = await resolveShowVenue(db, clubId, venueSelectionFromForm(formData))
 
   // Create the new show
   const show = await createShow({
@@ -450,7 +461,7 @@ export async function cloneShowAction(formData: FormData) {
     date: formData.get('date') as string,
     start_time: optionalText(formData.get('start_time')) ?? undefined,
     end_time: optionalText(formData.get('end_time')) ?? undefined,
-    venue_address: optionalText(formData.get('venue_address')) ?? undefined,
+    ...venue,
     capacity: optionalInteger(formData.get('capacity')) ?? undefined,
     ticket_price: optionalMoneyToMinor(formData.get('ticket_price')) ?? undefined,
     currency: optionalText(formData.get('currency')) ?? 'NOK',
@@ -638,6 +649,11 @@ export async function updateShowDetailsAction(formData: FormData) {
   })
   if (!check.ok) return { error: check.error }
 
+  // Stedet avgjøres mot klubbens egne lokasjoner — se `resolveShowVenue`.
+  // `venue_name` ble før satt til null her ved hver lagring, og det var
+  // grunnen til at komikeren leste «Venue: Coming» på et show med full adresse.
+  const venue = await resolveShowVenue(db, show.club_id ?? null, venueSelectionFromForm(formData))
+
   const title = String(formData.get('title') ?? '').trim()
   const { error } = await db.from('shows').update({
     title,
@@ -650,8 +666,7 @@ export async function updateShowDetailsAction(formData: FormData) {
     date,
     start_time: optionalText(formData.get('start_time')),
     end_time: optionalText(formData.get('end_time')),
-    venue_name: null,
-    venue_address: optionalText(formData.get('venue_address')),
+    ...venue,
     capacity: optionalInteger(formData.get('capacity')),
     ticket_price: optionalMoneyToMinor(formData.get('ticket_price')),
     currency: check.currency,
@@ -681,6 +696,10 @@ export async function updateShowDetailsAction(formData: FormData) {
   }
 
   revalidatePath(`/admin-app/shows/${showId}`)
+
+  // Skjemaet lagrer automatisk og må vite hva som faktisk ble stående:
+  // lenken kan ha falt bort, eller et nytt sted kan ha fått en id.
+  return { venue }
 }
 
 export async function updateRequirementAction(formData: FormData): Promise<RequirementActionResult> {
@@ -846,14 +865,33 @@ export async function reorderRequirementsAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
+/**
+ * Sier fra til komikerne en lineup-endring gikk ut over — etter svaret, så
+ * bookeren ikke venter på Resend. Den som mistet plassen får én beskjed, ikke
+ * to, selv om hen også hadde et tilbud ute.
+ */
+function notifyLineupChange(showId: string, change: { removed: string[]; withdrawn: string[] }) {
+  const removed = [...new Set(change.removed)]
+  const withdrawn = [...new Set(change.withdrawn)].filter((artistId) => !removed.includes(artistId))
+  if (removed.length === 0 && withdrawn.length === 0) return
+
+  runAfterResponse(`lineup-notices-${showId}`, async () => {
+    await notifyRemovedFromLineup(showId, removed)
+    await notifyOfferWithdrawn(showId, withdrawn)
+  })
+}
+
 export async function deleteRequirementAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   const reqId = formData.get('req_id') as string
   await assertRequirementAccess(showId, reqId)
   const db = createAdminClient()
+  // Leses før slettingen: kravet tar spots og tilbud med seg i kaskaden.
+  const occupants = await requirementOccupants(db, showId, reqId)
   const { error } = await db.from('show_requirements').delete().eq('id', reqId)
   if (error) throw new Error(error.message)
   await normalizeRequirementPositions(showId)
+  notifyLineupChange(showId, occupants)
   scheduleFullbookedAutomation(showId, 'delete-requirement')
   revalidatePath(`/admin-app/shows/${showId}`)
 }
@@ -878,24 +916,48 @@ export async function deleteSpotAction(formData: FormData) {
 
   await assertRequirementAccess(showId, reqId)
   const db = createAdminClient()
+  const removed: string[] = []
+  const withdrawn: string[] = []
 
   if (spotId) {
     await assertSpotAccess(showId, spotId)
+    const { data: cancelledSpots } = await db
+      .from('confirmed_spots')
+      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+      .eq('id', spotId)
+      .eq('show_id', showId)
+      .eq('status', 'confirmed')
+      .select('artist_id')
+    removed.push(...(cancelledSpots ?? []).map((spot) => spot.artist_id))
+
+    // En spot som alt er spilt eller betalt står utenfor filteret over, men
+    // skal fortsatt ut av lineupen slik den ble før.
     await db
       .from('confirmed_spots')
       .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
       .eq('id', spotId)
       .eq('show_id', showId)
+      .neq('status', 'cancelled')
   }
 
   if (offerId) {
     await assertOfferAccess(showId, offerId)
+    const { data: openOffer } = await db
+      .from('booking_offers')
+      .select('artist_id, status')
+      .eq('id', offerId)
+      .eq('show_id', showId)
+      .maybeSingle()
+    if (openOffer?.status === 'sent') withdrawn.push(openOffer.artist_id)
+
     await db
       .from('booking_offers')
       .update({ status: 'cancelled', responded_at: new Date().toISOString() })
       .eq('id', offerId)
       .eq('show_id', showId)
   }
+
+  notifyLineupChange(showId, { removed, withdrawn })
 
   const { data: requirement, error: requirementError } = await db
     .from('show_requirements')
@@ -931,13 +993,26 @@ export async function updateOfferStatusAction(formData: FormData) {
   await assertOfferAccess(showId, offerId)
   const db = createAdminClient()
 
+  const { data: before } = await db
+    .from('booking_offers')
+    .select('artist_id, show_requirement_id, status')
+    .eq('id', offerId)
+    .eq('show_id', showId)
+    .maybeSingle()
+
   if (status === 'accepted') {
-    await acceptBookingOfferById(offerId)
+    const accepted = await acceptBookingOfferById(offerId)
+    // Bookeren svarte på komikerens vegne. `repaired` betyr at plassen ble
+    // laget nå — da har komikeren ikke fått noen bekreftelse.
+    if (accepted.repaired && before) {
+      const { artist_id: artistId, show_requirement_id: requirementId } = before
+      runAfterResponse(`notify-added-${offerId}`, () => notifyAddedToLineup(showId, artistId, requirementId))
+    }
     revalidatePath(`/admin-app/shows/${showId}`)
     return
   }
 
-  await cancelConfirmedSpotForOffer(offerId)
+  const { removedArtistIds } = await cancelConfirmedSpotForOffer(offerId)
 
   const { error } = await db.from('booking_offers').update({
     status,
@@ -945,6 +1020,13 @@ export async function updateOfferStatusAction(formData: FormData) {
   }).eq('id', offerId)
 
   if (error) throw new Error(error.message)
+
+  // `cancelled` på et tilbud som sto ute er klubben som trekker det. `declined`
+  // og `expired` er komikerens eget svar ført inn av bookeren — ingen beskjed.
+  notifyLineupChange(showId, {
+    removed: removedArtistIds,
+    withdrawn: status === 'cancelled' && before?.status === 'sent' ? [before.artist_id] : [],
+  })
   if (status !== 'sent') {
     scheduleShowAutomation(showId, `offer-status-${status}`)
   }
@@ -959,7 +1041,7 @@ export async function cancelOfferAction(formData: FormData) {
 
   const { data: offer, error: offerError } = await db
     .from('booking_offers')
-    .select('artist_id')
+    .select('artist_id, status')
     .eq('id', offerId)
     .eq('show_id', showId)
     .maybeSingle()
@@ -969,6 +1051,9 @@ export async function cancelOfferAction(formData: FormData) {
   await db.from('booking_offers').update({ status: 'cancelled', responded_at: new Date().toISOString() }).eq('id', offerId)
   if (offer) {
     await excludeArtistFromAutomaticBooking(db, showId, offer.artist_id, 'admin_cancelled_offer')
+    // Bare et tilbud som faktisk sto ute: komikeren har en e-post med en lenke
+    // som nå ikke virker.
+    if (offer.status === 'sent') notifyLineupChange(showId, { removed: [], withdrawn: [offer.artist_id] })
   }
   scheduleShowAutomation(showId, 'cancel-offer')
   revalidatePath(`/admin-app/shows/${showId}`)
@@ -987,7 +1072,7 @@ export async function removeSpotAndReopenAction(formData: FormData) {
 
   const { data: spot } = await db
     .from('confirmed_spots')
-    .select('id, artist_id, show_requirement_id')
+    .select('id, artist_id, show_requirement_id, status')
     .eq('id', spotId)
     .eq('show_id', showId)
     .single()
@@ -1032,6 +1117,12 @@ export async function removeSpotAndReopenAction(formData: FormData) {
     .in('status', ['sent', 'accepted'])
 
   await excludeArtistFromAutomaticBooking(db, showId, spot.artist_id, 'admin_removed_spot')
+
+  // Avlyste komikeren selv, vet hen det allerede. Ellers er det klubben som
+  // har tatt hen ut, og da skal hen ha beskjed.
+  if (!artistCancelled && spot.status === 'confirmed') {
+    notifyLineupChange(showId, { removed: [spot.artist_id], withdrawn: [] })
+  }
 
   // Bølgen starter forfra på plassen: også andre gangen skal de beste få
   // sjansen først. Motoren ser at plassen har hatt en komiker som falt fra,
@@ -1139,7 +1230,7 @@ export async function swapArtistAction(formData: FormData) {
 
   const { data: oldSpot } = await db
     .from('confirmed_spots')
-    .select('show_requirement_id, fee_amount, currency')
+    .select('show_requirement_id, fee_amount, currency, artist_id, status')
     .eq('id', spotId)
     .single()
 
@@ -1176,6 +1267,11 @@ export async function swapArtistAction(formData: FormData) {
   if (error) throw new Error(error.message)
 
   await clearArtistBookingExclusion(db, showId, newArtistId)
+
+  // Et bytte er to beskjeder: én ut, én inn. Ingen av dem har svart på noe.
+  if (oldSpot.status === 'confirmed') notifyLineupChange(showId, { removed: [oldSpot.artist_id], withdrawn: [] })
+  runAfterResponse(`notify-added-${spotId}`, () => notifyAddedToLineup(showId, newArtistId, oldSpot.show_requirement_id))
+
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -1232,6 +1328,7 @@ export async function addArtistToRequirementAction(formData: FormData) {
     .eq('status', 'sent')
 
   await clearArtistBookingExclusion(db, showId, artistId)
+  runAfterResponse(`notify-added-${added.id}`, () => notifyAddedToLineup(showId, artistId, requirementId))
 
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['draft'])
   scheduleFullbookedAutomation(showId, 'add-artist-spot')
@@ -1309,6 +1406,7 @@ export async function addManualSpotAction(_prevState: ManualSpotActionState, for
   }
 
   await clearArtistBookingExclusion(db, showId, artistId)
+  runAfterResponse(`notify-added-${added.id}`, () => notifyAddedToLineup(showId, artistId, requirementId))
 
   await db.from('shows').update({ status: 'booking' }).eq('id', showId).in('status', ['draft'])
   scheduleFullbookedAutomation(showId, 'manual-spot')
@@ -1475,6 +1573,14 @@ export async function deleteShowAction(formData: FormData): Promise<{ error: str
 
     if (hasOutstandingSales(summary)) return { error: deleteShowBlockedMessage(summary) }
 
+    // Lineupen leses før slettingen — etterpå er radene borte (se
+    // `collectShowCancellationNotice`). Feiler oppslaget, slettes showet
+    // likevel: bookeren skal ikke stoppes av en e-post vi ikke fikk forberedt.
+    const cancellationNotice = await collectShowCancellationNotice(showId).catch((error) => {
+      console.error(`[Shows] Could not read the lineup of ${showId} before deleting it: ${actionErrorMessage(error)}`)
+      return null
+    })
+
     salesStopped = (await stopSalesBeforeDeletion(showId, actorId)).salesStopped
 
     const { data, error } = await createAdminClient()
@@ -1499,6 +1605,9 @@ export async function deleteShowAction(formData: FormData): Promise<{ error: str
       )
     }
     if (data.result === 'not_found') return { error: 'This show no longer exists. It may already have been deleted.' }
+
+    // Slettet eller arkivert: uansett er kvelden avlyst for dem som sto der.
+    runAfterResponse(`show-cancelled-notices-${showId}`, () => sendShowCancellationNotices(cancellationNotice))
 
     revalidateShowSales(showId, slug)
   } catch (error) {

@@ -5,6 +5,7 @@ import { Footer } from '@/components/Footer'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { clubInvoiceRecipient, formatMinor } from '@/lib/fee-invoices'
 import type { ArtistFeeInvoice, ArtistFeeInvoiceStatus } from '@/types/database'
+import { venueSuffix } from '@/lib/show-venue'
 
 export const metadata = { title: 'Your fee — Tickethalo' }
 
@@ -43,7 +44,7 @@ export default async function FeeInvoicePage({ params }: { params: Promise<{ tok
   if (!invoice) notFound()
 
   const [{ data: show }, { data: club }, { data: artist }] = await Promise.all([
-    db.from('shows').select('title, date, venue_name').eq('id', invoice.show_id).maybeSingle(),
+    db.from('shows').select('title, date, venue_name, venue_address').eq('id', invoice.show_id).maybeSingle(),
     invoice.club_id
       ? db.from('clubs').select('name, legal_name, org_number, invoice_email, support_email').eq('id', invoice.club_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -103,7 +104,7 @@ export default async function FeeInvoicePage({ params }: { params: Promise<{ tok
           </Detail>
           <Detail label="Show">
             {show?.date ? formatDate(show.date) : 'Coming'}
-            {show?.venue_name ? ` · ${show.venue_name}` : ''}
+            {venueSuffix(show)}
           </Detail>
           {invoice.agreement && <Detail label="Agreement">{invoice.agreement}</Detail>}
           {/* Kontoen på fakturaen er den klubben betaler til. Denne står her

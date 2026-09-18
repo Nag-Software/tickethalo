@@ -50,7 +50,7 @@ poeng = score × 10 − 10 for hvert show komikeren
                        allerede har i klubben innen 30 dager
 ```
 
-**Scoren** er et tall mellom 0 og 10 som sier hvordan komikeren har levert. Alle starter på 5. Etter hvert show vurderer klubben hver komiker med ett trykk: **svakt**, **middels** eller **sterkt**. Scoren er snittet av de ti siste vurderingene, der svakt teller 0, middels 5 og sterkt 10. Har komikeren færre enn tre vurderinger, fylles resten opp med 5, slik at én enkelt kveld ikke avgjør alt.
+**Scoren** er et tall mellom 0 og 10 som sier hvordan komikeren har levert *hos denne klubben*. Hver klubb har sin egen score for hver komiker, og alle starter på 5. Etter hvert show vurderer klubben hver komiker med ett trykk: **svakt**, **middels** eller **sterkt**. Scoren er snittet av de ti siste vurderingene, der svakt teller 0, middels 5 og sterkt 10. Har komikeren færre enn tre vurderinger, fylles resten opp med 5, slik at én enkelt kveld ikke avgjør alt.
 
 | Vurderinger | Score |
 |---|---|
@@ -157,7 +157,7 @@ Dagen etter showet gjør systemet opp honorarene, og showet merkes som ferdig. D
 
 Dette er sløyfen som gjør systemet bedre over tid. Vurderingen endrer scoren, scoren endrer køen, og køen avgjør hvem som får tilbud på neste show. En klubb som vurderer hver kveld, får en liste som gradvis sorterer seg selv.
 
-Vurderingene lagres med klubben som ga dem. I dag regnes scoren på tvers av alle klubber, slik at en komiker bygger ett rykte på plattformen. Når flere klubber deler de samme komikerne, kan vi regne scoren per klubb i stedet, uten å miste noe.
+Scoren er klubbens egen. Klubbene har ikke samme publikum. Geografi og demografi gjør at en komiker som treffer hos én klubb, ikke nødvendigvis treffer hos en annen. Derfor teller en vurdering bare hos klubben som ga den. En svak kveld ett sted flytter ikke komikeren ned i køen et annet sted, og en klubb som aldri har vurdert komikeren, starter på nøytrale 5,0.
 
 ## 11. En kveld fra start til slutt
 

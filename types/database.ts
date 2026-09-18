@@ -235,6 +235,8 @@ export type ClubArtist = {
   is_flagged: boolean
   flag_reason: string | null
   flagged_at: string | null
+  /** Snittet av klubbens egne vurderinger, 0–10. Se lib/artist-reviews.ts. */
+  score: number
 }
 
 export type ClubMembership = {
@@ -274,6 +276,7 @@ export type Artist = {
   /** Kontonummeret honoraret utbetales til. Ført av komikeren selv. */
   bank_account_number: string | null
   status: ArtistStatus
+  /** Utgått (migrasjon 061). Scoren er per klubb: `ClubArtist.score`. */
   admin_score: number | null
   admin_energy_level: EnergyLevel | null
   admin_notes: string | null
@@ -305,6 +308,8 @@ export type Show = {
   end_time: string | null
   venue_name: string | null
   venue_address: string | null
+  /** Lokasjonen fra My club showet er lenket til. Se migrasjon 060 og `lib/show-venue.ts`. */
+  club_location_id: string | null
   capacity: number | null
   ticket_price: number | null
   currency: string
@@ -791,6 +796,7 @@ export type Database = {
           is_flagged?: boolean
           flag_reason?: string | null
           flagged_at?: string | null
+          score?: number
         }
         Update: Partial<ClubArtist>
         Relationships: []
@@ -835,6 +841,7 @@ export type Database = {
           end_time?: string | null
           venue_name?: string | null
           venue_address?: string | null
+          club_location_id?: string | null
           capacity?: number | null
           ticket_price?: number | null
           currency?: string

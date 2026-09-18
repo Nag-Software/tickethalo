@@ -67,7 +67,7 @@ Kandidatene sorteres på poeng. Verdiene står i raden `default` i
 `booking_scoring_config`, og redigeres på `/superadmin/booking`.
 
 ```
-poeng = admin_score / 10 × quality_weight        kvalitet
+poeng = score / 10 × quality_weight              kvalitet
       − rotation_penalty × plasser i samme klubb innen rotation_window_days
 ```
 
@@ -79,8 +79,11 @@ Ved lik sum går den som har ventet lengst siden forrige kveld i klubben
 først, og den som aldri har spilt der, aller først. Til slutt komikerens id,
 slik at den samme kjøringen alltid gir den samme lineupen.
 
-`admin_score` settes ikke for hånd. Den er snittet av de siste ti
-vurderingene etter show — se punkt 9 og `lib/artist-score.ts`.
+`score` er klubbens egen og ligger på `club_artists.score` (migrasjon 061).
+Den settes ikke for hånd, men er snittet av de siste ti vurderingene *denne*
+klubben har gitt etter show — se punkt 9 og `lib/artist-score.ts`. Klubbene
+har ikke samme publikum, så vurderinger fra andre klubber teller ikke. En
+klubb som aldri har vurdert komikeren, starter på 5,0.
 
 ## 4. Bølgene og rekkefølgen mellom plassene
 
@@ -166,8 +169,9 @@ publiserer dem som er fylt, og sender påminnelser.
 Dagen etter gjøres honorarene opp (`lib/artist-fees.ts`), og lineupen dukker
 opp igjen på showsiden med «How did it go?». Ett trykk per komiker: sterkt,
 middels, svakt, eller avlyste. Vurderingen lagres i
-`artist_performance_reviews` med klubben som ga den, og `admin_score` regnes
-på nytt som snittet av de siste ti — `lib/artist-reviews.ts`. Kan endres i 30
+`artist_performance_reviews` med klubben som ga den, og klubbens
+`club_artists.score` regnes på nytt som snittet av klubbens siste ti —
+`lib/artist-reviews.ts`. Andre klubbers score for komikeren røres ikke. Kan endres i 30
 dager.
 
 ## 10. «Trenger oppmerksomhet»

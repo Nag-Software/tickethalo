@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { getClubAccess } from '@/lib/club-auth'
+import { showVenue } from '@/lib/show-venue'
 
 export default async function ScannerPickShowPage() {
   const db = createAdminClient()
@@ -52,7 +53,7 @@ export default async function ScannerPickShowPage() {
               <div className="flex-1 min-w-0">
                 <div className="font-semibold truncate">{show.title}</div>
                 <div className="text-xs text-zinc-400 mt-0.5">
-                  {[show.date, show.venue_name ?? show.venue_address].filter(Boolean).join(' · ')}
+                  {[show.date, showVenue(show).venue].filter(Boolean).join(' · ')}
                 </div>
               </div>
               <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[show.status] ?? 'bg-zinc-700 text-zinc-300'}`}>

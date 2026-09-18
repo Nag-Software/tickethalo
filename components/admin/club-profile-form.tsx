@@ -154,7 +154,7 @@ export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlin
             <FieldDescription className={FIELD_HINT_CLASS}>Used in filters and on the events.</FieldDescription>
           </Field>
 
-          <ClubLocationsField locations={locations} className="@xl:col-span-6" />
+          <ClubLocationsField locations={locations} />
         </FieldSection>
 
         <FieldSection id="club-profile-tickets" title="Tickets">

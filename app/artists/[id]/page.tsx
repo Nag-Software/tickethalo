@@ -11,6 +11,7 @@ import { PublicHeader } from '@/components/public/public-header'
 import { formatShowTime } from '@/lib/public-events'
 import { formatDayLabel, getOsloToday } from '@/lib/event-filters'
 import { Footer } from '@/components/Footer'
+import { showVenue } from '@/lib/show-venue'
 
 type Props = {
   params: Promise<{ id: string }>
@@ -172,7 +173,7 @@ export default async function ArtistDetailPage({ params }: Props) {
                             {show.title}
                           </span>
                           <span className="mt-0.5 block truncate text-[12.5px] text-[var(--ev-faint)]">
-                            {show.venue_name ?? show.venue_address ?? 'Sted kommer'}
+                            {showVenue(show).venue ?? 'Sted kommer'}
                           </span>
                         </span>
 

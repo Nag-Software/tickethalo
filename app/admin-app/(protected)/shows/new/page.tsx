@@ -6,6 +6,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { cloneShowAction, createShowAction } from '../actions'
 import { getClubAccess } from '@/lib/club-auth'
 import { CURRENCIES, normalizeCurrency } from '@/lib/currencies'
+import { VenuePicker } from '@/components/admin/venue-picker'
+import { clubLocations } from '@/lib/show-venue-write'
+import { showVenue } from '@/lib/show-venue'
 
 
 /** The currency the club sells in — the default for a new show. */
@@ -37,6 +40,8 @@ export default async function NewShowPage({
   const { from } = await searchParams
   const clubAccess = await getClubAccess()
   const clubCurrency = await getClubCurrency(clubAccess.selectedClubId)
+  // Stedene klubben har ført under My club — det Venue-feltet søker i.
+  const locations = await clubLocations(createAdminClient(), clubAccess.selectedClubId)
 
   if (from) {
     const db = createAdminClient()
@@ -82,8 +87,17 @@ export default async function NewShowPage({
                   <Field name="start_time" label="Start" type="time" defaultValue={(template.start_time ?? '').slice(0, 5)} />
                   <Field name="end_time" label="End" type="time" defaultValue={(template.end_time ?? '').slice(0, 5)} />
                 </div>
-                <div className="mt-4">
-                  <Field name="venue_address" label="Venue / address" defaultValue={template.venue_address ?? ''} />
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {/* Malen tar med seg stedet, lenken til My club inkludert. */}
+                  <VenuePicker
+                    locations={locations}
+                    defaultValue={{
+                      venue_name: template.venue_name ?? '',
+                      venue_address: template.venue_address ?? '',
+                      club_location_id: template.club_location_id ?? '',
+                      save_location: '',
+                    }}
+                  />
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <Field name="capacity" label="Capacity" type="number" min={1} defaultValue={template.capacity?.toString() ?? ''} />
@@ -155,7 +169,9 @@ export default async function NewShowPage({
               <Field name="start_time" label="Start" type="time" />
               <Field name="end_time" label="End" type="time" />
             </div>
-            <Field name="venue_address" label="Venue / address" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <VenuePicker locations={locations} />
+            </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Field name="capacity" label="Capacity" type="number" min={1} />
               <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01} placeholder="199" />
@@ -209,7 +225,7 @@ export default async function NewShowPage({
                       {s.start_time ? s.start_time.slice(0, 5) : 'Time TBA'}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {s.venue_address ?? s.venue_name ?? 'Venue TBA'}
+                      {showVenue(s).line ?? 'Venue TBA'}
                     </p>
                   </div>
                 </Link>

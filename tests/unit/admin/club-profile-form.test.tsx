@@ -58,7 +58,10 @@ describe('club profile form', () => {
 
     const location = screen.getByRole('group', { name: 'Location' })
     expect(within(location).getByLabelText('City')).toHaveValue('Oslo')
-    expect(within(location).getByRole('button', { name: 'Locations Latter +1' })).toBeInTheDocument()
+    // Stedene står åpent, med navn og adresse — ikke gjemt i en nedtrekksliste.
+    expect(within(location).getByLabelText('Venue 1 name')).toHaveValue('Latter')
+    expect(within(location).getByLabelText('Venue 1 address')).toHaveValue('Aker Brygge 1')
+    expect(within(location).getByLabelText('Venue 2 name')).toHaveValue('Chat Noir')
 
     const tickets = screen.getByRole('group', { name: 'Tickets' })
     expect(within(tickets).getByRole('button', { name: 'Currency NOK — Norwegian krone' })).toBeInTheDocument()
@@ -90,20 +93,18 @@ describe('club profile form', () => {
     expect([...submittedValues(container).values()]).not.toContain(CLUB_URL)
   })
 
-  it('adds a location from the dropdown to what is submitted', async () => {
+  it('adds a venue as a new row in what is submitted', async () => {
     const { container } = renderForm()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Locations Latter +1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add venue' }))
     await act(async () => {})
-    fireEvent.change(screen.getByLabelText('Location name'), { target: { value: 'Big Stage' } })
-    fireEvent.change(screen.getByLabelText('Address'), { target: { value: 'Karl Johans gate 1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add location' }))
+    fireEvent.change(screen.getByLabelText('Venue 3 name'), { target: { value: 'Big Stage' } })
+    fireEvent.change(screen.getByLabelText('Venue 3 address'), { target: { value: 'Karl Johans gate 1' } })
 
     const values = submittedValues(container)
     expect(values.getAll('locationName')).toEqual(['Latter', 'Chat Noir', 'Big Stage'])
     expect(values.getAll('locationAddress')).toEqual(['Aker Brygge 1', '', 'Karl Johans gate 1'])
     expect(values.getAll('locationId')).toEqual(['loc-1', 'loc-2', ''])
-    expect(screen.getByRole('button', { name: 'Locations Latter +2' })).toBeInTheDocument()
   })
 
   it('picks another currency from the search', async () => {

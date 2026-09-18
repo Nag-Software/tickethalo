@@ -6,6 +6,7 @@ import { Footer } from '@/components/Footer'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { publicAcceptOfferAction, publicDeclineOfferAction } from './actions'
+import { showVenue } from '@/lib/show-venue'
 
 export const metadata = { title: 'Booking offer — Tickethalo' }
 
@@ -66,6 +67,9 @@ export default async function PublicBookingOfferPage({
   const isExpired = offer.expires_at ? new Date(offer.expires_at) < new Date() : false
   const canRespond = offer.status === 'sent' && !isExpired
   const currency = offer.currency || show?.currency || 'NOK'
+  // Navnet ved «Venue», adressen som egen rad — og adressen alene når navnet
+  // mangler. Siden viste «Coming» med full adresse rett under.
+  const venue = showVenue(show)
 
   /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
      som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet. */
@@ -108,8 +112,8 @@ export default async function PublicBookingOfferPage({
         <dl className="mt-7 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)] text-[14px]">
           <Detail label="Date">{show?.date ? formatDate(show.date) : 'Coming'}</Detail>
           <Detail label="Time">{show?.start_time ? show.start_time.slice(0, 5) : 'Coming'}</Detail>
-          <Detail label="Venue">{show?.venue_name || 'Coming'}</Detail>
-          {show?.venue_address && <Detail label="Address">{show.venue_address}</Detail>}
+          <Detail label="Venue">{venue.venue ?? 'Coming'}</Detail>
+          {venue.address && <Detail label="Address">{venue.address}</Detail>}
           <Detail label="Your role">{req?.role_name ?? 'Coming'}</Detail>
           <Detail label="Lineup">
             {lineupNumber && totalSpots

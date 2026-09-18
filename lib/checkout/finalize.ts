@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
 import { refundOrder } from '@/lib/refunds'
 import type { Order, OrderCancellationReason } from '@/types/database'
+import { showVenue } from '@/lib/show-venue'
 
 export type FinalizeCheckoutResult = {
   result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show' | 'sales_closed' | 'missing_show' | 'unpaid' | 'failed'
@@ -293,8 +294,8 @@ export async function finalizeCheckoutSession(
       show_title: show?.title ?? session.metadata?.show_title ?? 'Tickethalo',
       show_date: show?.date ?? session.metadata?.show_date ?? '',
       show_time: show?.start_time?.slice(0, 5),
-      venue_name: show?.venue_name ?? show?.venue_address ?? '',
-      venue_address: show?.venue_name ? show.venue_address : null,
+      venue_name: showVenue(show).venue ?? '',
+      venue_address: showVenue(show).address,
       tickets: ticketCodes.map((code) => ({
         code,
         holderName: holderByCode.get(code) ?? null,

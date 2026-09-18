@@ -13,9 +13,10 @@ type Db = ReturnType<typeof createAdminClient>
  * vurderinger står alle på 5,0 og motoren har ingenting å prioritere etter —
  * da er den bare en utsender av e-poster.
  *
- * Vurderingen lagres med klubben som ga den, selv om scoren i dag regnes på
- * tvers av klubber. Den dagen flere klubber deler de samme komikerne, kan
- * scoren regnes per klubb uten at noe må samles inn på nytt.
+ * Scoren er klubbens egen og ligger på `club_artists.score`. Klubbene har
+ * ikke samme publikum — geografi og demografi gjør at den som treffer ett
+ * sted, ikke treffer et annet — så en vurdering teller bare hos klubben som
+ * ga den. En klubb som aldri har vurdert komikeren, starter på nøytrale 5,0.
  */
 
 /** Hvor lenge en vurdering kan endres. Etter det står den. */
@@ -32,15 +33,24 @@ export type LineupReviewInput = {
 }
 
 /**
- * Regner scoren på nytt fra komikerens siste vurderinger, og lagrer den.
+ * Regner klubbens score på nytt fra vurderingene klubben har gitt, og lagrer den.
  *
- * Kjøres hver gang en vurdering lagres eller endres. Scoren er avledet, ikke
- * ført: den skal aldri kunne bli noe annet enn det vurderingene sier.
+ * Kjøres hver gang en vurdering lagres eller endres, og når en komiker
+ * knyttes til klubben — koblingen kan ha vært slettet og laget på nytt, og da
+ * står den nye raden på 5,0 mens vurderingene fra forrige runde finnes ennå.
+ *
+ * Scoren er avledet, ikke ført: den skal aldri kunne bli noe annet enn det
+ * vurderingene sier. Er komikeren ikke knyttet til klubben, treffer
+ * oppdateringen ingen rad. Det er greit — vurderingen er lagret, og scoren
+ * regnes ut den dagen koblingen kommer.
  */
-export async function recalculateArtistScore(db: Db, artistId: string): Promise<number> {
+export async function recalculateClubArtistScore(db: Db, clubId: string | null, artistId: string): Promise<number> {
+  if (!clubId) return scoreFromRatings([])
+
   const { data, error } = await db
     .from('artist_performance_reviews')
     .select('rating, created_at')
+    .eq('club_id', clubId)
     .eq('artist_id', artistId)
     .order('created_at', { ascending: false })
     .limit(SCORE_WINDOW)
@@ -48,7 +58,11 @@ export async function recalculateArtistScore(db: Db, artistId: string): Promise<
   if (error) throw new Error(error.message)
 
   const score = scoreFromRatings((data ?? []).map((row) => row.rating as PerformanceRating))
-  const { error: updateError } = await db.from('artists').update({ admin_score: score }).eq('id', artistId)
+  const { error: updateError } = await db
+    .from('club_artists')
+    .update({ score })
+    .eq('club_id', clubId)
+    .eq('artist_id', artistId)
   if (updateError) throw new Error(updateError.message)
 
   return score
@@ -75,7 +89,7 @@ export async function savePerformanceReview(db: Db, input: LineupReviewInput): P
     }, { onConflict: 'confirmed_spot_id' })
 
   if (error) throw new Error(error.message)
-  return recalculateArtistScore(db, input.artistId)
+  return recalculateClubArtistScore(db, input.clubId, input.artistId)
 }
 
 /** Vurderingene klubben har gitt på ett show, slått opp på plass. */
@@ -89,15 +103,16 @@ export async function reviewsForShow(db: Db, showId: string) {
   return new Map((data ?? []).map((row) => [row.confirmed_spot_id, row]))
 }
 
-/** Antall vurderinger per komiker, til «7,5 · 6 vurderinger» i listene. */
-export async function reviewCounts(db: Db, artistIds: string[]): Promise<Map<string, number>> {
-  if (artistIds.length === 0) return new Map()
+/** Antall vurderinger klubben har gitt per komiker, til «7,5 · 6 vurderinger» i listene. */
+export async function reviewCounts(db: Db, clubId: string | null, artistIds: string[]): Promise<Map<string, number>> {
+  if (!clubId || artistIds.length === 0) return new Map()
 
   // PostgREST gir høyst 1000 rader uten videre. Tellingen er pynt ved siden
   // av scoren, så et tak her er greit — men det skal stå at det finnes.
   const { data, error } = await db
     .from('artist_performance_reviews')
     .select('artist_id')
+    .eq('club_id', clubId)
     .in('artist_id', artistIds)
     .limit(5000)
 

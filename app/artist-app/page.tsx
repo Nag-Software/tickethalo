@@ -6,6 +6,7 @@ import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { createClient } from '@/lib/supabase/server'
 import { Chip, DataRow, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
+import { venueSuffix } from '@/lib/show-venue'
 
 export default async function ArtistDashboardPage() {
   const supabase = await createClient()
@@ -24,7 +25,7 @@ export default async function ArtistDashboardPage() {
   const spots = spotsResult.data ?? []
   const relevantShowIds = [...new Set([...offers.map((offer) => offer.show_id), ...spots.map((spot) => spot.show_id)])]
   const { data: shows } = relevantShowIds.length > 0
-    ? await db.from('shows').select('id, title, date, start_time, venue_name').in('id', relevantShowIds)
+    ? await db.from('shows').select('id, title, date, start_time, venue_name, venue_address').in('id', relevantShowIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
 
@@ -102,7 +103,7 @@ export default async function ArtistDashboardPage() {
               </h3>
               <p className="mt-1 text-[14px] text-[var(--ev-muted)]">
                 {featuredShow.date ? formatDate(featuredShow.date) : 'Date coming'}
-                {featuredShow.venue_name ? ` · ${featuredShow.venue_name}` : ''}
+                {venueSuffix(featuredShow)}
               </p>
               {nextSpot && (
                 <p className="mt-2 text-[14px] font-medium tabular-nums">
@@ -147,7 +148,7 @@ export default async function ArtistDashboardPage() {
                     <p className="truncate text-[15px] font-medium">{show?.title ?? 'Booking offer'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
                       {show?.date ? formatDate(show.date) : 'Date coming'}
-                      {show?.venue_name ? ` · ${show.venue_name}` : ''}
+                      {venueSuffix(show)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -182,7 +183,7 @@ export default async function ArtistDashboardPage() {
                       <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                       <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
                         {show?.date ? formatDate(show.date) : 'Date coming'}
-                        {show?.venue_name ? ` · ${show.venue_name}` : ''}
+                        {venueSuffix(show)}
                       </p>
                     </div>
                     <span className="text-[14px] font-medium tabular-nums text-[var(--ev-muted)]">

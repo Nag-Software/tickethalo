@@ -38,6 +38,7 @@ import { rollBackIfSeatWasTaken } from '@/lib/booking-seats'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
 import { appUrl } from '@/lib/app-url'
+import { showVenue } from '@/lib/show-venue'
 
 /**
  * Showene motoren jobber på.
@@ -79,7 +80,7 @@ function offerDetails(show: OfferShow, requirement: OfferRequirement) {
     fee_label: requirementFeeLabel(requirement, currency),
     role_name: requirement.role_name,
     show_time: show.start_time?.slice(0, 5) ?? null,
-    venue: [show.venue_name, show.venue_address].filter(Boolean).join(', ') || null,
+    venue: showVenue(show).line,
   }
 }
 
@@ -126,7 +127,7 @@ type Candidate = {
   admin_energy_level: EnergyLevel | null
   gender: ArtistGender | null
   category: ArtistType[] | null
-  /** Snittet av vurderingene, 0–10. Se lib/artist-score.ts. */
+  /** Snittet av klubbens egne vurderinger, 0–10. Se lib/artist-reviews.ts. */
   score: number
   /** Bekreftede plasser i samme klubb innenfor rotasjonsvinduet. */
   clubBookingsInWindow: number
@@ -180,7 +181,7 @@ async function loadCandidates(
     { data: clubShows, error: clubShowError },
   ] = await Promise.all([
     admin.from('artists')
-      .select('id, email, full_name, admin_score, gender')
+      .select('id, email, full_name, gender')
       .eq('status', 'approved')
       .in('id', bookableIds),
     admin.from('artist_unavailable_dates')
@@ -268,7 +269,7 @@ async function loadCandidates(
     admin_energy_level: artist.admin_energy_level,
     gender: (artist.gender ?? null) as ArtistGender | null,
     category: artist.category,
-    score: Number(artist.admin_score ?? 5),
+    score: artist.score,
     clubBookingsInWindow: rotationCount.get(artist.id) ?? 0,
     lastClubBookingDate: lastClubBooking.get(artist.id) ?? null,
     unavailable: unavailableIds.has(artist.id),
@@ -853,7 +854,7 @@ export async function automateFullbookedShow(showId: string) {
       title: show.title,
       date: show.date,
       startTime: show.start_time,
-      venue: show.venue_name ?? show.venue_address ?? '',
+      venue: showVenue(show).line ?? '',
       artists: (spots ?? []).flatMap((spot) => {
         const artist = artistById.get(spot.artist_id)
         if (!artist) return []
@@ -1220,7 +1221,7 @@ export async function cancelConfirmedSpotForOffer(offerId: string) {
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
     .eq('booking_offer_id', offerId)
     .in('status', ['confirmed', 'completed', 'paid'])
-    .select('show_id, show_requirement_id')
+    .select('show_id, show_requirement_id, artist_id')
 
   // Setet er ledig igjen, og da skal bølgen begynne forfra — ellers arver
   // den dagen den gamle bølgen var kommet til, og kan sende hele taket med
@@ -1228,6 +1229,9 @@ export async function cancelConfirmedSpotForOffer(offerId: string) {
   for (const spot of cancelled ?? []) {
     await startAutoBooking(spot.show_id, spot.show_requirement_id, { restart: true })
   }
+
+  // Hvem som mistet plassen — kallstedet sier fra til dem.
+  return { removedArtistIds: [...new Set((cancelled ?? []).map((spot) => spot.artist_id))] }
 }
 
 /** Komikeren takker nei. */

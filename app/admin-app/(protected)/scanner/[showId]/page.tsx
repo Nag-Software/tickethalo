@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ScannerClient } from './scanner-client'
 import { getTicketsForShow } from '../actions'
 import { assertShowAccess } from '@/lib/club-auth'
+import { showVenue } from '@/lib/show-venue'
 
 export default async function ShowScannerPage({
   params,
@@ -27,7 +28,7 @@ export default async function ShowScannerPage({
     <ScannerClient
       showId={show.id}
       showTitle={show.title}
-      showInfo={[show.date, show.venue_name ?? show.venue_address].filter(Boolean).join(' · ')}
+      showInfo={[show.date, showVenue(show).venue].filter(Boolean).join(' · ')}
       initialTickets={tickets}
     />
   )

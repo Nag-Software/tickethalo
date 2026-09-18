@@ -1,4 +1,7 @@
-import { resend, FROM_EMAIL, fromWithName } from '@/lib/resend'
+import { randomUUID } from 'node:crypto'
+import type { CreateEmailOptions } from 'resend'
+import { resend, FROM_EMAIL, REPLY_TO_EMAIL, fromWithName } from '@/lib/resend'
+import { createAdminClient } from '@/lib/supabase/admin'
 import QRCode from 'qrcode'
 import { formatTicketCode } from '@/lib/tickets'
 import {
@@ -9,33 +12,113 @@ import {
   escapeHtml,
   offerDeclinedTemplate,
   offerReminderTemplate,
+  offerWithdrawnByClubTemplate,
   offerWithdrawnConflictTemplate,
+  removedFromLineupTemplate,
+  showCancelledTemplate,
+  showDateLabel,
   spotAvailableTemplate,
   spotFilledTemplate,
   type EmailTemplate,
   type OfferTemplateInput,
 } from './templates'
 
-type EmailResult = { success: boolean; resendId?: string; error?: string }
+export type EmailResult = { success: boolean; resendId?: string; error?: string }
+
+// ─────────────────────────────────────────────────────────────
+// Utsendingen — ett sted for alle e-poster
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Feil det er verdt å prøve igjen på. Resend slipper to kall i sekundet, og en
+ * bølge med tilbud eller en avlysning til en hel lineup treffer den grensen.
+ * Alt annet (ugyldig adresse, feil nøkkel, uverifisert domene) gir samme svar
+ * neste gang også.
+ */
+const RETRYABLE_ERRORS = new Set(['rate_limit_exceeded', 'application_error', 'internal_server_error'])
+const RETRY_DELAYS_MS = [700, 1800]
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Sender én e-post, med nye forsøk og spor.
+ *
+ * - Samme `idempotencyKey` på alle forsøk: svarte Resend ikke, men sendte
+ *   likevel, gir neste forsøk ikke en e-post til.
+ * - En feil logges her, ikke hos kallstedet. Halvparten av kallstedene leste
+ *   aldri resultatet, og en e-post som ikke gikk ut var usynlig.
+ * - Hver utsending får en rad i `email_logs`, så «fikk hen e-posten?» kan
+ *   besvares uten å lete i Resend.
+ *
+ * Kaster aldri. En e-post som feiler skal ikke velte handlingen som sendte den.
+ */
+async function deliver(templateName: string, payload: CreateEmailOptions): Promise<EmailResult> {
+  const recipient = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to
+  const idempotencyKey = randomUUID()
+  let failure = 'unknown error'
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    let retryable = false
+    try {
+      const { data, error } = await resend.emails.send(payload, { idempotencyKey })
+      if (!error) {
+        await logDelivery({ templateName, recipient, subject: payload.subject, resendId: data?.id ?? null })
+        return { success: true, resendId: data?.id }
+      }
+      failure = `${error.name}: ${error.message}`
+      retryable = RETRYABLE_ERRORS.has(error.name) || (error.statusCode ?? 0) >= 500
+    } catch (err) {
+      // Nettverket, ikke Resend: alltid verdt et nytt forsøk.
+      failure = err instanceof Error ? err.message : String(err)
+      retryable = true
+    }
+
+    if (!retryable || attempt === RETRY_DELAYS_MS.length) break
+    await wait(RETRY_DELAYS_MS[attempt])
+  }
+
+  console.error(`[Email] ${templateName} to ${recipient} failed: ${failure}`)
+  await logDelivery({ templateName, recipient, subject: payload.subject, error: failure })
+  return { success: false, error: failure }
+}
+
+async function logDelivery(entry: {
+  templateName: string
+  recipient: string
+  subject?: string
+  resendId?: string | null
+  error?: string
+}) {
+  try {
+    const sent = !entry.error
+    const { error } = await createAdminClient().from('email_logs').insert({
+      recipient_email: entry.recipient,
+      subject: entry.subject ?? null,
+      template_name: entry.templateName,
+      resend_email_id: entry.resendId ?? null,
+      status: sent ? 'sent' : 'failed',
+      error_message: entry.error ?? null,
+      sent_at: sent ? new Date().toISOString() : null,
+    })
+    if (error) console.warn(`[Email] Could not write email_logs for ${entry.templateName}: ${error.message}`)
+  } catch (err) {
+    // Loggen er et spor, ikke en del av utsendingen.
+    console.warn(`[Email] Could not write email_logs for ${entry.templateName}:`, err)
+  }
+}
 
 // ─────────────────────────────────────────────────────────────
 // Komikerpostene — malene ligger i ./templates
 // ─────────────────────────────────────────────────────────────
-async function sendArtistEmail(to: string, template: EmailTemplate): Promise<EmailResult> {
-  try {
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to,
-      subject: template.subject,
-      text: template.text,
-      html: template.html,
-    })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { success: false, error: msg }
-  }
+async function sendArtistEmail(templateName: string, to: string, template: EmailTemplate): Promise<EmailResult> {
+  return deliver(templateName, {
+    from: FROM_EMAIL,
+    to,
+    replyTo: REPLY_TO_EMAIL,
+    subject: template.subject,
+    text: template.text,
+    html: template.html,
+  })
 }
 
 export async function sendArtistApprovedEmail(opts: {
@@ -43,28 +126,28 @@ export async function sendArtistApprovedEmail(opts: {
   full_name: string
   portal_url: string
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, artistApprovedTemplate(opts))
+  return sendArtistEmail('artist_approved', opts.email, artistApprovedTemplate(opts))
 }
 
 export async function sendBookingOfferEmail(opts: OfferTemplateInput & {
   email: string
   token: string
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, bookingOfferTemplate(opts))
+  return sendArtistEmail('booking_offer', opts.email, bookingOfferTemplate(opts))
 }
 
 export async function sendSpotAvailableEmail(opts: OfferTemplateInput & {
   email: string
   token: string
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, spotAvailableTemplate(opts))
+  return sendArtistEmail('spot_available', opts.email, spotAvailableTemplate(opts))
 }
 
 /** Én påminnelse per tilbud, tett på fristen. Se lib/booking-schedule.ts. */
 export async function sendOfferReminderEmail(opts: OfferTemplateInput & {
   email: string
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, offerReminderTemplate(opts))
+  return sendArtistEmail('offer_reminder', opts.email, offerReminderTemplate(opts))
 }
 
 /** Tilbudet er trukket fordi komikeren tok en kolliderende kveld. */
@@ -75,7 +158,7 @@ export async function sendOfferWithdrawnConflictEmail(opts: {
   show_date: string
   booked_show_title?: string | null
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, offerWithdrawnConflictTemplate(opts))
+  return sendArtistEmail('offer_withdrawn_conflict', opts.email, offerWithdrawnConflictTemplate(opts))
 }
 
 export async function sendBookingConfirmedEmail(opts: {
@@ -87,8 +170,45 @@ export async function sendBookingConfirmedEmail(opts: {
   venue?: string | null
   fee_label?: string | null
   portal_url?: string | null
+  /** true når klubben satte komikeren rett inn, uten at hen svarte på et tilbud. */
+  added_by_club?: boolean
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, bookingConfirmedTemplate(opts))
+  return sendArtistEmail('booking_confirmed', opts.email, bookingConfirmedTemplate(opts))
+}
+
+/** Showet er avlyst — til dem som sto i lineupen, og til dem med et åpent tilbud. */
+export async function sendShowCancelledEmail(opts: {
+  email: string
+  full_name: string
+  show_title: string
+  show_date: string
+  club_name?: string | null
+  /** true = sto i lineupen. false = hadde bare et tilbud som ikke var besvart. */
+  booked: boolean
+}): Promise<EmailResult> {
+  return sendArtistEmail('show_cancelled', opts.email, showCancelledTemplate(opts))
+}
+
+/** Klubben tok komikeren ut av lineupen; showet går som planlagt. */
+export async function sendRemovedFromLineupEmail(opts: {
+  email: string
+  full_name: string
+  show_title: string
+  show_date: string
+  club_name?: string | null
+}): Promise<EmailResult> {
+  return sendArtistEmail('removed_from_lineup', opts.email, removedFromLineupTemplate(opts))
+}
+
+/** Klubben trakk et tilbud komikeren ikke hadde svart på. */
+export async function sendOfferWithdrawnByClubEmail(opts: {
+  email: string
+  full_name: string
+  show_title: string
+  show_date: string
+  club_name?: string | null
+}): Promise<EmailResult> {
+  return sendArtistEmail('offer_withdrawn_by_club', opts.email, offerWithdrawnByClubTemplate(opts))
 }
 
 export async function sendOfferDeclinedEmail(opts: {
@@ -98,7 +218,7 @@ export async function sendOfferDeclinedEmail(opts: {
   show_date: string
   portal_url?: string | null
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, offerDeclinedTemplate(opts))
+  return sendArtistEmail('offer_declined', opts.email, offerDeclinedTemplate(opts))
 }
 
 export async function sendSpotFilledEmail(opts: {
@@ -106,7 +226,7 @@ export async function sendSpotFilledEmail(opts: {
   full_name: string
   show_title?: string | null
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, spotFilledTemplate(opts))
+  return sendArtistEmail('spot_filled', opts.email, spotFilledTemplate(opts))
 }
 
 /**
@@ -123,7 +243,7 @@ export async function sendArtistFeeEmail(opts: {
   currency: string
   invoice_url: string
 }): Promise<EmailResult> {
-  return sendArtistEmail(opts.email, artistFeeTemplate(opts))
+  return sendArtistEmail('artist_fee', opts.email, artistFeeTemplate(opts))
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -193,7 +313,8 @@ export async function sendTicketPurchaseEmail(opts: {
 
     const displayName = escapeHtml(opts.buyer_name || opts.email)
     const showTitle = escapeHtml(opts.show_title || 'Tickethalo')
-    const showDate = escapeHtml(opts.show_date || 'Dato kommer')
+    const dateLabel = showDateLabel(opts.show_date, 'nb-NO') || 'Dato kommer'
+    const showDate = escapeHtml(dateLabel)
     const showTime = escapeHtml(opts.show_time || 'Tid kommer')
     const venueName = escapeHtml(opts.venue_name || 'Sted kommer')
     const venueAddress = escapeHtml(opts.venue_address)
@@ -251,12 +372,14 @@ export async function sendTicketPurchaseEmail(opts: {
       })
       .join('\n\n')
 
-    const { data, error } = await resend.emails.send({
+    return await deliver('ticket_purchase', {
       from: sellerName ? fromWithName(sellerName) : FROM_EMAIL,
       to: opts.email,
+      // Spørsmål om arrangementet går til arrangøren — det er det billetten sier.
+      replyTo: seller?.support_email?.trim() || REPLY_TO_EMAIL,
       subject,
       attachments,
-      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${opts.show_date}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
+      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${dateLabel}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
       html: `
         <div style="margin:0;background:#f4f4f5;padding:32px 12px;font-family:Inter,Arial,sans-serif;color:#18181b">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">
@@ -299,10 +422,10 @@ ${sellerHtml}
         </div>
       `,
     })
-    if (error) throw new Error(error.message)
-    return { success: true, resendId: data?.id }
   } catch (err) {
+    // Bare QR-genereringen kan kaste hit; `deliver` kaster aldri.
     const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[Email] ticket_purchase to ${opts.email} could not be built: ${msg}`)
     return { success: false, error: msg }
   }
 }

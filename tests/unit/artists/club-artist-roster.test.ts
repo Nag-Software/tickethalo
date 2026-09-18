@@ -43,13 +43,13 @@ describe('club comedian roster', () => {
 
   it('pairs each comedian with the club review', async () => {
     const { db } = rosterQuery({
-      data: [{ artist_id: 'a1', category: ['headliner'], admin_energy_level: 'high', admin_notes: null, is_flagged: null, flag_reason: null, flagged_at: null, artists: artist }],
+      data: [{ artist_id: 'a1', category: ['headliner'], admin_energy_level: 'high', admin_notes: null, is_flagged: null, flag_reason: null, flagged_at: null, score: '8.3', artists: artist }],
     })
 
     await expect(clubArtistRoster(db, 'club-1')).resolves.toEqual([
       {
         artist,
-        review: { category: ['headliner'], admin_energy_level: 'high', admin_notes: null, is_flagged: false, flag_reason: null, flagged_at: null },
+        review: { category: ['headliner'], admin_energy_level: 'high', admin_notes: null, is_flagged: false, flag_reason: null, flagged_at: null, score: 8.3 },
       },
     ])
   })

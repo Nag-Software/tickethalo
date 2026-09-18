@@ -7,6 +7,7 @@ import { clubIdForShow } from '@/lib/club-artists'
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import { runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
+import { recalculateClubArtistScore } from '@/lib/artist-reviews'
 import type { SubmissionStatus, SubmissionsAudience } from '@/types/database'
 
 /**
@@ -218,6 +219,10 @@ export async function approveSubmissionAction(formData: FormData): Promise<{ art
 
       if (error) throw new Error(error.message)
       connectedHere = true
+
+      // Klubbens tidligere vurderinger av komikeren, om de finnes, skal telle
+      // fra første tilbud — se `recalculateClubArtistScore`.
+      await recalculateClubArtistScore(db, clubId, artistId)
     }
 
     // Har bookeren tidligere tatt komikeren av dette showet, er et ja nå et

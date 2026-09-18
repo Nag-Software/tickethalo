@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { BookingOfferStatusToast } from '../booking-offers/status-toast'
 import { OfferButtons } from '@/components/artist/offer-buttons'
 import { Chip, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
+import { venueSuffix } from '@/lib/show-venue'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
   sent: 'Awaiting response',
@@ -37,7 +38,7 @@ export default async function ConfirmedBookingsPage({
     ...(offers ?? []).map((offer) => offer.show_id),
   ])]
   const { data: shows } = showIds.length > 0
-    ? await db.from('shows').select('id, title, date, start_time, venue_name, status').in('id', showIds)
+    ? await db.from('shows').select('id, title, date, start_time, venue_name, venue_address, status').in('id', showIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
 
@@ -103,7 +104,7 @@ export default async function ConfirmedBookingsPage({
                     <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
                       {show?.date ? formatDate(show.date) : 'Date coming'}
-                      {show?.venue_name ? ` · ${show.venue_name}` : ''}
+                      {venueSuffix(show)}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <Chip tone={active ? 'accent' : 'neutral'}>
@@ -176,7 +177,7 @@ export default async function ConfirmedBookingsPage({
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
                       {show?.date ? formatDate(show.date) : 'Date coming'}
                       {show?.start_time ? ` · ${show.start_time.slice(0, 5)}` : ''}
-                      {show?.venue_name ? ` · ${show.venue_name}` : ''}
+                      {venueSuffix(show)}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

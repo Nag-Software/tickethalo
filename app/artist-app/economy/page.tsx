@@ -2,6 +2,7 @@ import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { Empty, PageHeader, Panel, Row } from '@/components/artist/portal-ui'
 import { clubInvoiceRecipient } from '@/lib/fee-invoices'
 import type { ArtistFeeInvoiceStatus } from '@/types/database'
+import { venueSuffix } from '@/lib/show-venue'
 
 /**
  * Hvor langt fakturaen er kommet, med komikerens ord. Statusene i databasen
@@ -27,7 +28,7 @@ export default async function EconomyPage() {
 
   const showIds = [...new Set((spots ?? []).map((spot) => spot.show_id))]
   const { data: shows } = showIds.length > 0
-    ? await db.from('shows').select('id, title, date, venue_name, club_id').in('id', showIds)
+    ? await db.from('shows').select('id, title, date, venue_name, venue_address, club_id').in('id', showIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
 
@@ -103,7 +104,7 @@ export default async function EconomyPage() {
                     <p className="truncate text-[15px] font-medium">{show?.title ?? 'Show'}</p>
                     <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">
                       {show?.date ? formatDate(show.date) : 'Date coming'}
-                      {show?.venue_name ? ` · ${show.venue_name}` : ''}
+                      {venueSuffix(show)}
                     </p>
                     {invoice && (
                       <>

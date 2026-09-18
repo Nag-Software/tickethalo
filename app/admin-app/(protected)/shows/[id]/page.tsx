@@ -19,6 +19,8 @@ import { matchesHardRequirements } from '@/lib/booking-rules'
 import { canReviewShow, reviewCounts, reviewsForShow } from '@/lib/artist-reviews'
 import { LineupReviewPanel, type ReviewableSpot } from '@/components/admin/lineup-review-panel'
 import { assertShowAccess } from '@/lib/club-auth'
+import { clubLocations } from '@/lib/show-venue-write'
+import { showVenue } from '@/lib/show-venue'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import type { ArtistGender, RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
@@ -49,6 +51,7 @@ export default async function ShowDetailPage({
     { count: soldTicketCount },
     salesOverview,
     { data: club },
+    locations,
   ] = await Promise.all([
     db.from('shows').select('*').eq('id', id).single(),
     db.from('show_requirements').select('*').eq('show_id', id).order('lineup_position').order('created_at'),
@@ -69,6 +72,8 @@ export default async function ShowDetailPage({
     showClubId
       ? db.from('clubs').select('artist_share_bps').eq('id', showClubId).maybeSingle()
       : Promise.resolve({ data: null as { artist_share_bps: number } | null }),
+    // Venue-feltet under Details søker i klubbens lagrede lokasjoner.
+    tab === 'overview' ? clubLocations(db, showClubId ?? null) : Promise.resolve([]),
   ])
 
   if (!show) notFound()
@@ -101,12 +106,12 @@ export default async function ShowDetailPage({
       : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; profile_image_url: string | null }> }),
     roster.length > 0
       ? db.from('artists')
-        .select('id, full_name, stage_name, email, admin_score, gender')
+        .select('id, full_name, stage_name, email, gender')
         .eq('status', 'approved')
         .in('id', roster)
         .order('full_name')
         .limit(250)
-      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; admin_score: number | null; gender: ArtistGender | null }> }),
+      : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; email: string; gender: ArtistGender | null }> }),
     shouldLoadSelectableArtists
       ? db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', id)
       : Promise.resolve({ data: [] as Array<{ artist_id: string }> }),
@@ -260,32 +265,33 @@ export default async function ShowDetailPage({
   // avgjør hvem som får tilbud på neste show — se lib/artist-reviews.ts.
   const reviewable = tab === 'lineup' && canReviewShow(show.date)
   const reviewRows: ReviewableSpot[] = reviewable ? await (async () => {
-    const reviews = await reviewsForShow(db, id)
+    const showReviews = await reviewsForShow(db, id)
     const artistIds = activeLineup.map((spot) => spot.artist_id)
-    const [counts, { data: scoreRows }] = await Promise.all([
-      reviewCounts(db, artistIds),
+    const [counts, { data: nameRows }] = await Promise.all([
+      reviewCounts(db, showClubId, artistIds),
       artistIds.length > 0
-        ? db.from('artists').select('id, full_name, stage_name, admin_score').in('id', artistIds)
-        : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null; admin_score: number | null }> }),
+        ? db.from('artists').select('id, full_name, stage_name').in('id', artistIds)
+        : Promise.resolve({ data: [] as Array<{ id: string; full_name: string; stage_name: string | null }> }),
     ])
-    const scoreById = new Map((scoreRows ?? []).map((row) => [row.id, row]))
+    const nameById = new Map((nameRows ?? []).map((row) => [row.id, row]))
 
     return activeLineup.map((spot) => {
-      const artist = scoreById.get(spot.artist_id)
+      const artist = nameById.get(spot.artist_id)
       const requirement = (requirements ?? []).find((req) => req.id === spot.show_requirement_id)
       return {
         spotId: spot.id,
         artistName: artist ? artist.stage_name ?? artist.full_name : 'Unknown comedian',
         roleName: requirement?.role_name ?? null,
-        rating: reviews.get(spot.id)?.rating ?? null,
-        notes: reviews.get(spot.id)?.notes ?? null,
-        score: artist?.admin_score != null ? Number(artist.admin_score) : null,
+        rating: showReviews.get(spot.id)?.rating ?? null,
+        notes: showReviews.get(spot.id)?.notes ?? null,
+        // Klubbens egen score — `reviews` er klubbens liste, lastet over.
+        score: reviews.get(spot.artist_id)?.score ?? null,
         reviewCount: counts.get(spot.artist_id) ?? 0,
       }
     })
   })() : []
 
-  const showLocation = show.venue_address ?? show.venue_name
+  const showLocation = showVenue(show).line
 
   return (
     <div>
@@ -345,6 +351,7 @@ export default async function ShowDetailPage({
             ticketsSold={ticketsSold}
             hasRequirements={(requirements ?? []).length > 0}
             allSlotsFilled={allSlotsFilled}
+            locations={locations}
             updateShowDetailsAction={updateShowDetailsAction}
           />
         )}

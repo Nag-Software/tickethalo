@@ -6,6 +6,7 @@ import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import { runAutomaticBookingForClub } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
+import { recalculateClubArtistScore } from '@/lib/artist-reviews'
 
 /**
  * Katalogen skriver bare én ting: koblingen mellom klubben og komikeren.
@@ -41,6 +42,13 @@ export async function connectArtistAction(formData: FormData): Promise<{ error?:
       console.error(`[Discover] Could not connect artist: ${error.message}`)
       return { error: 'Could not add the comedian right now. Try again in a moment.' }
     }
+
+    // Har komikeren vært på lista før, finnes klubbens vurderinger ennå. Den
+    // nye koblingen står på 5,0 til scoren er regnet ut fra dem. Komikeren er
+    // lagt til uansett, så en feil her skal ikke melde at det ikke gikk.
+    await recalculateClubArtistScore(db, clubId, artistId).catch((scoreError) => {
+      console.error('[Discover] Could not recalculate club score:', scoreError)
+    })
 
     for (const path of PATHS) revalidatePath(path)
 
