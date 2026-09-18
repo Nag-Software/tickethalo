@@ -66,6 +66,10 @@ export type MarketingTaskKey =
   | 'schedule_email'
 export type MarketingDesignFileType = 'image'
 export type MarketingDesignKind = 'template' | 'poster'
+/** Hvor langt en mal er kommet i oppsettet av bilderuter og tekstfelt. */
+export type MarketingLayoutStatus = 'none' | 'draft' | 'confirmed'
+/** Lineupen en plakat ble laget for. */
+export type PosterLineupSnapshot = Array<{ artist_id: string | null; name: string }>
 export type PosterSource = 'ai' | 'upload'
 export type MarketingExportFormat =
   | 'facebook_event'
@@ -322,6 +326,9 @@ export type Show = {
   /** Merkevarefargene plakaten og eksportene bruker. Null = arv fra klubben. */
   marketing_palette: MarketingPalette | null
   selected_marketing_design_id: string | null
+  /** AI-bakgrunnen til plakaten uten mal. Gjenbrukes når bare lineupen endres. */
+  poster_background_url: string | null
+  poster_background_path: string | null
   status: ShowStatus
   /** Hvem som kan søke på plassene showet har åpnet. Se `ShowRequirement`. */
   submissions_audience: SubmissionsAudience
@@ -359,6 +366,14 @@ export type ShowMarketingDesign = {
   mime_type: string
   file_type: MarketingDesignFileType
   file_size: number | null
+  /** Bare for `kind: 'poster'`. */
+  source: PosterSource | null
+  lineup_snapshot: PosterLineupSnapshot | null
+  /** Bare for `kind: 'template'`. Formen er `PosterLayout` i lib/poster/layout.ts. */
+  poster_layout: unknown | null
+  layout_status: MarketingLayoutStatus
+  plate_url: string | null
+  plate_path: string | null
   created_at: string
   updated_at: string
 }
@@ -851,6 +866,8 @@ export type Database = {
           auto_poster_enabled?: boolean
           marketing_palette?: MarketingPalette | null
           selected_marketing_design_id?: string | null
+          poster_background_url?: string | null
+          poster_background_path?: string | null
           status?: ShowStatus
           submissions_audience?: SubmissionsAudience
           submissions_close_at?: string | null
@@ -886,6 +903,12 @@ export type Database = {
           mime_type: string
           file_type: MarketingDesignFileType
           file_size?: number | null
+          source?: PosterSource | null
+          lineup_snapshot?: PosterLineupSnapshot | null
+          poster_layout?: unknown | null
+          layout_status?: MarketingLayoutStatus
+          plate_url?: string | null
+          plate_path?: string | null
           created_at?: string
           updated_at?: string
         }

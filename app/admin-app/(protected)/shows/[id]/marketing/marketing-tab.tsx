@@ -5,6 +5,7 @@ import { AutoPosterToggle } from './automation-bar'
 import { BrandColorsCard } from './brand-colors-card'
 import { ChecklistCard } from './checklist-card'
 import { ExportPanel, type ExportState } from './export-panel'
+import { PosterArchive, type ArchivedPoster } from './poster-archive'
 import { PosterStage } from './poster-stage'
 import { SlotMatcher, type SlotArtistOption } from './slot-matcher'
 import { TemplatePicker, type TemplateOption } from './template-picker'
@@ -25,6 +26,7 @@ import {
   uploadMarketingSlotImageAction,
   uploadMarketingTemplateAction,
   uploadShowPosterAction,
+  useDesignAsPosterAction,
 } from './actions'
 import type { MarketingExportFormat, ShowStatus } from '@/types/database'
 
@@ -77,7 +79,7 @@ export async function MarketingTab({ showId }: { showId: string }) {
   // hentes i samme spørring, så begge deler vises i én liste.
   const designsQuery = db
     .from('show_marketing_designs')
-    .select('id, show_id, club_id, kind, label, file_name, file_url, slot_count')
+    .select('id, show_id, club_id, kind, label, file_name, file_url, slot_count, source, lineup_snapshot, layout_status, poster_layout, created_at')
     .order('created_at', { ascending: false })
 
   // `.or()` tar en rå filterstreng, så begge id-ene sjekkes mot UUID-formen
@@ -102,6 +104,8 @@ export async function MarketingTab({ showId }: { showId: string }) {
       fileName: design.file_name,
       slotCount: design.slot_count,
       isShowScoped: design.show_id === showId,
+      layoutStatus: design.layout_status,
+      isFlexible: Boolean((design.poster_layout as { lineupArea?: unknown } | null)?.lineupArea),
     }))
 
   const selectedTemplate = templates.find((template) => template.id === show.selected_marketing_design_id) ?? null
@@ -132,6 +136,25 @@ export async function MarketingTab({ showId }: { showId: string }) {
     isStale: row.source_poster_url !== show.poster_url,
   }))
 
+  // En plakat er utdatert når lineupen den ble laget for ikke lenger er
+  // lineupen showet har. Opplastede plakater har ingen kjent lineup.
+  const currentLineup = new Set(slots.map((slot) => slot.artistId).filter(Boolean))
+  const archive: ArchivedPoster[] = (designs ?? [])
+    .filter((design) => design.kind === 'poster' && design.show_id === showId)
+    .map((design) => {
+      const snapshot = (design.lineup_snapshot ?? []).map((entry) => entry.artist_id).filter(Boolean)
+      const isOutdated = design.lineup_snapshot != null
+        && (snapshot.length !== currentLineup.size || snapshot.some((id) => !currentLineup.has(id)))
+      return {
+        id: design.id,
+        fileUrl: design.file_url,
+        source: design.source,
+        createdAt: design.created_at,
+        isActive: design.file_url === show.poster_url,
+        isOutdated,
+      }
+    })
+
   const bookedCount = slots.filter((slot) => slot.artistId).length
   const canGenerate = bookedCount > 0
   const generateHint = canGenerate ? null : GENERATE_BLOCKED_HINT[show.status] ?? 'No confirmed artists yet.'
@@ -158,6 +181,14 @@ export async function MarketingTab({ showId }: { showId: string }) {
             uploadAction={uploadShowPosterAction}
             generateAction={generatePosterAction}
             clearAction={clearShowPosterAction}
+            hasTemplate={Boolean(selectedTemplate)}
+          />
+
+          <PosterArchive
+            showId={show.id}
+            posters={archive}
+            restoreAction={useDesignAsPosterAction}
+            deleteAction={deleteMarketingDesignAction}
           />
 
           <ExportPanel

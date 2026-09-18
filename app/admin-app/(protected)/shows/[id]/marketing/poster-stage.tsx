@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Image from 'next/image'
-import { ExternalLink, ImageOff, Loader2, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ExternalLink, ImageOff, Loader2, Palette, Sparkles, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MARKETING_EXPORT_SPECS, type MarketingExportSpec } from '@/lib/marketing/export-formats'
 import { MARKETING_DESIGN_ACCEPT } from '@/lib/marketing/storage'
@@ -24,7 +24,7 @@ const POSTER_RATIO = 2 / 3
 
 const SOURCE_BADGE: Record<PosterSource, { label: string; className: string }> = {
   upload: { label: 'Your own file', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' },
-  ai: { label: 'AI generated', className: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400' },
+  ai: { label: 'Generated', className: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400' },
 }
 
 export function PosterStage({
@@ -38,6 +38,7 @@ export function PosterStage({
   uploadAction,
   generateAction,
   clearAction,
+  hasTemplate,
 }: {
   showId: string
   showTitle: string
@@ -49,6 +50,8 @@ export function PosterStage({
   uploadAction: (formData: FormData) => Promise<{ posterUrl: string }>
   generateAction: (formData: FormData) => Promise<{ posterUrl: string | null }>
   clearAction: (formData: FormData) => Promise<void>
+  /** Med en mal er bakgrunnen malens egen, og det finnes ingen å bytte. */
+  hasTemplate: boolean
 }) {
   const { run, isRunning, isPending } = useMarketingAction()
   const [format, setFormat] = React.useState<StageFormat>('poster')
@@ -101,12 +104,30 @@ export function PosterStage({
             onClick={() => {
               const formData = new FormData()
               formData.set('show_id', showId)
-              run('generate', () => generateAction(formData), { success: 'New AI poster is ready.' })
+              run('generate', () => generateAction(formData), { success: 'New poster is ready. The previous one is kept below.' })
             }}
           >
             {isRunning('generate') ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
-            {posterUrl ? 'Regenerate with AI' : 'Generate with AI'}
+            {posterUrl ? 'Regenerate' : 'Generate poster'}
           </Button>
+
+          {posterSource === 'ai' && !hasTemplate && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={isPending || !canGenerate}
+              title="Keep the lineup and text, and have the AI paint a new background"
+              onClick={() => {
+                const formData = new FormData()
+                formData.set('show_id', showId)
+                formData.set('new_background', 'true')
+                run('background', () => generateAction(formData), { success: 'New background is ready. The previous poster is kept below.' })
+              }}
+            >
+              {isRunning('background') ? <Loader2 className="animate-spin" aria-hidden /> : <Palette aria-hidden />}
+              New background
+            </Button>
+          )}
 
           {posterUrl && (
             <Button
@@ -116,7 +137,7 @@ export function PosterStage({
               aria-label="Remove the poster from this show"
               title="Remove the poster from this show"
               onClick={() => {
-                if (!window.confirm('Remove the poster from this show? The file stays in the library.')) return
+                if (!window.confirm('Remove the poster from this show? The file stays under Previous posters.')) return
                 const formData = new FormData()
                 formData.set('show_id', showId)
                 run('clear', () => clearAction(formData), { success: 'Poster removed from the show.' })
@@ -171,7 +192,7 @@ export function PosterStage({
             <ImageOff className="size-6 text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">No poster yet</p>
             <p className="max-w-xs text-xs text-muted-foreground">
-              Upload your own artwork, or let the AI build one from your template, brand colours and photo slots.
+              Upload your own artwork, or generate one from your template, brand colours and photo slots. Photos, names and dates are always placed exactly — the AI only paints the background.
             </p>
             <Button size="sm" variant="outline" disabled={isPending} onClick={() => inputRef.current?.click()}>
               <Upload aria-hidden />

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { MARKETING_DESIGN_ACCEPT } from '@/lib/marketing/storage'
 import { templateFit } from '@/lib/marketing/slots'
 import { useMarketingAction } from './use-marketing-action'
+import type { MarketingLayoutStatus } from '@/types/database'
 
 /**
  * Malvelgeren.
@@ -25,6 +26,16 @@ export type TemplateOption = {
   slotCount: number
   /** True når malen ligger på dette showet i stedet for i biblioteket. */
   isShowScoped: boolean
+  /** Bare en bekreftet mal kan brukes til å lage plakater. */
+  layoutStatus: MarketingLayoutStatus
+  /** Malen har et lineupfelt, og tar dermed en lineup av hvilken som helst størrelse. */
+  isFlexible: boolean
+}
+
+const SETUP_BADGE: Record<MarketingLayoutStatus, { label: string; className: string }> = {
+  none: { label: 'Sets itself up on first use', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400' },
+  draft: { label: 'Sets itself up on first use', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400' },
+  confirmed: { label: 'Ready', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' },
 }
 
 const FIT_TONE_CLASS: Record<string, string> = {
@@ -79,16 +90,22 @@ export function TemplatePicker({
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
               <p className="truncate text-sm font-medium">{selected.label}</p>
-              <FitBadge slotCount={selected.slotCount} lineupSize={lineupSize} />
+              <div className="flex flex-wrap gap-1">
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${SETUP_BADGE[selected.layoutStatus].className}`}>
+                  {SETUP_BADGE[selected.layoutStatus].label}
+                </span>
+                <FitBadge slotCount={selected.slotCount} lineupSize={lineupSize} isFlexible={selected.isFlexible} />
+              </div>
               <p className="text-[11px] text-muted-foreground">
-                {selected.isShowScoped ? 'Uploaded to this show.' : 'From the club library.'}
+                Photos, names and dates are placed into the design by code; the rest of it is never redrawn.
+                If the result does not look right, the poster is made in the built-in layout in your colours instead.
               </p>
             </div>
           </div>
         ) : (
           <div className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
             <ImageOff className="size-4 shrink-0" aria-hidden />
-            <span>No template selected. The AI poster will design from scratch.</span>
+            <span>No template selected. The poster uses a built-in layout in your brand colours, with an AI-painted background.</span>
           </div>
         )}
       </div>
@@ -109,8 +126,10 @@ export function TemplatePicker({
   )
 }
 
-function FitBadge({ slotCount, lineupSize }: { slotCount: number; lineupSize: number }) {
-  const fit = templateFit(slotCount, lineupSize)
+function FitBadge({ slotCount, lineupSize, isFlexible }: { slotCount: number; lineupSize: number; isFlexible: boolean }) {
+  const fit = isFlexible
+    ? { label: 'Flexible — fits any lineup', tone: 'exact' as const }
+    : templateFit(slotCount, lineupSize)
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${FIT_TONE_CLASS[fit.tone]}`}>
       {fit.label}
@@ -151,8 +170,8 @@ function TemplateBrowser({
 
   const ranked = React.useMemo(
     () => [...templates].sort((a, b) => {
-      const scoreA = templateFit(a.slotCount, lineupSize).score
-      const scoreB = templateFit(b.slotCount, lineupSize).score
+      const scoreA = a.isFlexible ? 0 : templateFit(a.slotCount, lineupSize).score
+      const scoreB = b.isFlexible ? 0 : templateFit(b.slotCount, lineupSize).score
       if (scoreA !== scoreB) return scoreA - scoreB
       return a.label.localeCompare(b.label)
     }),
@@ -235,7 +254,7 @@ function TemplateBrowser({
                   </div>
                   <div className="space-y-1 p-2.5">
                     <p className="truncate text-xs font-medium">{template.label}</p>
-                    <FitBadge slotCount={template.slotCount} lineupSize={lineupSize} />
+                    <FitBadge slotCount={template.slotCount} lineupSize={lineupSize} isFlexible={template.isFlexible} />
                   </div>
                 </button>
 

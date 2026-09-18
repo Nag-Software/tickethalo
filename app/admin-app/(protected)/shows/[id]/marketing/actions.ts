@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertShowAccess } from '@/lib/club-auth'
-import { generateShowPoster } from '@/lib/actions/ai'
+import { generateShowPoster } from '@/lib/poster/generate'
 import { buildMarketingSlots } from '@/lib/marketing/slots'
 import { normalizeHex, paletteFromSeed, resolvePalette } from '@/lib/marketing/palette'
 import { suggestPalette } from '@/lib/marketing/palette-extract'
@@ -22,9 +22,11 @@ import type {
   MarketingDesignKind,
   MarketingExportFormat,
   MarketingPalette,
+  PosterLineupSnapshot,
   ShowMarketingDesign,
 } from '@/types/database'
 import { showVenue } from '@/lib/show-venue'
+import { normalizePosterLayout } from '@/lib/poster/layout'
 
 /**
  * Server actions for markedsføringsfanen.
@@ -54,7 +56,7 @@ async function loadShowForMarketing(showId: string) {
   const db = createAdminClient()
   const { data: show, error } = await db
     .from('shows')
-    .select('id, club_id, title, slug, date, start_time, venue_name, venue_address, description, ticket_price, currency, ticket_url, poster_url, poster_source, marketing_palette, selected_marketing_design_id')
+    .select('id, club_id, title, slug, date, start_time, venue_name, venue_address, description, ticket_price, currency, ticket_url, poster_url, poster_source, marketing_palette, selected_marketing_design_id, poster_background_url, poster_background_path')
     .eq('id', showId)
     .single()
 
@@ -131,6 +133,8 @@ async function storeDesignFile(input: {
   kind: MarketingDesignKind
   label: string | null
   slotCount: number
+  /** Lineupen plakaten gjelder for. Bare for `kind: 'poster'`. */
+  lineup?: PosterLineupSnapshot | null
 }): Promise<UploadedDesign> {
   assertUploadableImage(input.file)
 
@@ -154,6 +158,8 @@ async function storeDesignFile(input: {
       show_id: input.showId,
       club_id: input.clubId,
       kind: input.kind,
+      source: input.kind === 'poster' ? 'upload' : null,
+      lineup_snapshot: input.kind === 'poster' ? input.lineup ?? null : null,
       slot_count: input.slotCount,
       width,
       height,
@@ -247,7 +253,7 @@ export async function deleteMarketingDesignAction(formData: FormData) {
   const show = await loadShowForMarketing(showId)
   const { data: design } = await db
     .from('show_marketing_designs')
-    .select('id, file_path, show_id, club_id')
+    .select('id, kind, file_url, file_path, plate_path, poster_layout, show_id, club_id')
     .eq('id', designId)
     .maybeSingle()
 
@@ -256,6 +262,11 @@ export async function deleteMarketingDesignAction(formData: FormData) {
 
   if (!design || !belongsHere) throw new Error('That template does not belong to this show or club.')
 
+  // Plakaten som er i bruk skal ikke kunne forsvinne under event-siden.
+  if (design.kind === 'poster' && design.file_url === show.poster_url) {
+    throw new Error('This poster is in use on the show. Switch to another poster or remove it from the show first.')
+  }
+
   // Malen kan være valgt på flere show i klubben. Slippes den ett sted, må den
   // slippes overalt, ellers står showet igjen med en peker til ingenting.
   await db.from('shows').update({ selected_marketing_design_id: null }).eq('selected_marketing_design_id', designId)
@@ -263,7 +274,11 @@ export async function deleteMarketingDesignAction(formData: FormData) {
   const { error } = await db.from('show_marketing_designs').delete().eq('id', designId)
   if (error) throw new Error(error.message)
 
-  await db.storage.from(MARKETING_DESIGN_BUCKET).remove([design.file_path])
+  // Platen og klubbens fontfil er avledet av malen og har ingen annen eier.
+  const fontPath = normalizePosterLayout(design.poster_layout).customFont?.path
+  const paths = [design.file_path, design.plate_path, design.poster_layout ? fontPath : null]
+    .filter((path): path is string => Boolean(path))
+  await db.storage.from(MARKETING_DESIGN_BUCKET).remove(paths)
   revalidateShow(showId)
 }
 
@@ -315,7 +330,7 @@ export async function useDesignAsPosterAction(formData: FormData) {
   const show = await loadShowForMarketing(showId)
   const { data: design } = await db
     .from('show_marketing_designs')
-    .select('id, file_url, show_id, club_id')
+    .select('id, file_url, show_id, club_id, source')
     .eq('id', designId)
     .maybeSingle()
 
@@ -326,10 +341,17 @@ export async function useDesignAsPosterAction(formData: FormData) {
 
   const { error } = await db
     .from('shows')
-    .update({ poster_url: design.file_url, poster_source: 'upload' })
+    .update({ poster_url: design.file_url, poster_source: design.source ?? 'upload' })
     .eq('id', showId)
 
   if (error) throw new Error(error.message)
+
+  await db.from('marketing_tasks').upsert({
+    show_id: showId,
+    task_key: 'upload_poster',
+    label: 'Poster ready',
+    is_completed: true,
+  }, { onConflict: 'show_id,task_key', ignoreDuplicates: false })
 
   revalidateShow(showId)
   return { posterUrl: design.file_url }
@@ -376,11 +398,12 @@ export async function setAutoPosterAction(formData: FormData) {
 }
 
 /**
- * Genererer AI-plakaten på forespørsel.
+ * Genererer plakaten på forespørsel.
  *
- * Til forskjell fra før tar den med seg klubbens farger og ruteoppsettet, slik
- * at «headliner»-ruten faktisk får headlinerens bilde og plakaten kommer ut i
- * riktig farge første gang.
+ * Bilder, navn og tekst settes av kode fra rutene under; bildemodellen lager
+ * bare bakgrunnen, og bare når showet ikke bruker en mal. `new_background`
+ * ber om en ny bakgrunn — ellers gjenbrukes den showet har, og en endret
+ * lineup gir ny plakat uten noe AI-kall.
  */
 export async function generatePosterAction(formData: FormData) {
   const showId = requireText(formData.get('show_id'), 'Show is missing.')
@@ -406,7 +429,7 @@ export async function generatePosterAction(formData: FormData) {
   const design = show.selected_marketing_design_id
     ? (await db
       .from('show_marketing_designs')
-      .select('label, file_url, file_path, file_name, mime_type, slot_count')
+      .select('id, label, file_url, slot_count, poster_layout, layout_status, plate_url, plate_path')
       .eq('id', show.selected_marketing_design_id)
       .maybeSingle()).data
     : null
@@ -422,32 +445,37 @@ export async function generatePosterAction(formData: FormData) {
   const palette = resolvePalette(show.marketing_palette, club?.brand_color ?? null)
 
   const posterUrl = await generateShowPoster(showId, {
+    clubId: show.club_id,
     title: show.title,
     date: show.date,
     startTime: show.start_time,
     venue: showVenue(show).line ?? '',
+    // Rutene er allerede rangert som en plakat leser dem, og bærer med seg
+    // klubbens egne valg av bilde. Rekkefølgen her er rekkefølgen på plakaten.
     artists: slots.flatMap((slot) => (
       slot.artistId && slot.artistName
-        ? [{ name: slot.artistName, profile_image_url: slot.imageUrl, role_name: slot.roleLabel }]
+        ? [{ id: slot.artistId, name: slot.artistName, imageUrl: slot.imageUrl, roleName: slot.roleLabel }]
         : []
     )),
-    designTemplate: design
+    template: design
       ? {
+        id: design.id,
         label: design.label,
         fileUrl: design.file_url,
-        filePath: design.file_path,
-        fileName: design.file_name,
-        mimeType: design.mime_type,
-        slotCount: design.slot_count,
+        platePath: design.plate_path,
+        layout: design.poster_layout,
+        layoutStatus: design.layout_status,
+        plateUrl: design.plate_url,
       }
       : null,
     palette,
+    existingBackground: { url: show.poster_background_url, path: show.poster_background_path },
+    newBackground: formData.get('new_background') === 'true',
     throwOnError: true,
   })
 
   if (!posterUrl) throw new Error('Could not generate the poster right now.')
 
-  await db.from('shows').update({ poster_source: 'ai' }).eq('id', showId)
   await db.from('marketing_tasks').upsert({
     show_id: showId,
     task_key: 'upload_poster',

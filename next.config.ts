@@ -6,6 +6,12 @@ const supabaseHostname = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
+  // Plakatfontene leses med `fs` i `lib/poster/text.ts`. Sporingen ser ikke
+  // filer som åpnes via en sammensatt sti, så de må nevnes — ellers finnes de
+  // lokalt, men ikke i funksjonen på Vercel.
+  outputFileTracingIncludes: {
+    '/*': ['./lib/poster/fonts/*'],
+  },
   turbopack: {},
   images: {
     // Bildene serveres rett fra kilden i stedet for gjennom /_next/image.

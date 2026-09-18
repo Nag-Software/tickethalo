@@ -10,7 +10,7 @@ import {
   sendSpotFilledEmail,
   sendSpotAvailableEmail,
 } from '@/lib/email/mailer'
-import { generateShowPoster } from '@/lib/actions/ai'
+import { generateShowPoster } from '@/lib/poster/generate'
 import { resolvePalette } from '@/lib/marketing/palette'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import {
@@ -797,7 +797,7 @@ export async function automateFullbookedShow(showId: string) {
 
   const { data: show } = await admin
     .from('shows')
-    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, auto_poster_enabled, marketing_palette, club_id, status')
+    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, auto_poster_enabled, marketing_palette, poster_background_url, poster_background_path, club_id, status')
     .eq('id', showId)
     .single()
 
@@ -845,12 +845,13 @@ export async function automateFullbookedShow(showId: string) {
     const { data: posterDesign } = show.selected_marketing_design_id
       ? await admin
         .from('show_marketing_designs')
-        .select('label, file_url, file_path, file_name, mime_type, file_type')
+        .select('id, label, file_url, poster_layout, layout_status, plate_url, plate_path')
         .eq('id', show.selected_marketing_design_id)
         .maybeSingle()
       : { data: null }
 
     posterUrl = await generateShowPoster(showId, {
+      clubId: show.club_id,
       title: show.title,
       date: show.date,
       startTime: show.start_time,
@@ -859,21 +860,25 @@ export async function automateFullbookedShow(showId: string) {
         const artist = artistById.get(spot.artist_id)
         if (!artist) return []
         return [{
+          id: artist.id,
           name: artist.stage_name ?? artist.full_name,
-          profile_image_url: artist.profile_image_url,
-          role_name: requirementById.get(spot.show_requirement_id) ?? null,
+          imageUrl: artist.profile_image_url,
+          roleName: requirementById.get(spot.show_requirement_id) ?? null,
         }]
       }),
-      designTemplate: posterDesign
+      template: posterDesign
         ? {
+          id: posterDesign.id,
           label: posterDesign.label,
           fileUrl: posterDesign.file_url,
-          filePath: posterDesign.file_path,
-          fileName: posterDesign.file_name,
-          mimeType: posterDesign.mime_type,
+          platePath: posterDesign.plate_path,
+          layout: posterDesign.poster_layout,
+          layoutStatus: posterDesign.layout_status,
+          plateUrl: posterDesign.plate_url,
         }
         : null,
       palette: resolvePalette(show.marketing_palette, clubBrandColor),
+      existingBackground: { url: show.poster_background_url, path: show.poster_background_path },
     })
   }
 
