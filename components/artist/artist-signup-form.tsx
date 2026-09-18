@@ -228,7 +228,6 @@ export function ArtistSignupForm({
           )}
 
           <section className="space-y-4">
-            <SectionHeader icon={User} title="Identity" />
             <div className="grid gap-4 md:grid-cols-2">
               <LabeledInput icon={User} id="full_name" name="full_name" label="Full Name" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
               <LabeledInput icon={AtSign} id="email" name="email" label="Email" type="email" placeholder="name@example.com" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
@@ -270,16 +269,13 @@ export function ArtistSignupForm({
           </section>
 
           <section className="space-y-4">
-            <SectionHeader icon={Camera} title="Profile" />
+            <SectionHeader icon={Camera} title="Headshot photo" />
             <label htmlFor="profile_image_file" className="flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-[var(--ev-line-strong)] p-4 transition-colors hover:bg-[var(--ev-bg)]">
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[var(--ev-bg)] text-[var(--ev-muted)]">
                 <ImagePlus className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium">Headshot Picture</p>
-                <p className="truncate text-[13px] text-[var(--ev-muted)]">
-                  {preparingImage ? "Preparing image…" : (imageName ?? "This photo can be used on posters. Please choose a headshot.")}
-                </p>
+                <p className="text-[13px] font-medium">{preparingImage ? "Preparing image…" : (imageName ?? "This photo will be used on posters.")}</p>
               </div>
               <span className="shrink-0 rounded-full bg-[var(--ev-text)] px-3.5 py-2 text-[13px] font-semibold text-[var(--ev-bg)]">Choose Image</span>
               <input
@@ -325,18 +321,18 @@ export function ArtistSignupForm({
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="bio" className="text-[13px] font-medium">Short Bio</label>
+              <label htmlFor="bio" className="text-[13px] font-medium">Short Bio - This text will be used in marketing.</label>
               <textarea
                 id="bio"
                 name="bio"
                 rows={4}
                 className={textareaClassName}
-                placeholder="Tell us briefly about stage experience, career highlights and style. This will be used in marketing when you are booked for a spot."
+                placeholder="Tell us briefly about stage experience, career highlights and style."
               />
             </div>
           </section>
 
-          <section className="space-y-4 border-t border-[var(--ev-line)] pt-6">
+          <section className="space-y-4 border-[var(--ev-line)] pt-6">
             <SectionHeader icon={Globe2} title="Social Media Links" aside="optional" />
             <div className="grid gap-4 md:grid-cols-2">
               <Input id="instagram" name="instagram" type="url" placeholder="Instagram URL" className={fieldClassName} />
