@@ -330,7 +330,11 @@ export function LineupTab({
       fd.set('compensation_amount', req.compensation_amount == null ? '' : String(req.compensation_amount / 100))
       fd.set('compensation_percent', req.compensation_percent == null ? '' : String(req.compensation_percent))
       try {
-        await addRequirementAction(fd)
+        const result = await addRequirementAction(fd)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
         toast.success('Lineup spot duplicated.')
         router.refresh()
       } catch (err) {

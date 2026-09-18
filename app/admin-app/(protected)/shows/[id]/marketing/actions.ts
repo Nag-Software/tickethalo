@@ -437,6 +437,7 @@ export async function generatePosterAction(formData: FormData) {
         filePath: design.file_path,
         fileName: design.file_name,
         mimeType: design.mime_type,
+        slotCount: design.slot_count,
       }
       : null,
     palette,

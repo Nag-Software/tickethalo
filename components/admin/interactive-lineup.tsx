@@ -25,6 +25,7 @@ import {
   swapArtistAction,
   updateSpotFeeAction,
   updateSpotRoleAction,
+  type RequirementActionResult,
 } from '@/app/admin-app/(protected)/shows/actions'
 
 /** Score ligger bevisst ikke her: bookeren skal ikke se den. */
@@ -79,10 +80,17 @@ export function InteractiveLineup({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  function run(work: () => Promise<void>, success: string) {
+  // Handlinger som validerer bookerens tall (honorar, prosentpott) svarer med
+  // `{ ok: false, error }` i stedet for å kaste: Next skjuler meldingen på
+  // kastede feil i produksjon, og bookeren må få lese hvorfor det ble avvist.
+  function run(work: () => Promise<void | RequirementActionResult>, success: string) {
     startTransition(async () => {
       try {
-        await work()
+        const result = await work()
+        if (result && !result.ok) {
+          toast.error(result.error)
+          return
+        }
         toast.success(success)
         router.refresh()
       } catch (error) {

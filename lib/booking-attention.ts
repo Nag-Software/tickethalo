@@ -219,7 +219,7 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
         'Lineupen er full, men showet kan ikke publiseres før klubbens utbetalingsoppsett er ferdig.',
         'Fullfør Økonomi',
         null,
-        '/admin-app/economy',
+        '/admin-app/finances',
       )
     }
 

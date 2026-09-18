@@ -1,6 +1,6 @@
 'use server'
 
-import { toFile, type Uploadable } from 'openai'
+import OpenAI, { toFile, type Uploadable } from 'openai'
 import sharp from 'sharp'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOpenAI } from '@/lib/openai'
@@ -25,6 +25,8 @@ type PosterDesignTemplate = {
   filePath: string
   fileName: string
   mimeType: string
+  /** Antall bilderuter i malen, når klubben har oppgitt det. */
+  slotCount?: number | null
 }
 
 type PosterReferencePhoto = {
@@ -85,6 +87,8 @@ export async function generateShowPoster(showId: string, opts: {
     const portraitCountRule = referenceArtistCount > 0
       ? `The final poster must contain exactly ${referenceArtistCount} supplied comedian portrait${referenceArtistCount === 1 ? '' : 's'}: one portrait per supplied profile photo, no repeated faces, no duplicate cutouts, no mirrored copies, no extra headshots, and no generated additional comedians.`
       : `No supplied artist photos are available. Do not create prominent fake comedian faces; use typography, venue atmosphere, graphic motifs, and event details to carry the design.`
+    const templateSlotCount = designReference ? opts.designTemplate?.slotCount ?? 0 : 0
+    const emptyBoxCount = referenceArtistCount > 0 ? Math.max(0, templateSlotCount - referenceArtistCount) : 0
     const referenceList = referencePackage.identityLines.length > 0
       ? referencePackage.identityLines.join('\n')
       : sorted.map((artist) => `${artist.name}${artist.roleName ? ` (${artist.roleName})` : ''} - no reference photo`).join('\n')
@@ -124,6 +128,13 @@ export async function generateShowPoster(showId: string, opts: {
       designReference ? `STRICT EDIT MODE: Treat input image 1 as the base canvas. Preserve all existing non-text artwork: logos, venue logos, sponsor logos, icons, footer marks, backgrounds, textures, color palette, borders, splashes, decorative elements, layout grid, spacing, and typography style. Do not redraw, restyle, replace, move, or reinterpret logos or branding. Do not invent new graphic elements.` : null,
       designReference ? `ALLOWED EDITS ONLY: 1) Put the supplied artist photos into existing blank/photo areas. 2) Replace old names, date/time, venue, title, and event copy with the current show details above. Keep text in the same approximate positions, sizes, alignment, color, and hierarchy as the template. If a piece of existing text is a logo/brand mark, preserve it unchanged.` : null,
       designReference ? `PHOTO SLOT RULES: If the template contains rectangular blank photo boxes, place photos inside those same rectangles. Do not convert rectangles into circles, bubbles, badges, arches, stickers, or a collage. Do not add extra portrait frames. If there are more template slots than artists, leave extra slots visually consistent with the template instead of inventing people.` : null,
+      // Rutetallet gjør «la ruten stå tom» til et tall og ikke en tolkning:
+      // seks ruter og fem bilder gir ellers fort en sjette rute med et ansikt
+      // som allerede er brukt. Ingen rute-til-rute-plan — lineuppene varierer
+      // for mye til det — bare hvor mange som skal stå tomme.
+      emptyBoxCount > 0
+        ? `EMPTY BOXES: The template has ${opts.designTemplate?.slotCount} photo boxes and ${referenceArtistCount} comedian photo${referenceArtistCount === 1 ? '' : 's'} are supplied. Exactly ${emptyBoxCount} box${emptyBoxCount === 1 ? '' : 'es'} must stay empty: fill each with the template's own background so it reads as intentionally blank. Never fill an empty box by repeating a face that is already on the poster.`
+        : null,
       designReference ? `The final image should look like input image 1 was manually edited for this show, with only photos and editable event text changed.` : null,
       designReference ? null : ``,
       designReference ? null : `POSTER PLAN FOR THIS SPECIFIC SHOW:`,
@@ -156,32 +167,34 @@ export async function generateShowPoster(showId: string, opts: {
     ].filter(Boolean).join('\n')
 
     const openai = getOpenAI()
-    const response = referenceImages.length > 0
-      ? await openai.images.edit({
-        model: 'gpt-image-1.5',
-        image: referenceImages,
-        prompt,
-        n: 1,
-        size: '1024x1536',
-        quality: 'high',
-        input_fidelity: 'high',
-        output_format: 'png',
-      })
-      : await openai.images.generate({
-        model: 'gpt-image-1.5',
-        prompt,
-        n: 1,
-        size: '1024x1536',
-        quality: 'high',
-        output_format: 'png',
-      })
 
-    const imageBase64 = response.data?.[0]?.b64_json
-    if (!imageBase64) {
-      throw new Error('OpenAI returnerte ikke et bilde.')
+    // Bildemodellen følger ikke alltid «ingen dupliserte ansikter», særlig når
+    // malen har flere ruter enn lineupen har bilder. Derfor kontrolleres det
+    // ferdige bildet, og et bilde der samme person går igjen genereres på nytt.
+    // Uten referansebilder er det ingenting å telle mot, og sjekken hoppes over.
+    let imageBuffer: Buffer | null = null
+    for (let attempt = 1; attempt <= MAX_POSTER_ATTEMPTS; attempt++) {
+      const attemptPrompt = attempt === 1 ? prompt : `${prompt}\n\n${RETRY_NOTE}`
+      const candidate = await requestPosterImage(openai, referenceImages, attemptPrompt)
+      if (referenceArtistCount === 0) {
+        imageBuffer = candidate
+        break
+      }
+
+      const verdict = await verifyPosterPortraits(openai, candidate, referenceArtistCount)
+      if (verdict.ok) {
+        imageBuffer = candidate
+        break
+      }
+      console.warn(`[Poster] Attempt ${attempt}/${MAX_POSTER_ATTEMPTS} rejected: ${verdict.reason}`)
     }
 
-    const imageBuffer = Buffer.from(imageBase64, 'base64')
+    if (!imageBuffer) {
+      throw new Error(
+        'Plakaten fikk samme komiker flere ganger i alle forsøk. Prøv igjen, eller velg en mal med færre bilderuter.',
+      )
+    }
+
     const fileName = `${showId}/poster-${Date.now()}.png`
     const { error: uploadError } = await admin.storage
       .from('generated-posters')
@@ -303,6 +316,94 @@ async function fetchPosterReferencePhotos(artists: PosterArtist[]): Promise<Post
   }
 
   return photos
+}
+
+/** Ett bilde koster; tre forsøk er grensen for hva en klubb bør vente på. */
+const MAX_POSTER_ATTEMPTS = 3
+
+const RETRY_NOTE = `RETRY NOTE: A previous attempt of this exact poster showed the same comedian in more than one place. Every supplied comedian appears exactly once. If a photo area would otherwise be left over, leave it blank in the template's own background colour instead of reusing a face.`
+
+async function requestPosterImage(openai: OpenAI, referenceImages: Uploadable[], prompt: string): Promise<Buffer> {
+  const response = referenceImages.length > 0
+    ? await openai.images.edit({
+      model: 'gpt-image-1.5',
+      image: referenceImages,
+      prompt,
+      n: 1,
+      size: '1024x1536',
+      quality: 'high',
+      input_fidelity: 'high',
+      output_format: 'png',
+    })
+    : await openai.images.generate({
+      model: 'gpt-image-1.5',
+      prompt,
+      n: 1,
+      size: '1024x1536',
+      quality: 'high',
+      output_format: 'png',
+    })
+
+  const imageBase64 = response.data?.[0]?.b64_json
+  if (!imageBase64) {
+    throw new Error('OpenAI returnerte ikke et bilde.')
+  }
+  return Buffer.from(imageBase64, 'base64')
+}
+
+type PortraitVerdict = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Teller portrettene på den ferdige plakaten og ser etter en person som går
+ * igjen. Et vern, ikke en port: svikter selve sjekken (nett, parsing), slippes
+ * bildet gjennom uverifisert med en advarsel i loggen — en nede synsmodell
+ * skal ikke stoppe all plakatgenerering.
+ */
+async function verifyPosterPortraits(openai: OpenAI, image: Buffer, expectedCount: number): Promise<PortraitVerdict> {
+  try {
+    const response = await openai.responses.create({
+      model: 'gpt-5-mini',
+      reasoning: { effort: 'low' },
+      input: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: `This is a comedy show poster that should show exactly ${expectedCount} different comedian${expectedCount === 1 ? '' : 's'}, each exactly once. Count the portraits of people on the poster, and check whether any one person appears in more than one portrait (the same face repeated, mirrored, or re-cropped elsewhere on the poster). Ignore text, logos and decorative graphics.`,
+            },
+            { type: 'input_image', image_url: `data:image/png;base64,${image.toString('base64')}`, detail: 'high' },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'portrait_check',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              portraits: { type: 'integer', description: 'Number of portraits of people on the poster.' },
+              repeated_person: { type: 'boolean', description: 'True when one person appears in more than one portrait.' },
+            },
+            required: ['portraits', 'repeated_person'],
+            additionalProperties: false,
+          },
+        },
+      },
+    })
+
+    const parsed = JSON.parse(response.output_text) as { portraits: number; repeated_person: boolean }
+    if (parsed.repeated_person) return { ok: false, reason: 'the same person appears more than once' }
+    if (parsed.portraits > expectedCount) {
+      return { ok: false, reason: `${parsed.portraits} portraits for ${expectedCount} comedians` }
+    }
+    return { ok: true }
+  } catch (error) {
+    console.warn('[Poster] Portrait check failed, accepting the image unverified:', error)
+    return { ok: true }
+  }
 }
 
 async function normalizeOpenAIReferenceImage(buffer: Buffer, maxWidth: number, maxHeight: number) {

@@ -84,6 +84,12 @@ type Props = {
   rosterSize: number
   /** Ubehandlede søknader på showet, per lineup-plass. */
   pendingByRequirement: Record<string, number>
+  /**
+   * Taket for prosentavtalene samlet — klubbens andel av billettinntekten
+   * (`clubs.artist_share_bps`, 90 % som standard). Samme grense som
+   * `ensurePercentAllocationWithinLimit` håndhever på serveren.
+   */
+  percentLimit: number
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -272,7 +278,8 @@ function blockingCompensationIssue(
   ids: string[],
   states: Record<string, ReqState>,
   id: string,
-  nextState: ReqState
+  nextState: ReqState,
+  percentLimit: number
 ) {
   if (nextState.compensation_type === 'fixed') {
     const amount = toPlainNumber(nextState.compensation_amount)
@@ -289,8 +296,8 @@ function blockingCompensationIssue(
     }
 
     const projectedTotal = totalPercentAllocation(ids, states, { id, state: nextState })
-    if (projectedTotal > 100.0001) {
-      return 'Total percentage cannot exceed 100%.'
+    if (projectedTotal > percentLimit + 0.0001) {
+      return `Total percentage cannot exceed ${percentLimit}% of ticket sales.`
     }
   }
 
@@ -301,9 +308,10 @@ function compensationIssue(
   ids: string[],
   states: Record<string, ReqState>,
   id: string,
-  state: ReqState
+  state: ReqState,
+  percentLimit: number
 ): CompensationIssue | null {
-  const blockingIssue = blockingCompensationIssue(ids, states, id, state)
+  const blockingIssue = blockingCompensationIssue(ids, states, id, state, percentLimit)
   if (blockingIssue) {
     return { tone: 'destructive', message: blockingIssue }
   }
@@ -364,6 +372,7 @@ export function RequirementsTab({
   submissionsCloseAt,
   rosterSize,
   pendingByRequirement,
+  percentLimit,
 }: Props) {
   const router = useRouter()
 
@@ -391,12 +400,18 @@ export function RequirementsTab({
     (id: string, state: ReqState) => {
       setSavingIds((prev) => new Set([...prev, id]))
       updateRequirementAction(buildFormData(showId, id, state))
-        .then(() => {
+        .then((result) => {
           setSavingIds((prev) => {
             const next = new Set(prev)
             next.delete(id)
             return next
           })
+          // Avvist av serveren: feltet forblir «ulagret», så bookeren ser at
+          // verdien ikke ble tatt imot, og får vite hvorfor.
+          if (!result.ok) {
+            toast.error(result.error)
+            return
+          }
           setDirtyIds((prev) => {
             const latestState = reqStatesRef.current[id]
             if (!latestState || !isSameReqState(latestState, state) || !prev.has(id)) {
@@ -452,7 +467,7 @@ export function RequirementsTab({
       setDirtyIds(new Set(Object.keys(validDrafts)))
 
       for (const [id, state] of Object.entries(validDrafts)) {
-        const blockingIssue = blockingCompensationIssue(orderedIds, mergedStates, id, state)
+        const blockingIssue = blockingCompensationIssue(orderedIds, mergedStates, id, state, percentLimit)
         if (!blockingIssue) {
           debounceTimers.current[id] = setTimeout(() => {
             delete debounceTimers.current[id]
@@ -493,14 +508,14 @@ export function RequirementsTab({
       const current = reqStatesRef.current[id]
       if (!current) return
 
-      const blockingIssue = blockingCompensationIssue(orderedIds, reqStatesRef.current, id, current)
+      const blockingIssue = blockingCompensationIssue(orderedIds, reqStatesRef.current, id, current, percentLimit)
       if (blockingIssue) return
 
       clearTimeout(debounceTimers.current[id])
       delete debounceTimers.current[id]
       persistReq(id, current)
     },
-    [orderedIds, persistReq]
+    [orderedIds, persistReq, percentLimit]
   )
 
   function updateField(id: string, field: keyof ReqState, value: string) {
@@ -511,7 +526,7 @@ export function RequirementsTab({
     setReqStates((prev) => ({ ...prev, [id]: next }))
     setDirtyIds((prev) => new Set([...prev, id]))
 
-    const blockingIssue = blockingCompensationIssue(orderedIds, reqStates, id, next)
+    const blockingIssue = blockingCompensationIssue(orderedIds, reqStates, id, next, percentLimit)
     if (blockingIssue) {
       clearTimeout(debounceTimers.current[id])
       delete debounceTimers.current[id]
@@ -611,7 +626,11 @@ export function RequirementsTab({
 
     startAdding(async () => {
       try {
-        await addRequirementAction(fd)
+        const result = await addRequirementAction(fd)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
         toast.success('Lineup spot duplicated')
         router.refresh()
       } catch (err: unknown) {
@@ -656,7 +675,11 @@ export function RequirementsTab({
 
     startAdding(async () => {
       try {
-        await addRequirementAction(fd)
+        const result = await addRequirementAction(fd)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
         setWizard(WIZARD_INITIAL)
         toast.success('Requirement added')
         router.refresh()
@@ -679,7 +702,11 @@ export function RequirementsTab({
     fd.set('compensation_percent', wizard.compensation_percent)
     startAdding(async () => {
       try {
-        await addRequirementAction(fd)
+        const result = await addRequirementAction(fd)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
         setWizard(WIZARD_INITIAL)
         toast.success('Requirement added')
         router.refresh()
@@ -707,7 +734,7 @@ export function RequirementsTab({
   }).length
   const blockingIssueCount = orderedRequirements.filter((req) => {
     const state = reqStates[req.id]
-    return state ? compensationIssue(orderedIds, reqStates, req.id, state)?.tone === 'destructive' : false
+    return state ? compensationIssue(orderedIds, reqStates, req.id, state, percentLimit)?.tone === 'destructive' : false
   }).length
 
   const bookingBlockers: string[] = []
@@ -716,7 +743,7 @@ export function RequirementsTab({
   if (missingCompType > 0) bookingBlockers.push(`${missingCompType} spot${missingCompType > 1 ? 's are' : ' is'} missing a fee model`)
   if (missingAmount > 0) bookingBlockers.push(`${missingAmount} spot${missingAmount > 1 ? 's are' : ' is'} missing an amount or percentage`)
   if (blockingIssueCount > 0) bookingBlockers.push(`${blockingIssueCount} spot${blockingIssueCount > 1 ? 's have' : ' has'} invalid values`)
-  if (totalPercent > 100) bookingBlockers.push(`Percentage allocation is ${Math.round(totalPercent * 10) / 10}% (max 100%)`)
+  if (totalPercent > percentLimit + 0.0001) bookingBlockers.push(`Percentage allocation is ${Math.round(totalPercent * 10) / 10}% (max ${percentLimit}%)`)
   const canStartBooking = bookingBlockers.length === 0
   const pendingTotal = Object.values(pendingByRequirement).reduce((sum, count) => sum + count, 0)
 
@@ -742,7 +769,7 @@ export function RequirementsTab({
           {orderedRequirements.map((req, index) => {
             const state = reqStates[req.id] ?? stateFromRequirement(req)
             const saving = savingIds.has(req.id)
-            const issue = compensationIssue(orderedIds, reqStates, req.id, state)
+            const issue = compensationIssue(orderedIds, reqStates, req.id, state, percentLimit)
             const activeDropTarget = dropTarget?.id === req.id ? dropTarget.edge : null
             const isPercent = state.compensation_type === 'percent'
 

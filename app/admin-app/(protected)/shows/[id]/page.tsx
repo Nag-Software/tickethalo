@@ -48,6 +48,7 @@ export default async function ShowDetailPage({
     { data: tickets },
     { count: soldTicketCount },
     salesOverview,
+    { data: club },
   ] = await Promise.all([
     db.from('shows').select('*').eq('id', id).single(),
     db.from('show_requirements').select('*').eq('show_id', id).order('lineup_position').order('created_at'),
@@ -64,9 +65,15 @@ export default async function ShowDetailPage({
     shouldLoadTickets
       ? getShowSalesOverview(id).then(toShowSalesOverviewDto)
       : Promise.resolve(null),
+    // Taket for prosentavtalene i lineupen — se `percentLimit` på RequirementsTab.
+    showClubId
+      ? db.from('clubs').select('artist_share_bps').eq('id', showClubId).maybeSingle()
+      : Promise.resolve({ data: null as { artist_share_bps: number } | null }),
   ])
 
   if (!show) notFound()
+
+  const percentLimit = (club?.artist_share_bps ?? 10000) / 100
 
   // `select('*')` gir `ticket_sales_closed_at` og `deleted_at`. Merkelappen
   // leser samme regel som checkout, så admin og kjøperen aldri er uenige.
@@ -378,6 +385,7 @@ export default async function ShowDetailPage({
                 submissionsCloseAt={show.submissions_close_at ?? null}
                 rosterSize={roster.length}
                 pendingByRequirement={pendingSubmissionsByRequirement}
+                percentLimit={percentLimit}
               />
             : <LineupTab
                 showId={show.id}

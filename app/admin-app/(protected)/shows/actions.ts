@@ -73,6 +73,32 @@ function optionalCompensationType(value: FormDataEntryValue | null): Requirement
 }
 
 /**
+ * En feil bookeren skal lese: ugyldig prosent, sprengt honorarpott. Next
+ * skjuler meldingen på feil som kastes fra en server action i produksjon
+ * («An error occurred in the Server Components render …»), så disse må
+ * tilbake som verdi. Databasefeil og tilgangsfeil kastes fortsatt — de er
+ * våre, og den generelle meldingen er riktig for dem.
+ */
+class RequirementInputError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RequirementInputError'
+  }
+}
+
+export type RequirementActionResult = { ok: true } | { ok: false; error: string }
+
+async function runRequirementAction(work: () => Promise<void>): Promise<RequirementActionResult> {
+  try {
+    await work()
+    return { ok: true }
+  } catch (error) {
+    if (error instanceof RequirementInputError) return { ok: false, error: error.message }
+    throw error
+  }
+}
+
+/**
  * Taket for hvor mye av billettinntekten lineupen kan love bort.
  *
  * Det er klubbens `artist_share_bps` — den samme potten honorar-kjøringen
@@ -94,19 +120,30 @@ async function artistSharePercent(showId: string) {
   return (club?.artist_share_bps ?? 10000) / 100
 }
 
+/**
+ * Prosenten gjelder per spot, ikke per krav — honorarkjøringen regner
+ * `net × percent` for hver bekreftede spot (`computeShowFees`). Et krav med
+ * to plasser på 20 % lover derfor bort 40 %, og telles slik her.
+ */
+function percentCommitted(requirement: { compensation_type: string | null; compensation_percent: number | null; quantity: number | null }) {
+  if (requirement.compensation_type !== 'percent') return 0
+  return Number(requirement.compensation_percent ?? 0) * Math.max(1, requirement.quantity ?? 1)
+}
+
 async function ensurePercentAllocationWithinLimit(
   showId: string,
-  nextPercent: number | null,
+  /** Uten `quantity` beholdes antallet kravet allerede har — honorar-editoren endrer bare satsen. */
+  next: { compensation_percent: number | null; quantity?: number },
   reqId?: string
 ) {
-  if (nextPercent == null) {
+  if (next.compensation_percent == null) {
     return
   }
 
   const db = createAdminClient()
   const { data, error } = await db
     .from('show_requirements')
-    .select('id, compensation_type, compensation_percent')
+    .select('id, compensation_type, compensation_percent, quantity')
     .eq('show_id', showId)
 
   if (error) {
@@ -117,17 +154,18 @@ async function ensurePercentAllocationWithinLimit(
     if (reqId && requirement.id === reqId) {
       return sum
     }
-
-    if (requirement.compensation_type !== 'percent') {
-      return sum
-    }
-
-    return sum + Number(requirement.compensation_percent ?? 0)
+    return sum + percentCommitted(requirement)
   }, 0)
 
+  const existingQuantity = reqId ? (data ?? []).find((requirement) => requirement.id === reqId)?.quantity : null
+  const quantity = Math.max(1, next.quantity ?? existingQuantity ?? 1)
+
   const limit = await artistSharePercent(showId)
-  if (currentTotal + nextPercent > limit + 0.0001) {
-    throw new Error(`Total percentage for the lineup cannot exceed ${limit}% of ticket sales.`)
+  const nextTotal = currentTotal + next.compensation_percent * quantity
+  if (nextTotal > limit + 0.0001) {
+    throw new RequirementInputError(
+      `Total percentage for the lineup cannot exceed ${limit}% of ticket sales (this would make it ${Math.round(nextTotal * 10) / 10}%).`,
+    )
   }
 }
 
@@ -176,6 +214,16 @@ async function normalizeRequirementPositions(showId: string) {
   }
 }
 
+function assertValidCompensation(percent: number | null, amount: number | null) {
+  if (percent != null && (Number.isNaN(percent) || percent < 0 || percent > 100)) {
+    throw new RequirementInputError('Percentage must be between 0 and 100.')
+  }
+
+  if (amount != null && (Number.isNaN(amount) || amount < 0)) {
+    throw new RequirementInputError('A fixed amount must be 0 or higher.')
+  }
+}
+
 async function getRequirementWriteInput(formData: FormData, showId: string) {
   const compensationType = optionalCompensationType(formData.get('compensation_type'))
   const compensationAmount = compensationType === 'fixed'
@@ -185,13 +233,7 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     ? optionalDecimal(formData.get('compensation_percent'))
     : null
 
-  if (compensationPercent != null && (Number.isNaN(compensationPercent) || compensationPercent < 0 || compensationPercent > 100)) {
-    throw new Error('Percentage must be between 0 and 100.')
-  }
-
-  if (compensationAmount != null && (Number.isNaN(compensationAmount) || compensationAmount < 0)) {
-    throw new Error('A fixed amount must be 0 or higher.')
-  }
+  assertValidCompensation(compensationPercent, compensationAmount)
 
   return {
     role_name: canonicalRoleLabel(String(formData.get('role_name') ?? '').trim()) ?? '',
@@ -484,28 +526,31 @@ export async function cloneShowAction(formData: FormData) {
   redirect(`/admin-app/shows/${show.id}?tab=lineup`)
 }
 
-export async function addRequirementAction(formData: FormData) {
+export async function addRequirementAction(formData: FormData): Promise<RequirementActionResult> {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
   const db = createAdminClient()
-  const input = await getRequirementWriteInput(formData, showId)
 
-  await ensurePercentAllocationWithinLimit(showId, input.compensation_percent)
+  return runRequirementAction(async () => {
+    const input = await getRequirementWriteInput(formData, showId)
 
-  // En plass som legges til i et show som allerede er i gang, skal ikke
-  // vente på neste Start booking. Bølgen begynner nå, på dag 1.
-  const { data: show } = await db.from('shows').select('status').eq('id', showId).maybeSingle()
-  const live = show?.status === 'booking' || show?.status === 'fullbooked' || show?.status === 'published'
+    await ensurePercentAllocationWithinLimit(showId, input)
 
-  const { error } = await db.from('show_requirements').insert({
-    show_id: showId,
-    ...input,
-    auto_started_at: live && !input.submissions_open ? new Date().toISOString() : null,
+    // En plass som legges til i et show som allerede er i gang, skal ikke
+    // vente på neste Start booking. Bølgen begynner nå, på dag 1.
+    const { data: show } = await db.from('shows').select('status').eq('id', showId).maybeSingle()
+    const live = show?.status === 'booking' || show?.status === 'fullbooked' || show?.status === 'published'
+
+    const { error } = await db.from('show_requirements').insert({
+      show_id: showId,
+      ...input,
+      auto_started_at: live && !input.submissions_open ? new Date().toISOString() : null,
+    })
+
+    if (error) throw new Error(error.message)
+    if (live) scheduleShowAutomation(showId, 'requirement-added')
+    revalidatePath(`/admin-app/shows/${showId}`)
   })
-
-  if (error) throw new Error(error.message)
-  if (live) scheduleShowAutomation(showId, 'requirement-added')
-  revalidatePath(`/admin-app/shows/${showId}`)
 }
 
 export async function startBookingAction(formData: FormData) {
@@ -515,7 +560,7 @@ export async function startBookingAction(formData: FormData) {
 
   const { data: reqs, error: reqError } = await db
     .from('show_requirements')
-    .select('role_name, compensation_type, compensation_amount, compensation_percent')
+    .select('role_name, compensation_type, compensation_amount, compensation_percent, quantity')
     .eq('show_id', showId)
 
   if (reqError) throw new Error(reqError.message)
@@ -526,9 +571,7 @@ export async function startBookingAction(formData: FormData) {
     if (!req.compensation_type) throw new Error('Every lineup spot must have a fee model set.')
   }
 
-  const percentTotal = reqs
-    .filter((r) => r.compensation_type === 'percent')
-    .reduce((sum, r) => sum + (r.compensation_percent ?? 0), 0)
+  const percentTotal = reqs.reduce((sum, r) => sum + percentCommitted(r), 0)
   const percentLimit = await artistSharePercent(showId)
   if (percentTotal > percentLimit) {
     throw new Error(`Percentage allocation exceeds ${percentLimit}% of ticket sales (${percentTotal}%).`)
@@ -640,26 +683,29 @@ export async function updateShowDetailsAction(formData: FormData) {
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
-export async function updateRequirementAction(formData: FormData) {
+export async function updateRequirementAction(formData: FormData): Promise<RequirementActionResult> {
   const showId = formData.get('show_id') as string
   const reqId = formData.get('req_id') as string
   await assertRequirementAccess(showId, reqId)
   const db = createAdminClient()
-  const input = await getRequirementWriteInput(formData, showId)
 
-  await ensurePercentAllocationWithinLimit(showId, input.compensation_percent, reqId)
+  return runRequirementAction(async () => {
+    const input = await getRequirementWriteInput(formData, showId)
 
-  const { error } = await db.from('show_requirements').update(input).eq('id', reqId)
+    await ensurePercentAllocationWithinLimit(showId, input, reqId)
 
-  if (error) throw new Error(error.message)
+    const { error } = await db.from('show_requirements').update(input).eq('id', reqId)
 
-  // Ingen bølge herfra. Denne handlingen hører til veiviseren, som bare
-  // vises på utkast, og et utkast har ikke startet. Stemplet vi `auto_started_at`
-  // her, ville Start booking arvet en dato fra da plassen sist ble endret —
-  // og et utkast som hadde ligget i ti dager sendte hele taket med tilbud på
-  // dag én. Bølgen settes i gang av Start booking og av
-  // `toggleRequirementSubmissionsAction`.
-  revalidatePath(`/admin-app/shows/${showId}`)
+    if (error) throw new Error(error.message)
+
+    // Ingen bølge herfra. Denne handlingen hører til veiviseren, som bare
+    // vises på utkast, og et utkast har ikke startet. Stemplet vi `auto_started_at`
+    // her, ville Start booking arvet en dato fra da plassen sist ble endret —
+    // og et utkast som hadde ligget i ti dager sendte hele taket med tilbud på
+    // dag én. Bølgen settes i gang av Start booking og av
+    // `toggleRequirementSubmissionsAction`.
+    revalidatePath(`/admin-app/shows/${showId}`)
+  })
 }
 
 /**
@@ -697,11 +743,15 @@ export async function updateSpotRoleAction(formData: FormData) {
  * or offer — so those follow along, the same way they are set when a spot is
  * created or an offer is moved. A paid-out spot is left alone.
  */
-export async function updateSpotFeeAction(formData: FormData) {
+export async function updateSpotFeeAction(formData: FormData): Promise<RequirementActionResult> {
   const showId = String(formData.get('show_id') ?? '')
   const reqId = String(formData.get('req_id') ?? '')
   await assertRequirementAccess(showId, reqId)
 
+  return runRequirementAction(() => writeSpotFee(formData, showId, reqId))
+}
+
+async function writeSpotFee(formData: FormData, showId: string, reqId: string) {
   const compensationType = optionalCompensationType(formData.get('compensation_type'))
   const compensationAmount = compensationType === 'fixed'
     ? optionalMoneyToMinor(formData.get('compensation_amount'))
@@ -710,15 +760,9 @@ export async function updateSpotFeeAction(formData: FormData) {
     ? optionalDecimal(formData.get('compensation_percent'))
     : null
 
-  if (compensationPercent != null && (Number.isNaN(compensationPercent) || compensationPercent < 0 || compensationPercent > 100)) {
-    throw new Error('Percentage must be between 0 and 100.')
-  }
+  assertValidCompensation(compensationPercent, compensationAmount)
 
-  if (compensationAmount != null && (Number.isNaN(compensationAmount) || compensationAmount < 0)) {
-    throw new Error('A fixed amount must be 0 or higher.')
-  }
-
-  await ensurePercentAllocationWithinLimit(showId, compensationPercent, reqId)
+  await ensurePercentAllocationWithinLimit(showId, { compensation_percent: compensationPercent }, reqId)
 
   const db = createAdminClient()
   const { error } = await db
