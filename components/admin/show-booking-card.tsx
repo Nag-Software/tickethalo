@@ -147,7 +147,7 @@ export function ShowBookingCard({
                 alt={show.title}
                 width={50}
                 height={50}
-                className="object-cover"
+                className="object-cover w-full h-full blur-lg scale-105 brightness-120 contrast-80 saturate-100"
               />
               <Image
                 src={show.posterUrl}

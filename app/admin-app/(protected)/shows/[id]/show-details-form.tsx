@@ -230,18 +230,10 @@ export function ShowDetailsForm({
       }}
       onBlur={flush}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-0.5">
-          <h2 className="text-base font-semibold tracking-tight">Show details</h2>
-          <p className="text-xs text-muted-foreground">
-            What the event page, the poster and the ticket are built from.
-          </p>
-        </div>
-        <AutosaveStatus status={status} missingField={missingField} />
-      </div>
 
       <FieldFrame>
         <FieldSection id="show-details-basics" title="Basics">
+          <AutosaveStatus status={status} missingField={missingField} />
           <Field className="col-span-12 min-w-0 gap-1.5">
             <FieldLabel htmlFor="show-title">Title</FieldLabel>
             <div className={FIELD_GROUP_CLASS}>
