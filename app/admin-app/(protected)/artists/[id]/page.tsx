@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Check, ChevronLeft, Mail, MapPin, Phone } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { EMPTY_REVIEW, clubArtistReview } from '@/lib/club-artist-profile'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { ToastActionForm } from '@/components/toast-action-form'
@@ -17,7 +17,7 @@ import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles
 import { READINESS_BLOCKER_LABELS, artistReadinessBlockers } from '@/lib/artist-readiness'
 import { disconnectArtistAction } from '../../discover/actions'
 import { ConnectArtistButton } from '@/components/admin/connect-artist-button'
-import { saveClubArtistReviewAction, updateArtistStatusAction } from './actions'
+import { saveClubArtistReviewAction } from './actions'
 
 /**
  * Komikerprofilen i klubbadmin.
@@ -26,9 +26,10 @@ import { saveClubArtistReviewAction, updateArtistStatusAction } from './actions'
  * opplysninger, høyre side er klubbens vurdering av hen. Toppkortet svarer på
  * det man kom hit for å se — hvem er dette, kan hen bookes, og er hen min.
  *
- * Statusen settes ett sted. Før lå den både i et nedtrekk i skjemaet og i
- * «Approve»-knappen, som ikke gjorde det samme: godkjenning sender e-posten
- * med portalenken, nedtrekket gjorde det ikke.
+ * Plattformstatusen settes ikke her lenger. «Platform status»-kortet er tatt
+ * bort: det var moderering for superadmin, og sto i veien på en side klubben
+ * bruker til å vurdere en komiker. Statusen settes nå under
+ * `/superadmin/artists`.
  */
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -48,10 +49,9 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
   // ikke på komikeren. Klubbens vurdering finnes bare når komikeren er knyttet
   // til klubben, så den svarer også på det; et eget oppslag for koblingen
   // trengs ikke.
-  const [{ data: artist }, clubReview, { isSuperadmin }] = await Promise.all([
+  const [{ data: artist }, clubReview] = await Promise.all([
     db.from('artists').select('*').eq('id', id).maybeSingle(),
     getDefaultClubIdForAdmin().then((clubId) => clubArtistReview(db, clubId, id)),
-    getClubAccess(),
   ])
   if (!artist) notFound()
 
@@ -165,39 +165,6 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
 
           {/* ── Klubbens vurdering ─────────────────────────── */}
           <div className="flex flex-col gap-6">
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle>Platform status</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  Comedians are approved automatically when they sign up. This is moderation, not
-                  an approval queue — suspending someone removes them from their own portal and
-                  from every club&apos;s booking, so only a superadmin can change it.
-                </p>
-
-                {isSuperadmin ? (
-                  <ToastActionForm action={updateArtistStatusAction} successMessage="Status updated." className="flex flex-col gap-2">
-                    <input type="hidden" name="artist_id" value={artist.id} />
-                    <Label htmlFor="artist-status">Status</Label>
-                    <select id="artist-status" name="status" defaultValue={artist.status} className={SELECT_CLASS}>
-                      <option value="approved">Approved — active on Tickethalo</option>
-                      <option value="inactive">Inactive — paused, can be reinstated</option>
-                      <option value="rejected">Rejected — removed from the platform</option>
-                    </select>
-                    <Button type="submit" variant="outline" size="sm" className="w-fit">
-                      Update status
-                    </Button>
-                  </ToastActionForm>
-                ) : (
-                  <p className="rounded-2xl bg-muted px-4 py-2.5 text-xs text-muted-foreground">
-                    Done with this comedian? Remove them from your club, or flag them below. Both
-                    stay with your club.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
             {inClub ? (
               <>
               <Card size="sm">

@@ -1,157 +1,134 @@
 import Link from 'next/link'
+import { Building2, ChevronRight, Plus, Search } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Building2, Inbox, Plus, SlidersHorizontal } from 'lucide-react'
+import { AdminHeader } from '@/components/admin/admin-header'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { ClubReadinessPill, EmptyState } from '@/components/superadmin/ui'
 import { describeClubReadiness } from '@/lib/stripe-connect'
+import { getOsloToday } from '@/lib/event-filters'
 
 export const metadata = { title: 'Klubber — Superadmin' }
 
-
-export default async function ClubsPage() {
+export default async function ClubsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const query = ((await searchParams).q ?? '').trim()
   const db = createAdminClient()
-
-  const { data: clubs } = await db
-    .from('clubs')
-    .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, support_email')
-    .order('name')
-
-  const clubIds = (clubs ?? []).map((c) => c.id)
-  const { data: membershipCounts } = clubIds.length
-    ? await db
-        .from('club_memberships')
-        .select('club_id')
-        .in('club_id', clubIds)
-    : { data: [] }
+  const today = getOsloToday()
 
   // Arkiverte show (slettet av bookeren, men med salgshistorikk) telles ikke —
   // for klubben finnes de ikke lenger.
-  const { data: showCounts } = clubIds.length
-    ? await db
-        .from('shows')
-        .select('club_id')
-        .in('club_id', clubIds)
-        .is('deleted_at', null)
-    : { data: [] }
+  const [{ data: clubs }, { data: memberships }, { data: shows }] = await Promise.all([
+    db.from('clubs')
+      .select('id, name, slug, city, created_at, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, support_email')
+      .order('name'),
+    db.from('club_memberships').select('club_id'),
+    db.from('shows').select('club_id, date').is('deleted_at', null).eq('is_template', false),
+  ])
 
-  // Antall ubehandlede betasøknader. Vises som et merke på lenken, slik at
-  // søknadene ikke blir liggende i en fane ingen åpner.
-  const { count: pendingBetaRequests } = await db
-    .from('club_beta_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'new')
+  const admins = new Map<string, number>()
+  for (const membership of memberships ?? []) admins.set(membership.club_id, (admins.get(membership.club_id) ?? 0) + 1)
 
-  const memberMap = new Map<string, number>()
-  const showMap = new Map<string, number>()
-  for (const m of membershipCounts ?? []) {
-    memberMap.set(m.club_id, (memberMap.get(m.club_id) ?? 0) + 1)
+  const showCounts = new Map<string, { total: number; upcoming: number }>()
+  for (const show of shows ?? []) {
+    if (!show.club_id) continue
+    const entry = showCounts.get(show.club_id) ?? { total: 0, upcoming: 0 }
+    entry.total += 1
+    if (show.date >= today) entry.upcoming += 1
+    showCounts.set(show.club_id, entry)
   }
-  for (const s of showCounts ?? []) {
-    if (s.club_id) showMap.set(s.club_id, (showMap.get(s.club_id) ?? 0) + 1)
-  }
+
+  const needle = query.toLowerCase()
+  const all = clubs ?? []
+  const visible = needle
+    ? all.filter((club) => [club.name, club.city, club.slug].some((value) => value?.toLowerCase().includes(needle)))
+    : all
+  const readyCount = all.filter((club) => describeClubReadiness(club).every((item) => item.done)).length
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Building2 className="size-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Klubber</h1>
-          <span className="text-sm text-muted-foreground">Tickethalo superadmin</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/superadmin/booking">
-              <SlidersHorizontal className="size-4" />
-              Bookingmotoren
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/superadmin/beta-requests">
-              <Inbox className="size-4" />
-              Betasøknader
-              {(pendingBetaRequests ?? 0) > 0 && (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
-                  {pendingBetaRequests}
-                </span>
-              )}
-            </Link>
-          </Button>
-          <form action="/superadmin/logout" method="post">
-            <button type="submit" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Logg ut
-            </button>
-          </form>
+    <div>
+      <AdminHeader
+        title="Klubber"
+        description={`${all.length} klubber · ${readyCount} klare for salg`}
+        actions={
           <Button asChild size="sm">
             <Link href="/superadmin/clubs/new">
               <Plus className="size-4" />
               Ny klubb
             </Link>
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="p-6">
-        {(!clubs || clubs.length === 0) ? (
-          <div className="flex flex-col items-center justify-center gap-4 py-24 text-muted-foreground">
-            <Building2 className="size-10 opacity-30" />
-            <p className="text-sm">Ingen klubber ennå.</p>
-            <Button asChild variant="outline" size="sm">
+      <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
+        {all.length === 0 ? (
+          <EmptyState icon={Building2}>
+            <p>Ingen klubber ennå.</p>
+            <Button asChild variant="outline" size="sm" className="mt-3">
               <Link href="/superadmin/clubs/new">Opprett første klubb</Link>
             </Button>
-          </div>
+          </EmptyState>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {clubs.map((club) => {
-              const readiness = describeClubReadiness(club)
-              const missing = readiness.filter((item) => !item.done)
-              const ready = missing.length === 0
-              const hasAccount = Boolean(club.stripe_account_id)
-              // Kontoen kan være ferdig hos Stripe mens utbetalingene ikke er
-              // holdt tilbake. Det er en plattformfeil, ikke noe klubben mangler,
-              // så den får sin egen etikett.
-              const onlyScheduleMissing = missing.length > 0 && missing.every((item) => item.key === 'payout_schedule')
+          <>
+            <form method="get" className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input name="q" defaultValue={query} placeholder="Søk på klubb eller by" className="pl-9" />
+            </form>
 
-              return (
-              <Link
-                key={club.id}
-                href={`/superadmin/clubs/${club.id}`}
-                className="block rounded-lg border bg-card p-5 hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="font-medium">{club.name}</span>
-                  {club.city && (
-                    <span className="text-xs text-muted-foreground shrink-0">{club.city}</span>
-                  )}
-                </div>
-                <div className="flex gap-4 text-xs text-muted-foreground mt-2">
-                  <span>{memberMap.get(club.id) ?? 0} admin{(memberMap.get(club.id) ?? 0) !== 1 ? 's' : ''}</span>
-                  <span>{showMap.get(club.id) ?? 0} show{(showMap.get(club.id) ?? 0) !== 1 ? 's' : ''}</span>
-                </div>
-                {/* En klubb uten ferdig Connect-konto kan ikke selge billetter
-                    — showene blir liggende upublisert. Det bør ses herfra. */}
-                <div className="mt-3">
-                  {ready ? (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                      Klar for salg
-                    </span>
-                  ) : (
-                    <span
-                      title={missing.map((item) => item.label).join(', ')}
-                      className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700"
-                    >
-                      {!hasAccount
-                        ? 'Ingen Stripe-konto'
-                        : onlyScheduleMissing
-                          ? 'Utbetalingsplan ikke manuell'
-                          : 'Oppsett ikke fullført'}
-                    </span>
-                  )}
-                </div>
-              </Link>
-              )
-            })}
-          </div>
+            {visible.length === 0 ? (
+              <EmptyState icon={Building2}>Ingen klubber passer søket.</EmptyState>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border bg-card">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
+                      <th className="px-4 py-2.5 font-medium">Klubb</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Admins</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Show</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Kommende</th>
+                      {/* En klubb uten ferdig Connect-konto kan ikke selge billetter
+                          — showene blir liggende upublisert. Det bør ses herfra. */}
+                      <th className="px-4 py-2.5 font-medium">Billettsalg</th>
+                      <th className="px-4 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((club) => {
+                      const missing = describeClubReadiness(club).filter((item) => !item.done)
+                      const adminCount = admins.get(club.id) ?? 0
+                      const counts = showCounts.get(club.id) ?? { total: 0, upcoming: 0 }
+                      const href = `/superadmin/clubs/${club.id}`
+
+                      return (
+                        <tr key={club.id} className="border-b transition-colors last:border-0 hover:bg-accent/50">
+                          <td className="px-4 py-3">
+                            <Link href={href} className="font-medium hover:underline">
+                              {club.name}
+                            </Link>
+                            {club.city && <span className="ml-2 text-muted-foreground">{club.city}</span>}
+                          </td>
+                          <td className={`px-4 py-3 text-right tabular-nums ${adminCount === 0 ? 'font-medium text-amber-700' : ''}`}>
+                            {adminCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">{counts.total}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{counts.upcoming}</td>
+                          <td className="px-4 py-3">
+                            <ClubReadinessPill hasAccount={Boolean(club.stripe_account_id)} missing={missing} />
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link href={href} aria-label={`Åpne ${club.name}`} className="inline-flex text-muted-foreground hover:text-foreground">
+                              <ChevronRight className="size-4" />
+                            </Link>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
-      </main>
+      </div>
     </div>
   )
 }

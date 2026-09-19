@@ -1,80 +1,66 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Check, ChevronLeft, ExternalLink, Trash2, UserMinus, X } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { ArrowLeft, Trash2, UserPlus, UserMinus } from 'lucide-react'
+import { AdminHeader } from '@/components/admin/admin-header'
+import { ToastActionForm } from '@/components/toast-action-form'
+import { ConfirmActionButton } from '@/components/superadmin/confirm-action-button'
+import {
+  ClubReadinessPill,
+  MetricCard,
+  READINESS_LABELS_NB,
+  SHOW_STATUS_LABELS,
+  Section,
+  ShowStatusPill,
+  formatDate,
+  formatNok,
+} from '@/components/superadmin/ui'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { addClubAdminAction, removeClubAdminAction, deleteClubAction } from '../actions'
+import { describeClubReadiness } from '@/lib/stripe-connect'
+import { getOsloToday } from '@/lib/event-filters'
+import { addClubAdminAction, deleteClubAction, removeClubAdminAction } from '../actions'
+import type { ShowStatus } from '@/types/database'
 
-function formatCurrency(amountMinor: number) {
-  return new Intl.NumberFormat('nb-NO', {
-    style: 'currency',
-    currency: 'NOK',
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100)
-}
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function statusLabel(status: string) {
-  switch (status) {
-    case 'draft':
-      return 'Planlegger'
-    case 'booking':
-      return 'Booking'
-    case 'fullbooked':
-      return 'Fullbooked'
-    case 'published':
-      return 'Publisert'
-    case 'completed':
-      return 'Gjennomført'
-    case 'cancelled':
-      return 'Kansellert'
-    default:
-      return status
-  }
-}
+const STATUS_ORDER: ShowStatus[] = ['draft', 'booking', 'fullbooked', 'published', 'completed', 'cancelled']
 
-export default async function ClubDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
+export default async function ClubDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  if (!UUID_PATTERN.test(id)) notFound()
+
   const db = createAdminClient()
-
-  const { data: club } = await db
-    .from('clubs')
-    .select('id, name, slug, city, description, created_at')
-    .eq('id', id)
-    .single()
-
-  if (!club) notFound()
-
-  const { data: memberships } = await db
-    .from('club_memberships')
-    .select('id, profile_id, created_at, profiles(full_name, email, role)')
-    .eq('club_id', id)
-    .order('created_at')
 
   // Arkiverte show (slettet av bookeren, men med salgshistorikk) holdes utenfor
   // tallene og lista. De har bare refunderte ordrer, så inntekt og solgte
   // billetter blir de samme — men de telles for seg, så de ikke blir borte.
-  const [{ data: clubShows }, { count: archivedShows }] = await Promise.all([
-    db
-      .from('shows')
+  const [{ data: club }, { data: memberships }, { data: clubShows }, { count: archivedShows }] = await Promise.all([
+    db.from('clubs')
+      .select('id, name, slug, city, description, created_at, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number')
+      .eq('id', id)
+      .maybeSingle(),
+    db.from('club_memberships')
+      .select('id, profile_id, created_at, profiles(full_name, email, role)')
+      .eq('club_id', id)
+      .order('created_at'),
+    db.from('shows')
       .select('id, title, date, status, capacity')
       .eq('club_id', id)
       .is('deleted_at', null)
+      .eq('is_template', false)
       .order('date', { ascending: false }),
-    db
-      .from('shows')
+    db.from('shows')
       .select('id', { count: 'exact', head: true })
       .eq('club_id', id)
       .not('deleted_at', 'is', null),
   ])
 
-  const shows = (clubShows ?? []).slice(0, 10)
-  const showIds = (clubShows ?? []).map((show) => show.id)
+  if (!club) notFound()
+
+  const allShows = clubShows ?? []
+  const showIds = allShows.map((show) => show.id)
 
   const [{ data: ticketRows }, { data: orderRows }] = await Promise.all([
     showIds.length > 0
@@ -85,177 +71,215 @@ export default async function ClubDetailPage({
       : Promise.resolve({ data: [] as Array<{ show_id: string | null; amount_total: number | null; status: string }> }),
   ])
 
-  const today = new Date().toISOString().slice(0, 10)
-  const totalShows = clubShows?.length ?? 0
-  const upcomingShows = (clubShows ?? []).filter((show) => show.date >= today).length
-  const completedShows = (clubShows ?? []).filter((show) => show.status === 'completed').length
-  const publishedShows = (clubShows ?? []).filter((show) => show.status === 'published').length
-  const totalCapacity = (clubShows ?? []).reduce((sum, show) => sum + (show.capacity ?? 0), 0)
-  const ticketsSold = (ticketRows ?? []).filter((ticket) => ticket.status === 'valid' || ticket.status === 'used').length
-  const checkedInTickets = (ticketRows ?? []).filter((ticket) => ticket.status === 'used').length
+  const today = getOsloToday()
+  const upcoming = allShows.filter((show) => show.date >= today && show.status !== 'cancelled').reverse()
+  const past = allShows.filter((show) => show.date < today).slice(0, 8)
+  const totalCapacity = allShows.reduce((sum, show) => sum + (show.capacity ?? 0), 0)
+  const soldByShow = new Map<string, number>()
+  for (const ticket of ticketRows ?? []) {
+    if (ticket.status === 'valid' || ticket.status === 'used') {
+      soldByShow.set(ticket.show_id, (soldByShow.get(ticket.show_id) ?? 0) + 1)
+    }
+  }
+  const ticketsSold = [...soldByShow.values()].reduce((sum, count) => sum + count, 0)
+  const checkedIn = (ticketRows ?? []).filter((ticket) => ticket.status === 'used').length
   const paidOrders = (orderRows ?? []).filter((order) => order.status === 'paid')
   const grossRevenue = paidOrders.reduce((sum, order) => sum + (order.amount_total ?? 0), 0)
-  const revenuePerShow = totalShows > 0 ? Math.round(grossRevenue / totalShows) : 0
   const fillRate = totalCapacity > 0 ? Math.round((ticketsSold / totalCapacity) * 100) : 0
 
-  const removeWithClubId = removeClubAdminAction.bind(null)
+  const readiness = describeClubReadiness(club)
+  const missing = readiness.filter((item) => !item.done)
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/superadmin/clubs">
-              <ArrowLeft className="size-4" />
-            </Link>
-          </Button>
-          <div>
-            <h1 className="text-lg font-semibold">{club.name}</h1>
-            {club.city && <p className="text-xs text-muted-foreground">{club.city}</p>}
-          </div>
+    <div>
+      <AdminHeader
+        title={club.name}
+        description={[club.city, `Opprettet ${formatDate(club.created_at)}`].filter(Boolean).join(' · ')}
+        actions={
+          <>
+            {/* Setter klubben i klubbvelgeren og åpner portalen som den klubben. */}
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/admin-app/select-club?club=${club.id}&next=${encodeURIComponent('/admin-app/shows')}`}>
+                <ExternalLink className="size-4" />
+                Åpne i klubbportalen
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href={`/clubs/${club.slug}`} target="_blank">Offentlig side</Link>
+            </Button>
+          </>
+        }
+      />
+
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 p-6">
+        <Button variant="ghost" size="sm" asChild className="-mb-4 -ml-2 w-fit text-muted-foreground">
+          <Link href="/superadmin/clubs">
+            <ChevronLeft className="size-4" />
+            Klubber
+          </Link>
+        </Button>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="Brutto inntekt" value={formatNok(grossRevenue)} detail={`${paidOrders.length} betalte ordrer`} />
+          <MetricCard
+            label="Billetter solgt"
+            value={String(ticketsSold)}
+            detail={totalCapacity > 0 ? `${fillRate} % av kapasiteten · ${checkedIn} sjekket inn` : `${checkedIn} sjekket inn`}
+          />
+          <MetricCard
+            label="Show"
+            value={String(allShows.length)}
+            detail={`${upcoming.length} kommende${(archivedShows ?? 0) > 0 ? ` · ${archivedShows} arkivert` : ''}`}
+          />
+          <MetricCard
+            label="Snitt per show"
+            value={formatNok(allShows.length > 0 ? Math.round(grossRevenue / allShows.length) : 0)}
+            detail="Brutto delt på antall show"
+          />
         </div>
-        <form
-          action={async () => {
-            'use server'
-            await deleteClubAction(id)
-          }}
-        >
-          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" type="submit">
-            <Trash2 className="size-4" />
-          </Button>
-        </form>
-      </header>
 
-      <main className="max-w-6xl p-6 space-y-8">
-        <section className="space-y-4">
-          <div className="space-y-1">
-            <h2 className="font-medium">Klubbanalyse</h2>
-            <p className="text-sm text-muted-foreground">Oversikt over aktivitet, billettsalg og inntekt for {club.name}.</p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <MetricCard label="Brutto inntekt" value={formatCurrency(grossRevenue)} detail={`${paidOrders.length} betalte ordre`} />
-            <MetricCard label="Billetter solgt" value={String(ticketsSold)} detail={totalCapacity > 0 ? `${fillRate}% av kapasitet` : 'Ingen kapasitet satt'} />
-            <MetricCard label="Shows" value={String(totalShows)} detail={`${upcomingShows} kommende · ${completedShows} gjennomført`} />
-            <MetricCard label="Publiserte shows" value={String(publishedShows)} detail="Aktive ute på nettsiden" />
-            <MetricCard label="Check-ins" value={String(checkedInTickets)} detail="Billetter markert som brukt" />
-            <MetricCard label="Snitt per show" value={formatCurrency(revenuePerShow)} detail="Brutto delt på antall shows" />
-          </div>
-
-          <div className="rounded-lg border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">Statusfordeling</h3>
-              <span className="text-xs text-muted-foreground">
-                Alle aktive shows i klubben
-                {(archivedShows ?? 0) > 0 && ` · ${archivedShows} arkivert`}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {['draft', 'booking', 'fullbooked', 'published', 'completed', 'cancelled'].map((status) => {
-                const count = (clubShows ?? []).filter((show) => show.status === status).length
-                return (
-                  <div key={status} className="rounded-full border bg-background px-3 py-1.5 text-xs">
-                    <span className="font-medium">{statusLabel(status)}</span>
-                    <span className="ml-2 text-muted-foreground">{count}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* Add admin */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <UserPlus className="size-4 text-muted-foreground" />
-            <h2 className="font-medium">Legg til admin</h2>
-          </div>
-          <form action={addClubAdminAction} className="flex gap-2">
-            <input type="hidden" name="club_id" value={club.id} />
-            <div className="flex-1 space-y-1">
-              <Label htmlFor="email" className="sr-only">E-post</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="admin@klubb.no"
-                required
-              />
-            </div>
-            <Button type="submit" size="sm">Legg til</Button>
-          </form>
-          <p className="text-xs text-muted-foreground">
-            Brukeren må allerede ha registrert seg. Rollen settes automatisk til admin.
-          </p>
-        </section>
-
-        {/* Current admins */}
-        <section className="space-y-3">
-          <h2 className="font-medium">Admins ({memberships?.length ?? 0})</h2>
-          {!memberships || memberships.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Ingen admins ennå.</p>
-          ) : (
-            <ul className="space-y-2">
-              {memberships.map((m) => {
-                const profile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles
-                return (
-                  <li
-                    key={m.id}
-                    className="flex items-center justify-between rounded-lg border bg-card px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{profile?.full_name ?? profile?.email}</p>
-                      {profile?.full_name && (
-                        <p className="text-xs text-muted-foreground">{profile.email}</p>
-                      )}
-                    </div>
-                    <form
-                      action={async () => {
-                        'use server'
-                        await removeWithClubId(m.id, id)
-                      }}
-                    >
-                      <Button variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" type="submit">
-                        <UserMinus className="size-3.5" />
-                      </Button>
-                    </form>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </section>
-
-        {/* Recent shows */}
-        <section className="space-y-3">
-          <h2 className="font-medium">Siste shows</h2>
-          {!shows || shows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Ingen shows tilknyttet denne klubben ennå.</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {shows.map((show) => (
-                <li key={show.id} className="flex items-center justify-between text-sm rounded border bg-card px-3 py-2">
-                  <span>{show.title}</span>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>{new Date(show.date).toLocaleDateString('nb-NO')}</span>
-                    <span>{statusLabel(show.status)}</span>
-                  </div>
+        <div className="grid gap-8 lg:grid-cols-2">
+          {/* ── Kan klubben selge? ─────────────────────────── */}
+          <Section
+            title="Billettsalg"
+            description="Et show kan ikke publiseres før alt her er på plass. Klubben fullfører det selv under Finances."
+            actions={<ClubReadinessPill hasAccount={Boolean(club.stripe_account_id)} missing={missing} />}
+          >
+            <ul className="divide-y overflow-hidden rounded-xl border bg-card text-sm">
+              {readiness.map((item) => (
+                <li key={item.key} className="flex items-center gap-2.5 px-4 py-2.5">
+                  {item.done
+                    ? <Check className="size-4 shrink-0 text-emerald-600" />
+                    : <X className="size-4 shrink-0 text-amber-600" />}
+                  <span className={item.done ? 'text-muted-foreground' : 'font-medium'}>
+                    {READINESS_LABELS_NB[item.key] ?? item.label}
+                  </span>
                 </li>
               ))}
             </ul>
-          )}
-        </section>
-      </main>
-    </div>
-  )
-}
+            {club.stripe_account_id && (
+              <p className="text-xs text-muted-foreground">
+                Stripe-konto: <code className="rounded bg-muted px-1 py-0.5">{club.stripe_account_id}</code>
+              </p>
+            )}
+          </Section>
 
-function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+          {/* ── Hvem driver klubben ────────────────────────── */}
+          <Section
+            title={`Admins (${memberships?.length ?? 0})`}
+            description="Brukeren må allerede ha registrert seg. Rollen settes automatisk til admin."
+          >
+            {!memberships || memberships.length === 0 ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                Ingen admins ennå — ingen kan logge inn og drive klubben.
+              </p>
+            ) : (
+              <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+                {memberships.map((membership) => {
+                  const profile = Array.isArray(membership.profiles) ? membership.profiles[0] : membership.profiles
+                  const label = profile?.full_name ?? profile?.email ?? 'Ukjent bruker'
+                  return (
+                    <li key={membership.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{label}</p>
+                        {profile?.full_name && <p className="truncate text-xs text-muted-foreground">{profile.email}</p>}
+                      </div>
+                      <ConfirmActionButton
+                        action={removeClubAdminAction}
+                        fields={{ membership_id: membership.id, club_id: club.id }}
+                        confirmMessage={`Fjerne ${label} som admin for ${club.name}?`}
+                        successMessage={`${label} er fjernet.`}
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Fjern ${label}`}
+                        className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <UserMinus className="size-3.5" />
+                      </ConfirmActionButton>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            <ToastActionForm action={addClubAdminAction} successMessage="Admin lagt til." className="flex gap-2">
+              <input type="hidden" name="club_id" value={club.id} />
+              <Label htmlFor="admin-email" className="sr-only">E-post</Label>
+              <Input id="admin-email" name="email" type="email" placeholder="admin@klubb.no" required />
+              <Button type="submit" size="sm" className="h-9">Legg til</Button>
+            </ToastActionForm>
+          </Section>
+        </div>
+
+        <Section
+          title="Show"
+          actions={
+            <div className="flex flex-wrap gap-1.5">
+              {STATUS_ORDER.map((status) => {
+                const count = allShows.filter((show) => show.status === status).length
+                if (count === 0) return null
+                return (
+                  <span key={status} className="rounded-full border bg-background px-2.5 py-1 text-[11px]">
+                    {SHOW_STATUS_LABELS[status]} <span className="ml-1 text-muted-foreground tabular-nums">{count}</span>
+                  </span>
+                )
+              })}
+            </div>
+          }
+        >
+          {allShows.length === 0 ? (
+            <p className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+              Ingen show tilknyttet denne klubben ennå.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border bg-card">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
+                    <th className="px-4 py-2.5 font-medium">Show</th>
+                    <th className="px-4 py-2.5 font-medium">Dato</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Solgt</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...upcoming, ...past].map((show) => (
+                    <tr key={show.id} className={`border-b last:border-0 ${show.date < today ? 'text-muted-foreground' : ''}`}>
+                      <td className="px-4 py-2.5 font-medium">{show.title}</td>
+                      <td className="px-4 py-2.5 tabular-nums">{formatDate(show.date)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {soldByShow.get(show.id) ?? 0}{show.capacity ? ` / ${show.capacity}` : ''}
+                      </td>
+                      <td className="px-4 py-2.5 text-right"><ShowStatusPill status={show.status as ShowStatus} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {allShows.length > upcoming.length + past.length && (
+            <p className="text-xs text-muted-foreground">Viser alle kommende og de åtte siste spilte showene.</p>
+          )}
+        </Section>
+
+        {/* ── Faresone ─────────────────────────────────────── */}
+        <Section
+          title="Slett klubb"
+          description="Fjerner klubben, admin-tilgangene og klubbens oppsett. En klubb med ordrer kan ikke slettes — regnskapet må bli stående."
+        >
+          <ConfirmActionButton
+            action={deleteClubAction}
+            fields={{ club_id: club.id }}
+            confirmMessage={`Slette ${club.name} for godt? Dette kan ikke angres.`}
+            variant="outline"
+            size="sm"
+            className="w-fit border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+            Slett {club.name}
+          </ConfirmActionButton>
+        </Section>
+      </div>
     </div>
   )
 }

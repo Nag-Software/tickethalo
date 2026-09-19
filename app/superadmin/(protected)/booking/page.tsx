@@ -1,7 +1,5 @@
-import Link from 'next/link'
-import { ArrowLeft, SlidersHorizontal } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Button } from '@/components/ui/button'
+import { AdminHeader } from '@/components/admin/admin-header'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { BookingSettingsForm } from './booking-settings-form'
 import { ClubDeadlineForm } from './club-deadline-form'
@@ -26,17 +24,8 @@ export default async function BookingSettingsPage() {
   ])
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="flex items-center gap-3 border-b px-6 py-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/superadmin/clubs">
-            <ArrowLeft className="size-4" />
-          </Link>
-        </Button>
-        <SlidersHorizontal className="size-5 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Bookingmotoren</h1>
-        <span className="text-sm text-muted-foreground">Parametere for hele plattformen</span>
-      </header>
+    <div>
+      <AdminHeader title="Bookingmotoren" description="Parametere for hele plattformen" />
 
       <div className="mx-auto max-w-4xl px-6 py-8">
         <section className="mb-8">
@@ -57,7 +46,7 @@ export default async function BookingSettingsPage() {
             standard, som nå er {settings.lineup_deadline_days} dager.
           </p>
 
-          <div className="mt-4 overflow-hidden rounded-lg border">
+          <div className="mt-4 overflow-hidden rounded-xl border bg-card">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30 text-xs text-muted-foreground">

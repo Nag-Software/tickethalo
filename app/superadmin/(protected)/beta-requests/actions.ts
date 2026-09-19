@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { assertSuperadmin } from '@/lib/superadmin-auth'
 import type { ClubBetaRequestStatus } from '@/types/database'
 
 const STATUSES: ClubBetaRequestStatus[] = ['new', 'contacted', 'approved', 'declined']
@@ -10,6 +11,7 @@ const STATUSES: ClubBetaRequestStatus[] = ['new', 'contacted', 'approved', 'decl
 // Sett status på en betasøknad
 // ─────────────────────────────────────────────────────────────
 export async function setBetaRequestStatusAction(formData: FormData) {
+  await assertSuperadmin()
   const id = formData.get('id') as string
   const status = formData.get('status') as ClubBetaRequestStatus
 
@@ -27,12 +29,14 @@ export async function setBetaRequestStatusAction(formData: FormData) {
   if (error) throw new Error('Kunne ikke oppdatere søknaden.')
 
   revalidatePath('/superadmin/beta-requests')
+  revalidatePath('/superadmin', 'layout')
 }
 
 // ─────────────────────────────────────────────────────────────
 // Slett en betasøknad
 // ─────────────────────────────────────────────────────────────
 export async function deleteBetaRequestAction(formData: FormData) {
+  await assertSuperadmin()
   const id = formData.get('id') as string
   if (!id) throw new Error('Mangler søknad.')
 
@@ -40,4 +44,5 @@ export async function deleteBetaRequestAction(formData: FormData) {
   await db.from('club_beta_requests').delete().eq('id', id)
 
   revalidatePath('/superadmin/beta-requests')
+  revalidatePath('/superadmin', 'layout')
 }

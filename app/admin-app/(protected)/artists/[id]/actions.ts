@@ -8,7 +8,7 @@ import { saveClubArtistReview, type ClubArtistReview } from '@/lib/club-artist-p
 import { canonicalRoleValues } from '@/lib/artist-roles'
 import { runAutomaticBookingForClub } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
-import type { ArtistStatus, ArtistType, EnergyLevel } from '@/types/database'
+import type { ArtistType, EnergyLevel } from '@/types/database'
 
 /**
  * Alt som eksporteres fra en `'use server'`-modul er et kallbart endepunkt, og
@@ -83,36 +83,6 @@ export async function saveClubArtistReviewAction(formData: FormData) {
 
   revalidatePath(`/admin-app/artists/${artistId}`)
 }
-
-/**
- * Moderering — forbeholdt superadmin.
- *
- * Komikere godkjennes automatisk ved registrering; det finnes ingen kø.
- * Statusen er derfor ikke en inngangsdør, men en nødbrems: superadmin kan
- * sette noen til `inactive` eller `rejected` og dermed ta hen ut av
- * plattformen — portalen, tilgjengelighetsdatoene og all booking.
- *
- * En enkelt klubb skal ikke kunne gjøre dette for alle andre. Vil en klubb
- * slutte å booke noen, fjerner de koblingen eller flagger hen hos seg.
- */
-async function assertSuperadmin() {
-  const access = await getClubAccess()
-  if (!access.isSuperadmin) {
-    throw new Error('Only a superadmin can change a comedian\'s platform status.')
-  }
-  return access
-}
-
-export async function updateArtistStatusAction(formData: FormData) {
-  await assertSuperadmin()
-  const artistId = formData.get('artist_id') as string
-  const status = formData.get('status') as ArtistStatus
-  const db = createAdminClient()
-
-  await db.from('artists').update({ status }).eq('id', artistId)
-  revalidatePath(`/admin-app/artists/${artistId}`)
-}
-
 
 export async function deleteArtistAction(formData: FormData) {
   const access = await assertAdmin()

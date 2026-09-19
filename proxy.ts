@@ -48,7 +48,7 @@ const SECTION_INDEXES: Record<string, string> = {
   // already have keep landing on the right page.
   '/admin-app/min-klubb': '/admin-app/my-club',
   '/admin-app/okonomi': '/admin-app/finances',
-  '/superadmin': '/superadmin/clubs',
+  '/superadmin': '/superadmin/overview',
   '/artist-app/settings': '/artist-app/profile',
   '/artist-app/booking-offers': '/artist-app/bookings',
   '/artist-app/invoices': '/artist-app',

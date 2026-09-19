@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { ArrowLeft, Building2, Inbox, Mail } from 'lucide-react'
+import { Building2, Inbox, Mail } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Button } from '@/components/ui/button'
+import { AdminHeader } from '@/components/admin/admin-header'
 import { DeleteButton } from '@/components/admin/delete-button'
 import { setBetaRequestStatusAction, deleteBetaRequestAction } from './actions'
 import type { ClubBetaRequest, ClubBetaRequestStatus } from '@/types/database'
@@ -43,23 +44,10 @@ export default async function BetaRequestsPage() {
   const handled = requests.filter((r) => r.status !== 'new')
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/superadmin/clubs">
-              <ArrowLeft className="size-4" />
-            </Link>
-          </Button>
-          <Inbox className="size-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Betasøknader</h1>
-          <span className="text-sm text-muted-foreground">
-            {pending.length} ubehandlet av {requests.length}
-          </span>
-        </div>
-      </header>
+    <div>
+      <AdminHeader title="Betasøknader" description={`${pending.length} ubehandlet av ${requests.length}`} />
 
-      <main className="p-6 space-y-8">
+      <div className="mx-auto flex max-w-4xl flex-col gap-8 p-6">
         {requests.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-4 py-24 text-muted-foreground">
             <Inbox className="size-10 opacity-30" />
@@ -90,7 +78,7 @@ export default async function BetaRequestsPage() {
             )}
           </>
         )}
-      </main>
+      </div>
     </div>
   )
 }
@@ -100,7 +88,7 @@ function RequestCard({ request }: { request: ClubBetaRequest }) {
   const source = request.source ? SOURCE_LABEL[request.source] ?? request.source : null
 
   return (
-    <div className="rounded-lg border bg-card p-5">
+    <div className="rounded-xl border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

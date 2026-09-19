@@ -1,9 +1,12 @@
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { createClubAction } from '../actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { AdminHeader } from '@/components/admin/admin-header'
+import { ToastActionForm } from '@/components/toast-action-form'
 
 export const metadata = { title: 'Ny klubb — Superadmin' }
 
@@ -16,21 +19,22 @@ export default async function NewClubPage({
   const { name } = await searchParams
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b px-6 py-4 flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+    <div>
+      <AdminHeader title="Ny klubb" description="Klubben får admins og Stripe-oppsett etterpå" />
+
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+        <Button variant="ghost" size="sm" asChild className="-mb-2 -ml-2 w-fit text-muted-foreground">
           <Link href="/superadmin/clubs">
-            <ArrowLeft className="size-4" />
+            <ChevronLeft className="size-4" />
+            Klubber
           </Link>
         </Button>
-        <h1 className="text-lg font-semibold">Ny klubb</h1>
-      </header>
 
-      <main className="p-6 max-w-lg">
-        <form action={createClubAction} className="space-y-5">
+        <ToastActionForm action={createClubAction} className="max-w-lg space-y-5 rounded-xl border bg-card p-6">
           <div className="space-y-1.5">
             <Label htmlFor="name">Klubbnavn *</Label>
             <Input id="name" name="name" placeholder="Oslo Comedy Club" defaultValue={name ?? ''} required />
+            <p className="text-xs text-muted-foreground">Adressen til klubbsiden lages av navnet.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="city">By</Label>
@@ -38,17 +42,11 @@ export default async function NewClubPage({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="description">Beskrivelse</Label>
-            <textarea
-              id="description"
-              name="description"
-              rows={3}
-              placeholder="Kort beskrivelse av klubben..."
-              className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-            />
+            <Textarea id="description" name="description" rows={3} placeholder="Kort beskrivelse av klubben..." className="resize-none" />
           </div>
           <Button type="submit" className="w-full">Opprett klubb</Button>
-        </form>
-      </main>
+        </ToastActionForm>
+      </div>
     </div>
   )
 }
