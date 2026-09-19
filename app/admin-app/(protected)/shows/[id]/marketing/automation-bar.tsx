@@ -27,12 +27,12 @@ export function AutoPosterToggle({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium">Generate an AI poster when the lineup publishes</p>
+        <p className="text-sm font-medium">Generate an AI poster when you publish the show</p>
         <p className="text-xs text-muted-foreground">
           {enabled
             ? hasPoster
               ? 'On — but this show already has a poster, so nothing will be generated.'
-              : 'On — a poster is generated from the template, colours and photo slots at publish time.'
+              : 'On — a poster is generated from the template, colours and photo slots when you press Publish.'
             : 'Off. Nothing is generated unless you press “Generate with AI”.'}
         </p>
       </div>
@@ -41,7 +41,7 @@ export function AutoPosterToggle({
         type="button"
         role="switch"
         aria-checked={enabled}
-        aria-label="Generate an AI poster when the lineup publishes"
+        aria-label="Generate an AI poster when you publish the show"
         disabled={isPending}
         onClick={() => {
           const formData = new FormData()

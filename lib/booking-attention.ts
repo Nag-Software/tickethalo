@@ -223,6 +223,20 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       )
     }
 
+    // ── Fylt, og venter på klubben ─────────────────────────────────────────
+    //
+    // Showet publiserer seg ikke selv. Klubben har fått «Line-up is booked –
+    // Publish?», men en e-post kan bli liggende — og et show som står full og
+    // upublisert selger ingen billetter.
+    if (show.requirements.length > 0 && openSpots.length === 0 && show.status !== 'published' && show.clubPayoutReady) {
+      add(
+        'warning',
+        'ready-to-publish',
+        'Lineupen er full, men showet er ikke publisert. Billettsalget åpner ikke før dere publiserer.',
+        'Se over og publiser',
+      )
+    }
+
     // ── Fristen ────────────────────────────────────────────────────────────
     if (openSpots.length > 0 && show.status !== 'published') {
       if (daysToDeadline < 0) {

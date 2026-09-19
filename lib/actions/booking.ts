@@ -4,14 +4,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
   sendBookingOfferEmail,
   sendBookingConfirmedEmail,
+  sendLineupFullEmail,
   sendOfferDeclinedEmail,
   sendOfferReminderEmail,
   sendOfferWithdrawnConflictEmail,
   sendSpotFilledEmail,
   sendSpotAvailableEmail,
 } from '@/lib/email/mailer'
-import { generateShowPoster } from '@/lib/poster/generate'
-import { resolvePalette } from '@/lib/marketing/palette'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import {
   hasScheduleConflict,
@@ -36,8 +35,10 @@ import type { ArtistGender, ArtistType, EnergyLevel, RequirementCompensationType
 import { assertArtistBookableForShow } from '@/lib/club-artists'
 import { rollBackIfSeatWasTaken } from '@/lib/booking-seats'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
-import { getClubForShow, isClubPayoutReady, missingReadinessLabels } from '@/lib/stripe-connect'
-import { appUrl } from '@/lib/app-url'
+import { getClubForShow, isClubPayoutReady } from '@/lib/stripe-connect'
+import { appPath, appUrl } from '@/lib/app-url'
+import { missingForPublish } from '@/lib/publish-readiness'
+import { firstOpenRequirement } from '@/lib/show-publish'
 import { showVenue } from '@/lib/show-venue'
 
 /**
@@ -759,15 +760,18 @@ export async function sendBookingReminders() {
 }
 
 /**
- * Publiserer showet når hele lineupen er bekreftet.
+ * Lineupen er full: sett showet til `fullbooked` og si fra til klubben.
  *
- * Det finnes ingen vei til `published` med ledige plasser lenger. Publikum
- * kjøper billett til en kveld med navn på, og navn som dukker opp etterpå
- * rekker verken plakat eller markedsføring. Vil klubben kjøre med færre
- * komikere, sletter bookeren plassen — da er lineupen full.
+ * Denne funksjonen *publiserte* showet før. Da gikk event-siden ut i det
+ * siste komiker sa ja — uten plakat, uten tekst og uten billettpris, fordi
+ * ingen av delene har noe med lineupen å gjøre. Nå stopper automatikken her.
+ * Klubben får «Line-up is booked – Publish?» og publiserer selv med
+ * `publishShow` når siden er klar.
  *
- * Databasen holder den samme grensen (migrasjon 053), så sjekken under er
- * den som gir en lesbar beskjed, ikke den som er load-bearing.
+ * Kalles etter hvert svar og hver morgen, så den må tåle å kjøre mange ganger
+ * på samme show: e-posten går én gang per fulle lineup
+ * (`lineup_full_notified_at`), og åpner en plass seg igjen før publisering,
+ * går showet tilbake til `booking` og stempelet nullstilles.
  */
 export async function automateFullbookedShow(showId: string) {
   const admin = createAdminClient()
@@ -779,41 +783,82 @@ export async function automateFullbookedShow(showId: string) {
 
   if (!requirements?.length) return { fullbooked: false, reason: 'no_requirements' as const }
 
-  for (const req of requirements) {
-    const { count } = await admin
-      .from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', req.id)
-      .in('status', ['confirmed', 'completed', 'paid'])
+  const open = await firstOpenRequirement(admin, requirements)
+  if (open) {
+    // Et frafall før publisering. `fullbooked` ville nå være en løgn, og
+    // klubben skal ha ny beskjed når plassen er fylt igjen. Et publisert show
+    // røres ikke — billettene er solgt, og motoren fyller plassen.
+    await admin.from('shows').update({ status: 'booking' }).eq('id', showId).eq('status', 'fullbooked')
+    await admin.from('shows').update({ lineup_full_notified_at: null })
+      .eq('id', showId).neq('status', 'published').not('lineup_full_notified_at', 'is', null)
 
-    if ((count ?? 0) < req.quantity) {
-      return {
-        fullbooked: false,
-        reason: 'requirements_not_filled' as const,
-        message: `Krav "${req.role_name}" er ikke fylt (${count ?? 0}/${req.quantity})`,
-      }
+    return {
+      fullbooked: false,
+      reason: 'requirements_not_filled' as const,
+      message: `Krav "${open.role_name}" er ikke fylt (${open.filled}/${open.quantity})`,
     }
   }
 
   const { data: show } = await admin
     .from('shows')
-    .select('title, slug, date, start_time, venue_name, venue_address, poster_url, published_at, selected_marketing_design_id, auto_poster_enabled, marketing_palette, poster_background_url, poster_background_path, club_id, status')
+    .select('title, date, status, club_id, poster_url, description, ticket_price, published_at')
     .eq('id', showId)
     .single()
 
   if (!show) return { fullbooked: false, reason: 'show_not_found' as const }
 
-  // Denne funksjonen publiserer showet, også fra cron. Er klubbens
-  // Connect-konto ikke ferdig, ville billettsalget åpnet uten en selger å ta
-  // imot pengene på vegne av.
-  const club = await getClubForShow(showId)
-  if (!isClubPayoutReady(club)) {
-    return {
-      fullbooked: false,
-      reason: 'club_not_payable' as const,
-      message: `Klubben mangler: ${missingReadinessLabels(club).join(', ')}`,
-    }
+  if (show.status === 'published') {
+    return { fullbooked: true, published: true, notifiedNow: false }
   }
+
+  // Bookeren kan fylle lineupen for hånd uten noen gang å starte bookingen,
+  // så `draft` er en like gyldig vei hit som `booking`.
+  await admin.from('shows').update({ status: 'fullbooked' }).eq('id', showId).in('status', ['draft', 'booking'])
+
+  const notifiedNow = await notifyClubLineupFull(admin, showId, show)
+  return { fullbooked: true, published: false, notifiedNow }
+}
+
+/**
+ * Sender «Line-up is booked – Publish?» til alle i klubben, én gang.
+ *
+ * Stempelet settes *før* utsendingen, med `is null` som vilkår: to kjøringer
+ * som kommer samtidig (et ja fra en komiker og morgenjobben) kan ikke begge
+ * vinne. Går ingen av e-postene ut, tas stempelet av igjen, så neste kjøring
+ * prøver på nytt i stedet for at varselet blir borte.
+ */
+async function notifyClubLineupFull(
+  admin: ReturnType<typeof createAdminClient>,
+  showId: string,
+  show: {
+    title: string
+    date: string
+    club_id: string | null
+    poster_url: string | null
+    description: string | null
+    ticket_price: number | null
+  },
+) {
+  if (!show.club_id) return false
+
+  const { data: claimed } = await admin
+    .from('shows')
+    .update({ lineup_full_notified_at: new Date().toISOString() })
+    .eq('id', showId)
+    .is('lineup_full_notified_at', null)
+    .select('id')
+
+  if (!claimed?.length) return false
+
+  const { data: memberships } = await admin
+    .from('club_memberships')
+    .select('profile_id')
+    .eq('club_id', show.club_id)
+
+  const profileIds = (memberships ?? []).map((membership) => membership.profile_id)
+  const { data: members } = profileIds.length > 0
+    ? await admin.from('profiles').select('email, full_name').in('id', profileIds)
+    : { data: [] as Array<{ email: string; full_name: string | null }> }
 
   const { data: spots } = await admin
     .from('confirmed_spots')
@@ -822,125 +867,36 @@ export async function automateFullbookedShow(showId: string) {
     .in('status', ['confirmed', 'completed', 'paid'])
 
   const artistIds = [...new Set((spots ?? []).map((spot) => spot.artist_id))]
-  const { data: artistRows } = artistIds.length > 0
-    ? await admin.from('artists').select('id, full_name, stage_name, profile_image_url').in('id', artistIds)
-    : { data: [] as Array<{ id: string; full_name: string; stage_name: string | null; profile_image_url: string | null }> }
-  const artistById = new Map((artistRows ?? []).map((artist) => [artist.id, artist]))
-  const requirementById = new Map((requirements ?? []).map((requirement) => [requirement.id, requirement.role_name]))
+  const { data: artists } = artistIds.length > 0
+    ? await admin.from('artists').select('id, full_name, stage_name').in('id', artistIds)
+    : { data: [] as Array<{ id: string; full_name: string; stage_name: string | null }> }
+  const nameById = new Map((artists ?? []).map((artist) => [artist.id, artist.stage_name ?? artist.full_name]))
 
-  let posterUrl = show.poster_url ?? null
+  const club = await getClubForShow(showId)
+  const recipients = [...new Map((members ?? []).filter((member) => member.email).map((member) => [member.email.toLowerCase(), member])).values()]
 
-  // AI-plakaten lages ikke av seg selv. De fleste klubber har sin egen
-  // plakat, og en generert plakat som overrasker dem på publiseringstidspunktet
-  // er verre enn ingen plakat. `auto_poster_enabled` er av som standard, og
-  // klubben skrur den på per show i markedsføringsfanen om den vil ha den.
-  if (!posterUrl && show.auto_poster_enabled) {
-    const { data: clubBrand } = show.club_id
-      ? await admin.from('clubs').select('brand_color').eq('id', show.club_id).maybeSingle()
-      : { data: null }
-    const clubBrandColor = clubBrand?.brand_color ?? null
-
-    // Malen kan ligge i klubbens bibliotek og ikke på showet, så oppslaget går
-    // på id alene — tilhørigheten ble sjekket da malen ble valgt.
-    const { data: posterDesign } = show.selected_marketing_design_id
-      ? await admin
-        .from('show_marketing_designs')
-        .select('id, label, file_url, poster_layout, layout_status, plate_url, plate_path')
-        .eq('id', show.selected_marketing_design_id)
-        .maybeSingle()
-      : { data: null }
-
-    posterUrl = await generateShowPoster(showId, {
-      clubId: show.club_id,
-      title: show.title,
-      date: show.date,
-      startTime: show.start_time,
-      venue: showVenue(show).line ?? '',
-      artists: (spots ?? []).flatMap((spot) => {
-        const artist = artistById.get(spot.artist_id)
-        if (!artist) return []
-        return [{
-          id: artist.id,
-          name: artist.stage_name ?? artist.full_name,
-          imageUrl: artist.profile_image_url,
-          roleName: requirementById.get(spot.show_requirement_id) ?? null,
-        }]
-      }),
-      template: posterDesign
-        ? {
-          id: posterDesign.id,
-          label: posterDesign.label,
-          fileUrl: posterDesign.file_url,
-          platePath: posterDesign.plate_path,
-          layout: posterDesign.poster_layout,
-          layoutStatus: posterDesign.layout_status,
-          plateUrl: posterDesign.plate_url,
-        }
-        : null,
-      palette: resolvePalette(show.marketing_palette, clubBrandColor),
-      existingBackground: { url: show.poster_background_url, path: show.poster_background_path },
+  let sent = 0
+  for (const member of recipients) {
+    const delivery = await sendLineupFullEmail({
+      email: member.email,
+      full_name: member.full_name,
+      show_title: show.title,
+      show_date: show.date,
+      lineup: artistIds.flatMap((id) => nameById.get(id) ?? []),
+      missing: missingForPublish(show).map((item) => item.phrase),
+      payout_ready: isClubPayoutReady(club),
+      show_url: appPath(`/admin-app/shows/${showId}`),
     })
+    if (delivery.success) sent++
   }
 
-  const alreadyPublished = Boolean(show.published_at)
-  const publishedAt = show.published_at ?? new Date().toISOString()
-  const posterWasGenerated = Boolean(posterUrl) && posterUrl !== show.poster_url
-
-  const { error: publishError } = await admin.from('shows').update({
-    status: 'published',
-    published_at: publishedAt,
-    ...(posterUrl ? { poster_url: posterUrl } : {}),
-    ...(posterWasGenerated ? { poster_source: 'ai' as const } : {}),
-  }).eq('id', showId).in('status', ['draft', 'booking', 'fullbooked'])
-
-  if (publishError) {
-    // Vakten i databasen (053) svarer her hvis noe har endret seg mellom
-    // tellingen over og oppdateringen.
-    return { fullbooked: false, reason: 'publish_rejected' as const, message: publishError.message }
+  if (sent === 0) {
+    console.error(`[Booking] Lineup-full notice for show ${showId} reached nobody (${recipients.length} recipients)`)
+    await admin.from('shows').update({ lineup_full_notified_at: null }).eq('id', showId)
+    return false
   }
 
-  // Er showet allerede publisert, holdes plakaten i sync uten å røre status.
-  if (posterUrl && alreadyPublished) {
-    await admin.from('shows').update({ poster_url: posterUrl })
-      .eq('id', showId).eq('status', 'published')
-  }
-
-  // Markedsføringsoppgavene hører til publiseringen, ikke til hvilken vei
-  // siste plass ble fylt. Et show bookeren fylte ved å legge komikere rett
-  // inn i lineupen fikk før ingen oppgaver i det hele tatt.
-  if (!alreadyPublished) {
-    await admin.from('marketing_tasks').upsert([
-      { show_id: showId, task_key: 'publish_event_page', label: 'Publiser event-side', is_completed: true },
-      { show_id: showId, task_key: 'activate_ticket_sales', label: 'Aktiver billettsalg', is_completed: false },
-      { show_id: showId, task_key: 'upload_poster', label: 'Plakat på plass', is_completed: Boolean(posterUrl) },
-      { show_id: showId, task_key: 'create_facebook_event', label: 'Opprett Facebook-event', is_completed: false },
-      { show_id: showId, task_key: 'share_facebook_groups', label: 'Del i Facebook-grupper', is_completed: false },
-      { show_id: showId, task_key: 'send_calendar_partners', label: 'Send til kalenderpartnere', is_completed: false },
-      { show_id: showId, task_key: 'schedule_email', label: 'Planlegg e-postkampanje', is_completed: false },
-    ], { onConflict: 'show_id,task_key', ignoreDuplicates: true })
-
-    // Fylles siste plass av et ja, har `accept_booking_offer` allerede
-    // seedet de samme radene — med event-siden *ikke* publisert. Upserten
-    // over hopper over eksisterende rader, så uten dette sto oppgaven
-    // «Publiser event-side» igjen som ugjort på et show som nettopp ble
-    // publisert.
-    await admin.from('marketing_tasks')
-      .update({ is_completed: true })
-      .eq('show_id', showId)
-      .eq('task_key', 'publish_event_page')
-
-    if (posterUrl) {
-      await admin.from('marketing_tasks')
-        .update({ is_completed: true })
-        .eq('show_id', showId)
-        .eq('task_key', 'upload_poster')
-    }
-  }
-
-  // `publishedNow` skiller «ble publisert nå» fra «var publisert fra før».
-  // Den daglige jobben teller publiseringer, og uten skillet talte den hvert
-  // ferdige show på nytt hver eneste dag.
-  return { fullbooked: true, posterUrl, published: true, publishedNow: !alreadyPublished, publishedAt }
+  return true
 }
 
 /**

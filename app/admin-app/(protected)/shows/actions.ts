@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createShow } from '@/lib/actions/shows'
 import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
+import { publishShow } from '@/lib/show-publish'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canReviewShow, savePerformanceReview } from '@/lib/artist-reviews'
@@ -1675,6 +1676,51 @@ export async function resumeTicketSalesAction(formData: FormData): Promise<Resum
     revalidateShowSales(showId, slug)
     return { ok: true }
   } catch (error) {
+    return { error: actionErrorMessage(error) }
+  }
+}
+
+export type PublishShowResult = { ok: true } | { error: string }
+
+/**
+ * Klubben publiserer showet selv.
+ *
+ * Showet publiserte seg selv før, i det lineupen ble full — uten plakat,
+ * tekst og billettpris. Nå stopper automatikken på `fullbooked`, klubben får
+ * «Line-up is booked – Publish?», og dette er knappen e-posten peker til.
+ *
+ * Plakat, tekst og pris sperrer ikke: dialogen viser hva som mangler, og
+ * valget er klubbens. Full lineup og ferdig utbetalingsoppsett sperrer.
+ */
+export async function publishShowAction(formData: FormData): Promise<PublishShowResult> {
+  const showId = String(formData.get('show_id') ?? '')
+
+  try {
+    await assertShowAccess(showId)
+    const slug = await showSlug(showId)
+    const result = await publishShow(showId)
+
+    if (!result.published) {
+      switch (result.reason) {
+        case 'no_requirements':
+          return { error: 'Add at least one lineup spot before publishing.' }
+        case 'requirements_not_filled':
+          return { error: 'The lineup is not full. Fill every spot, or delete the spot, before publishing.' }
+        case 'club_not_payable':
+          return { error: 'The club’s payout setup is not finished. Complete it under Finances before publishing.' }
+        case 'show_not_found':
+          return { error: 'The show could not be found.' }
+        default:
+          return { error: result.message ?? 'The show could not be published.' }
+      }
+    }
+
+    revalidateShowSales(showId, slug)
+    revalidatePath('/admin-app/marketing')
+    revalidatePath('/admin-app')
+    return { ok: true }
+  } catch (error) {
+    console.error(`[Shows] Publish ${showId} failed: ${actionErrorMessage(error)}`)
     return { error: actionErrorMessage(error) }
   }
 }

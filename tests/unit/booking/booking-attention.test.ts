@@ -164,6 +164,22 @@ describe('publisering', () => {
     expect(keys([ready])).not.toContain('not-payable')
   })
 
+  // Showet publiserer seg ikke selv lenger. En full lineup som står upublisert
+  // selger ingen billetter, og e-posten til klubben kan bli liggende.
+  it('minner om publisering når lineupen er full og klubben er klar', () => {
+    const ready = show({ status: 'fullbooked', requirements: [spot({ filled: 1, pendingAuto: 0 })] })
+    expect(keys([ready])).toContain('ready-to-publish')
+
+    const blocked = show({ status: 'fullbooked', requirements: [spot({ filled: 1, pendingAuto: 0 })], clubPayoutReady: false })
+    expect(keys([blocked])).not.toContain('ready-to-publish')
+  })
+
+  it('minner ikke om publisering når showet er publisert eller har en ledig plass', () => {
+    const live = show({ status: 'published', requirements: [spot({ filled: 1, pendingAuto: 0 })] })
+    expect(keys([live])).not.toContain('ready-to-publish')
+    expect(keys([show()])).not.toContain('ready-to-publish')
+  })
+
   // Et show uten plasser har ikke «full lineup» — det kan ikke publiseres i
   // det hele tatt. Varselet sa det motsatte, og uten Stripe-mangel sa det
   // ingenting, så showet sto fast uten et ord.

@@ -338,6 +338,8 @@ export type Show = {
   stripe_price_id: string | null
   is_template: boolean
   published_at: string | null
+  /** Når klubben fikk «Line-up is booked – Publish?». Null = ikke varslet for gjeldende lineup. */
+  lineup_full_notified_at: string | null
   club_id: string | null
   /** Satt = bookeren har stengt billettsalget. Showet er fortsatt synlig. */
   ticket_sales_closed_at: string | null
@@ -875,6 +877,7 @@ export type Database = {
           stripe_price_id?: string | null
           is_template?: boolean
           published_at?: string | null
+          lineup_full_notified_at?: string | null
           club_id?: string | null
           ticket_sales_closed_at?: string | null
           ticket_sales_closed_by?: string | null

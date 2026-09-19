@@ -26,7 +26,8 @@ export const maxDuration = 60
  *     det første som ryker når kjøringen går over tiden — og en påminnelse
  *     som kommer dagen etter fristen er ingen påminnelse.
  *  3. Kjør motoren for alle show med ledige plasser. Den trapper opp bølgen
- *     med dagens kvote, og publiserer showet når siste plass er fylt.
+ *     med dagens kvote. Er siste plass fylt, får klubben «Line-up is booked –
+ *     Publish?» — jobben publiserer ingenting selv, det gjør klubben.
  *
  * Kjøres kl. 06:00 UTC, så tilbudene lander til frokost og ikke midt på
  * natten. Se `.github/workflows/run-automation.yml`.
@@ -41,19 +42,19 @@ export async function GET(request: Request) {
   const results = await runAutomaticBookingForOpenShows()
 
   const offersSent = results.reduce((sum, result) => sum + result.booking.offersCreated, 0)
-  // `fullbooked` er sant også for show som allerede *var* publisert, så den
-  // alene talte hvert ferdige show på nytt hver eneste dag. Dette er den ene
-  // linjen jobben sier noe med, og da må tallet bety det det står.
-  const published = results.filter((result) => result.fullbooked.publishedNow).length
+  // `fullbooked` er sant for hvert show med full lineup, hver eneste dag.
+  // `notifiedNow` er sant bare den ene gangen klubben faktisk fikk e-posten,
+  // så tallet betyr det det står.
+  const lineupsFull = results.filter((result) => result.fullbooked.notifiedNow).length
 
   console.log(
-    `[cron/booking] ${results.length} shows · ${offersSent} offers sent · ${published} published · ${expired} expired · ${reminded} reminders`,
+    `[cron/booking] ${results.length} shows · ${offersSent} offers sent · ${lineupsFull} lineup-full notices · ${expired} expired · ${reminded} reminders`,
   )
 
   return NextResponse.json({
     shows: results.length,
     offersSent,
-    published,
+    lineupsFull,
     expired,
     reminded,
   })

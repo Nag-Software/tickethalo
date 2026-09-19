@@ -10,6 +10,7 @@ import {
   bookingConfirmedTemplate,
   bookingOfferTemplate,
   escapeHtml,
+  lineupFullTemplate,
   offerDeclinedTemplate,
   offerReminderTemplate,
   offerWithdrawnByClubTemplate,
@@ -227,6 +228,18 @@ export async function sendSpotFilledEmail(opts: {
   show_title?: string | null
 }): Promise<EmailResult> {
   return sendArtistEmail('spot_filled', opts.email, spotFilledTemplate(opts))
+}
+
+/**
+ * «Line-up is booked – Publish?» — til klubben, ikke til en komiker.
+ *
+ * Går gjennom samme `deliver` som resten, så den får nye forsøk og en rad i
+ * `email_logs`. Hvem som får den og når avgjøres i `lib/actions/booking.ts`.
+ */
+export async function sendLineupFullEmail(opts: Parameters<typeof lineupFullTemplate>[0] & {
+  email: string
+}): Promise<EmailResult> {
+  return sendArtistEmail('lineup_full', opts.email, lineupFullTemplate(opts))
 }
 
 /**

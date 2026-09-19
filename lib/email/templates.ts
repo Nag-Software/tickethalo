@@ -490,3 +490,71 @@ export function artistFeeTemplate(opts: {
     }),
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Til klubben
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Lineupen er full — og showet er *ikke* publisert.
+ *
+ * Showet publiserte seg selv før, og gikk ut uten plakat, tekst og
+ * billettsalg. Nå er dette e-posten som kommer i stedet: klubben ser over
+ * siden og trykker Publiser selv. `missing` er det som fortsatt står tomt,
+ * så e-posten sier hva som gjenstår og ikke bare at noe gjør det.
+ */
+export function lineupFullTemplate(opts: {
+  full_name?: string | null
+  show_title: string
+  show_date: string
+  /** Komikerne i lineupen, i rekkefølge. */
+  lineup: string[]
+  /** Det event-siden mangler, skrevet som det skal leses: «a poster». */
+  missing: string[]
+  /** Er ikke utbetalingsoppsettet ferdig, kan showet ikke publiseres ennå. */
+  payout_ready: boolean
+  show_url: string
+}): EmailTemplate {
+  const date = showDateLabel(opts.show_date)
+  const greeting = opts.full_name?.trim() ? `Hi ${opts.full_name.trim()}` : 'Hi'
+  const lineup = opts.lineup.join(', ')
+  const missing = opts.missing.length > 0
+    ? `Before you publish, the event page still needs ${joinList(opts.missing)}.`
+    : 'The event page has everything it needs.'
+  const payout = opts.payout_ready
+    ? null
+    : 'Ticket sales cannot open until the club’s payout setup is finished under Finances, so the show cannot be published before that is done.'
+
+  return {
+    subject: `Line-up is booked – Publish? ${opts.show_title}`,
+    text: [
+      greeting,
+      '',
+      `Every spot on ${opts.show_title} on ${date} is confirmed${lineup ? `: ${lineup}` : ''}.`,
+      '',
+      'The show is not published yet. Nothing goes live and no tickets are sold until you publish it yourself.',
+      missing,
+      ...(payout ? [payout] : []),
+      '',
+      'Review the show and publish when you are ready:',
+      opts.show_url,
+    ].join('\n'),
+    html: shell({
+      eyebrow: 'Line-up is booked',
+      heading: 'Ready to publish?',
+      body:
+        paragraph(`${escapeHtml(greeting)}, every spot on <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(date)} is confirmed.`) +
+        details([['Line-up', lineup || null]]) +
+        paragraph('The show is <strong>not published yet</strong>. Nothing goes live and no tickets are sold until you publish it yourself.') +
+        paragraph(escapeHtml(missing), opts.missing.length === 0) +
+        (payout ? paragraph(escapeHtml(payout), true) : '') +
+        button(opts.show_url, 'Review and publish'),
+    }),
+  }
+}
+
+/** «a poster», «a poster and a description», «a poster, a description and a ticket price». */
+function joinList(items: string[]) {
+  if (items.length <= 1) return items.join('')
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}

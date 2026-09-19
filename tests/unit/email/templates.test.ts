@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bookingConfirmedTemplate,
   bookingOfferTemplate,
+  lineupFullTemplate,
   offerWithdrawnByClubTemplate,
   removedFromLineupTemplate,
   showCancelledTemplate,
@@ -86,6 +87,48 @@ describe('notices when the club changes something', () => {
     expect(template.text).toContain('The club has cancelled')
     expect(template.html).not.toContain('<script>')
     expect(template.html).toContain('Laughs &amp; &lt;script&gt;')
+    expect(template.html).toContain('&lt;b&gt;Ida&lt;/b&gt;')
+  })
+})
+
+// Showet publiserte seg selv før — uten plakat, tekst og billettsalg. Nå får
+// klubben denne e-posten i stedet, og publiserer selv.
+describe('lineupFullTemplate', () => {
+  const base = {
+    full_name: 'Kari',
+    show_title: 'Backstage Stand Up',
+    show_date: '2026-10-17',
+    lineup: ['Ida', 'Jonas'],
+    missing: ['a poster', 'a description', 'a ticket price'],
+    payout_ready: true,
+    show_url: 'https://x.test/admin-app/shows/1',
+  }
+
+  it('asks the club to publish and says nothing is live yet', () => {
+    const template = lineupFullTemplate(base)
+    expect(template.subject).toBe('Line-up is booked – Publish? Backstage Stand Up')
+    expect(template.text).toContain('The show is not published yet')
+    expect(template.text).toContain('Ida, Jonas')
+    expect(template.text).toContain('https://x.test/admin-app/shows/1')
+    expect(template.html).toContain('Review and publish')
+    expect(template.text).not.toContain('2026-10-17')
+  })
+
+  it('lists what the event page still needs, or says it is complete', () => {
+    expect(lineupFullTemplate(base).text).toContain('still needs a poster, a description and a ticket price.')
+    expect(lineupFullTemplate({ ...base, missing: ['a poster'] }).text).toContain('still needs a poster.')
+    expect(lineupFullTemplate({ ...base, missing: [] }).text).toContain('has everything it needs')
+  })
+
+  it('warns about the payout setup only when it blocks publishing', () => {
+    expect(lineupFullTemplate(base).text).not.toContain('payout setup')
+    expect(lineupFullTemplate({ ...base, payout_ready: false }).text).toContain('payout setup')
+  })
+
+  it('escapes what the club typed and tolerates a missing name', () => {
+    const template = lineupFullTemplate({ ...base, full_name: null, show_title: 'Laughs & <script>', lineup: ['<b>Ida</b>'] })
+    expect(template.text.startsWith('Hi\n')).toBe(true)
+    expect(template.html).not.toContain('<script>')
     expect(template.html).toContain('&lt;b&gt;Ida&lt;/b&gt;')
   })
 })

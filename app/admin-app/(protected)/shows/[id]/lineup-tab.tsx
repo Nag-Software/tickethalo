@@ -16,6 +16,8 @@ import { shouldBypassImageOptimization } from '@/lib/utils'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
 import { cn } from '@/lib/utils'
+import { PublishShowDialog } from '@/components/admin/publish-show-dialog'
+import type { PublishReadinessItem } from '@/lib/publish-readiness'
 import {
   addRequirementAction,
   deleteRequirementAction,
@@ -161,6 +163,7 @@ function requirementSummary(requirement: Requirement, currency: string) {
 
 export function LineupTab({
   showId,
+  showTitle,
   showStatus,
   showCurrency,
   requirements,
@@ -170,12 +173,14 @@ export function LineupTab({
   selectableArtists,
   energyRelaxationSuggestions,
   allSlotsFilled,
+  publishReadiness,
   submissionsAudience,
   submissionsCloseAt,
   rosterSize,
   pendingByRequirement,
 }: {
   showId: string
+  showTitle: string
   showStatus: string
   showCurrency: string
   requirements: Requirement[]
@@ -185,6 +190,8 @@ export function LineupTab({
   selectableArtists: SelectableArtist[]
   energyRelaxationSuggestions: Record<string, { candidates: number }>
   allSlotsFilled: boolean
+  /** Det event-siden mangler før publisering — se `lib/publish-readiness.ts`. */
+  publishReadiness: PublishReadinessItem[]
   submissionsAudience: SubmissionsAudience
   submissionsCloseAt: string | null
   rosterSize: number
@@ -1149,14 +1156,16 @@ export function LineupTab({
         </div>
       )}
 
-      {/* Ingen publiser-knapp lenger: showet publiserer seg selv i det siste
-          plassen er bekreftet. Vil klubben kjøre kortere lineup, sletter
-          bookeren plassen — da er lineupen full. */}
+      {/* Showet publiserer seg ikke selv. Når siste plass er bekreftet får
+          klubben en e-post, og publiserer herfra når event-siden er klar.
+          Vil klubben kjøre kortere lineup, sletter bookeren plassen — da er
+          lineupen full. */}
       {requirements.length > 0 && !allSlotsFilled && ['draft', 'booking', 'fullbooked'].includes(showStatus) && (
         <div className={cn(spotCardClass, 'px-4 py-4 sm:px-5')}>
           <p className="text-sm text-muted-foreground">
-            {filledSlots} of {totalSlots} spots are filled. The show publishes itself as soon as every
-            spot has a confirmed comedian. To run a shorter lineup, delete a spot — then the lineup is full.
+            {filledSlots} of {totalSlots} spots are filled. You get an email as soon as every spot has a
+            confirmed comedian, and publish the show yourself when the event page is ready. To run a
+            shorter lineup, delete a spot — then the lineup is full.
           </p>
         </div>
       )}
@@ -1176,14 +1185,18 @@ export function LineupTab({
         </div>
       )}
 
-      {/* All-filled celebration */}
-      {allSlotsFilled && showStatus === 'booking' && (
+      {/* Full lineup, ikke publisert: klubben trykker selv. */}
+      {allSlotsFilled && ['draft', 'booking', 'fullbooked'].includes(showStatus) && (
         <div className="rounded-2xl border-2 border-purple-300 bg-purple-50/50 p-5 dark:bg-purple-950/20">
           <h3 className="font-bold text-purple-900 dark:text-purple-300">The lineup is ready! 🎉</h3>
           <p className="text-sm text-purple-700 dark:text-purple-400 mt-0.5">
-            Every spot is filled. The event page publishes itself and the marketing tasks start automatically.
-            A poster is only generated if “Generate an AI poster when the lineup publishes” is on under Marketing.
+            Every spot is filled. The show is not published yet — nothing goes live and no tickets are sold
+            until you publish it.
+            {publishReadiness.some((item) => !item.done) && (
+              <> Still missing: {publishReadiness.filter((item) => !item.done).map((item) => item.label.toLowerCase()).join(', ')}.</>
+            )}
           </p>
+          <PublishShowDialog showId={showId} showTitle={showTitle} readiness={publishReadiness} className="mt-3" />
         </div>
       )}
     </div>

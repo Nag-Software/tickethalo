@@ -141,7 +141,14 @@ export function ShowBookingCard({
 
         <Wrapper href={showDetailHref} className="block border-y bg-muted/50">
           {show.posterUrl ? (
-            <div className="relative aspect-[16/9] w-full bg-zinc-950">
+            <div className="relative aspect-[16/9] w-full bg-black">
+              <Image
+                src={show.posterUrl}
+                alt={show.title}
+                width={50}
+                height={50}
+                className="object-cover"
+              />
               <Image
                 src={show.posterUrl}
                 alt={show.title}

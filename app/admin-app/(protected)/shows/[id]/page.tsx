@@ -10,6 +10,7 @@ import { ticketSalesState } from '@/lib/ticket-sales'
 import { updateShowDetailsAction } from '../actions'
 import { buildBookingSpots } from '@/lib/booking-spots'
 import { OverviewTab } from './overview-tab'
+import { publishReadiness } from '@/lib/publish-readiness'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
 import { MarketingTab } from './marketing/marketing-tab'
@@ -394,6 +395,7 @@ export default async function ShowDetailPage({
               />
             : <LineupTab
                 showId={show.id}
+                showTitle={show.title}
                 showStatus={show.status}
                 showCurrency={show.currency}
                 requirements={(requirements ?? []).map(r => ({
@@ -430,6 +432,7 @@ export default async function ShowDetailPage({
                   .map(({ id, full_name, stage_name, email }) => ({ id, full_name, stage_name, email }))}
                 energyRelaxationSuggestions={energyRelaxationSuggestions}
                 allSlotsFilled={allSlotsFilled}
+                publishReadiness={publishReadiness(show)}
                 submissionsAudience={(show.submissions_audience ?? 'roster') as SubmissionsAudience}
                 submissionsCloseAt={show.submissions_close_at ?? null}
                 rosterSize={roster.length}
