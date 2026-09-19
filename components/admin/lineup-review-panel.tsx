@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatScore, PERFORMANCE_RATINGS, RATING_LABELS } from '@/lib/artist-score'
+import { PERFORMANCE_RATINGS, RATING_LABELS } from '@/lib/artist-score'
 import { saveLineupReviewAction } from '@/app/admin-app/(protected)/shows/actions'
 import type { PerformanceRating } from '@/types/database'
 
@@ -28,8 +28,6 @@ export type ReviewableSpot = {
   roleName: string | null
   rating: PerformanceRating | null
   notes: string | null
-  /** Scoren komikeren står på nå, etter vurderingene som finnes. */
-  score: number | null
   reviewCount: number
 }
 
@@ -47,16 +45,18 @@ export function LineupReviewPanel({ showId, spots }: { showId: string; spots: Re
   const [, startSaving] = useTransition()
 
   /**
-   * Følg serveren når den har regnet ut den nye scoren.
+   * Følg serveren etter en lagret vurdering.
    *
    * Tilstanden ble satt fra propene én gang, ved første render. Etter en
-   * vurdering skrev `router.refresh()` en ny score inn i propene, men raden
-   * viste fortsatt den gamle — stikk i strid med det denne panelen lover.
-   * Signaturen gjør at vi bare synker når tallene faktisk er endret, ikke
-   * hver gang forelderen tegnes på nytt.
+   * vurdering skrev `router.refresh()` nye tall inn i propene, men raden
+   * viste fortsatt de gamle. Signaturen gjør at vi bare synker når tallene
+   * faktisk er endret, ikke hver gang forelderen tegnes på nytt.
+   *
+   * Scoren er bevisst ikke med: den blir igjen på serveren, og bookeren
+   * skal aldri se den.
    */
   const signature = useMemo(
-    () => spots.map((row) => `${row.spotId}:${row.rating ?? ''}:${row.score ?? ''}:${row.reviewCount}`).join('|'),
+    () => spots.map((row) => `${row.spotId}:${row.rating ?? ''}:${row.reviewCount}`).join('|'),
     [spots],
   )
   const [syncedTo, setSyncedTo] = useState(signature)
@@ -86,8 +86,7 @@ export function LineupReviewPanel({ showId, spots }: { showId: string; spots: Re
       try {
         await saveLineupReviewAction(fd)
         toast.success(`${spot.artistName}: ${RATING_LABELS[rating].toLowerCase()}`)
-        // Hent den nye scoren. Den er regnet ut på serveren, og det er den
-        // raden skal vise.
+        // Hent antall vurderinger på nytt fra serveren.
         router.refresh()
       } catch (error) {
         setRows(previous)
@@ -124,7 +123,7 @@ export function LineupReviewPanel({ showId, spots }: { showId: string; spots: Re
                 {' · '}
                 {row.reviewCount === 0
                   ? 'no reviews yet'
-                  : `${formatScore(row.score)} · ${row.reviewCount} ${row.reviewCount === 1 ? 'review' : 'reviews'}`}
+                  : `${row.reviewCount} ${row.reviewCount === 1 ? 'review' : 'reviews'}`}
               </p>
             </div>
 

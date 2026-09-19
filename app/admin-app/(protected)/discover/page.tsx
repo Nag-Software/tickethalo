@@ -176,7 +176,7 @@ export default async function DiscoverPage({
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {artists.map((artist) => (
               <ArtistCard key={artist.id} artist={artist} />
             ))}

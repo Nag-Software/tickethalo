@@ -284,8 +284,6 @@ export default async function ShowDetailPage({
         roleName: requirement?.role_name ?? null,
         rating: showReviews.get(spot.id)?.rating ?? null,
         notes: showReviews.get(spot.id)?.notes ?? null,
-        // Klubbens egen score — `reviews` er klubbens liste, lastet over.
-        score: reviews.get(spot.artist_id)?.score ?? null,
         reviewCount: counts.get(spot.artist_id) ?? 0,
       }
     })
