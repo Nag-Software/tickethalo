@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -192,48 +193,57 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
 
   const clubUrl = publicClubUrl(club)
 
-  const account = await stripe.v2.core.accounts.create(
-    {
-      display_name: club.legal_name ?? club.name,
-      contact_email: contactEmail,
-      // Express-dashbordet gir klubben en enkel oversikt over egne utbetalinger
-      // uten at de trenger et fullt Stripe-oppsett.
-      dashboard: 'express',
-      identity: {
-        country: 'no',
-        // `entity_type` settes ikke: en klubb kan være AS, forening eller
-        // enkeltpersonforetak, og onboardingen spør om det selv.
-      },
-      configuration: {
-        merchant: {
-          mcc: CLUB_MCC,
-          // `stripe_balance.payouts` bes ikke om: den følger med
-          // merchant-konfigurasjonen, og leses tilbake i syncAccountStatus.
-          capabilities: {
-            card_payments: { requested: true },
-          },
-          support: {
-            email: contactEmail,
-            ...(clubUrl ? { url: clubUrl } : {}),
-          },
-        },
-      },
-      defaults: {
-        currency: club.currency.toLowerCase(),
-        // Stripe krever `application` på begge når dashbordet er `express`.
-        // Det betyr at Tickethalo betaler Stripes behandlingsgebyr og hefter
-        // for tap. Gebyret trekkes fra plattformens saldo, aldri fra klubbens
-        // betaling, så klubben sitter igjen med nøyaktig 90 % (brutto minus
-        // provisjonen). Se lib/stripe-fees.ts for hvordan gebyret bokføres.
-        responsibilities: {
-          fees_collector: 'application',
-          losses_collector: 'application',
-        },
-      },
-      metadata: { club_id: club.id, club_slug: club.slug },
+  const params: Stripe.V2.Core.AccountCreateParams = {
+    display_name: club.legal_name ?? club.name,
+    contact_email: contactEmail,
+    // Express-dashbordet gir klubben en enkel oversikt over egne utbetalinger
+    // uten at de trenger et fullt Stripe-oppsett.
+    dashboard: 'express',
+    identity: {
+      country: 'no',
+      // `entity_type` settes ikke: en klubb kan være AS, forening eller
+      // enkeltpersonforetak, og onboardingen spør om det selv.
     },
-    { idempotencyKey: `club-account-v2-${club.id}` },
-  )
+    configuration: {
+      merchant: {
+        mcc: CLUB_MCC,
+        // `stripe_balance.payouts` bes ikke om: den følger med
+        // merchant-konfigurasjonen, og leses tilbake i syncAccountStatus.
+        capabilities: {
+          card_payments: { requested: true },
+        },
+        support: {
+          email: contactEmail,
+          ...(clubUrl ? { url: clubUrl } : {}),
+        },
+      },
+    },
+    defaults: {
+      currency: club.currency.toLowerCase(),
+      // Stripe krever `application` på begge når dashbordet er `express`.
+      // Det betyr at Tickethalo betaler Stripes behandlingsgebyr og hefter
+      // for tap. Gebyret trekkes fra plattformens saldo, aldri fra klubbens
+      // betaling, så klubben sitter igjen med nøyaktig 90 % (brutto minus
+      // provisjonen). Se lib/stripe-fees.ts for hvordan gebyret bokføres.
+      responsibilities: {
+        fees_collector: 'application',
+        losses_collector: 'application',
+      },
+    },
+    metadata: { club_id: club.id, club_slug: club.slug },
+  }
+
+  // Nøkkelen følger innholdet, ikke bare klubben. Stripe avviser en nøkkel som
+  // kommer tilbake med andre parametre, og da sto klubben fast for godt etter
+  // ett mislykket forsøk: retter den kontakt-e-posten eller navnet, eller
+  // kommer forsøket fra et annet miljø (localhost sender ingen `support.url`),
+  // er forespørselen ikke lenger den samme. Et dobbeltklikk sender fortsatt
+  // identiske parametre og får samme konto tilbake.
+  const paramsHash = createHash('sha256').update(JSON.stringify(params)).digest('hex').slice(0, 16)
+
+  const account = await stripe.v2.core.accounts.create(params, {
+    idempotencyKey: `club-account-v2-${club.id}-${paramsHash}`,
+  })
 
   const db = createAdminClient()
   const { error } = await db.from('clubs').update({ stripe_account_id: account.id }).eq('id', club.id)
