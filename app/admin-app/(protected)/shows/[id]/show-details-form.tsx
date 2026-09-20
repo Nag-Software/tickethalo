@@ -27,6 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Textarea } from '@/components/ui/textarea'
 import { VenuePicker } from '@/components/admin/venue-picker'
 import type { VenueLocation } from '@/lib/show-venue'
+import { MIN_TICKET_PRICE_MINOR } from '@/lib/tickets'
 import { cn } from '@/lib/utils'
 
 /**
@@ -349,7 +350,7 @@ export function ShowDetailsForm({
               <Input
                 id="show-price"
                 type="number"
-                min={0}
+                min={MIN_TICKET_PRICE_MINOR / 100}
                 step="0.01"
                 value={values.ticket_price}
                 onChange={(event) => update('ticket_price', event.target.value)}
@@ -359,7 +360,8 @@ export function ShowDetailsForm({
               <span className={cn(FIELD_ADDON_CLASS, 'border-l')}>{currency}</span>
             </div>
             <FieldDescription className={FIELD_HINT_CLASS}>
-              Currency is set under <Link href="/admin-app/my-club">My club</Link>.
+              Minimum {MIN_TICKET_PRICE_MINOR / 100} {currency}. Currency is set under{' '}
+              <Link href="/admin-app/my-club">My club</Link>.
             </FieldDescription>
           </Field>
         </FieldSection>

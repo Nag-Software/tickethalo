@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { type ClubReadiness, isClubPayoutReady } from '@/lib/stripe-connect'
 import { osloDate, ticketSalesState } from '@/lib/ticket-sales'
+import { isTicketPriceBelowMinimum } from '@/lib/tickets'
 import { type PublicTicketSalesState, toPublicTicketSalesState } from '@/lib/ticket-sales-display'
 import type { Artist, Club, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
 
@@ -180,6 +181,7 @@ export function isPubliclySellable(
 ): boolean {
   if (show.ticket_url) return true
   if (!show.ticket_price || show.ticket_price <= 0) return false
+  if (isTicketPriceBelowMinimum(show.ticket_price)) return false
   if (!club) return false
   return isClubPayoutReady({ ...club, payout_schedule_interval: club.payout_schedule_interval ?? 'manual' })
 }

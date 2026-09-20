@@ -71,7 +71,7 @@ describe('isPubliclySellable', () => {
     expect(isPubliclySellable(priced, readyClub)).toBe(true)
   })
 
-  it.each([null, 0, -100])('refuses a show with price %s', (ticket_price) => {
+  it.each([null, 0, -100, 200, 999])('refuses a show with price %s', (ticket_price) => {
     expect(isPubliclySellable({ ticket_url: null, ticket_price }, readyClub)).toBe(false)
   })
 

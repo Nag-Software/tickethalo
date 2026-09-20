@@ -9,6 +9,7 @@ import { CURRENCIES, normalizeCurrency } from '@/lib/currencies'
 import { VenuePicker } from '@/components/admin/venue-picker'
 import { clubLocations } from '@/lib/show-venue-write'
 import { showVenue } from '@/lib/show-venue'
+import { MIN_TICKET_PRICE_MINOR } from '@/lib/tickets'
 
 
 /** The currency the club sells in — the default for a new show. */
@@ -101,7 +102,7 @@ export default async function NewShowPage({
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <Field name="capacity" label="Capacity" type="number" min={1} defaultValue={template.capacity?.toString() ?? ''} />
-                  <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01}
+                  <Field name="ticket_price" label="Ticket price" type="number" min={MIN_TICKET_PRICE_MINOR / 100} step={0.01}
                     defaultValue={template.ticket_price ? String(template.ticket_price / 100) : ''} />
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Currency</label>
@@ -174,7 +175,7 @@ export default async function NewShowPage({
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Field name="capacity" label="Capacity" type="number" min={1} />
-              <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01} placeholder="199" />
+              <Field name="ticket_price" label="Ticket price" type="number" min={MIN_TICKET_PRICE_MINOR / 100} step={0.01} placeholder="199" />
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Currency</label>
                 <select name="currency" defaultValue={clubCurrency}

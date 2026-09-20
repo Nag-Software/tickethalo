@@ -257,6 +257,16 @@ describe('createCheckoutSession — club readiness', () => {
     expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled()
   })
 
+  it('refuses a price below the minimum before touching Stripe', async () => {
+    state.show = openShow({ ticket_price: 200 })
+
+    const error = await checkoutError(createCheckoutSession('show_1', 'https://tickethalo.no/events/x'))
+    expect(error.code).toBe('price_missing')
+    expect(error.detail).toContain('below the minimum')
+    expect(ensureKnown).not.toHaveBeenCalled()
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled()
+  })
+
   it('refuses an order that does not fit in the remaining capacity', async () => {
     state.soldTickets = 99
 

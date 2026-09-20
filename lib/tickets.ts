@@ -2,6 +2,29 @@
 export const MAX_TICKETS_PER_ORDER = 10
 
 /**
+ * Laveste billettpris, i minste valutaenhet (10 kr).
+ *
+ * Stripe avviser betalinger under 3 kr, og da fikk kjøperen bare «prøv igjen
+ * senere» på et show bookeren trodde var i salg. Grensen ligger godt over, så
+ * provisjonen og Stripe-gebyret også gir mening. 0 er fortsatt lov: et gratis
+ * show er et valg, og det selges ikke gjennom Tickethalo.
+ */
+export const MIN_TICKET_PRICE_MINOR = 1000
+
+/** Satt, men for lav til å selges. 0 og tom pris er ikke «for lav». */
+export function isTicketPriceBelowMinimum(priceMinor: number | null | undefined): boolean {
+  if (priceMinor === null || priceMinor === undefined) return false
+  if (Number.isNaN(priceMinor)) return true
+  return priceMinor !== 0 && priceMinor < MIN_TICKET_PRICE_MINOR
+}
+
+/** Meldingen bookeren får. `null` når prisen er i orden. */
+export function ticketPriceError(priceMinor: number | null | undefined, currency?: string | null): string | null {
+  if (!isTicketPriceBelowMinimum(priceMinor)) return null
+  return `The ticket price must be at least ${MIN_TICKET_PRICE_MINOR / 100} ${currency?.trim() || 'NOK'}.`
+}
+
+/**
  * Billettkoden slik den kommer inn i døra.
  *
  * QR-koden på billetten inneholder en verifiseringslenke, ikke koden alene —

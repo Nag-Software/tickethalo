@@ -46,6 +46,7 @@ import {
   type ShowSalesOverviewDto,
 } from '@/lib/show-sales'
 import { ticketSalesState } from '@/lib/ticket-sales'
+import { ticketPriceError } from '@/lib/tickets'
 import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -442,6 +443,11 @@ export async function createShowAction(formData: FormData) {
     club_id: clubId,
   }
 
+  // Skjemaet stopper en for lav pris selv (`min`); dette er for det som
+  // kommer utenom.
+  const priceError = ticketPriceError(input.ticket_price, input.currency)
+  if (priceError) throw new Error(priceError)
+
   const show = await createShow(input)
   await seedDefaultLineup(show.id)
   // Standardoppsettet er det første bookeren skal se på — ikke oversikten.
@@ -454,6 +460,12 @@ export async function cloneShowAction(formData: FormData) {
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
   const venue = await resolveShowVenue(db, clubId, venueSelectionFromForm(formData))
+
+  const priceError = ticketPriceError(
+    optionalMoneyToMinor(formData.get('ticket_price')),
+    optionalText(formData.get('currency')),
+  )
+  if (priceError) throw new Error(priceError)
 
   // Create the new show
   const show = await createShow({
@@ -650,6 +662,10 @@ export async function updateShowDetailsAction(formData: FormData) {
   })
   if (!check.ok) return { error: check.error }
 
+  const ticketPrice = optionalMoneyToMinor(formData.get('ticket_price'))
+  const priceError = ticketPriceError(ticketPrice, check.currency)
+  if (priceError) return { error: priceError }
+
   // Stedet avgjøres mot klubbens egne lokasjoner — se `resolveShowVenue`.
   // `venue_name` ble før satt til null her ved hver lagring, og det var
   // grunnen til at komikeren leste «Venue: Coming» på et show med full adresse.
@@ -669,7 +685,7 @@ export async function updateShowDetailsAction(formData: FormData) {
     end_time: optionalText(formData.get('end_time')),
     ...venue,
     capacity: optionalInteger(formData.get('capacity')),
-    ticket_price: optionalMoneyToMinor(formData.get('ticket_price')),
+    ticket_price: ticketPrice,
     currency: check.currency,
   }).eq('id', showId)
 

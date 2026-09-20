@@ -17,7 +17,7 @@ import {
   toCheckoutError,
 } from '@/lib/checkout/errors'
 import { ticketSalesState } from '@/lib/ticket-sales'
-import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
+import { MAX_TICKETS_PER_ORDER, isTicketPriceBelowMinimum } from '@/lib/tickets'
 
 type ShowForCheckout = {
   id: string
@@ -98,6 +98,11 @@ export async function createCheckoutSession(
   if (salesError) throw salesError
 
   if (!show.ticket_price || show.ticket_price <= 0) throw new CheckoutError('price_missing')
+  // Skjemaet slipper ikke inn en pris under minsteprisen, men show fra før
+  // grensen kan ha en. Stripe ville avvist de laveste uansett (under 3 kr).
+  if (isTicketPriceBelowMinimum(show.ticket_price)) {
+    throw new CheckoutError('price_missing', { detail: `price=${show.ticket_price} is below the minimum` })
+  }
 
   // Klubber fra før migrasjon 047 har ingen kjent utbetalingsplan. Uten dette
   // ville hver av dem vært «ikke klar» til noen trykket Oppdater under Økonomi
