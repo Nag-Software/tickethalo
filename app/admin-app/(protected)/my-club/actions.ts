@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { extractLogoBrandColor } from '@/lib/club-logo-color'
 import { normalizeCurrency } from '@/lib/currencies'
-import { syncConnectedAccountName } from '@/lib/stripe-connect'
+import { trySyncConnectedAccountName } from '@/lib/stripe-connect'
 
 const CLUB_MEDIA_BUCKET = 'club-media'
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
@@ -226,25 +226,19 @@ export async function saveClubProfileAction(formData: FormData) {
     throw new Error('Could not save the club profile.')
   }
 
-  await syncClubLocations(clubId, locations)
-
   // Klubbnavnet er også navnet kunden ser i Stripe Checkout og på
-  // kvitteringen (`connectedAccountNames`). Følger det ikke med hit, står det
-  // gamle navnet der til noen trykker Refresh under Finances. En Stripe-feil
-  // skal likevel ikke velte en profil som allerede er lagret.
-  if (currentClub.stripe_account_id) {
-    try {
-      await syncConnectedAccountName({
-        id: clubId,
-        name,
-        legal_name: currentClub.legal_name,
-        stripe_account_id: currentClub.stripe_account_id,
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error(`[My club] Could not update the name on ${currentClub.stripe_account_id} in Stripe: ${message}`)
-    }
-  }
+  // kvitteringen (`connectedAccountNames`). Det synkes rett etter at navnet
+  // er lagret, før lokasjonene: feiler de, skal ikke Stripe stå igjen med det
+  // gamle navnet. En Stripe-feil velter ikke profilen — den er lagret, og
+  // Refresh under Finances prøver navnet på nytt.
+  await trySyncConnectedAccountName({
+    id: clubId,
+    name,
+    legal_name: currentClub.legal_name,
+    stripe_account_id: currentClub.stripe_account_id,
+  })
+
+  await syncClubLocations(clubId, locations)
 
   revalidatePath('/admin-app')
   revalidatePath('/admin-app/my-club')

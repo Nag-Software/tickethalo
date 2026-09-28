@@ -193,10 +193,14 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
 
   const clubUrl = publicClubUrl(club)
 
-  const names = connectedAccountNames(club)
-
+  // Navnet kunden ser (`defaults.profile.doing_business_as`) settes ikke her,
+  // men rett etterpå i `createOnboardingLink`. Parametrene inngår i
+  // idempotensnøkkelen: en konto som ble opprettet hos Stripe uten at
+  // lagringen hos oss lyktes, må få samme nøkkel ved neste forsøk — ellers
+  // får klubben to kontoer. Og et navn Stripe måtte avvise skal aldri stoppe
+  // opprettelsen av kontoen.
   const params: Stripe.V2.Core.AccountCreateParams = {
-    display_name: names.displayName,
+    display_name: club.legal_name ?? club.name,
     contact_email: contactEmail,
     // Express-dashbordet gir klubben en enkel oversikt over egne utbetalinger
     // uten at de trenger et fullt Stripe-oppsett.
@@ -222,8 +226,6 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
     },
     defaults: {
       currency: club.currency.toLowerCase(),
-      // Navnet kunden ser i Checkout og på kvitteringen. Se `connectedAccountNames`.
-      profile: { doing_business_as: names.doingBusinessAs },
       // Stripe krever `application` på begge når dashbordet er `express`.
       // Det betyr at Tickethalo betaler Stripes behandlingsgebyr og hefter
       // for tap. Gebyret trekkes fra plattformens saldo, aldri fra klubbens
@@ -424,7 +426,8 @@ async function storePayoutSchedule(clubId: string, accountId: string): Promise<s
  * Kontoen fikk navnet sitt da den ble opprettet og fulgte ikke med når klubben
  * endret navn i Tickethalo. En klubb i drift viste derfor et gammelt navn i
  * Express uten å kunne rette det selv — Express lar ikke klubben endre det
- * offentlige navnet, det er plattformens felt.
+ * offentlige navnet, det er plattformens felt. Nå settes navnene på vei inn i
+ * onboardingen og hver gang klubben lagrer navn eller selgeropplysninger.
  */
 export type ConnectedAccountNames = { displayName: string; doingBusinessAs: string }
 
@@ -490,9 +493,34 @@ export async function syncConnectedAccountName(
   return { updated: true }
 }
 
+/**
+ * Samme synk, men kaster aldri. For kallstedene der navnet er en bieffekt av
+ * noe som allerede er lagret: en Stripe-feil skal ikke velte lagringen, bare
+ * gi beskjed. `true` når Stripe har navnet (eller klubben ikke har konto).
+ */
+export async function trySyncConnectedAccountName(
+  club: Pick<ConnectClub, 'id' | 'name' | 'legal_name' | 'stripe_account_id'>,
+): Promise<boolean> {
+  try {
+    await syncConnectedAccountName(club)
+    return true
+  } catch (error) {
+    console.error(
+      `[Connect] Could not update the name on ${club.stripe_account_id} for club ${club.id}: ${describeStripeError(error)}`,
+    )
+    return false
+  }
+}
+
 /** Onboarding-lenke (KYC + bankkonto). Lenken er kortlivet og må hentes på nytt. */
 export async function createOnboardingLink(club: ConnectClub, returnPath = '/admin-app/finances') {
   const accountId = await getOrCreateConnectedAccount(club)
+
+  // Navnene settes her, ikke i opprettelsen (se der). Onboardingen viser
+  // klubben det offentlige navnet, så det skal stå riktig før de kommer dit.
+  // Feiler det, går klubben videre likevel: Refresh og lagring prøver igjen.
+  await trySyncConnectedAccountName({ ...club, stripe_account_id: accountId })
+
   const origin = accountOrigin().replace(/\/$/, '')
 
   const link = await stripe.v2.core.accountLinks.create({

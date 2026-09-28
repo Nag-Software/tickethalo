@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const stripeMock = vi.hoisted(() => ({
-  v2: { core: { accounts: { retrieve: vi.fn(), update: vi.fn() } } },
+  v2: { core: { accounts: { retrieve: vi.fn(), update: vi.fn() }, accountLinks: { create: vi.fn() } } },
   balanceSettings: { retrieve: vi.fn(), update: vi.fn() },
 }))
 
@@ -71,6 +71,7 @@ import {
   assertClubCanSell,
   commissionFor,
   connectedAccountNames,
+  createOnboardingLink,
   describeClubReadiness,
   ensureClubPayoutScheduleKnown,
   getClubForShow,
@@ -79,6 +80,7 @@ import {
   PayoutScheduleSyncError,
   syncAccountStatus,
   syncConnectedAccountName,
+  trySyncConnectedAccountName,
   type ClubReadiness,
   type ConnectClub,
 } from '@/lib/stripe-connect'
@@ -585,5 +587,82 @@ describe('syncConnectedAccountName', () => {
 
     await expect(syncConnectedAccountName(club)).rejects.toThrow('Connection timed out')
     expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('trySyncConnectedAccountName', () => {
+  const club = { id: 'club_1', name: 'Backstage Stand Up', legal_name: null, stripe_account_id: 'acct_123' }
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('answers yes when the account already has the name', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
+      display_name: 'Backstage Stand Up',
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    })
+
+    await expect(trySyncConnectedAccountName(club)).resolves.toBe(true)
+  })
+
+  it('never throws: a Stripe error becomes a no with a log line that carries the request id', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Old' })
+    stripeMock.v2.core.accounts.update.mockRejectedValue(
+      Object.assign(new Error('Business profile names must consist of recognizable words.'), { requestId: 'req_9' }),
+    )
+
+    await expect(trySyncConnectedAccountName(club)).resolves.toBe(false)
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('req_9'))
+  })
+})
+
+describe('createOnboardingLink', () => {
+  // Kontoen finnes og planen er kjent, så det er bare navnet og lenken igjen.
+  const club: ConnectClub = {
+    ...legacyClub({ payout_schedule_interval: 'manual', stripe_account_id: 'acct_123' }),
+    name: 'Backstage Stand Up',
+    legal_name: 'Backstage Comedy AS',
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    stripeMock.v2.core.accountLinks.create.mockResolvedValue({ url: 'https://connect.stripe.com/setup/abc' })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('puts the club names on the account before the club is sent into onboarding', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Backstage Comedy AS' })
+    stripeMock.v2.core.accounts.update.mockResolvedValue({})
+
+    await expect(createOnboardingLink(club)).resolves.toBe('https://connect.stripe.com/setup/abc')
+
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    })
+    // Navnet først, så lenken: onboardingen skal vise det riktige navnet.
+    expect(stripeMock.v2.core.accounts.update.mock.invocationCallOrder[0]).toBeLessThan(
+      stripeMock.v2.core.accountLinks.create.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('still hands out the onboarding link when Stripe refuses the name', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockRejectedValue(new Error('Connection timed out'))
+
+    await expect(createOnboardingLink(club)).resolves.toBe('https://connect.stripe.com/setup/abc')
+    expect(stripeMock.v2.core.accountLinks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ account: 'acct_123' }),
+    )
   })
 })

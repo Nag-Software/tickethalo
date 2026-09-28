@@ -5,12 +5,13 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import {
+  type AccountSyncResult,
   CLUB_CONNECT_FIELDS,
   type ConnectClub,
   createDashboardLink,
   createOnboardingLink,
   syncAccountStatus,
-  syncConnectedAccountName,
+  trySyncConnectedAccountName,
 } from '@/lib/stripe-connect'
 
 /**
@@ -100,19 +101,17 @@ function payoutScheduleProblem(interval: string | null): { error: string } | und
 
 /**
  * Navnet på kontoen hos Stripe følger klubben i Tickethalo — se
- * `connectedAccountNames`. En Stripe-feil her skal aldri velte det som alt
- * er lagret, så resultatet er bare ja eller nei; detaljene går i loggen.
+ * `connectedAccountNames`. Lyktes ikke det, skal det stå i samme toast som
+ * resten av statusen, ikke bare i loggen — ellers ser Refresh ut til å ha
+ * ordnet alt.
  */
-async function trySyncAccountName(club: ConnectClub): Promise<boolean> {
-  if (!club.stripe_account_id) return true
+function withNameProblem(message: string | undefined, nameSynced: boolean): ActionError {
+  if (nameSynced) return message ? { error: message } : undefined
 
-  try {
-    await syncConnectedAccountName(club)
-    return true
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(`[Finances] Could not update the name on ${club.stripe_account_id} in Stripe: ${message}`)
-    return false
+  return {
+    error: message
+      ? `${message} The club name could not be updated in Stripe either — try again in a moment.`
+      : 'Status updated — but the club name could not be updated in Stripe. Try again in a moment.',
   }
 }
 
@@ -169,26 +168,32 @@ export async function refreshClubStatusAction(): Promise<ActionError> {
     const club = await currentClub()
     if (!club.stripe_account_id) return { error: 'The club does not have a Stripe account yet.' }
 
-    const status = await syncAccountStatus(club.stripe_account_id)
-    // Samme knapp retter navnet på kontoen. En klubb som byttet navn før
-    // navnet fulgte med, slipper da å lagre profilen på nytt for å få det med.
-    const nameSynced = await trySyncAccountName(club)
+    // Samme knapp retter navnet på kontoen, så en klubb som byttet navn før
+    // navnet fulgte med slipper å lagre noe på nytt. De to er uavhengige og
+    // går samtidig, så knappen ikke venter på to Stripe-rundturer etter
+    // hverandre. Navnesynken kaster aldri, og ventes inn også når
+    // statussynken kaster: sendes svaret før den er ferdig, kan funksjonen
+    // fryses midt i, og navnet blir stående.
+    const nameSync = trySyncConnectedAccountName(club)
+    let status: AccountSyncResult
+    try {
+      status = await syncAccountStatus(club.stripe_account_id)
+    } finally {
+      await nameSync
+    }
+    const nameSynced = await nameSync
     revalidatePath(PATH)
 
     // Ikke en feil, men verdt å si: statusen er hentet, og Stripe mangler
     // fortsatt noe. Uten dette ser knappen ut til å ikke gjøre noe.
     if (!status.chargesEnabled || !status.payoutsEnabled) {
-      return { error: 'Status updated — Stripe still needs more information from the club.' }
+      return withNameProblem('Status updated — Stripe still needs more information from the club.', nameSynced)
     }
 
     // Kontoen er i orden hos Stripe, men salget åpner ikke før utbetalingene
     // holdes til etter showet. Sjekklista viser det, men knappen bør si hvorfor.
     const scheduleProblem = payoutScheduleProblem(status.payoutScheduleInterval)
-    if (scheduleProblem) return scheduleProblem
-
-    if (!nameSynced) {
-      return { error: 'Status updated — but the club name could not be updated in Stripe. Try again in a moment.' }
-    }
+    return withNameProblem(scheduleProblem?.error, nameSynced)
   } catch (error) {
     return toActionError(error, 'Could not reach Stripe. Try again in a moment.')
   }
@@ -252,7 +257,7 @@ export async function saveSellerDetailsAction(formData: FormData): Promise<Actio
     // Det juridiske navnet er også kontoens navn i Stripe-dashbordet. Går
     // Stripe ned akkurat nå, står opplysningene lagret likevel — knappen
     // Refresh prøver navnet på nytt.
-    if (!(await trySyncAccountName({ ...club, legal_name: legalName }))) {
+    if (!(await trySyncConnectedAccountName({ ...club, legal_name: legalName }))) {
       return {
         error:
           'Seller details saved — but the name could not be updated in Stripe. Use Refresh under Stripe status to try again.',
