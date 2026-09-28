@@ -61,11 +61,40 @@ create policy "Superadmin manage customers"
   on customers for all
   using (is_superadmin()) with check (is_superadmin());
 
+-- email_logs fra 001 fantes aldri i produksjon: databasen ble satt opp for
+-- hånd før migreringsverktøyet kom. Hver e-post har derfor logget «Could not
+-- write email_logs», og superadmins oversikt over feilede e-poster har vært
+-- tom. Tabellen lages her, identisk med 001, så sporet finnes fra nå av.
+create table if not exists email_logs (
+  id              uuid primary key default gen_random_uuid(),
+
+  recipient_email text not null,
+  subject         text,
+  template_name   text,
+  resend_email_id text,
+
+  status          text not null default 'pending'
+                    check (status in ('pending', 'sent', 'failed')),
+  error_message   text,
+
+  payload         jsonb,
+
+  created_at      timestamptz not null default now(),
+  sent_at         timestamptz
+);
+
+alter table email_logs enable row level security;
+
 drop policy if exists "Admins manage email logs" on email_logs;
+drop policy if exists "Superadmin manage email logs" on email_logs;
 
 create policy "Superadmin manage email logs"
   on email_logs for all
   using (is_superadmin()) with check (is_superadmin());
+
+-- Oversikten leser de siste feilede; uten indeks blir det en full skann.
+create index if not exists idx_email_logs_status_created
+  on email_logs (status, created_at desc);
 
 -- ── Den offentlige show-policyen regnet «i dag» i UTC ──
 -- Alt annet regner norsk dato (048, 060, lib/ticket-sales.ts). Sidene leser
