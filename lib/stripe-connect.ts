@@ -193,8 +193,10 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
 
   const clubUrl = publicClubUrl(club)
 
+  const names = connectedAccountNames(club)
+
   const params: Stripe.V2.Core.AccountCreateParams = {
-    display_name: club.legal_name ?? club.name,
+    display_name: names.displayName,
     contact_email: contactEmail,
     // Express-dashbordet gir klubben en enkel oversikt over egne utbetalinger
     // uten at de trenger et fullt Stripe-oppsett.
@@ -220,6 +222,8 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
     },
     defaults: {
       currency: club.currency.toLowerCase(),
+      // Navnet kunden ser i Checkout og på kvitteringen. Se `connectedAccountNames`.
+      profile: { doing_business_as: names.doingBusinessAs },
       // Stripe krever `application` på begge når dashbordet er `express`.
       // Det betyr at Tickethalo betaler Stripes behandlingsgebyr og hefter
       // for tap. Gebyret trekkes fra plattformens saldo, aldri fra klubbens
@@ -398,6 +402,92 @@ async function storePayoutSchedule(clubId: string, accountId: string): Promise<s
     console.error(`[Connect] Could not store payout schedule for club ${clubId}: ${error.message}`)
   }
   return interval
+}
+
+// ─────────────────────────────────────────────────────────────
+// Navnet på kontoen
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Navnene Stripe viser for klubbens konto, utledet av klubben i Tickethalo.
+ *
+ * Stripe har tre navn på en konto, og de bor hver for seg:
+ *  - `display_name` vises i Tickethalos eget Stripe-dashbord og på fakturaer
+ *    til klubben. Juridisk navn når det er satt, ellers klubbnavnet.
+ *  - `defaults.profile.doing_business_as` er navnet kunden ser: i Checkout,
+ *    på kvitteringen og i klubbens Express-dashbord. Det er navnet publikum
+ *    kjenner klubben under — klubbnavnet, slik det står under «My club».
+ *  - `identity.business_details.registered_name` er det juridiske navnet fra
+ *    KYC-en. Det rører vi ikke: en endring der utløser ny verifisering hos
+ *    Stripe, og klubben gjør den selv i Express under kontoinnstillinger.
+ *
+ * Kontoen fikk navnet sitt da den ble opprettet og fulgte ikke med når klubben
+ * endret navn i Tickethalo. En klubb i drift viste derfor et gammelt navn i
+ * Express uten å kunne rette det selv — Express lar ikke klubben endre det
+ * offentlige navnet, det er plattformens felt.
+ */
+export type ConnectedAccountNames = { displayName: string; doingBusinessAs: string }
+
+export function connectedAccountNames(club: Pick<ConnectClub, 'name' | 'legal_name'>): ConnectedAccountNames {
+  const name = club.name.trim()
+  const legalName = club.legal_name?.trim() || null
+  return { displayName: legalName ?? name, doingBusinessAs: name }
+}
+
+/** Kontoen slik Stripe returnerer den — bare feltene navnene leses fra. */
+export type ConnectedAccountNameFields = {
+  display_name?: string | null
+  defaults?: { profile?: { doing_business_as?: string | null } | null } | null
+}
+
+/**
+ * Det som må sendes til Stripe for at kontoen skal hete det klubben heter,
+ * eller null når den allerede gjør det.
+ *
+ * Bare feltene som avviker sendes. Stripe sender `account.updated` også for
+ * en oppdatering som ikke endret noe, og webhooken synker status på hvert av
+ * dem — et navn som alt stemmer skal ikke koste en runde til. Et tomt navn i
+ * Tickethalo skrives aldri: det skal ikke viske ut et navn som står hos Stripe.
+ */
+export function accountNameUpdate(
+  account: ConnectedAccountNameFields,
+  desired: ConnectedAccountNames,
+): Stripe.V2.Core.AccountUpdateParams | null {
+  const update: Stripe.V2.Core.AccountUpdateParams = {}
+
+  if (desired.displayName && (account.display_name ?? '') !== desired.displayName) {
+    update.display_name = desired.displayName
+  }
+
+  const currentDoingBusinessAs = account.defaults?.profile?.doing_business_as ?? ''
+  if (desired.doingBusinessAs && currentDoingBusinessAs !== desired.doingBusinessAs) {
+    update.defaults = { profile: { doing_business_as: desired.doingBusinessAs } }
+  }
+
+  return Object.keys(update).length > 0 ? update : null
+}
+
+/**
+ * Gir kontoen hos Stripe klubbens navn. Kalles når klubben lagrer klubbnavn
+ * eller selgeropplysninger, og fra Refresh under Økonomi, så en klubb som
+ * byttet navn før dette fantes kan rette det uten å lagre noe på nytt.
+ *
+ * Leser kontoen først og skriver bare det som avviker. Kaster ved Stripe-feil;
+ * kallerne avgjør hva det betyr for lagringen (den skal stå uansett).
+ */
+export async function syncConnectedAccountName(
+  club: Pick<ConnectClub, 'id' | 'name' | 'legal_name' | 'stripe_account_id'>,
+): Promise<{ updated: boolean }> {
+  const accountId = club.stripe_account_id
+  if (!accountId) return { updated: false }
+
+  const account = await stripe.v2.core.accounts.retrieve(accountId, { include: ['defaults'] })
+  const update = accountNameUpdate(account, connectedAccountNames(club))
+  if (!update) return { updated: false }
+
+  await stripe.v2.core.accounts.update(accountId, update)
+  console.info(`[Connect] Updated the name on ${accountId} for club ${club.id}: ${Object.keys(update).join(', ')}`)
+  return { updated: true }
 }
 
 /** Onboarding-lenke (KYC + bankkonto). Lenken er kortlivet og må hentes på nytt. */

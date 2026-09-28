@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const stripeMock = vi.hoisted(() => ({
-  v2: { core: { accounts: { retrieve: vi.fn() } } },
+  v2: { core: { accounts: { retrieve: vi.fn(), update: vi.fn() } } },
   balanceSettings: { retrieve: vi.fn(), update: vi.fn() },
 }))
 
@@ -67,8 +67,10 @@ vi.mock('@/lib/stripe', () => ({ stripe: stripeMock }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => db.client }))
 
 import {
+  accountNameUpdate,
   assertClubCanSell,
   commissionFor,
+  connectedAccountNames,
   describeClubReadiness,
   ensureClubPayoutScheduleKnown,
   getClubForShow,
@@ -76,6 +78,7 @@ import {
   missingReadinessLabels,
   PayoutScheduleSyncError,
   syncAccountStatus,
+  syncConnectedAccountName,
   type ClubReadiness,
   type ConnectClub,
 } from '@/lib/stripe-connect'
@@ -470,5 +473,117 @@ describe('publishing guards for legacy clubs', () => {
     clubLookup()
 
     await expect(assertClubCanSell('show_1')).rejects.toThrow('Payouts held until after the show')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Navnet på kontoen
+// ─────────────────────────────────────────────────────────────
+
+describe('connectedAccountNames', () => {
+  it('shows the legal name in the Stripe dashboard and the club name to customers', () => {
+    expect(connectedAccountNames({ name: 'Backstage Stand Up', legal_name: 'Backstage Comedy AS' })).toEqual({
+      displayName: 'Backstage Comedy AS',
+      doingBusinessAs: 'Backstage Stand Up',
+    })
+  })
+
+  it.each([null, '', '   '])('falls back to the club name when the legal name is %j', (legalName) => {
+    expect(connectedAccountNames({ name: ' Backstage Stand Up ', legal_name: legalName })).toEqual({
+      displayName: 'Backstage Stand Up',
+      doingBusinessAs: 'Backstage Stand Up',
+    })
+  })
+})
+
+describe('accountNameUpdate', () => {
+  const desired = { displayName: 'Backstage Comedy AS', doingBusinessAs: 'Backstage Stand Up' }
+
+  it('sends nothing when Stripe already has both names', () => {
+    const account = {
+      display_name: 'Backstage Comedy AS',
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    }
+
+    expect(accountNameUpdate(account, desired)).toBeNull()
+  })
+
+  it('sends only the name that differs', () => {
+    const account = {
+      display_name: 'Backstage Comedy AS',
+      defaults: { profile: { doing_business_as: 'Old Club Name' } },
+    }
+
+    expect(accountNameUpdate(account, desired)).toEqual({
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    })
+  })
+
+  it('fills in both names on an account that has none', () => {
+    expect(accountNameUpdate({}, desired)).toEqual({
+      display_name: 'Backstage Comedy AS',
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    })
+  })
+
+  it('never blanks a name Stripe has with an empty one from Tickethalo', () => {
+    const account = { display_name: 'Set in Stripe', defaults: { profile: { doing_business_as: 'Set in Stripe' } } }
+
+    expect(accountNameUpdate(account, { displayName: '', doingBusinessAs: '' })).toBeNull()
+  })
+})
+
+describe('syncConnectedAccountName', () => {
+  const club = {
+    id: 'club_1',
+    name: 'Backstage Stand Up',
+    legal_name: 'Backstage Comedy AS',
+    stripe_account_id: 'acct_123',
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does nothing for a club without a Stripe account', async () => {
+    await expect(syncConnectedAccountName({ ...club, stripe_account_id: null })).resolves.toEqual({ updated: false })
+    expect(stripeMock.v2.core.accounts.retrieve).not.toHaveBeenCalled()
+    expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
+  })
+
+  it('reads the account with its defaults and leaves a matching account alone', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
+      display_name: 'Backstage Comedy AS',
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    })
+
+    await expect(syncConnectedAccountName(club)).resolves.toEqual({ updated: false })
+    expect(stripeMock.v2.core.accounts.retrieve).toHaveBeenCalledWith('acct_123', { include: ['defaults'] })
+    expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
+  })
+
+  it('renames the account when the club was renamed in Tickethalo', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
+      display_name: 'Backstage Comedy AS',
+      defaults: { profile: { doing_business_as: 'Old Club Name' } },
+    })
+    stripeMock.v2.core.accounts.update.mockResolvedValue({})
+
+    await expect(syncConnectedAccountName(club)).resolves.toEqual({ updated: true })
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+    })
+  })
+
+  it('lets a Stripe error through, so the caller decides what it means for the save', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockRejectedValue(new Error('Connection timed out'))
+
+    await expect(syncConnectedAccountName(club)).rejects.toThrow('Connection timed out')
+    expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
   })
 })

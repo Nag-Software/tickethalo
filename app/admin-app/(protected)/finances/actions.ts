@@ -10,6 +10,7 @@ import {
   createDashboardLink,
   createOnboardingLink,
   syncAccountStatus,
+  syncConnectedAccountName,
 } from '@/lib/stripe-connect'
 
 /**
@@ -97,6 +98,24 @@ function payoutScheduleProblem(interval: string | null): { error: string } | und
   }
 }
 
+/**
+ * Navnet på kontoen hos Stripe følger klubben i Tickethalo — se
+ * `connectedAccountNames`. En Stripe-feil her skal aldri velte det som alt
+ * er lagret, så resultatet er bare ja eller nei; detaljene går i loggen.
+ */
+async function trySyncAccountName(club: ConnectClub): Promise<boolean> {
+  if (!club.stripe_account_id) return true
+
+  try {
+    await syncConnectedAccountName(club)
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[Finances] Could not update the name on ${club.stripe_account_id} in Stripe: ${message}`)
+    return false
+  }
+}
+
 export async function startClubOnboardingAction(): Promise<ActionError> {
   let url: string
 
@@ -151,6 +170,9 @@ export async function refreshClubStatusAction(): Promise<ActionError> {
     if (!club.stripe_account_id) return { error: 'The club does not have a Stripe account yet.' }
 
     const status = await syncAccountStatus(club.stripe_account_id)
+    // Samme knapp retter navnet på kontoen. En klubb som byttet navn før
+    // navnet fulgte med, slipper da å lagre profilen på nytt for å få det med.
+    const nameSynced = await trySyncAccountName(club)
     revalidatePath(PATH)
 
     // Ikke en feil, men verdt å si: statusen er hentet, og Stripe mangler
@@ -163,6 +185,10 @@ export async function refreshClubStatusAction(): Promise<ActionError> {
     // holdes til etter showet. Sjekklista viser det, men knappen bør si hvorfor.
     const scheduleProblem = payoutScheduleProblem(status.payoutScheduleInterval)
     if (scheduleProblem) return scheduleProblem
+
+    if (!nameSynced) {
+      return { error: 'Status updated — but the club name could not be updated in Stripe. Try again in a moment.' }
+    }
   } catch (error) {
     return toActionError(error, 'Could not reach Stripe. Try again in a moment.')
   }
@@ -175,7 +201,7 @@ export async function refreshClubStatusAction(): Promise<ActionError> {
  */
 export async function saveSellerDetailsAction(formData: FormData): Promise<ActionError> {
   try {
-    const clubId = await getDefaultClubIdForAdmin()
+    const club = await currentClub()
     const db = createAdminClient()
 
     const text = (key: string) => {
@@ -204,15 +230,17 @@ export async function saveSellerDetailsAction(formData: FormData): Promise<Actio
       return { error: 'That does not look like an invoicing email address.' }
     }
 
+    const legalName = text('legal_name')
+
     const { error } = await db
       .from('clubs')
       .update({
-        legal_name: text('legal_name'),
+        legal_name: legalName,
         org_number: orgNumber,
         support_email: supportEmail,
         invoice_email: invoiceEmail,
       })
-      .eq('id', clubId)
+      .eq('id', club.id)
 
     if (error) {
       console.error(`[Finances] Could not save seller details: ${error.message}`)
@@ -220,6 +248,16 @@ export async function saveSellerDetailsAction(formData: FormData): Promise<Actio
     }
 
     revalidatePath(PATH)
+
+    // Det juridiske navnet er også kontoens navn i Stripe-dashbordet. Går
+    // Stripe ned akkurat nå, står opplysningene lagret likevel — knappen
+    // Refresh prøver navnet på nytt.
+    if (!(await trySyncAccountName({ ...club, legal_name: legalName }))) {
+      return {
+        error:
+          'Seller details saved — but the name could not be updated in Stripe. Use Refresh under Stripe status to try again.',
+      }
+    }
   } catch (error) {
     return toActionError(error, 'Could not save the seller details.')
   }
