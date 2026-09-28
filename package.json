@@ -23,6 +23,7 @@
     "validate:full": "pnpm validate",
     "db:migrate": "node scripts/migrate.mjs up",
     "db:migrate:status": "node scripts/migrate.mjs status",
+    "db:migrate:verify": "node scripts/migrate.mjs verify",
     "db:migrate:baseline": "node scripts/migrate.mjs baseline"
   },
   "dependencies": {
