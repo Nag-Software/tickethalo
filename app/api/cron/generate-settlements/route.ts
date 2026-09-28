@@ -9,9 +9,10 @@ export const maxDuration = 60
  * Månedlig avregningsnota per klubb. Kjøres tidlig i måneden og gjelder
  * måneden før. Se `lib/settlements.ts`.
  *
- * Vercel prøver ikke en cron på nytt. Feiler kjøringen den 1., kan måneden
- * kjøres for hånd med `?period=YYYY-MM` (og samme hemmelighet i
- * Authorization-headeren). Kjøringen er idempotent.
+ * Kjøres fra GitHub Actions (.github/workflows/run-automation.yml), ikke fra
+ * Vercel: Hobby-planen tillater to cron-jobber. Feiler kjøringen den 1., kan
+ * måneden kjøres for hånd fra Actions («Run workflow» med period=YYYY-MM),
+ * som sender `?period=` hit med samme hemmelighet. Kjøringen er idempotent.
  */
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {

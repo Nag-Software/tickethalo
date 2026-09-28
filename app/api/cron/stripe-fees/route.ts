@@ -6,6 +6,10 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 /**
+ * Kjøres fra GitHub Actions (.github/workflows/run-automation.yml), ikke fra
+ * Vercel: Hobby-planen tillater to cron-jobber, og de er brukt på utbetaling
+ * og honorarer. Samme hemmelighet, samme rute.
+ *
  * Bokfører Stripe-gebyrene der Stripe faktisk trekker dem: på plattformkontoen.
  * Speiler plattformens balansetransaksjoner, henter Stripes gebyrrapport og
  * fordeler gebyret per ordre. Klubbens andel røres ikke. Se `lib/stripe-fees.ts`.

@@ -1,16 +1,57 @@
 name: Run automation
 
+# Cron-jobbene som ikke får plass hos Vercel. Hobby-planen tillater to
+# cron-jobber per prosjekt, og de to i vercel.json er dem som flytter penger
+# og varsler komikere (release-payouts og artist-fees). Resten kjøres herfra,
+# mot de samme rutene og med den samme hemmeligheten.
+#
+# Alle klokkeslett er UTC. Rutene svarer 500 når noe feiler, og curl --fail
+# gjør at kjøringen da vises som rød i Actions.
+
 on:
   schedule:
+    # 05:00 UTC: Stripe-gebyrene bokføres før utbetalingen 06:30 hos Vercel.
+    - cron: "0 5 * * *"
     # 06:00 UTC: tilbudene lander til frokost i norsk tid, ikke midt på natten.
     - cron: "0 6 * * *"
+    # 07:00 UTC den 1.: avregningsnota for måneden som gikk.
+    - cron: "0 7 1 * *"
   workflow_dispatch:
+    inputs:
+      job:
+        description: Which job to run
+        type: choice
+        required: true
+        default: booking
+        options:
+          - booking
+          - stripe-fees
+          - generate-settlements
+      period:
+        description: "Settlements only: month to (re)generate, YYYY-MM. Empty = previous month."
+        type: string
+        required: false
 
 permissions:
   contents: read
 
 jobs:
+  stripe-fees:
+    if: github.event.schedule == '0 5 * * *' || inputs.job == 'stripe-fees'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Book Stripe fees
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          APP_URL="${APP_URL%/}"
+          curl --fail --show-error --silent \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/stripe-fees"
+
   booking:
+    if: github.event.schedule == '0 6 * * *' || inputs.job == 'booking'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger daily booking automation
@@ -22,3 +63,20 @@ jobs:
           curl --fail --show-error --silent \
             --header "Authorization: Bearer ${CRON_SECRET}" \
             "${APP_URL}/api/cron/booking"
+
+  generate-settlements:
+    if: github.event.schedule == '0 7 1 * *' || inputs.job == 'generate-settlements'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate monthly settlements
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PERIOD: ${{ inputs.period }}
+        run: |
+          APP_URL="${APP_URL%/}"
+          QUERY=""
+          if [ -n "${PERIOD}" ]; then QUERY="?period=${PERIOD}"; fi
+          curl --fail --show-error --silent \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/generate-settlements${QUERY}"
