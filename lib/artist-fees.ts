@@ -334,10 +334,15 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
       continue
     }
 
-    await db
+    // Går ikke stempelet inn, sendes eposten på nytt i morgen. Det skal i
+    // det minste stå i loggen hvorfor komikeren fikk den to ganger.
+    const { error: stampError } = await db
       .from('confirmed_spots')
       .update({ fee_email_sent_at: new Date().toISOString() })
       .eq('id', fee.spotId)
+    if (stampError) {
+      console.error(`[ArtistFees] ${show.id}/${fee.spotId}: fee email sent but could not be recorded: ${stampError.message}`)
+    }
 
     emailed += 1
   }
@@ -359,12 +364,22 @@ async function markCompleted(show: ShowRow) {
 }
 
 /**
- * Gjør opp alle show som er avholdt og ennå ikke gjort opp. Kjøres daglig,
- * så et show blir tatt dagen etter at det gikk.
+ * Så lenge etter showet holdes honorarene i sync med salget. Refusjoner
+ * etter det er sjeldne, og et show som er gjort opp hver natt i en måned
+ * trenger ikke gjøres opp for alltid — ellers vokser kjøringen med hvert
+ * show som er spilt, til den ikke rekker de nyeste.
  */
-export async function settleFinishedShows(today = new Date()) {
+const SETTLE_WINDOW_DAYS = 30
+
+/**
+ * Gjør opp alle show som er avholdt og ennå ikke gjort opp. Kjøres daglig,
+ * så et show blir tatt dagen etter at det gikk. Nyeste først: det er dem
+ * komikerne venter på, og dem som skal rekkes hvis tiden går ut.
+ */
+export async function settleFinishedShows(today = new Date(), options?: { deadline?: number }) {
   const db = createAdminClient()
   const todayDate = today.toISOString().slice(0, 10)
+  const windowStart = new Date(today.getTime() - SETTLE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   // `completed` er med fordi et show kan ha blitt markert avholdt før
   // honorarene gikk ut — da skal kjøringen fortsatt plukke det opp.
@@ -372,11 +387,18 @@ export async function settleFinishedShows(today = new Date()) {
     .from('shows')
     .select('id, title, date, currency, status, club_id, venue_name')
     .lt('date', todayDate)
+    .gte('date', windowStart)
     .in('status', ['published', 'fullbooked', 'completed'])
+    .order('date', { ascending: false })
 
   const outcomes: ShowFeeOutcome[] = []
+  let deferred = 0
 
   for (const show of (shows ?? []) as ShowRow[]) {
+    if (typeof options?.deadline === 'number' && Date.now() > options.deadline) {
+      deferred += 1
+      continue
+    }
     try {
       outcomes.push(await settleShow(show))
     } catch (error) {
@@ -390,6 +412,8 @@ export async function settleFinishedShows(today = new Date()) {
     shows: outcomes.length,
     emailed: outcomes.reduce((total, outcome) => total + outcome.emailed, 0),
     paid: outcomes.reduce((total, outcome) => total + outcome.paid, 0),
+    /** Show som ikke ble rukket innen fristen. Tas i morgen. */
+    deferred,
     outcomes,
   }
 }

@@ -5,7 +5,7 @@ import {
   formatMinor,
   normalizeFeeInvoiceReference,
 } from '@/lib/fee-invoices'
-import { previousMonthPeriod, refundedClubAmount } from '@/lib/settlements'
+import { monthPeriod, parseMonthPeriod, periodBounds, previousMonthPeriod, refundedClubAmount } from '@/lib/settlements'
 
 describe('fee invoice recipients', () => {
   it('prefers legal identity and invoice email', () => {
@@ -69,6 +69,41 @@ describe('settlement periods', () => {
   })
 })
 
+describe('settlement period bounds', () => {
+  // Norsk tid: sommertid er UTC+2, vintertid UTC+1. Månedens første salg
+  // klokka 00:30 den 1. skal inn i den måneden, ikke den forrige.
+  it('starts and ends the month at Norwegian midnight', () => {
+    expect(periodBounds({ start: '2026-08-01', end: '2026-08-31' })).toEqual({
+      from: '2026-07-31T22:00:00.000Z',
+      to: '2026-08-31T21:59:59.999Z',
+    })
+    expect(periodBounds({ start: '2026-01-01', end: '2026-01-31' })).toEqual({
+      from: '2025-12-31T23:00:00.000Z',
+      to: '2026-01-31T22:59:59.999Z',
+    })
+  })
+
+  it('spans the switch to and from summer time', () => {
+    expect(periodBounds({ start: '2026-03-01', end: '2026-03-31' })).toEqual({
+      from: '2026-02-28T23:00:00.000Z',
+      to: '2026-03-31T21:59:59.999Z',
+    })
+    expect(periodBounds({ start: '2026-10-01', end: '2026-10-31' })).toEqual({
+      from: '2026-09-30T22:00:00.000Z',
+      to: '2026-10-31T22:59:59.999Z',
+    })
+  })
+
+  it('parses a manual rerun period and rejects anything else', () => {
+    expect(parseMonthPeriod('2026-02')).toEqual(monthPeriod(2026, 2))
+    expect(monthPeriod(2026, 2)).toEqual({ start: '2026-02-01', end: '2026-02-28' })
+    expect(parseMonthPeriod('2026-13')).toBeNull()
+    expect(parseMonthPeriod('2026-2')).toBeNull()
+    expect(parseMonthPeriod('')).toBeNull()
+    expect(parseMonthPeriod(null)).toBeNull()
+  })
+})
+
 describe('settlement refunds', () => {
   it('takes what went back to the buyer minus the commission Tickethalo returned', () => {
     expect(refundedClubAmount({ club_net_amount: 45_000, refunded_amount: 50_000, application_fee_refunded_amount: 5_000 })).toBe(
@@ -81,6 +116,14 @@ describe('settlement refunds', () => {
     expect(refundedClubAmount({ club_net_amount: 45_000, refunded_amount: 50_000, application_fee_refunded_amount: 0 })).toBe(
       50_000,
     )
+  })
+
+  it('charges a lost dispute as the loss the club actually took, not as an ordinary refund', () => {
+    // Stripe trakk 200 kr og 150 kr i gebyr; ordren står som refundert uten
+    // refunded_amount (refunds.ts: «pengene gikk tilbake gjennom disputten»).
+    expect(
+      refundedClubAmount({ club_net_amount: 18_000, refunded_amount: 0, application_fee_refunded_amount: 0, dispute_net_amount: 35_000 }),
+    ).toBe(35_000)
   })
 
   it('falls back to the club share for refunded orders without a refunded amount', () => {

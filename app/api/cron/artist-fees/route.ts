@@ -15,8 +15,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const result = await settleFinishedShows()
-  console.log(`[cron/artist-fees] ${result.shows} shows, ${result.emailed} emails, ${result.paid} in fees`)
+  // Vercel dreper funksjonen ved `maxDuration`, og da kommer verken loggen
+  // eller svaret. Kjøringen slutter å starte nye show ti sekunder før.
+  const result = await settleFinishedShows(new Date(), { deadline: Date.now() + 50_000 })
+  console.log(
+    `[cron/artist-fees] ${result.shows} shows, ${result.emailed} emails, ${result.paid} in fees, ${result.deferred} deferred`,
+  )
 
   return NextResponse.json(result)
 }

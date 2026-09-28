@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { startOfDayInZone } from '@/lib/ticket-sales'
 
 /**
  * Avregningsnota per klubb.
@@ -26,18 +27,25 @@ type RefundedOrder = {
   club_net_amount: number | null
   refunded_amount: number | null
   application_fee_refunded_amount: number | null
+  /** Klubbens netto tap på en disputt (trukket + gebyr − tilbakeført). */
+  dispute_net_amount?: number | null
 }
 
 /**
  * Hva en refusjon tok fra klubben: det som gikk tilbake til kunden, minus
  * provisjonen Tickethalo førte tilbake. Samme formel som utbetalingen bruker,
  * slik at en refusjon i dashbordet uten tilbakeført provisjon også stemmer.
- * Eldre ordrer uten refusjonsbeløp faller tilbake på klubbens andel.
+ *
+ * En tapt disputt lukkes som refundert uten `refunded_amount`: pengene gikk
+ * tilbake gjennom disputten og står i `dispute_net_amount`, sammen med
+ * gebyret. Det er tapet klubben faktisk hadde, og det utbetalingen trekker.
+ * Eldre ordrer uten noen av beløpene faller tilbake på klubbens andel.
  */
 export function refundedClubAmount(order: RefundedOrder): number {
   const refunded = order.refunded_amount ?? 0
-  if (refunded <= 0) return order.club_net_amount ?? 0
-  return refunded - (order.application_fee_refunded_amount ?? 0)
+  if (refunded > 0) return refunded - (order.application_fee_refunded_amount ?? 0)
+  if ((order.dispute_net_amount ?? 0) > 0) return order.dispute_net_amount as number
+  return order.club_net_amount ?? 0
 }
 
 type SettlementRow = {
@@ -54,29 +62,71 @@ type SettlementRow = {
   issued_at: string
 }
 
+export type SettlementPeriod = { start: string; end: string }
+
+/** Én kalendermåned, `YYYY-MM-DD` fra første til siste dag. */
+export function monthPeriod(year: number, month: number): SettlementPeriod {
+  const start = new Date(Date.UTC(year, month - 1, 1))
+  const end = new Date(Date.UTC(year, month, 0))
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
+}
+
+/** `YYYY-MM` → perioden, eller null når teksten ikke er en måned. */
+export function parseMonthPeriod(value: string | null | undefined): SettlementPeriod | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(value?.trim() ?? '')
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  if (month < 1 || month > 12) return null
+  return monthPeriod(year, month)
+}
+
 /** Forrige hele måned, som er perioden en månedlig avregning gjelder. */
 export function previousMonthPeriod(today = new Date()) {
   const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0))
-  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1))
-
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-  }
+  return monthPeriod(end.getUTCFullYear(), end.getUTCMonth() + 1)
 }
 
+/**
+ * Periodens ytterpunkter som tidspunkter, i norsk tid.
+ *
+ * Grensene gikk før ved UTC-midnatt, så et salg klokka 00:30 den 1. havnet
+ * i forrige måneds nota — mens utbetalingen (`club_releasable_amount`) og
+ * plattformens hovedbok regner norsk dato. Alle tre skal legge samme salg i
+ * samme måned.
+ */
+export function periodBounds(period: SettlementPeriod): { from: string; to: string } {
+  const from = startOfDayInZone(period.start)
+  const [year, month, day] = period.end.split('-').map(Number)
+  const dayAfterEnd = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
+  const to = new Date(startOfDayInZone(dayAfterEnd).getTime() - 1)
+  return { from: from.toISOString(), to: to.toISOString() }
+}
+
+/**
+ * Nummeret på notaen. Hele sluggen, ikke de tolv første tegnene: to klubber
+ * med samme begynnelse («oslo-comedy-club» og «oslo-comedy-club-2») fikk
+ * ellers samme nummer, og `document_number` er unik — da feilet hele
+ * månedens kjøring for alle klubber.
+ */
 function documentNumber(slug: string, periodStart: string) {
   const [year, month] = periodStart.split('-')
-  return `AVR-${year}${month}-${slug.toUpperCase().slice(0, 12)}`
+  return `AVR-${year}${month}-${slug.toUpperCase()}`
 }
 
 export async function generateSettlements(period = previousMonthPeriod()) {
   const db = createAdminClient()
   const { start, end } = period
+  const { from, to } = periodBounds(period)
 
-  // Hele døgnet på sluttdatoen skal med.
-  const from = `${start}T00:00:00.000Z`
-  const to = `${end}T23:59:59.999Z`
+  // En kjøring til for samme periode skal ikke flytte utstedelsesdatoen:
+  // notaen ble utstedt første gang, tallene kan rettes.
+  const { data: existing } = await db
+    .from('club_settlements')
+    .select('club_id, issued_at')
+    .eq('period_start', start)
+    .eq('period_end', end)
+  const issuedAtByClub = new Map((existing ?? []).map((row) => [row.club_id, row.issued_at]))
 
   const { data: clubs } = await db
     .from('clubs')
@@ -105,7 +155,7 @@ export async function generateSettlements(period = previousMonthPeriod()) {
     // Refusjoner utført i perioden, uansett når salget skjedde.
     const { data: refunds } = await db
       .from('orders')
-      .select('club_net_amount, refunded_amount, application_fee_refunded_amount')
+      .select('club_net_amount, refunded_amount, application_fee_refunded_amount, dispute_net_amount')
       .eq('club_id', club.id)
       .eq('status', 'refunded')
       .is('cancellation_reason', null)
@@ -133,7 +183,7 @@ export async function generateSettlements(period = previousMonthPeriod()) {
       net_amount: gross - commission - commissionVat - refunded,
       currency: club.currency.toUpperCase(),
       document_number: documentNumber(club.slug, start),
-      issued_at: new Date().toISOString(),
+      issued_at: issuedAtByClub.get(club.id) ?? new Date().toISOString(),
     })
   }
 
