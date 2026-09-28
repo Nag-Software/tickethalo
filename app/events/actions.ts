@@ -31,10 +31,14 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
     Math.max(1, Number(formData.get('quantity') ?? 1) || 1),
     MAX_TICKETS_PER_ORDER,
   )
-  const holderNames = formData
+  const names = formData
     .getAll('holder_name')
     .slice(0, quantity)
     .map((value) => String(value).trim().slice(0, 120))
+  // Skjemaet har ett navnefelt for hele ordren: det navnet står på alle
+  // billettene, så gruppa finner seg selv i gjestelista. Flere felt (ett per
+  // billett) tas fortsatt imot som de kommer.
+  const holderNames = names.length === 1 && quantity > 1 ? Array.from({ length: quantity }, () => names[0]) : names
 
   const headerStore = await headers()
   const host = headerStore.get('host') ?? 'localhost:3000'
