@@ -59,7 +59,7 @@ function resolveOutcome(
   switch (completion?.result) {
     case 'created':
       return completion.emailSent
-        ? { tone: 'success', heading: 'Thanks for your purchase', message: 'Your ticket has been sent by email.' }
+        ? { tone: 'success', heading: 'Thanks for your purchase', message: 'The ticket will be sent to your email soon.' }
         : {
             tone: 'warning',
             heading: 'Thanks for your purchase',
@@ -79,7 +79,7 @@ function resolveOutcome(
       // (`ticket_email_sent_at`). Usant betyr at den feilet — da skal ikke
       // siden love at den er sendt.
       return completion.emailSent
-        ? { tone: 'success', heading: 'Thanks for your purchase', message: 'Your ticket has been sent by email.' }
+        ? { tone: 'success', heading: 'Thanks for your purchase', message: 'The ticket will be sent to your email soon.' }
         : {
             tone: 'warning',
             heading: 'Thanks for your purchase',
