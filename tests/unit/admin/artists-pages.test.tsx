@@ -49,20 +49,18 @@ describe('club comedian list', () => {
     ])
   })
 
-  // Scoren avgjør rekkefølgen i køen når motoren sender tilbud. Står den
-  // ikke i lista, er det ingen måte for bookeren å se hvorfor den
-  // prioriterer som den gjør.
-  // Scoren er klubbens egen (`club_artists.score`), og tellingen gjelder
-  // bare vurderingene denne klubben har gitt.
-  it('shows the score and how many reviews it rests on', async () => {
+  // Scoren og tellingen av vurderinger ble tatt ut av lista («fjerna
+  // score»): den styrer køen i motoren, men skal ikke stå ved siden av
+  // navnet. Lista viser komikerne med rolle, og spør ikke etter tellingen.
+  it('lists the comedians with their roles, without a score column', async () => {
     const { container } = render(await ArtistsPage({ searchParams: Promise.resolve({}) }))
     const rows = [...container.querySelectorAll('tbody tr')]
 
-    expect(reviewCounts).toHaveBeenCalledWith(expect.anything(), 'club-1', [ID_ADA, ID_TOM])
-    expect(rows[0].textContent).toContain('7,5')
-    expect(rows[1].textContent).toContain('5,0')
-    expect(rows[0].textContent).toContain('6 reviews')
-    expect(rows[1].textContent).toContain('0 reviews')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('Ada Lovelace')
+    expect(rows[1].textContent).toContain('Thomas Søyland')
+    expect(reviewCounts).not.toHaveBeenCalled()
+    expect(container.textContent).not.toMatch(/reviews/)
   })
 
   it('passes the search to the roster query', async () => {

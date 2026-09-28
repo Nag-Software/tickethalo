@@ -138,6 +138,8 @@ describe('renderPoster', () => {
     }
   })
 
+  // Åtte fulle plakatrenderinger tar over fem sekunder på CI-maskinen, og
+  // testen falt på standardfristen uten at noe var galt.
   it('renders for every lineup size from one to eight', async () => {
     const names = [...FIVE, 'Åse Ødegård-Sæther', 'Kristoffer Aleksandersen', 'Li Wu']
     for (let count = 1; count <= 8; count++) {
@@ -146,7 +148,7 @@ describe('renderPoster', () => {
       const { plan } = await renderPoster({ layout, content: content(artists), background: await blankBackground() })
       expect(plan.placements).toHaveLength(count)
     }
-  })
+  }, 60_000)
 
   it('fails loudly when show text cannot be set at a readable size', async () => {
     const artists = await lineup(FIVE.slice(0, 2))
