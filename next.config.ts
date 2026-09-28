@@ -6,6 +6,18 @@ const supabaseHostname = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
+  // Prosjektet svarer også på humorevents.vercel.app. Én adresse utad:
+  // lenker, QR-koder og Stripe-returer skal alle peke på tickethalo.com.
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'humorevents.vercel.app' }],
+        destination: 'https://tickethalo.com/:path*',
+        permanent: true,
+      },
+    ]
+  },
   // Plakatfontene leses med `fs` i `lib/poster/text.ts`. Sporingen ser ikke
   // filer som åpnes via en sammensatt sti, så de må nevnes — ellers finnes de
   // lokalt, men ikke i funksjonen på Vercel.

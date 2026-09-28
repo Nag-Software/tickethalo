@@ -21,5 +21,8 @@ export function fromWithName(displayName: string | null | undefined) {
   if (!trimmed) return FROM_EMAIL
 
   const address = FROM_EMAIL.match(/<([^>]+)>/)?.[1] ?? FROM_EMAIL
-  return `${trimmed} <${address}>`
+  // Alltid i anførselstegn: et navn med komma, kolon eller parentes
+  // («Comedy Club, Bergen AS») er ellers to adresser for e-postserveren, og
+  // Resend avviser hele sendingen — kjøperen får ingen billett.
+  return `"${trimmed}" <${address}>`
 }

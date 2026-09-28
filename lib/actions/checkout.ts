@@ -243,7 +243,8 @@ function createSession(
       cancel_url: `${origin}/checkout/cancel?event=${show.slug}`,
       metadata: {
         show_id: show.id,
-        show_title: show.title,
+        // Stripe tar 500 tegn per verdi; tittelen har ingen grense hos oss.
+        show_title: show.title.slice(0, 500),
         show_date: show.date,
         event_slug: show.slug,
         app_origin: origin,
@@ -267,7 +268,13 @@ function createSession(
           club_id: club.id,
         },
       },
-      allow_promotion_codes: true,
+      // Rabattkoder er av. Provisjonen regnes av full pris når sesjonen lages
+      // og følger ikke rabatten: en kode på 100 % gir «no_payment_required»
+      // som oppgjøret avviser som ubetalt — kjøperen får ingen billett — og
+      // en kode over 90 % gir en provisjon større enn beløpet, som Stripe
+      // avviser i Checkout. Skal koder inn, må provisjonen regnes av det
+      // kjøperen faktisk betaler.
+      allow_promotion_codes: false,
     },
     { stripeAccount: club.stripe_account_id! },
   )

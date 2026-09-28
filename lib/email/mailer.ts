@@ -392,7 +392,7 @@ export async function sendTicketPurchaseEmail(opts: {
       replyTo: seller?.support_email?.trim() || REPLY_TO_EMAIL,
       subject,
       attachments,
-      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${dateLabel}\nTid: ${opts.show_time ?? 'Tid kommer'}\nSted: ${opts.venue_name}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
+      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${dateLabel}\nTid: ${opts.show_time || 'Tid kommer'}\nSted: ${opts.venue_name || 'Sted kommer'}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
       html: `
         <div style="margin:0;background:#f4f4f5;padding:32px 12px;font-family:Inter,Arial,sans-serif;color:#18181b">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">

@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
+import { appUrl } from '@/lib/app-url'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import {
   type CheckoutError,
@@ -40,10 +41,17 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   // billett) tas fortsatt imot som de kommer.
   const holderNames = names.length === 1 && quantity > 1 ? Array.from({ length: quantity }, () => names[0]) : names
 
+  // Opprinnelsen havner i suksesslenken og i QR-koden på billetten. Den
+  // skal være det faste domenet (`APP_URL`), ikke det kjøperen tilfeldigvis
+  // kom inn på: vercel.app-aliaset og forhåndsvisninger svarer også, og en
+  // QR-kode med en slik adresse peker et annet sted enn resten. Lokalt, uten
+  // `APP_URL`, brukes forespørselen som før.
   const headerStore = await headers()
   const host = headerStore.get('host') ?? 'localhost:3000'
   const protocol = headerStore.get('x-forwarded-proto') ?? 'http'
-  const sourceUrl = `${protocol}://${host}/events/${slug}`
+  const canonical = appUrl()
+  const origin = canonical.startsWith('https://') ? canonical : `${protocol}://${host}`
+  const sourceUrl = `${origin}/events/${slug}`
 
   // Check for external ticket URL — if set, redirect directly
   const db = createAdminClient()
