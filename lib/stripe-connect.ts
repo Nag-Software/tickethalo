@@ -497,11 +497,10 @@ type ConnectedAccountIconFields = {
  * Refresh under Økonomi, så en klubb som byttet navn eller logo før dette
  * fantes kan rette det uten å lagre noe på nytt.
  *
- * Leser kontoen først og skriver bare det som avviker, i én oppdatering.
- * Logoen er et vedheng til navnet: klarer vi ikke lage eller laste opp
- * ikonet, settes navnet likevel, og feilen kommer tilbake i `iconError`.
- * Kaster ved Stripe-feil på selve kontoen; kallerne avgjør hva det betyr
- * for lagringen (den skal stå uansett).
+ * Leser kontoen først og skriver bare det som avviker. Logoen er et vedheng
+ * til navnet: klarer vi ikke lage, laste opp eller sette ikonet, står navnet
+ * likevel, og feilen kommer tilbake i `iconError`. Kaster ved Stripe-feil på
+ * navnet; kallerne avgjør hva det betyr for lagringen (den skal stå uansett).
  */
 export async function syncConnectedAccountBranding(club: BrandingClub): Promise<BrandingSyncResult> {
   const accountId = club.stripe_account_id
@@ -510,51 +509,68 @@ export async function syncConnectedAccountBranding(club: BrandingClub): Promise<
   const account = await stripe.v2.core.accounts.retrieve(accountId, {
     include: ['defaults', 'configuration.merchant'],
   })
-  const update: Stripe.V2.Core.AccountUpdateParams = accountNameUpdate(account, connectedAccountNames(club)) ?? {}
-  let iconError: string | undefined
+  let updated = false
 
+  // Navnet først, for seg selv. Det er det viktigste av de to, og skal ikke
+  // falle om Stripe avviser ikonet: én oppdatering med begge ville blitt
+  // avvist i sin helhet — det var slik navnet uteble første gang.
+  const nameUpdate = accountNameUpdate(account, connectedAccountNames(club))
+  if (nameUpdate) {
+    await stripe.v2.core.accounts.update(accountId, nameUpdate)
+    console.info(`[Connect] Updated ${accountId} for club ${club.id}: ${Object.keys(nameUpdate).join(', ')}`)
+    updated = true
+  }
+
+  let iconError: string | undefined
   if (club.logo_url) {
     try {
-      const iconId = await ensureClubIconFile({ id: club.id, logo_url: club.logo_url }, account, accountId)
-      if (iconId) update.configuration = { merchant: { branding: { icon: iconId } } }
+      const iconId = await ensureClubIconFile({ id: club.id, logo_url: club.logo_url }, account)
+      if (iconId) {
+        await stripe.v2.core.accounts.update(accountId, { configuration: { merchant: { branding: { icon: iconId } } } })
+        console.info(`[Connect] Updated ${accountId} for club ${club.id}: icon ${iconId}`)
+        updated = true
+      }
     } catch (error) {
       iconError = describeStripeError(error)
       console.error(`[Connect] Could not put the logo of club ${club.id} on ${accountId}: ${iconError}`)
     }
   }
 
-  if (Object.keys(update).length === 0) return { updated: false, iconError }
-
-  await stripe.v2.core.accounts.update(accountId, update)
-  console.info(`[Connect] Updated ${accountId} for club ${club.id}: ${Object.keys(update).join(', ')}`)
-  return { updated: true, iconError }
+  return { updated, iconError }
 }
 
 /**
  * Fil-ID-en ikonet skal settes til, eller null når Stripe alt har dagens logo.
  *
- * Fila lastes opp på klubbens konto: det er kontoen som eier ikonet sitt.
- * Filnavnet bærer et fingeravtrykk av logo-adressen (`clubIconFilename`),
- * så et oppslag på ikonet Stripe har er nok til å se om det er den samme.
+ * Fila lastes opp på plattformkontoen, uten `stripeAccount`. Kontoen
+ * oppdateres fra plattformen, og en fil som ble lastet opp i klubbens
+ * kontekst er usynlig derfra: Stripe svarte «No such file upload» og avviste
+ * hele oppdateringen. Filnavnet bærer et fingeravtrykk av logo-adressen
+ * (`clubIconFilename`), så et oppslag på ikonet Stripe har er nok til å se
+ * om det er den samme. Kan ikonet som står der ikke leses, lastes logoen
+ * opp på nytt — én fil for mye er bedre enn et ikon som aldri kommer.
  */
 async function ensureClubIconFile(
   club: { id: string; logo_url: string },
   account: ConnectedAccountIconFields,
-  accountId: string,
 ): Promise<string | null> {
   const filename = clubIconFilename(club)
   const currentIconId = account.configuration?.merchant?.branding?.icon ?? null
 
   if (currentIconId) {
-    const current = await stripe.files.retrieve(currentIconId, undefined, { stripeAccount: accountId })
-    if (current.filename === filename) return null
+    try {
+      const current = await stripe.files.retrieve(currentIconId)
+      if (current.filename === filename) return null
+    } catch (error) {
+      console.warn(`[Connect] Could not read icon ${currentIconId} of club ${club.id}: ${describeStripeError(error)}`)
+    }
   }
 
   const data = await buildClubIcon(club.logo_url)
-  const file = await stripe.files.create(
-    { purpose: 'business_icon', file: { data, name: filename, type: 'application/octet-stream' } },
-    { stripeAccount: accountId },
-  )
+  const file = await stripe.files.create({
+    purpose: 'business_icon',
+    file: { data, name: filename, type: 'application/octet-stream' },
+  })
   return file.id
 }
 

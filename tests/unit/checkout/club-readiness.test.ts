@@ -600,20 +600,37 @@ describe('syncConnectedAccountBranding', () => {
     })
   })
 
-  it('uploads the logo on the club account and sets it as the icon, in the same update as the name', async () => {
+  it('uploads the logo on the platform and sets it as the icon, after the name and in its own update', async () => {
     stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Søyland Invest' })
 
     await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: true })
 
     expect(buildClubIcon).toHaveBeenCalledWith(withLogo.logo_url)
-    expect(stripeMock.files.create).toHaveBeenCalledWith(
-      { purpose: 'business_icon', file: { data: Buffer.from('png'), name: iconName, type: 'application/octet-stream' } },
-      { stripeAccount: 'acct_123' },
-    )
-    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledTimes(1)
-    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+    // Uten `stripeAccount`: kontoen oppdateres fra plattformen, og en fil
+    // lastet opp i klubbens kontekst er usynlig derfra («No such file upload»).
+    expect(stripeMock.files.create).toHaveBeenCalledTimes(1)
+    expect(stripeMock.files.create).toHaveBeenCalledWith({
+      purpose: 'business_icon',
+      file: { data: Buffer.from('png'), name: iconName, type: 'application/octet-stream' },
+    })
+    expect(stripeMock.v2.core.accounts.update.mock.calls).toEqual([
+      ['acct_123', { defaults: { profile: { doing_business_as: 'Crønch Comedy' } } }],
+      ['acct_123', { configuration: { merchant: { branding: { icon: 'file_new' } } } }],
+    ])
+  })
+
+  it('keeps the name when Stripe rejects the icon, and says so', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Søyland Invest' })
+    stripeMock.v2.core.accounts.update
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(Object.assign(new Error("No such file upload: 'file_new'"), { requestId: 'req_icon' }))
+
+    await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({
+      updated: true,
+      iconError: "No such file upload: 'file_new' (request req_icon)",
+    })
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenNthCalledWith(1, 'acct_123', {
       defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
-      configuration: { merchant: { branding: { icon: 'file_new' } } },
     })
   })
 
@@ -626,7 +643,7 @@ describe('syncConnectedAccountBranding', () => {
     stripeMock.files.retrieve.mockResolvedValue({ id: 'file_old', filename: iconName })
 
     await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: false })
-    expect(stripeMock.files.retrieve).toHaveBeenCalledWith('file_old', undefined, { stripeAccount: 'acct_123' })
+    expect(stripeMock.files.retrieve).toHaveBeenCalledWith('file_old')
     expect(buildClubIcon).not.toHaveBeenCalled()
     expect(stripeMock.files.create).not.toHaveBeenCalled()
     expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
@@ -641,6 +658,22 @@ describe('syncConnectedAccountBranding', () => {
     stripeMock.files.retrieve.mockResolvedValue({ id: 'file_old', filename: 'tickethalo-club-club_1-0000000000000000.png' })
 
     await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: true })
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+      configuration: { merchant: { branding: { icon: 'file_new' } } },
+    })
+  })
+
+  it('uploads the logo again when the icon on the account cannot be read', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
+      display_name: 'Søyland Invest',
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
+      configuration: { merchant: { branding: { icon: 'file_elsewhere' } } },
+    })
+    stripeMock.files.retrieve.mockRejectedValue(new Error("No such file: 'file_elsewhere'"))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: true })
+    expect(stripeMock.files.create).toHaveBeenCalledTimes(1)
     expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
       configuration: { merchant: { branding: { icon: 'file_new' } } },
     })
