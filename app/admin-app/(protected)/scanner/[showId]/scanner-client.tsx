@@ -11,6 +11,11 @@ type ScanResult = {
   subtitle: string
 }
 
+/** Hvor lenge det grønne bekreftelsesbildet står før kameraet er tilbake. */
+const SUCCESS_OVERLAY_MS = 2500
+/** Hvor lenge en kode som nettopp ble lest ignoreres. Lengre enn bildet over. */
+const SAME_CODE_WINDOW_MS = 6000
+
 export function ScannerClient({
   showId,
   showTitle,
@@ -48,7 +53,7 @@ export function ScannerClient({
     setScanResult(result)
     if (resultTimeoutRef.current) clearTimeout(resultTimeoutRef.current)
     if (result.tone === 'success') {
-      resultTimeoutRef.current = setTimeout(() => setScanResult(null), 2500)
+      resultTimeoutRef.current = setTimeout(() => setScanResult(null), SUCCESS_OVERLAY_MS)
     }
   }, [])
 
@@ -61,9 +66,12 @@ export function ScannerClient({
       const normalized = extractTicketCode(code)
       if (!normalized) return
 
-      // Debounce: ignore same code within 3 s
+      // Samme kode ignoreres en stund: kameraet leser QR-en mange ganger i
+      // sekundet så lenge den er i bildet. Vinduet må vare lenger enn det
+      // grønne bekreftelsesbildet, ellers blir «Slipp inn» avløst av «Alt
+      // sjekket inn» for den samme gjesten før hen har senket telefonen.
       const now = Date.now()
-      if (normalized === lastCodeRef.current && now - lastCodeTimeRef.current < 3000) return
+      if (normalized === lastCodeRef.current && now - lastCodeTimeRef.current < SAME_CODE_WINDOW_MS) return
       lastCodeRef.current = normalized
       lastCodeTimeRef.current = now
 
@@ -73,7 +81,13 @@ export function ScannerClient({
         const result = await checkInByCode(showId, normalized)
 
         if ('notFound' in result) {
-          showScanResult({ tone: 'error', title: 'Not found', subtitle: `Unknown code: ${normalized}` })
+          showScanResult({ tone: 'error', title: 'Not found', subtitle: `Unknown code: ${formatTicketCode(normalized)}` })
+        } else if ('wrongShow' in result) {
+          showScanResult({
+            tone: 'error',
+            title: 'Wrong show',
+            subtitle: [result.holderName, `Ticket for ${result.showTitle} · ${result.showDate}`].filter(Boolean).join(' · '),
+          })
         } else if ('alreadyUsed' in result) {
           const time = result.checkedInAt
             ? new Date(result.checkedInAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -112,24 +126,25 @@ export function ScannerClient({
     try {
       const { BrowserQRCodeReader } = await import('@zxing/browser')
       const reader = new BrowserQRCodeReader(undefined, { delayBetweenScanAttempts: 100 })
-
-      // Prefer rear camera
-      let deviceId: string | undefined
-      try {
-        const devices = await BrowserQRCodeReader.listVideoInputDevices()
-        if (devices.length) {
-          const rear = devices.find(d => /back|rear|environment|bak/i.test(d.label))
-          deviceId = rear?.deviceId ?? devices[devices.length - 1]?.deviceId
-        }
-      } catch {
-        // Proceed without device selection
+      const onResult = (result: { getText(): string } | undefined) => {
+        if (result) processCode(result.getText())
       }
 
-      if (!videoRef.current) return
-
-      const controls = await reader.decodeFromVideoDevice(deviceId, videoRef.current, result => {
-        if (result) processCode(result.getText())
-      })
+      // Bakkameraet bes om med `facingMode: 'environment'` — det er det
+      // leseren gjør når den ikke får en enhets-ID. Enhetslista var veien
+      // før, men på iPhone er kameranavnene tomme til tilgangen er gitt, og
+      // «siste enhet i lista» kunne bli frontkameraet: en dørvakt som holdt
+      // telefonen mot billetten og så seg selv. Lista er bare reserve for
+      // nettlesere som ikke forstår facingMode.
+      let controls: { stop: () => void }
+      try {
+        controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, onResult)
+      } catch (environmentError) {
+        const devices = await BrowserQRCodeReader.listVideoInputDevices()
+        const rear = devices.find(d => /back|rear|environment|bak/i.test(d.label)) ?? devices[devices.length - 1]
+        if (!rear?.deviceId || !videoRef.current) throw environmentError
+        controls = await reader.decodeFromVideoDevice(rear.deviceId, videoRef.current, onResult)
+      }
       controlsRef.current = controls
       setIsScanning(true)
     } catch (err) {

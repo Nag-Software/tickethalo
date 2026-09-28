@@ -2,11 +2,13 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { assertShowAccess } from '@/lib/club-auth'
+import { assertShowAccess, getClubAccess } from '@/lib/club-auth'
 import { ticketCodeCandidates } from '@/lib/tickets'
 
 export type CheckInResult =
   | { notFound: true }
+  /** Ekte billett, men til et annet av klubbens show. */
+  | { wrongShow: true; showTitle: string; showDate: string; holderName: string | null }
   | { alreadyUsed: true; checkedInAt: string | null; holderName: string | null }
   | { invalid: true; status: string }
   | {
@@ -43,7 +45,7 @@ export async function checkInByCode(showId: string, rawCode: string): Promise<Ch
     .in('ticket_code', candidates)
     .maybeSingle()
 
-  if (!ticket) return { notFound: true }
+  if (!ticket) return wrongShowOrNotFound(candidates)
   if (ticket.status === 'used') {
     return { alreadyUsed: true, checkedInAt: ticket.checked_in_at, holderName: ticket.holder_name }
   }
@@ -84,6 +86,34 @@ export async function checkInByCode(showId: string, rawCode: string): Promise<Ch
     buyerName: order?.buyer_name ?? null,
     buyerEmail: order?.buyer_email ?? null,
   }
+}
+
+/**
+ * Koden finnes ikke på dette showet. Er den en ekte billett til et annet av
+ * klubbens show, skal døra få vite det: «Ukjent kode» får en vakt til å avvise
+ * en betalende gjest som bare har møtt opp på feil dato — eller står i feil
+ * kø på en kveld med to show. Andre klubbers billetter forblir ukjente.
+ */
+async function wrongShowOrNotFound(candidates: string[]): Promise<CheckInResult> {
+  const db = createAdminClient()
+  const { data: ticket } = await db
+    .from('tickets')
+    .select('show_id, holder_name')
+    .in('ticket_code', candidates)
+    .maybeSingle()
+  if (!ticket) return { notFound: true }
+
+  const { data: show } = await db
+    .from('shows')
+    .select('title, date, club_id')
+    .eq('id', ticket.show_id)
+    .maybeSingle()
+  if (!show?.club_id) return { notFound: true }
+
+  const access = await getClubAccess()
+  if (!access.isSuperadmin && !access.clubIds.includes(show.club_id)) return { notFound: true }
+
+  return { wrongShow: true, showTitle: show.title, showDate: show.date, holderName: ticket.holder_name }
 }
 
 export async function uncheckIn(ticketId: string, showId: string): Promise<{ ok: boolean }> {

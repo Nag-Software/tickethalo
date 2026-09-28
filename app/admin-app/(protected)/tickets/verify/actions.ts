@@ -17,6 +17,7 @@ export async function checkInFromVerifyAction(formData: FormData): Promise<{ err
   revalidatePath(`/admin-app/tickets/verify`)
 
   if ('notFound' in result) return { error: 'The ticket does not exist for this show.' }
+  if ('wrongShow' in result) return { error: `This ticket is for ${result.showTitle} on ${result.showDate}.` }
   if ('alreadyUsed' in result) return { error: 'This ticket was already checked in.' }
   if ('invalid' in result) return { error: `The ticket is ${result.status}.` }
 }
