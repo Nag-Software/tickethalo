@@ -163,6 +163,7 @@ describe('generateShowPoster', () => {
     expect(responsesCreate).toHaveBeenCalledOnce()
   })
 
+  // To fulle plakatrenderinger; over fem sekunder på en travel CI-maskin.
   it('falls back to the built-in layout when the template result does not look right', async () => {
     responsesCreate.mockImplementation(async (args: { text: { format: { name: string } } }) => ({
       output_text: JSON.stringify(args.text.format.name === 'poster_quality'
@@ -174,7 +175,7 @@ describe('generateShowPoster', () => {
     expect(imagesGenerate).toHaveBeenCalledOnce()
     // Oppsettet som ga et dårlig resultat glemmes.
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ layout_status: 'none', plate_url: null }))
-  })
+  }, 30_000)
 
   // «Korrekt informasjon»: et ordmerke i malen må stemme med showet.
   it('does not use a template whose built-in title is another show\'s title', async () => {
