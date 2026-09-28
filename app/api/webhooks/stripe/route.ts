@@ -28,7 +28,9 @@ import {
  * alle disse:
  *  - checkout.session.completed, checkout.session.async_payment_succeeded
  *      → billetter utstedes (`finalizeCheckoutSession`). Utsolgt, ugyldig show
- *        eller stoppet billettsalg refunderes automatisk der inne.
+ *        eller stoppet billettsalg refunderes automatisk der inne. Feiler
+ *        billett-e-posten, svares 500 så Stripe leverer på nytt og e-posten
+ *        prøves igjen.
  *  - checkout.session.async_payment_failed → logges; ingen ordre ble laget.
  *  - charge.refunded → refusjonen speiles på ordren (`lib/refunds.ts`), også
  *    delrefusjoner og refusjoner gjort i Stripe-dashbordet.
@@ -220,14 +222,17 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, account
       break
 
     case 'created':
-      if (!completion.emailSent) {
-        console.error(
-          `[Stripe Webhook] Ticket ${completion.ticketCode} created but email failed: ${completion.emailError ?? 'unknown error'}`,
+    case 'duplicate':
+      // Billettene finnes, men e-posten gikk ikke ut. 500 gjør at Stripe
+      // leverer eventet på nytt, og da prøver finalize sendingen igjen
+      // (`ticket_email_sent_at` er nullstilt). Uten dette var en e-post som
+      // feilet borte for godt. En kansellert `duplicate` har ingen koder og
+      // ingen e-post å sende, og faller utenom.
+      if ((completion.ticketCodes?.length ?? 0) > 0 && !completion.emailSent && completion.emailError) {
+        throw new Error(
+          `Ticket email for order ${completion.orderId ?? 'unknown'} (session ${session.id}) failed: ${completion.emailError ?? 'unknown error'}`,
         )
       }
-      break
-
-    case 'duplicate':
       break
   }
 }

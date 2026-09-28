@@ -75,11 +75,16 @@ function resolveOutcome(
           message: `The payment was registered, but we could not confirm that a ticket was issued. Check your email in a few minutes. If no ticket arrives, contact us at ${SUPPORT_EMAIL} with the reference below.`,
         }
       }
-      return {
-        tone: 'success',
-        heading: 'Thanks for your purchase',
-        message: 'The ticket was already created and sent earlier.',
-      }
+      // `emailSent` er sant både når e-posten gikk nå og når den gikk tidligere
+      // (`ticket_email_sent_at`). Usant betyr at den feilet — da skal ikke
+      // siden love at den er sendt.
+      return completion.emailSent
+        ? { tone: 'success', heading: 'Thanks for your purchase', message: 'Your ticket has been sent by email.' }
+        : {
+            tone: 'warning',
+            heading: 'Thanks for your purchase',
+            message: 'The payment went through, but the ticket could not be emailed automatically. Keep the ticket code below — it gets you in.',
+          }
     case 'unpaid':
       return {
         tone: 'warning',

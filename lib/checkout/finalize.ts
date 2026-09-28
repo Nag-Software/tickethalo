@@ -12,6 +12,10 @@ export type FinalizeCheckoutResult = {
   ticketCode?: string | null
   /** Alle billettkodene i ordren. Én per plass i bestillingen. */
   ticketCodes?: string[]
+  /**
+   * E-posten har gått — nå eller tidligere. På `duplicate` med billetter
+   * betyr false at forsøket her feilet, ikke at noen andre sendte den.
+   */
   emailSent?: boolean
   emailError?: string
   /** Settes når betalingen er bokført, slik at gebyr-oppgjøret kan kjøres. */
@@ -217,7 +221,17 @@ export async function finalizeCheckoutSession(
     return { result: 'failed', emailError: completionError?.message }
   }
 
-  if (completion.result !== 'created') {
+  const ticketCodes = completion.ticket_codes?.length
+    ? completion.ticket_codes
+    : completion.ticket_code
+      ? [completion.ticket_code]
+      : []
+
+  // `duplicate` med billetter: ordren finnes fra før, og den som laget den
+  // skulle ha sendt e-posten. Feilet den der, er dette sjansen — se
+  // `claimTicketEmail`. Uten billetter er ordren kansellert (under).
+  const hasTickets = ticketCodes.length > 0
+  if (completion.result !== 'created' && !(completion.result === 'duplicate' && hasTickets)) {
     let cancellationReason: OrderCancellationReason | null = null
     let refunded: boolean | undefined
 
@@ -227,11 +241,7 @@ export async function finalizeCheckoutSession(
       refunded = completion.order_id
         ? await refundOrderWithoutTicket(completion.order_id, session.id)
         : false
-    } else if (
-      completion.result === 'duplicate' &&
-      !completion.ticket_code &&
-      !(completion.ticket_codes?.length ?? 0)
-    ) {
+    } else if (completion.result === 'duplicate') {
       // Den andre av webhooken og suksessiden får `duplicate`. Uten billetter
       // er ordren kansellert, og kjøperen må få vite det — ikke at billetten
       // «allerede er sendt». Refusjonen er den førstes ansvar, og køens.
@@ -244,7 +254,7 @@ export async function finalizeCheckoutSession(
       result: completion.result,
       orderId: completion.order_id,
       ticketCode: completion.ticket_code,
-      ticketCodes: completion.ticket_codes ?? [],
+      ticketCodes,
       emailSent: false,
       chargeId: charge.chargeId,
       cancellationReason,
@@ -255,13 +265,21 @@ export async function finalizeCheckoutSession(
   let emailSent = false
   let emailError: string | undefined
 
-  const ticketCodes = completion.ticket_codes?.length
-    ? completion.ticket_codes
-    : completion.ticket_code
-      ? [completion.ticket_code]
-      : []
+  // Bare én av webhooken og suksesssiden skal sende, og bare når e-posten
+  // ikke alt har gått. Den som får satt tidsstempelet sender; feiler
+  // sendingen, nullstilles det så neste forsøk (Stripes nye levering, eller
+  // kjøperen som laster siden på nytt) prøver igjen.
+  const claim = buyerEmail && hasTickets && completion.order_id
+    ? await claimTicketEmail(completion.order_id, completion.result)
+    : 'no_email'
 
-  if (buyerEmail && ticketCodes.length > 0) {
+  if (claim === 'already_sent') {
+    emailSent = true
+  } else if (claim === 'no_email') {
+    // Checkout krever e-postadresse, så dette skal ikke skje. Ikke en
+    // `emailError`: et nytt forsøk fra Stripe ville gitt samme svar.
+    console.error(`[Checkout] Session ${session.id} has tickets but no buyer email — nothing to send the ticket to`)
+  } else if (claim === 'claimed') {
     const { data: show } = await admin
       .from('shows')
       .select('title, date, start_time, venue_name, venue_address, club_id')
@@ -306,6 +324,7 @@ export async function finalizeCheckoutSession(
 
     emailSent = emailResult.success
     emailError = emailResult.error
+    if (!emailSent && completion.order_id) await releaseTicketEmailClaim(completion.order_id)
   }
   return {
     result: completion.result,
@@ -315,6 +334,50 @@ export async function finalizeCheckoutSession(
     emailSent,
     emailError,
     chargeId: charge.chargeId,
+  }
+}
+
+type TicketEmailClaim = 'claimed' | 'already_sent' | 'no_email'
+
+/**
+ * Tar retten til å sende billett-e-posten for ordren: én betinget
+ * oppdatering der bare den som faktisk satte `ticket_email_sent_at` får
+ * `claimed`. Webhooken og suksesssiden kan komme samtidig, og kjøperen skal
+ * ha én e-post, ikke to.
+ *
+ * Kan ikke ordren skrives (databasen nede, eller kolonnen ikke migrert
+ * ennå), gjelder den gamle regelen: den som laget ordren sender, den andre
+ * lar være. Én e-post for mye er bedre enn ingen — men ikke for hver
+ * visning av suksesssiden.
+ */
+async function claimTicketEmail(orderId: string, result: 'created' | 'duplicate'): Promise<TicketEmailClaim> {
+  const db = createAdminClient()
+  const { data: claimed, error } = await db
+    .from('orders')
+    .update({ ticket_email_sent_at: new Date().toISOString() })
+    .eq('id', orderId)
+    .is('ticket_email_sent_at', null)
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    console.warn(
+      `[Checkout] Could not claim the ticket email for order ${orderId}: ${error.message} — ` +
+        (result === 'created' ? 'sending anyway' : 'leaving it to whoever created the order'),
+    )
+    return result === 'created' ? 'claimed' : 'already_sent'
+  }
+  return claimed ? 'claimed' : 'already_sent'
+}
+
+/** Sendingen feilet: gi retten tilbake, så neste forsøk kan ta den. */
+async function releaseTicketEmailClaim(orderId: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from('orders')
+    .update({ ticket_email_sent_at: null })
+    .eq('id', orderId)
+  if (error) {
+    console.error(`[Checkout] Could not release the ticket email claim for order ${orderId}: ${error.message}`)
   }
 }
 

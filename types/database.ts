@@ -567,6 +567,8 @@ export type Order = {
   last_refund_error: string | null
   refunded_at: string | null
   refund_reason: string | null
+  /** Når billett-e-posten gikk ut. Tom på en ordre med billetter = skal sendes. */
+  ticket_email_sent_at: string | null
 
   created_at: string
   updated_at: string
@@ -1100,6 +1102,7 @@ export type Database = {
           last_refund_error?: string | null
           refunded_at?: string | null
           refund_reason?: string | null
+          ticket_email_sent_at?: string | null
           created_at?: string
           updated_at?: string
         }
