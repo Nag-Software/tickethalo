@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const stripeMock = vi.hoisted(() => ({
   v2: { core: { accounts: { retrieve: vi.fn(), update: vi.fn() }, accountLinks: { create: vi.fn() } } },
+  files: { create: vi.fn(), retrieve: vi.fn() },
   balanceSettings: { retrieve: vi.fn(), update: vi.fn() },
 }))
 
@@ -65,6 +66,12 @@ const db = vi.hoisted(() => {
 
 vi.mock('@/lib/stripe', () => ({ stripe: stripeMock }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => db.client }))
+// Filnavnet er ren logikk og testes ekte; selve bildebehandlingen (nettverk
+// og sharp) hører hjemme i tests/unit/checkout/club-icon.test.ts.
+vi.mock('@/lib/club-icon', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/club-icon')>()),
+  buildClubIcon: vi.fn(),
+}))
 
 import {
   accountNameUpdate,
@@ -79,11 +86,12 @@ import {
   missingReadinessLabels,
   PayoutScheduleSyncError,
   syncAccountStatus,
-  syncConnectedAccountName,
-  trySyncConnectedAccountName,
+  syncConnectedAccountBranding,
+  trySyncConnectedAccountBranding,
   type ClubReadiness,
   type ConnectClub,
 } from '@/lib/stripe-connect'
+import { buildClubIcon, clubIconFilename } from '@/lib/club-icon'
 
 const readyClub: ClubReadiness = {
   stripe_account_id: 'acct_123',
@@ -187,6 +195,7 @@ const legacyClub = (overrides: Partial<ConnectClub> = {}): ConnectClub => ({
   org_number: '123456789',
   support_email: 'club@example.com',
   invoice_email: null,
+  logo_url: null,
   stripe_account_id: nextAccount(),
   charges_enabled: true,
   payouts_enabled: true,
@@ -535,17 +544,24 @@ describe('accountNameUpdate', () => {
   })
 })
 
-describe('syncConnectedAccountName', () => {
+describe('syncConnectedAccountBranding', () => {
   const club = {
     id: 'club_1',
-    name: 'Backstage Stand Up',
-    legal_name: 'Backstage Comedy AS',
+    name: 'Crønch Comedy',
+    legal_name: 'Søyland Invest',
+    logo_url: null,
     stripe_account_id: 'acct_123',
   }
+  const withLogo = { ...club, logo_url: 'https://cdn.example.com/club_1/logo/1-abc.png' }
+  const iconName = clubIconFilename({ id: 'club_1', logo_url: withLogo.logo_url })
 
   beforeEach(() => {
     vi.resetAllMocks()
     vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(buildClubIcon).mockResolvedValue(Buffer.from('png'))
+    stripeMock.files.create.mockResolvedValue({ id: 'file_new' })
+    stripeMock.v2.core.accounts.update.mockResolvedValue({})
   })
 
   afterEach(() => {
@@ -553,45 +569,107 @@ describe('syncConnectedAccountName', () => {
   })
 
   it('does nothing for a club without a Stripe account', async () => {
-    await expect(syncConnectedAccountName({ ...club, stripe_account_id: null })).resolves.toEqual({ updated: false })
+    await expect(syncConnectedAccountBranding({ ...club, stripe_account_id: null })).resolves.toEqual({ updated: false })
     expect(stripeMock.v2.core.accounts.retrieve).not.toHaveBeenCalled()
     expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
   })
 
-  it('reads the account with its defaults and leaves a matching account alone', async () => {
+  it('reads names and branding in one go and leaves a matching account alone', async () => {
     stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
-      display_name: 'Backstage Comedy AS',
-      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+      display_name: 'Søyland Invest',
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
     })
 
-    await expect(syncConnectedAccountName(club)).resolves.toEqual({ updated: false })
-    expect(stripeMock.v2.core.accounts.retrieve).toHaveBeenCalledWith('acct_123', { include: ['defaults'] })
+    await expect(syncConnectedAccountBranding(club)).resolves.toEqual({ updated: false })
+    expect(stripeMock.v2.core.accounts.retrieve).toHaveBeenCalledWith('acct_123', {
+      include: ['defaults', 'configuration.merchant'],
+    })
     expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
+    expect(stripeMock.files.create).not.toHaveBeenCalled()
   })
 
   it('renames the account when the club was renamed in Tickethalo', async () => {
     stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
-      display_name: 'Backstage Comedy AS',
+      display_name: 'Søyland Invest',
       defaults: { profile: { doing_business_as: 'Old Club Name' } },
     })
-    stripeMock.v2.core.accounts.update.mockResolvedValue({})
 
-    await expect(syncConnectedAccountName(club)).resolves.toEqual({ updated: true })
+    await expect(syncConnectedAccountBranding(club)).resolves.toEqual({ updated: true })
     expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
-      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
     })
   })
 
-  it('lets a Stripe error through, so the caller decides what it means for the save', async () => {
+  it('uploads the logo on the club account and sets it as the icon, in the same update as the name', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Søyland Invest' })
+
+    await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: true })
+
+    expect(buildClubIcon).toHaveBeenCalledWith(withLogo.logo_url)
+    expect(stripeMock.files.create).toHaveBeenCalledWith(
+      { purpose: 'business_icon', file: { data: Buffer.from('png'), name: iconName, type: 'application/octet-stream' } },
+      { stripeAccount: 'acct_123' },
+    )
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledTimes(1)
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
+      configuration: { merchant: { branding: { icon: 'file_new' } } },
+    })
+  })
+
+  it('does not upload the logo again when the icon on the account was made from the same logo', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
+      display_name: 'Søyland Invest',
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
+      configuration: { merchant: { branding: { icon: 'file_old' } } },
+    })
+    stripeMock.files.retrieve.mockResolvedValue({ id: 'file_old', filename: iconName })
+
+    await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: false })
+    expect(stripeMock.files.retrieve).toHaveBeenCalledWith('file_old', undefined, { stripeAccount: 'acct_123' })
+    expect(buildClubIcon).not.toHaveBeenCalled()
+    expect(stripeMock.files.create).not.toHaveBeenCalled()
+    expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
+  })
+
+  it('replaces the icon when the club uploaded a new logo', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
+      display_name: 'Søyland Invest',
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
+      configuration: { merchant: { branding: { icon: 'file_old' } } },
+    })
+    stripeMock.files.retrieve.mockResolvedValue({ id: 'file_old', filename: 'tickethalo-club-club_1-0000000000000000.png' })
+
+    await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({ updated: true })
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+      configuration: { merchant: { branding: { icon: 'file_new' } } },
+    })
+  })
+
+  it('still sets the name when the logo cannot be turned into an icon, and says so', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Søyland Invest' })
+    vi.mocked(buildClubIcon).mockRejectedValue(new Error('Could not download the club logo (404)'))
+
+    await expect(syncConnectedAccountBranding(withLogo)).resolves.toEqual({
+      updated: true,
+      iconError: 'Could not download the club logo (404)',
+    })
+    expect(stripeMock.files.create).not.toHaveBeenCalled()
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
+    })
+  })
+
+  it('lets a Stripe error on the account through, so the caller decides what it means for the save', async () => {
     stripeMock.v2.core.accounts.retrieve.mockRejectedValue(new Error('Connection timed out'))
 
-    await expect(syncConnectedAccountName(club)).rejects.toThrow('Connection timed out')
+    await expect(syncConnectedAccountBranding(club)).rejects.toThrow('Connection timed out')
     expect(stripeMock.v2.core.accounts.update).not.toHaveBeenCalled()
   })
 })
 
-describe('trySyncConnectedAccountName', () => {
-  const club = { id: 'club_1', name: 'Backstage Stand Up', legal_name: null, stripe_account_id: 'acct_123' }
+describe('trySyncConnectedAccountBranding', () => {
+  const club = { id: 'club_1', name: 'Crønch Comedy', legal_name: null, logo_url: null, stripe_account_id: 'acct_123' }
 
   beforeEach(() => {
     vi.resetAllMocks()
@@ -605,11 +683,22 @@ describe('trySyncConnectedAccountName', () => {
 
   it('answers yes when the account already has the name', async () => {
     stripeMock.v2.core.accounts.retrieve.mockResolvedValue({
-      display_name: 'Backstage Stand Up',
-      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+      display_name: 'Crønch Comedy',
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
     })
 
-    await expect(trySyncConnectedAccountName(club)).resolves.toBe(true)
+    await expect(trySyncConnectedAccountBranding(club)).resolves.toBe(true)
+  })
+
+  it('answers no when the name went through but the logo did not', async () => {
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Crønch Comedy' })
+    stripeMock.v2.core.accounts.update.mockResolvedValue({})
+    vi.mocked(buildClubIcon).mockRejectedValue(new Error('too big'))
+
+    await expect(
+      trySyncConnectedAccountBranding({ ...club, logo_url: 'https://cdn.example.com/logo.png' }),
+    ).resolves.toBe(false)
+    expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledTimes(1)
   })
 
   it('never throws: a Stripe error becomes a no with a log line that carries the request id', async () => {
@@ -618,7 +707,7 @@ describe('trySyncConnectedAccountName', () => {
       Object.assign(new Error('Business profile names must consist of recognizable words.'), { requestId: 'req_9' }),
     )
 
-    await expect(trySyncConnectedAccountName(club)).resolves.toBe(false)
+    await expect(trySyncConnectedAccountBranding(club)).resolves.toBe(false)
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('req_9'))
   })
 })
@@ -627,8 +716,8 @@ describe('createOnboardingLink', () => {
   // Kontoen finnes og planen er kjent, så det er bare navnet og lenken igjen.
   const club: ConnectClub = {
     ...legacyClub({ payout_schedule_interval: 'manual', stripe_account_id: 'acct_123' }),
-    name: 'Backstage Stand Up',
-    legal_name: 'Backstage Comedy AS',
+    name: 'Crønch Comedy',
+    legal_name: 'Søyland Invest',
   }
 
   beforeEach(() => {
@@ -643,13 +732,13 @@ describe('createOnboardingLink', () => {
   })
 
   it('puts the club names on the account before the club is sent into onboarding', async () => {
-    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Backstage Comedy AS' })
+    stripeMock.v2.core.accounts.retrieve.mockResolvedValue({ display_name: 'Søyland Invest' })
     stripeMock.v2.core.accounts.update.mockResolvedValue({})
 
     await expect(createOnboardingLink(club)).resolves.toBe('https://connect.stripe.com/setup/abc')
 
     expect(stripeMock.v2.core.accounts.update).toHaveBeenCalledWith('acct_123', {
-      defaults: { profile: { doing_business_as: 'Backstage Stand Up' } },
+      defaults: { profile: { doing_business_as: 'Crønch Comedy' } },
     })
     // Navnet først, så lenken: onboardingen skal vise det riktige navnet.
     expect(stripeMock.v2.core.accounts.update.mock.invocationCallOrder[0]).toBeLessThan(

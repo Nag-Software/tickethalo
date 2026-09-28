@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { extractLogoBrandColor } from '@/lib/club-logo-color'
 import { normalizeCurrency } from '@/lib/currencies'
-import { trySyncConnectedAccountName } from '@/lib/stripe-connect'
+import { trySyncConnectedAccountBranding } from '@/lib/stripe-connect'
 
 const CLUB_MEDIA_BUCKET = 'club-media'
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
@@ -226,15 +226,16 @@ export async function saveClubProfileAction(formData: FormData) {
     throw new Error('Could not save the club profile.')
   }
 
-  // Klubbnavnet er også navnet kunden ser i Stripe Checkout og på
-  // kvitteringen (`connectedAccountNames`). Det synkes rett etter at navnet
-  // er lagret, før lokasjonene: feiler de, skal ikke Stripe stå igjen med det
-  // gamle navnet. En Stripe-feil velter ikke profilen — den er lagret, og
-  // Refresh under Finances prøver navnet på nytt.
-  await trySyncConnectedAccountName({
+  // Klubbnavnet og logoen er også det kunden ser øverst i Stripe Checkout
+  // (`syncConnectedAccountBranding`). De synkes rett etter at profilen er
+  // lagret, før lokasjonene: feiler de, skal ikke Stripe stå igjen med det
+  // gamle. En Stripe-feil velter ikke profilen — den er lagret, og Refresh
+  // under Finances prøver igjen.
+  await trySyncConnectedAccountBranding({
     id: clubId,
     name,
     legal_name: currentClub.legal_name,
+    logo_url: logoUrl,
     stripe_account_id: currentClub.stripe_account_id,
   })
 

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildClubIcon, clubIconFilename } from '@/lib/club-icon'
 
 /**
  * Stripe Connect for klubber.
@@ -27,7 +28,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 /** Feltene alt Connect-arbeid trenger. Hold listen i sync med `ConnectClub`. */
 export const CLUB_CONNECT_FIELDS =
-  'id, name, slug, currency, legal_name, org_number, support_email, invoice_email, ' +
+  'id, name, slug, currency, legal_name, org_number, support_email, invoice_email, logo_url, ' +
   'stripe_account_id, charges_enabled, payouts_enabled, onboarding_completed_at, ' +
   'platform_fee_bps, commission_vat_bps, payout_hold_days, payout_schedule_interval'
 
@@ -41,6 +42,8 @@ export type ConnectClub = {
   support_email: string | null
   /** Adressen komikerne sender honorarfakturaen til. Se `lib/fee-invoices.ts`. */
   invoice_email: string | null
+  /** Blir ikonet på Stripe-kontoen, og dermed i Checkout. Se `lib/club-icon.ts`. */
+  logo_url: string | null
   stripe_account_id: string | null
   charges_enabled: boolean
   payouts_enabled: boolean
@@ -193,8 +196,8 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
 
   const clubUrl = publicClubUrl(club)
 
-  // Navnet kunden ser (`defaults.profile.doing_business_as`) settes ikke her,
-  // men rett etterpå i `createOnboardingLink`. Parametrene inngår i
+  // Navnet kunden ser (`defaults.profile.doing_business_as`) og logoen settes
+  // ikke her, men rett etterpå i `createOnboardingLink`. Parametrene inngår i
   // idempotensnøkkelen: en konto som ble opprettet hos Stripe uten at
   // lagringen hos oss lyktes, må få samme nøkkel ved neste forsøk — ellers
   // får klubben to kontoer. Og et navn Stripe måtte avvise skal aldri stoppe
@@ -407,7 +410,7 @@ async function storePayoutSchedule(clubId: string, accountId: string): Promise<s
 }
 
 // ─────────────────────────────────────────────────────────────
-// Navnet på kontoen
+// Navn og logo på kontoen
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -428,6 +431,10 @@ async function storePayoutSchedule(clubId: string, accountId: string): Promise<s
  * Express uten å kunne rette det selv — Express lar ikke klubben endre det
  * offentlige navnet, det er plattformens felt. Nå settes navnene på vei inn i
  * onboardingen og hver gang klubben lagrer navn eller selgeropplysninger.
+ *
+ * Logoen følger samme vei: den lastes opp som kontoens ikon
+ * (`configuration.merchant.branding.icon`) og vises ved siden av navnet i
+ * Checkout. Se `syncConnectedAccountBranding`.
  */
 export type ConnectedAccountNames = { displayName: string; doingBusinessAs: string }
 
@@ -470,40 +477,97 @@ export function accountNameUpdate(
   return Object.keys(update).length > 0 ? update : null
 }
 
-/**
- * Gir kontoen hos Stripe klubbens navn. Kalles når klubben lagrer klubbnavn
- * eller selgeropplysninger, og fra Refresh under Økonomi, så en klubb som
- * byttet navn før dette fantes kan rette det uten å lagre noe på nytt.
- *
- * Leser kontoen først og skriver bare det som avviker. Kaster ved Stripe-feil;
- * kallerne avgjør hva det betyr for lagringen (den skal stå uansett).
- */
-export async function syncConnectedAccountName(
-  club: Pick<ConnectClub, 'id' | 'name' | 'legal_name' | 'stripe_account_id'>,
-): Promise<{ updated: boolean }> {
-  const accountId = club.stripe_account_id
-  if (!accountId) return { updated: false }
+export type BrandingSyncResult = {
+  /** Noe ble skrevet til Stripe. */
+  updated: boolean
+  /** Logoen kom ikke på plass; navnet er håndtert uavhengig av dette. */
+  iconError?: string
+}
 
-  const account = await stripe.v2.core.accounts.retrieve(accountId, { include: ['defaults'] })
-  const update = accountNameUpdate(account, connectedAccountNames(club))
-  if (!update) return { updated: false }
+type BrandingClub = Pick<ConnectClub, 'id' | 'name' | 'legal_name' | 'logo_url' | 'stripe_account_id'>
 
-  await stripe.v2.core.accounts.update(accountId, update)
-  console.info(`[Connect] Updated the name on ${accountId} for club ${club.id}: ${Object.keys(update).join(', ')}`)
-  return { updated: true }
+/** Feltene ikonsynken leser fra kontoen slik Stripe returnerer den. */
+type ConnectedAccountIconFields = {
+  configuration?: { merchant?: { branding?: { icon?: string | null } | null } | null } | null
 }
 
 /**
- * Samme synk, men kaster aldri. For kallstedene der navnet er en bieffekt av
- * noe som allerede er lagret: en Stripe-feil skal ikke velte lagringen, bare
- * gi beskjed. `true` når Stripe har navnet (eller klubben ikke har konto).
+ * Gir kontoen hos Stripe klubbens navn og logo. Kalles på vei inn i
+ * onboardingen, når klubben lagrer profil eller selgeropplysninger, og fra
+ * Refresh under Økonomi, så en klubb som byttet navn eller logo før dette
+ * fantes kan rette det uten å lagre noe på nytt.
+ *
+ * Leser kontoen først og skriver bare det som avviker, i én oppdatering.
+ * Logoen er et vedheng til navnet: klarer vi ikke lage eller laste opp
+ * ikonet, settes navnet likevel, og feilen kommer tilbake i `iconError`.
+ * Kaster ved Stripe-feil på selve kontoen; kallerne avgjør hva det betyr
+ * for lagringen (den skal stå uansett).
  */
-export async function trySyncConnectedAccountName(
-  club: Pick<ConnectClub, 'id' | 'name' | 'legal_name' | 'stripe_account_id'>,
-): Promise<boolean> {
+export async function syncConnectedAccountBranding(club: BrandingClub): Promise<BrandingSyncResult> {
+  const accountId = club.stripe_account_id
+  if (!accountId) return { updated: false }
+
+  const account = await stripe.v2.core.accounts.retrieve(accountId, {
+    include: ['defaults', 'configuration.merchant'],
+  })
+  const update: Stripe.V2.Core.AccountUpdateParams = accountNameUpdate(account, connectedAccountNames(club)) ?? {}
+  let iconError: string | undefined
+
+  if (club.logo_url) {
+    try {
+      const iconId = await ensureClubIconFile({ id: club.id, logo_url: club.logo_url }, account, accountId)
+      if (iconId) update.configuration = { merchant: { branding: { icon: iconId } } }
+    } catch (error) {
+      iconError = describeStripeError(error)
+      console.error(`[Connect] Could not put the logo of club ${club.id} on ${accountId}: ${iconError}`)
+    }
+  }
+
+  if (Object.keys(update).length === 0) return { updated: false, iconError }
+
+  await stripe.v2.core.accounts.update(accountId, update)
+  console.info(`[Connect] Updated ${accountId} for club ${club.id}: ${Object.keys(update).join(', ')}`)
+  return { updated: true, iconError }
+}
+
+/**
+ * Fil-ID-en ikonet skal settes til, eller null når Stripe alt har dagens logo.
+ *
+ * Fila lastes opp på klubbens konto: det er kontoen som eier ikonet sitt.
+ * Filnavnet bærer et fingeravtrykk av logo-adressen (`clubIconFilename`),
+ * så et oppslag på ikonet Stripe har er nok til å se om det er den samme.
+ */
+async function ensureClubIconFile(
+  club: { id: string; logo_url: string },
+  account: ConnectedAccountIconFields,
+  accountId: string,
+): Promise<string | null> {
+  const filename = clubIconFilename(club)
+  const currentIconId = account.configuration?.merchant?.branding?.icon ?? null
+
+  if (currentIconId) {
+    const current = await stripe.files.retrieve(currentIconId, undefined, { stripeAccount: accountId })
+    if (current.filename === filename) return null
+  }
+
+  const data = await buildClubIcon(club.logo_url)
+  const file = await stripe.files.create(
+    { purpose: 'business_icon', file: { data, name: filename, type: 'application/octet-stream' } },
+    { stripeAccount: accountId },
+  )
+  return file.id
+}
+
+/**
+ * Samme synk, men kaster aldri. For kallstedene der navn og logo er en
+ * bieffekt av noe som allerede er lagret: en Stripe-feil skal ikke velte
+ * lagringen, bare gi beskjed. `true` når Stripe har både navn og logo
+ * (eller klubben ikke har konto).
+ */
+export async function trySyncConnectedAccountBranding(club: BrandingClub): Promise<boolean> {
   try {
-    await syncConnectedAccountName(club)
-    return true
+    const result = await syncConnectedAccountBranding(club)
+    return !result.iconError
   } catch (error) {
     console.error(
       `[Connect] Could not update the name on ${club.stripe_account_id} for club ${club.id}: ${describeStripeError(error)}`,
@@ -516,10 +580,10 @@ export async function trySyncConnectedAccountName(
 export async function createOnboardingLink(club: ConnectClub, returnPath = '/admin-app/finances') {
   const accountId = await getOrCreateConnectedAccount(club)
 
-  // Navnene settes her, ikke i opprettelsen (se der). Onboardingen viser
+  // Navn og logo settes her, ikke i opprettelsen (se der). Onboardingen viser
   // klubben det offentlige navnet, så det skal stå riktig før de kommer dit.
   // Feiler det, går klubben videre likevel: Refresh og lagring prøver igjen.
-  await trySyncConnectedAccountName({ ...club, stripe_account_id: accountId })
+  await trySyncConnectedAccountBranding({ ...club, stripe_account_id: accountId })
 
   const origin = accountOrigin().replace(/\/$/, '')
 
