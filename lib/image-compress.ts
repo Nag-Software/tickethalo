@@ -16,6 +16,25 @@ const MAX_DIMENSION = 1600
 const TARGET_BYTES = 1_200_000
 const QUALITY_STEPS = [0.82, 0.7, 0.6, 0.45]
 
+/**
+ * `image/*` heller enn en liste med typer i `accept`. Med en liste viser
+ * Chrome på Android en egen velger der kameraet kommer først og galleriet er
+ * gjemt — komikere fikk bare tatt nytt bilde. Med `image/*` får de galleriet.
+ *
+ * Til gjengjeld slipper `image/*` gjennom formater nettleseren ikke kan vise
+ * (HEIC o.l.). Det vi klarer å lese, gjør `compressImageFile` om til JPEG;
+ * resten stopper `isDisplayableImage` før skjemaet sendes.
+ */
+export const IMAGE_ACCEPT = 'image/*'
+
+const DISPLAYABLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+export function isDisplayableImage(file: File) {
+  return DISPLAYABLE_TYPES.has(file.type)
+}
+
+export const UNSUPPORTED_IMAGE_MESSAGE = 'This image format is not supported. Choose a JPG, PNG or WebP picture.'
+
 export async function compressImageFile(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
 
@@ -23,8 +42,10 @@ export async function compressImageFile(file: File): Promise<File> {
     const source = await loadImage(file)
     const scale = Math.min(1, MAX_DIMENSION / Math.max(source.width, source.height))
 
-    // Alt som allerede er lite nok slipper en runde med reenkoding.
-    if (scale === 1 && file.size <= TARGET_BYTES) return file
+    // Alt som allerede er lite nok slipper en runde med reenkoding — så lenge
+    // nettleseren kan vise det. HEIC o.l. blir JPEG uansett størrelse.
+    const displayable = isDisplayableImage(file)
+    if (displayable && scale === 1 && file.size <= TARGET_BYTES) return file
 
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(source.width * scale)
@@ -45,7 +66,7 @@ export async function compressImageFile(file: File): Promise<File> {
       if (blob.size <= TARGET_BYTES) break
     }
 
-    if (!best || best.size >= file.size) return file
+    if (!best || (displayable && best.size >= file.size)) return file
 
     return new File([best], jpegName(file.name), {
       type: 'image/jpeg',

@@ -2,7 +2,13 @@
 
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { MAX_UPLOAD_BYTES, compressImageFile } from '@/lib/image-compress'
+import {
+  IMAGE_ACCEPT,
+  MAX_UPLOAD_BYTES,
+  UNSUPPORTED_IMAGE_MESSAGE,
+  compressImageFile,
+  isDisplayableImage,
+} from '@/lib/image-compress'
 
 const inputClass =
   'w-full text-[13px] text-[var(--ev-muted)] file:mr-3 file:rounded-full file:border-0 file:bg-[var(--ev-card-hover)] file:px-3.5 file:py-2 file:text-[13px] file:font-medium file:text-[var(--ev-text)]'
@@ -25,7 +31,10 @@ export function ProfileImageInput({ name = 'profile_image_file' }: { name?: stri
       if (compressed !== file) replaceSelectedFile(compressed)
 
       const selected = inputRef.current?.files?.[0] ?? compressed
-      if (selected.size > MAX_UPLOAD_BYTES) {
+      if (!isDisplayableImage(selected)) {
+        toast.error(UNSUPPORTED_IMAGE_MESSAGE)
+        if (inputRef.current) inputRef.current.value = ''
+      } else if (selected.size > MAX_UPLOAD_BYTES) {
         toast.error('The image is too large. Choose a smaller picture.')
         if (inputRef.current) inputRef.current.value = ''
       }
@@ -53,7 +62,7 @@ export function ProfileImageInput({ name = 'profile_image_file' }: { name?: stri
         ref={inputRef}
         name={name}
         type="file"
-        accept="image/png,image/jpeg,image/webp"
+        accept={IMAGE_ACCEPT}
         // Feltet låses mens vi krymper, så ingen rekker å lagre originalen.
         disabled={preparing}
         className={inputClass}

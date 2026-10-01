@@ -16,7 +16,13 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { BrandLogo } from "@/components/brand/brand-logo"
-import { MAX_UPLOAD_BYTES, compressImageFile } from "@/lib/image-compress"
+import {
+  IMAGE_ACCEPT,
+  MAX_UPLOAD_BYTES,
+  UNSUPPORTED_IMAGE_MESSAGE,
+  compressImageFile,
+  isDisplayableImage,
+} from "@/lib/image-compress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LocationField, type SelectedLocation } from "@/components/artist/location-field"
@@ -138,8 +144,13 @@ export function ArtistSignupForm({
       if (compressed !== file) replaceSelectedFile(compressed)
 
       const selected = imageInputRef.current?.files?.[0] ?? compressed
-      if (selected.size > MAX_UPLOAD_BYTES) {
-        toast.error("The image is too large. Choose a smaller picture.")
+      const problem = !isDisplayableImage(selected)
+        ? UNSUPPORTED_IMAGE_MESSAGE
+        : selected.size > MAX_UPLOAD_BYTES
+          ? "The image is too large. Choose a smaller picture."
+          : null
+      if (problem) {
+        toast.error(problem)
         if (imageInputRef.current) imageInputRef.current.value = ""
         setImageName(null)
         setValues((prev) => ({ ...prev, profile_image_file: false }))
@@ -282,7 +293,7 @@ export function ArtistSignupForm({
                 id="profile_image_file"
                 name="profile_image_file"
                 type="file"
-                accept="image/png,image/jpeg,image/webp"
+                accept={IMAGE_ACCEPT}
                 required
                 className="sr-only"
                 ref={imageInputRef}
