@@ -61,6 +61,13 @@ export default async function EventDetailPage({ params }: Props) {
   const fillPercent = ticketFillPercent(show)
   // Navn og adresse: kjøperen skal finne fram, ikke bare vite hva stedet heter.
   const showLocation = showVenue(show).line
+  // Byen legges bare til når adressen ikke allerede har den — ellers står
+  // «4006 Stavanger, Stavanger».
+  const city = show.clubCity?.trim()
+  const place =
+    city && !showLocation?.toLowerCase().includes(city.toLowerCase())
+      ? [showLocation, city].filter(Boolean).join(', ')
+      : showLocation
   // Worked out on the server when the page was fetched — see `withTicketCounts`.
   const salesOpen = show.salesState.kind === 'open'
 
@@ -184,11 +191,17 @@ export default async function EventDetailPage({ params }: Props) {
                 {show.title}
               </h1>
 
-              <p className="text-[17px] text-[var(--ev-muted)] sm:text-[15px]">
-                {formatShowDate(show.date)} · {formatShowTime(show)}
-                {showLocation && <> · {showLocation}</>}
-                {show.clubCity && <>, {show.clubCity}</>}
-              </p>
+              <ul className="flex flex-col gap-1 text-[17px] text-[var(--ev-muted)] sm:text-[15px]">
+                {[formatShowDate(show.date), formatShowTime(show).replace('-', ' – '), place].map(
+                  (line) =>
+                    line && (
+                      <li key={line} className="flex gap-2">
+                        <span aria-hidden>·</span>
+                        {line}
+                      </li>
+                    )
+                )}
+              </ul>
 
               {/* On mobile the buy block is hidden and the bottom bar has no room
                   for the full date and time sales open, so it goes here. */}
@@ -220,21 +233,6 @@ export default async function EventDetailPage({ params }: Props) {
                 {checkoutNote && <p className="text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>}
               </div>
             </div>
-
-            {/* Klubben er selger og arrangør av showet — Tickethalo formidler
-                billetten. Kjøperen inngår avtalen med klubben, så det må stå
-                der kjøpet skjer, ikke bare i vilkårene. */}
-            {show.clubName && (
-              <p className="text-[13px] leading-relaxed text-[var(--ev-faint)]">
-                Organiser and seller: {show.clubLegalName ?? show.clubName}
-                {show.clubOrgNumber ? ` (org. no. ${show.clubOrgNumber})` : ''}. The ticket is sold by
-                the organiser; Tickethalo handles the ticketing —{' '}
-                <Link href="/kjopsvilkar" className="underline underline-offset-2 hover:text-[var(--ev-text)]">
-                  terms of purchase
-                </Link>
-                .
-              </p>
-            )}
 
             <Section title="About the show">
               <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-[var(--ev-muted)] sm:text-[15px]">
@@ -297,6 +295,21 @@ export default async function EventDetailPage({ params }: Props) {
                 </ul>
               )}
             </Section>
+
+            {/* Klubben er selger og arrangør av showet — Tickethalo formidler
+                billetten. Kjøperen inngår avtalen med klubben, så det må stå
+                der kjøpet skjer, ikke bare i vilkårene. */}
+            {show.clubName && (
+              <p className="text-[13px] leading-relaxed text-[var(--ev-faint)]">
+                Organiser and seller: {show.clubLegalName ?? show.clubName}
+                {show.clubOrgNumber ? ` (org. no. ${show.clubOrgNumber})` : ''}. The ticket is sold by
+                the organiser; Tickethalo handles the ticketing —{' '}
+                <Link href="/kjopsvilkar" className="underline underline-offset-2 hover:text-[var(--ev-text)]">
+                  terms of purchase
+                </Link>
+                .
+              </p>
+            )}
           </div>
         </div>
       </div>
