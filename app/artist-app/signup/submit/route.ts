@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { registerArtist } from '@/lib/actions/artist'
+import { isApprovedHeadshot } from '@/lib/headshot-check'
 import { createClient } from '@/lib/supabase/server'
 import { lookupCountry, type CountryCode } from '@/lib/geo'
 import { normalizeLanguages } from '@/lib/languages'
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
 
   try {
     validateSignupForm(formData)
+    await validateHeadshot(formData)
 
     const password = String(formData.get('password') ?? '')
 
@@ -54,6 +56,7 @@ function toSignupErrorCode(error: unknown) {
   if (message.includes('password')) return 'invalid_password'
   if (message.includes('email')) return 'invalid_email'
   if (message.includes('video')) return 'invalid_video'
+  if (message.includes('headshot')) return 'photo_unchecked'
   if (message.includes('required')) return 'missing'
   return 'failed'
 }
@@ -78,6 +81,19 @@ function validateSignupForm(formData: FormData) {
 
   if (video && !isVideoUrl(video)) {
     throw new Error('Invalid video URL')
+  }
+}
+
+/**
+ * Bildet må være det skjemaet fikk godkjent — kvitteringen er signert for
+ * akkurat de bytene. Se `lib/headshot-check.ts`.
+ */
+async function validateHeadshot(formData: FormData) {
+  const photo = fileOrUndefined(formData.get('profile_image_file'))
+  if (!photo) return
+  const image = Buffer.from(await photo.arrayBuffer())
+  if (!isApprovedHeadshot(image, optionalString(formData.get('profile_image_check')))) {
+    throw new Error('Headshot not approved')
   }
 }
 

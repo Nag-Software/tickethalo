@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -8,7 +8,6 @@ import {
   BadgeCheck,
   Camera,
   Globe2,
-  ImagePlus,
   Lock,
   Phone,
   User,
@@ -16,16 +15,10 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { BrandLogo } from "@/components/brand/brand-logo"
-import {
-  IMAGE_ACCEPT,
-  MAX_UPLOAD_BYTES,
-  UNSUPPORTED_IMAGE_MESSAGE,
-  compressImageFile,
-  isDisplayableImage,
-} from "@/lib/image-compress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LocationField, type SelectedLocation } from "@/components/artist/location-field"
+import { HeadshotPicker } from "@/components/artist/headshot-picker"
 import { LanguageField } from "@/components/artist/language-field"
 import { defaultLanguagesForCountry, lookupCountry } from "@/lib/geo"
 import type { LanguageCode } from "@/lib/languages"
@@ -82,9 +75,6 @@ export function ArtistSignupForm({
     language: false,
     gender: false,
   })
-  const [imageName, setImageName] = useState<string | null>(null)
-  const [preparingImage, setPreparingImage] = useState(false)
-  const imageInputRef = useRef<HTMLInputElement>(null)
   const [location, setLocation] = useState<SelectedLocation | null>(null)
   const [languages, setLanguages] = useState<LanguageCode[]>([])
   const [password, setPassword] = useState('')
@@ -125,57 +115,10 @@ export function ArtistSignupForm({
   const missing = requiredFields.filter((field) => !values[field.id])
   const passwordsDoNotMatch = passwordConfirmation.length > 0 && password !== passwordConfirmation
 
-  /**
-   * Et bilde rett fra mobilkameraet er større enn det serverless-funksjonen
-   * tar imot, så vi krymper det her og bytter ut fila i input-feltet. Da går
-   * skjemaet som en helt vanlig POST videre.
-   */
-  async function handleImageChange(file: File | undefined) {
-    if (!file) {
-      setImageName(null)
-      setValues((prev) => ({ ...prev, profile_image_file: false }))
-      return
-    }
-
-    setImageName(file.name)
-    setPreparingImage(true)
-    try {
-      const compressed = await compressImageFile(file)
-      if (compressed !== file) replaceSelectedFile(compressed)
-
-      const selected = imageInputRef.current?.files?.[0] ?? compressed
-      const problem = !isDisplayableImage(selected)
-        ? UNSUPPORTED_IMAGE_MESSAGE
-        : selected.size > MAX_UPLOAD_BYTES
-          ? "The image is too large. Choose a smaller picture."
-          : null
-      if (problem) {
-        toast.error(problem)
-        if (imageInputRef.current) imageInputRef.current.value = ""
-        setImageName(null)
-        setValues((prev) => ({ ...prev, profile_image_file: false }))
-        return
-      }
-
-      setImageName(selected.name)
-      setValues((prev) => ({ ...prev, profile_image_file: true }))
-    } finally {
-      setPreparingImage(false)
-    }
-  }
-
-  /** `input.files` kan bare settes med en DataTransfer — den mangler i eldre nettlesere. */
-  function replaceSelectedFile(file: File) {
-    const input = imageInputRef.current
-    if (!input || typeof DataTransfer === "undefined") return
-    try {
-      const transfer = new DataTransfer()
-      transfer.items.add(file)
-      input.files = transfer.files
-    } catch {
-      // Beholder originalen; størrelsessjekken under sier fra hvis den er for stor.
-    }
-  }
+  // Stabil, ellers kjører bildevelgerens effekt på nytt ved hver render.
+  const setHeadshotReady = useCallback((ready: boolean) => {
+    setValues((prev) => (prev.profile_image_file === ready ? prev : { ...prev, profile_image_file: ready }))
+  }, [])
 
   function updateTextField(field: RequiredFieldId, value: string) {
     setValues((prev) => ({
@@ -281,25 +224,7 @@ export function ArtistSignupForm({
 
           <section className="space-y-4">
             <SectionHeader icon={Camera} title="Headshot photo" />
-            <label htmlFor="profile_image_file" className="flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-[var(--ev-line-strong)] p-4 transition-colors hover:bg-[var(--ev-bg)]">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[var(--ev-bg)] text-[var(--ev-muted)]">
-                <ImagePlus className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium">{preparingImage ? "Preparing image…" : (imageName ?? "This photo will be used on posters.")}</p>
-              </div>
-              <span className="shrink-0 rounded-full bg-[var(--ev-text)] px-3.5 py-2 text-[13px] font-semibold text-[var(--ev-bg)]">Choose Image</span>
-              <input
-                id="profile_image_file"
-                name="profile_image_file"
-                type="file"
-                accept={IMAGE_ACCEPT}
-                required
-                className="sr-only"
-                ref={imageInputRef}
-                onChange={(event) => void handleImageChange(event.target.files?.[0])}
-              />
-            </label>
+            <HeadshotPicker onReadyChange={setHeadshotReady} />
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
@@ -360,7 +285,7 @@ export function ArtistSignupForm({
             <Button
               type="submit"
               className="h-11 rounded-full border-0 bg-[var(--ev-text)] px-5 text-[13px] font-semibold text-[var(--ev-bg)] transition-colors hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)] disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] sm:min-w-48"
-              disabled={missing.length > 0 || passwordsDoNotMatch || preparingImage}
+              disabled={missing.length > 0 || passwordsDoNotMatch}
             >
               <BadgeCheck className="size-4" />
               Register Artist Profile

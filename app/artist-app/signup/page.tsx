@@ -43,6 +43,8 @@ export default async function ArtistSignupPage({
                     ? 'Invalid email address.'
                       : error === 'invalid_video'
                         ? 'Enter a valid video link.'
+                      : error === 'photo_unchecked'
+                        ? 'Choose your headshot again so we can check it.'
                       : error === 'missing'
                         ? 'Fill in all required fields before submitting.'
                         : error === 'unconfirmed'
