@@ -7,6 +7,8 @@ import { formatArtistRoleList } from '@/lib/artist-roles'
 import { isArtistBookable } from '@/lib/artist-readiness'
 import { LocationLanguageFields } from '@/components/artist/location-language-fields'
 import { ProfileImageInput } from '@/components/artist/profile-image-input'
+import { SocialHandleInput } from '@/components/artist/social-handle-input'
+import { socialHandle } from '@/lib/social-links'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 
@@ -92,16 +94,16 @@ export default async function ArtistProfilePage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Instagram">
-                  <input name="instagram" type="url" defaultValue={links.instagram ?? ''} placeholder="https://" className={inputClass} />
+                  <SocialHandleInput name="instagram" defaultValue={socialHandle('instagram', links.instagram)} placeholder="username" className={inputClass} />
                 </Field>
                 <Field label="TikTok">
-                  <input name="tiktok" type="url" defaultValue={links.tiktok ?? ''} placeholder="https://" className={inputClass} />
+                  <SocialHandleInput name="tiktok" defaultValue={socialHandle('tiktok', links.tiktok)} placeholder="username" className={inputClass} />
                 </Field>
                 <Field label="Facebook">
-                  <input name="facebook" type="url" defaultValue={links.facebook ?? ''} placeholder="https://" className={inputClass} />
+                  <SocialHandleInput name="facebook" defaultValue={socialHandle('facebook', links.facebook)} placeholder="username" className={inputClass} />
                 </Field>
                 <Field label="Website">
-                  <input name="website" type="url" defaultValue={links.website ?? ''} placeholder="https://" className={inputClass} />
+                  <input name="website" type="text" inputMode="url" autoCapitalize="none" spellCheck={false} defaultValue={links.website ?? ''} placeholder="yourname.com" className={inputClass} />
                 </Field>
               </div>
 

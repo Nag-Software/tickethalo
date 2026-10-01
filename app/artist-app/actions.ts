@@ -6,6 +6,7 @@ import { getCurrentArtist } from '@/lib/artist-portal'
 import { osloDateString } from '@/lib/booking-schedule'
 import { lookupCountry } from '@/lib/geo'
 import { normalizeLanguages } from '@/lib/languages'
+import { socialLinksFromForm } from '@/lib/social-links'
 
 export async function updateArtistProfileAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
@@ -259,16 +260,4 @@ function textValue(value: FormDataEntryValue | null) {
 function countryValue(value: FormDataEntryValue | null) {
   const text = textValue(value)?.toUpperCase()
   return text && lookupCountry(text) ? text : null
-}
-
-function socialLinksFromForm(formData: FormData) {
-  const links = {
-    instagram: textValue(formData.get('instagram')),
-    tiktok: textValue(formData.get('tiktok')),
-    showcase: textValue(formData.get('showcase')),
-    facebook: textValue(formData.get('facebook')),
-    website: textValue(formData.get('website')),
-  }
-  const entries = Object.entries(links).filter((entry): entry is [string, string] => Boolean(entry[1]))
-  return entries.length > 0 ? Object.fromEntries(entries) : null
 }

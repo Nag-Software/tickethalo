@@ -4,6 +4,7 @@ import { isApprovedHeadshot } from '@/lib/headshot-check'
 import { createClient } from '@/lib/supabase/server'
 import { lookupCountry, type CountryCode } from '@/lib/geo'
 import { normalizeLanguages } from '@/lib/languages'
+import { socialLinksFromForm } from '@/lib/social-links'
 import type { ArtistGender } from '@/types/database'
 
 const signupPath = '/artist-app/signup'
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
       country: country(formData.get('country')),
       languages: normalizeLanguages(formData.getAll('language').map((value) => String(value))),
       gender: gender(formData.get('gender')),
-      social_links: socialLinks(formData),
+      social_links: socialLinksFromForm(formData) ?? undefined,
       profile_image_file: fileOrUndefined(formData.get('profile_image_file')),
     })
 
@@ -113,18 +114,6 @@ const GENDER_VALUES: readonly ArtistGender[] = ['woman', 'man', 'non_binary', 'p
 function gender(value: FormDataEntryValue | null): ArtistGender | undefined {
   const text = optionalString(value)
   return GENDER_VALUES.find((allowed) => allowed === text)
-}
-
-function socialLinks(formData: FormData): Record<string, string> | undefined {
-  const links = {
-    instagram: optionalString(formData.get('instagram')),
-    tiktok: optionalString(formData.get('tiktok')),
-    showcase: optionalString(formData.get('showcase')),
-    facebook: optionalString(formData.get('facebook')),
-    website: optionalString(formData.get('website')),
-  }
-  const entries = Object.entries(links).filter((entry): entry is [string, string] => Boolean(entry[1]))
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
 function isVideoUrl(value: string) {

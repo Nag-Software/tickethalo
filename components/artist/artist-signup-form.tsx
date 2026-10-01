@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LocationField, type SelectedLocation } from "@/components/artist/location-field"
 import { HeadshotPicker } from "@/components/artist/headshot-picker"
+import { SocialHandleInput } from "@/components/artist/social-handle-input"
 import { LanguageField } from "@/components/artist/language-field"
 import { defaultLanguagesForCountry, lookupCountry } from "@/lib/geo"
 import type { LanguageCode } from "@/lib/languages"
@@ -271,10 +272,13 @@ export function ArtistSignupForm({
           <section className="space-y-4 border-[var(--ev-line)] pt-6">
             <SectionHeader icon={Globe2} title="Social Media Links" aside="optional" />
             <div className="grid gap-4 md:grid-cols-2">
-              <Input id="instagram" name="instagram" type="url" placeholder="Instagram URL" className={fieldClassName} />
-              <Input id="tiktok" name="tiktok" type="url" placeholder="TikTok URL" className={fieldClassName} />
-              <Input id="facebook" name="facebook" type="url" placeholder="Facebook URL" className={fieldClassName} />
-              <Input id="website" name="website" type="url" placeholder="Website URL" className={fieldClassName} />
+              <SocialField id="instagram" label="Instagram" />
+              <SocialField id="tiktok" label="TikTok" />
+              <SocialField id="facebook" label="Facebook" />
+              <div className="space-y-2">
+                <label htmlFor="website" className="text-[13px] font-medium">Website</label>
+                <Input id="website" name="website" type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="yourname.com" className={fieldClassName} />
+              </div>
             </div>
           </section>
 
@@ -313,6 +317,15 @@ function SectionHeader({
         <h3 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h3>
       </div>
       {aside && <span className="text-[13px] text-[var(--ev-faint)]">{aside}</span>}
+    </div>
+  )
+}
+
+function SocialField({ id, label }: { id: string; label: string }) {
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="text-[13px] font-medium">{label}</label>
+      <SocialHandleInput id={id} name={id} placeholder="username" className={cn(fieldClassName, "w-full px-3.5")} />
     </div>
   )
 }
