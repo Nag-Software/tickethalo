@@ -10,6 +10,7 @@ import { ticketSalesState } from '@/lib/ticket-sales'
 import { updateShowDetailsAction } from '../actions'
 import { buildBookingSpots } from '@/lib/booking-spots'
 import { OverviewTab } from './overview-tab'
+import { ShowTabs } from './show-tabs'
 import { publishReadiness } from '@/lib/publish-readiness'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
@@ -305,36 +306,19 @@ export default async function ShowDetailPage({
             {/* Et show som ikke er publisert selger ikke — da sier merkelappen ingenting nytt. */}
             {salesState.kind !== 'unavailable' && <TicketSalesChip sales={salesState} className="hidden sm:inline" />}
             <Link href="/admin-app/shows" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              ← Back
+              ← <span className="sr-only sm:not-sr-only">Back</span>
             </Link>
-            <DeleteShowDialog showId={show.id} showTitle={show.title} />
+            {/* På mobil ligger «Delete show» i Tickets-fanen; her tar den plassen fra tittelen. */}
+            <span className="hidden sm:contents">
+              <DeleteShowDialog showId={show.id} showTitle={show.title} />
+            </span>
           </div>
         }
       />
 
-      {/* Tab nav */}
-      <div className="flex gap-0 border-b px-6">
-        {TABS.map((t) => (
-          <Link
-            key={t.key}
-            href={`/admin-app/shows/${id}?tab=${t.key}`}
-            className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-            {t.badge != null && t.badge > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
-                {t.badge}
-              </span>
-            )}
-          </Link>
-        ))}
-      </div>
+      <ShowTabs showId={id} active={tab} tabs={TABS} />
 
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
 
         {/* ══════════════════ OVERVIEW ══════════════════ */}
         {tab === 'overview' && (
