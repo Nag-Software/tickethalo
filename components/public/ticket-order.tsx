@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Minus, Plus, Ticket } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader2, Minus, Plus, Ticket } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
 import {
   Dialog,
@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { startCheckoutAction } from '@/app/events/actions'
+import { formatTicketPrice } from '@/lib/public-show-format'
 import { type PublicTicketSalesState, ticketSalesButtonLabel } from '@/lib/ticket-sales-display'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import { cn } from '@/lib/utils'
@@ -33,11 +34,22 @@ import { cn } from '@/lib/utils'
  * checkout. Det gjelder også show uten pris og klubber som ikke er klare for
  * salg: de får «Not on sale» (`isPubliclySellable`). Checkout sjekker uansett
  * på nytt når kjøperen trykker.
+ *
+ * På mobil er dette et ark fra bunnen: knappen som åpnet det ligger i
+ * bunnlinja, og arket kommer opp der tommelen allerede er. Fra `sm` er det en
+ * vanlig dialog midt på skjermen.
+ *
+ * Summen står på knappen. «250 kr per billett» er ikke det kjøperen betaler
+ * når hun har valgt tre — og Stripe skal ikke være første sted hun ser tallet.
  */
 export function TicketOrder({
   showId,
   slug,
-  price,
+  title,
+  summary,
+  ticketPrice,
+  currency,
+  external,
   soldOut,
   salesState,
   remaining,
@@ -45,12 +57,25 @@ export function TicketOrder({
   full,
   className,
   triggerClassName,
-  triggerLabel = 'Buy ticket',
+  triggerLabel = 'Buy tickets',
+  initialQuantity = 1,
+  autoOpen,
 }: {
   showId: string
   slug: string
-  /** Ferdig formatert pris per billett, f.eks. «250 kr». */
-  price: string
+  /** Showets navn — overskriften i arket, så kjøperen ser hva hun kjøper. */
+  title?: string
+  /** Én linje med dato, tid og sted under overskriften. */
+  summary?: string
+  /** Pris per billett i minste valutaenhet, som `shows.ticket_price`. */
+  ticketPrice: number | null
+  currency: string
+  /**
+   * Showet selges på en ekstern billettside (`shows.ticket_url`). Da finnes
+   * det ingenting å velge her — antall og navn ville blitt kastet idet
+   * kjøperen sendes videre — så knappen går rett til checkout-handlingen.
+   */
+  external?: boolean
   soldOut: boolean
   /** Fra `PublicShow.salesState`. Alt annet enn `open` gir en deaktivert knapp. */
   salesState: PublicTicketSalesState
@@ -62,10 +87,27 @@ export function TicketOrder({
   /** Replaces the default trigger styling — the cards use their own size. */
   triggerClassName?: string
   triggerLabel?: string
+  /** Antallet arket starter på — kjøperen som avbrøt betalingen får sitt tilbake. */
+  initialQuantity?: number
+  /**
+   * Åpner arket når siden lastes. Showsiden har to knapper — kjøpsblokka på
+   * desktop og bunnlinja på mobil — og bare den som faktisk vises skal åpne.
+   */
+  autoOpen?: boolean
 }) {
   const limit = Math.max(1, Math.min(maxPerOrder, remaining ?? maxPerOrder))
   const [open, setOpen] = useState(false)
-  const [quantity, setQuantity] = useState(1)
+  const [quantity, setQuantity] = useState(() => Math.max(1, Math.min(limit, Math.floor(initialQuantity) || 1)))
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    // `getClientRects` og ikke `offsetParent`: bunnlinja er `position: fixed`,
+    // og da er `offsetParent` null også når knappen er synlig.
+    if (autoOpen && triggerRef.current?.getClientRects().length) setOpen(true)
+  }, [autoOpen])
+
+  const price = formatTicketPrice({ ticket_price: ticketPrice, currency })
+  const total = formatTicketPrice({ ticket_price: (ticketPrice ?? 0) * quantity, currency })
 
   function setCount(next: number) {
     setQuantity(Math.max(1, Math.min(limit, next)))
@@ -74,9 +116,10 @@ export function TicketOrder({
   const defaultTrigger = cn(
     'inline-flex h-12 items-center justify-center gap-2 px-7 text-[16px] font-semibold transition-colors lg:text-[14px]',
     full && 'w-full',
-    'bg-[var(--ev-text)] text-[var(--ev-bg)]',
-    'hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]',
-    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
+    // Oransje, fordi kjøpet er det eneste på siden som skal trekke blikket.
+    'bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)]',
+    'hover:bg-[var(--ev-text)] hover:text-[var(--ev-bg)]',
+    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-text)]',
     'disabled:cursor-not-allowed disabled:bg-[var(--ev-card-hover)] disabled:text-[var(--ev-faint)] disabled:hover:bg-[var(--ev-card-hover)]',
     className,
   )
@@ -99,23 +142,52 @@ export function TicketOrder({
     )
   }
 
+  if (external) {
+    return (
+      <ToastActionForm action={startCheckoutAction} className={cn('group', full && 'w-full')}>
+        <input type="hidden" name="show_id" value={showId} />
+        <input type="hidden" name="slug" value={slug} />
+        <button type="submit" className={cn(buttonClass, 'whitespace-nowrap')} style={{ borderRadius: 'var(--ev-r-chip)' }}>
+          <Ticket className="size-4 group-data-[pending]:hidden" />
+          <Loader2 className="hidden size-4 animate-spin group-data-[pending]:block" aria-hidden />
+          {triggerLabel}
+        </button>
+      </ToastActionForm>
+    )
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger className={buttonClass} style={{ borderRadius: 'var(--ev-r-chip)' }}>
+      <DialogTrigger ref={triggerRef} className={buttonClass} style={{ borderRadius: 'var(--ev-r-chip)' }}>
         <Ticket className="size-4" /> {triggerLabel}
       </DialogTrigger>
 
       <DialogContent
-        className="ev-surface max-w-md gap-5 bg-[var(--ev-bg)] text-[var(--ev-text)]"
+        className={cn(
+          'ev-surface max-w-md gap-5 bg-[var(--ev-bg)] text-[var(--ev-text)]',
+          // Under `sm`: et ark i full bredde fra bunnen i stedet for en boks
+          // midt på skjermen.
+          'max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0',
+          'max-sm:rounded-b-none max-sm:pb-[max(1.5rem,env(safe-area-inset-bottom))]',
+          'max-sm:data-[state=open]:zoom-in-100 max-sm:data-[state=open]:slide-in-from-bottom-10',
+          'max-sm:data-[state=closed]:zoom-out-100 max-sm:data-[state=closed]:slide-out-to-bottom-10',
+        )}
         data-tone="light"
       >
-        <DialogHeader>
-          <DialogTitle className="text-[22px] font-semibold">How many tickets?</DialogTitle>
-          <DialogDescription className="text-[var(--ev-faint)]">{price} per ticket.</DialogDescription>
+        <DialogHeader className="pr-8">
+          <DialogTitle className="text-balance text-[22px] font-semibold leading-tight">
+            {title ?? 'How many tickets?'}
+          </DialogTitle>
+          <DialogDescription className="text-[15px] text-[var(--ev-muted)] sm:text-[14px]">
+            {summary ?? `${price} per ticket.`}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-between gap-4">
-          <span className="text-[15px] font-medium">Tickets</span>
+          <div>
+            <div className="text-[17px] font-semibold sm:text-[15px]">Tickets</div>
+            <div className="text-[14px] text-[var(--ev-muted)] sm:text-[13px]">{price} each</div>
+          </div>
           <div
             className="flex items-center gap-1 bg-[var(--ev-card)] p-1"
             style={{ borderRadius: 'var(--ev-r-chip)' }}
@@ -123,7 +195,9 @@ export function TicketOrder({
             <StepButton label="One fewer" onClick={() => setCount(quantity - 1)} disabled={quantity <= 1}>
               <Minus className="size-4" />
             </StepButton>
-            <span className="w-10 text-center text-[17px] font-semibold tabular-nums">{quantity}</span>
+            <span aria-live="polite" className="w-10 text-center text-[19px] font-semibold tabular-nums sm:text-[17px]">
+              {quantity}
+            </span>
             <StepButton label="One more" onClick={() => setCount(quantity + 1)} disabled={quantity >= limit}>
               <Plus className="size-4" />
             </StepButton>
@@ -138,34 +212,54 @@ export function TicketOrder({
           </p>
         )}
 
-        <ToastActionForm action={startCheckoutAction} className="flex flex-col gap-3">
+        <ToastActionForm action={startCheckoutAction} className="group flex flex-col gap-5">
           <input type="hidden" name="show_id" value={showId} />
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="quantity" value={quantity} />
 
           {/* Ett navn for hele ordren — serveren setter det på alle billettene. */}
-          <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-[var(--ev-faint)]">
-              {quantity === 1 ? 'Name on the ticket' : 'Name on the tickets'}
+          {/* «Optional» står på feltet: uten det ser navnet påkrevd ut, og
+              kjøperen stopper for å finne ut hva som skal stå der. */}
+          <label className="flex flex-col gap-1.5">
+            <span className="flex justify-between gap-3 text-[14px] text-[var(--ev-muted)] sm:text-[13px]">
+              <span>{quantity === 1 ? 'Name on the ticket' : 'Name on the tickets'}</span>
+              <span>Optional</span>
             </span>
             <input
               name="holder_name"
               placeholder="Your name"
               maxLength={120}
               autoComplete="name"
-              className="h-11 w-full bg-[var(--ev-card)] px-4 text-[15px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)]"
+              className="h-12 w-full bg-[var(--ev-card)] px-4 text-[16px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:h-11 sm:text-[15px]"
               style={{ borderRadius: 'var(--ev-r-card)' }}
             />
+            <span className="text-[13px] text-[var(--ev-faint)]">
+              Leave it empty and we use the name from your payment.
+            </span>
           </label>
 
-          <button
-            type="submit"
-            className={cn(defaultTrigger, 'w-full')}
-            style={{ borderRadius: 'var(--ev-r-chip)' }}
-          >
-            Continue to payment
-          </button>
-          <p className="text-center text-[12px] text-[var(--ev-faint)]">Payment opens in secure checkout.</p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-4 border-t border-[var(--ev-line)] pt-4">
+              <span className="text-[15px] text-[var(--ev-muted)] sm:text-[14px]">Total</span>
+              <span className="text-[20px] font-semibold tabular-nums">{total}</span>
+            </div>
+
+            {/* Sesjonen hos Stripe tar et sekund eller to å lage. Uten en synlig
+                tilstand ser knappen død ut, og kjøperen trykker en gang til. */}
+            <button
+              type="submit"
+              className={cn(defaultTrigger, 'h-14 w-full sm:h-12')}
+              style={{ borderRadius: 'var(--ev-r-chip)' }}
+            >
+              <span className="group-data-[pending]:hidden">Continue to payment · {total}</span>
+              <span className="hidden items-center gap-2 group-data-[pending]:inline-flex">
+                <Loader2 className="size-4 animate-spin" aria-hidden /> Opening checkout…
+              </span>
+            </button>
+            <p className="text-center text-[13px] text-[var(--ev-faint)] sm:text-[12px]">
+              Secure checkout · pay by card
+            </p>
+          </div>
         </ToastActionForm>
       </DialogContent>
     </Dialog>
@@ -189,7 +283,7 @@ function StepButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="flex size-9 items-center justify-center rounded-full text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+      className="flex size-11 items-center sm:size-9 justify-center rounded-full text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
     >
       {children}
     </button>

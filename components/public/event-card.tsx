@@ -162,7 +162,10 @@ export function EventCard({
           <TicketOrder
             showId={show.id}
             slug={show.slug ?? show.id}
-            price={formatTicketPrice(show)}
+            title={show.title}
+            ticketPrice={show.ticket_price}
+            currency={show.currency}
+            external={Boolean(show.ticket_url)}
             soldOut={soldOut}
             salesState={show.salesState}
             remaining={remainingTickets(show)}

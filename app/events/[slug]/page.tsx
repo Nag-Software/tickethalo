@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { ArrowLeft } from 'lucide-react'
 import { TicketOrder } from '@/components/public/ticket-order'
 import {
+  formatShortDate,
   formatShowDate,
   formatShowTime,
   formatTicketPrice,
@@ -19,9 +20,11 @@ import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 import { NaturalPosterImage } from '@/components/public/natural-poster-image'
 import { showVenue } from '@/lib/show-venue'
+import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 
 type Props = {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ tickets?: string }>
 }
 
 export const dynamic = 'force-dynamic'
@@ -50,8 +53,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default async function EventDetailPage({ params }: Props) {
+export default async function EventDetailPage({ params, searchParams }: Props) {
   const { slug } = await params
+  // Satt av avbruddssiden (`/checkout/cancel`): kjøperen som gikk ut av
+  // betalingen kommer tilbake til arket med det samme antallet.
+  const { tickets } = await searchParams
+  const resumeQuantity = Math.floor(Number(tickets))
+  const resume = resumeQuantity >= 1 && resumeQuantity <= MAX_TICKETS_PER_ORDER
   const show = await getPublishedShowBySlug(slug)
   if (!show) notFound()
 
@@ -84,6 +92,9 @@ export default async function EventDetailPage({ params }: Props) {
           : null
 
   const price = formatTicketPrice(show)
+  const orderSummary = [formatShortDate(show.date), show.start_time?.slice(0, 5), showVenue(show).venue]
+    .filter(Boolean)
+    .join(' · ')
   // The line under the button. Before sales open it says exactly when, which the
   // short button label has no room for. Where nothing can be bought it says
   // nothing — "Payment opens in secure checkout" under a disabled button is noise.
@@ -93,17 +104,23 @@ export default async function EventDetailPage({ params }: Props) {
       ? null
       : show.ticket_url
         ? 'You will be sent on to an external ticket page.'
-        : 'Payment opens in secure checkout.'
+        : 'Secure checkout · pay by card'
 
   const buyButton = (full?: boolean) => (
     <TicketOrder
       showId={show.id}
       slug={show.slug}
-      price={price}
+      title={show.title}
+      summary={orderSummary}
+      ticketPrice={show.ticket_price}
+      currency={show.currency}
+      external={Boolean(show.ticket_url)}
       soldOut={soldOut}
       salesState={show.salesState}
       remaining={remaining}
       full={full}
+      initialQuantity={resume ? resumeQuantity : 1}
+      autoOpen={resume}
     />
   )
 
@@ -128,11 +145,15 @@ export default async function EventDetailPage({ params }: Props) {
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-14">
           {/* Poster. Not cropped here — on the show page the whole poster is the point. */}
-          <div className="lg:sticky lg:top-24 lg:self-start">
+          <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
             {/* Full width would give a ~66vh poster on mobile, pushing the title
-                and price below the fold. The width is tied to the height instead. */}
+                and price below the fold. The width is tied to the height instead.
+                On desktop too: the buy block sits under the poster in the same
+                sticky column, and a column taller than the window would hide
+                it. 20rem is the header offset plus the block; 0.667 is a 2:3
+                poster, the tallest we see. */}
             <div
-              className="mx-auto w-full max-w-[min(100%,34vh)] overflow-hidden bg-[var(--ev-poster-ground)] lg:mx-0 lg:max-w-none"
+              className="mx-auto w-full max-w-[min(100%,34vh)] overflow-hidden bg-[var(--ev-poster-ground)] lg:mx-0 lg:max-w-[min(100%,calc((100svh_-_20rem)_*_0.667))]"
               style={{ borderRadius: 'var(--ev-r-card)' }}
             >
               {show.poster_url ? (
@@ -151,6 +172,30 @@ export default async function EventDetailPage({ params }: Props) {
                   <strong className="text-3xl font-medium leading-tight">{show.title}</strong>
                 </div>
               )}
+            </div>
+
+            {/* Buy block — hidden on mobile, where the fixed bottom bar takes
+                over. It lives in the sticky poster column so price and action
+                stay in view while the description and line-up scroll. */}
+            <div
+              className="hidden flex-col gap-3.5 bg-[var(--ev-card)] p-5 lg:flex"
+              style={{ borderRadius: 'var(--ev-r-card)' }}
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <div className="text-[28px] font-semibold leading-none tabular-nums">{price}</div>
+                {capacity && (
+                  <div
+                    className={cn(
+                      'text-[13px]',
+                      capacity.urgent ? 'font-medium text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
+                    )}
+                  >
+                    {capacity.text}
+                  </div>
+                )}
+              </div>
+              {buyButton(true)}
+              {checkoutNote && <p className="text-center text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>}
             </div>
           </div>
 
@@ -209,30 +254,6 @@ export default async function EventDetailPage({ params }: Props) {
                 <p className="text-[15px] text-[var(--ev-faint)] lg:hidden">{checkoutNote}</p>
               )}
             </header>
-
-            {/* Buy block — hidden on mobile, where the fixed bottom bar takes over */}
-            <div
-              className="hidden flex-wrap items-center gap-x-6 gap-y-4 bg-[var(--ev-card)] p-6 lg:flex"
-              style={{ borderRadius: 'var(--ev-r-card)' }}
-            >
-              <div>
-                <div className="text-[28px] font-semibold leading-none tabular-nums">{price}</div>
-                {capacity && (
-                  <div
-                    className={cn(
-                      'mt-1.5 text-[13px]',
-                      capacity.urgent ? 'font-medium text-[var(--ev-accent)]' : 'text-[var(--ev-faint)]'
-                    )}
-                  >
-                    {capacity.text}
-                  </div>
-                )}
-              </div>
-              <div className="ml-auto flex flex-col items-end gap-2">
-                {buyButton()}
-                {checkoutNote && <p className="text-[12px] text-[var(--ev-faint)]">{checkoutNote}</p>}
-              </div>
-            </div>
 
             <Section title="About the show">
               <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-[var(--ev-muted)] sm:text-[15px]">

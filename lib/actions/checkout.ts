@@ -240,7 +240,8 @@ function createSession(
       // `s` lar suksesssiden finne fram til riktig Connect-konto. Sesjonen
       // finnes bare på klubbens konto, så uten den kan den ikke hentes.
       success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&s=${show.id}`,
-      cancel_url: `${origin}/checkout/cancel?event=${show.slug}`,
+      // `tickets` lar avbruddssiden tilby det samme antallet på nytt.
+      cancel_url: `${origin}/checkout/cancel?event=${show.slug}&tickets=${quantity}`,
       metadata: {
         show_id: show.id,
         // Stripe tar 500 tegn per verdi; tittelen har ingen grense hos oss.
