@@ -143,17 +143,22 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
           <ArrowLeft className="size-4" aria-hidden /> All shows
         </Link>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-14">
+        {/* The poster column is sized from the window height, not a fixed 400px:
+            the buy block sits under the poster in the same sticky column, and a
+            column taller than the window would hide it. 20rem is the header
+            offset plus the block; 0.667 is a 2:3 poster, the tallest we see.
+            Sizing the column — rather than capping the poster inside it — keeps
+            poster and buy block the same width and hands the rest to the text. */}
+        <div className="grid gap-8 lg:grid-cols-[clamp(280px,calc((100svh_-_20rem)_*_0.667),400px)_minmax(0,1fr)] lg:gap-14">
           {/* Poster. Not cropped here — on the show page the whole poster is the point. */}
-          <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
+          {/* Sticky only where the column fits: below ~46rem of height the 280px
+              floor makes it taller than the window, and a stuck column would
+              cut the buy block off. There it scrolls with the page instead. */}
+          <div className="flex flex-col gap-4 lg:self-start lg:[@media(min-height:46rem)]:sticky lg:[@media(min-height:46rem)]:top-24">
             {/* Full width would give a ~66vh poster on mobile, pushing the title
-                and price below the fold. The width is tied to the height instead.
-                On desktop too: the buy block sits under the poster in the same
-                sticky column, and a column taller than the window would hide
-                it. 20rem is the header offset plus the block; 0.667 is a 2:3
-                poster, the tallest we see. */}
+                and price below the fold. The width is tied to the height instead. */}
             <div
-              className="mx-auto w-full max-w-[min(100%,34vh)] overflow-hidden bg-[var(--ev-poster-ground)] lg:mx-0 lg:max-w-[min(100%,calc((100svh_-_20rem)_*_0.667))]"
+              className="mx-auto w-full max-w-[min(100%,34vh)] overflow-hidden bg-[var(--ev-poster-ground)] lg:mx-0 lg:max-w-none"
               style={{ borderRadius: 'var(--ev-r-card)' }}
             >
               {show.poster_url ? (
