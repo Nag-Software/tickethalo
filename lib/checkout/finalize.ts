@@ -352,7 +352,7 @@ export async function deliverTicketEmail(params: {
   const { data: club } = clubId
     ? await admin
         .from('clubs')
-        .select('name, legal_name, org_number, support_email')
+        .select('name, legal_name, org_number, support_email, country, ticket_vat_bps')
         .eq('id', clubId)
         .maybeSingle()
     : { data: null }

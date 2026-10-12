@@ -21,7 +21,14 @@ import { Label } from '@/components/ui/label'
 import { describeClubReadiness } from '@/lib/stripe-connect'
 import { getOsloToday } from '@/lib/event-filters'
 import { MAX_PLATFORM_FEE_PERCENT, MIN_PLATFORM_FEE_PERCENT, formatCommissionPercent } from '@/lib/platform-fee'
-import { addClubAdminAction, deleteClubAction, removeClubAdminAction, updateClubCommissionAction } from '../actions'
+import { CLUB_COUNTRIES, MAX_TICKET_VAT_PERCENT, defaultTicketVatBps, formatVatPercent } from '@/lib/ticket-vat'
+import {
+  addClubAdminAction,
+  deleteClubAction,
+  removeClubAdminAction,
+  updateClubCommissionAction,
+  updateClubTaxAction,
+} from '../actions'
 import type { ShowStatus } from '@/types/database'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -39,7 +46,7 @@ export default async function ClubDetailPage({ params }: { params: Promise<{ id:
   // billetter blir de samme — men de telles for seg, så de ikke blir borte.
   const [{ data: club }, { data: memberships }, { data: clubShows }, { count: archivedShows }] = await Promise.all([
     db.from('clubs')
-      .select('id, name, slug, city, description, created_at, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, platform_fee_bps')
+      .select('id, name, slug, city, description, created_at, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, platform_fee_bps, country, currency, ticket_vat_bps')
       .eq('id', id)
       .maybeSingle(),
     db.from('club_memberships')
@@ -246,6 +253,62 @@ export default async function ClubDetailPage({ params }: { params: Promise<{ id:
               <p className="text-xs text-muted-foreground">
                 Standard er 10 %. Stripe-gebyret betales av Tickethalo og utgjør rundt 4 % av billettprisen,
                 så under {MIN_PLATFORM_FEE_PERCENT} % taper vi penger på hvert salg.
+              </p>
+            </ToastActionForm>
+          </Section>
+
+          {/* ── Land og moms på billettene ─────────────────── */}
+          <Section
+            title="Land og moms"
+            description="Momsen regnes ut av billettprisen og trekkes fra honorargrunnlaget til komikerne. Gjelder fra neste kjøp; betalte ordrer beholder momsen de ble solgt med."
+          >
+            <ToastActionForm
+              action={updateClubTaxAction}
+              successMessage="Land og moms er lagret."
+              className="flex flex-col gap-3 rounded-xl border bg-card p-4"
+            >
+              <input type="hidden" name="club_id" value={club.id} />
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="club-country">Land</Label>
+                  <select
+                    id="club-country"
+                    name="country"
+                    defaultValue={club.country}
+                    // Stripe-kontoen er opprettet i landet og kan ikke flyttes.
+                    disabled={Boolean(club.stripe_account_id)}
+                    className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+                  >
+                    {CLUB_COUNTRIES.map((country) => (
+                      <option key={country.code} value={country.code}>{country.label}</option>
+                    ))}
+                  </select>
+                  {club.stripe_account_id && <input type="hidden" name="country" value={club.country} />}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ticket-vat-percent">Moms på billetter</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="ticket-vat-percent"
+                      name="ticket_vat_percent"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={MAX_TICKET_VAT_PERCENT}
+                      step={0.5}
+                      defaultValue={formatVatPercent(club.ticket_vat_bps)}
+                      required
+                      className="w-24 tabular-nums"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <Button type="submit" size="sm" className="h-9">Lagre</Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Standard for {CLUB_COUNTRIES.find((country) => country.code === club.country)?.label ?? club.country} er{' '}
+                {formatVatPercent(defaultTicketVatBps(club.country))} %. Valuta: {club.currency}. Sett 0 for en klubb som er
+                unntatt moms, for eksempel en forening.
               </p>
             </ToastActionForm>
           </Section>

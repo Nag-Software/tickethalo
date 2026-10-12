@@ -104,6 +104,8 @@ export type Club = {
   city: string | null
   /** Hex (#rrggbb) hentet fra logoen ved opplasting. Null = standard Tickethalo-aksent. */
   brand_color: string | null
+  /** ISO 3166-1 alpha-2. Landet klubben er registrert i. Se migrasjon 068. */
+  country: string
   /** ISO 4217. Standardvaluta for nye show i klubben. */
   currency: string
 
@@ -125,6 +127,8 @@ export type Club = {
   platform_fee_bps: number
   /** 0 = provisjonen er unntatt etter mval. § 3-7. */
   commission_vat_bps: number
+  /** Moms på billettsalget, regnet ut av prisen. 0 i Norge, 2500 i Danmark, 600 i Sverige. */
+  ticket_vat_bps: number
   /** Dager etter showdato før utbetaling frigis. */
   payout_hold_days: number
   /** Komikernes samlede andel av klubbens netto på et show. 9000 = 90 %. */
@@ -544,6 +548,8 @@ export type Order = {
   platform_fee_amount: number | null
   /** gross − provisjon. Stripe-gebyret betales av Tickethalo og trekkes ikke herfra. */
   club_net_amount: number | null
+  /** Momsen i `gross_amount`, låst ved kjøpet. Null før migrasjon 068 = 0. Trekkes fra honorargrunnlaget. */
+  ticket_vat_amount: number | null
   /** Stripes behandlingsgebyr inkl. mva, belastet plattformkontoen. */
   stripe_fee_amount: number | null
   stripe_fee_tax_amount: number | null
@@ -1101,6 +1107,7 @@ export type Database = {
           stripe_fee_status?: StripeFeeStatus
           stripe_fee_reconciled_at?: string | null
           club_net_amount?: number | null
+          ticket_vat_amount?: number | null
           payment_method_type?: string | null
           refunded_amount?: number
           application_fee_refunded_amount?: number
@@ -1229,6 +1236,7 @@ export type Database = {
           address_line?: string | null
           city?: string | null
           brand_color?: string | null
+          country?: string
           currency?: string
           legal_name?: string | null
           org_number?: string | null
@@ -1241,6 +1249,7 @@ export type Database = {
           requirements_due?: unknown | null
           platform_fee_bps?: number
           commission_vat_bps?: number
+          ticket_vat_bps?: number
           payout_hold_days?: number
           artist_share_bps?: number
           lineup_deadline_days?: number | null

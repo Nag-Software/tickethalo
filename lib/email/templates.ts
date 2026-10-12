@@ -468,8 +468,17 @@ export function artistFeeTemplate(opts: {
   currency: string
   /** Siden med resten — beløp, referanse, hvem som faktureres. */
   invoice_url: string
+  /**
+   * Klubbens moms på billettene, når den har noen. Honoraret er alt regnet
+   * av inntekten uten moms, og komikerens egen opptreden er momsfri — så
+   * fakturaen skal ikke legge moms oppå.
+   */
+  ticket_vat_percent?: number | null
 }): EmailTemplate {
   const amount = money(opts.amount, opts.currency)
+  const vatNote = opts.ticket_vat_percent
+    ? `The club pays ${opts.ticket_vat_percent}% VAT on ticket sales, so your fee is calculated from the revenue after VAT. The amount above is excluding VAT.`
+    : null
 
   return {
     subject: `Your fee for ${opts.show_title}: ${amount}`,
@@ -477,6 +486,7 @@ export function artistFeeTemplate(opts: {
       `Hi ${opts.full_name}`,
       '',
       `${opts.show_title} on ${showDateLabel(opts.show_date)} is settled, and your fee is ${amount}.`,
+      ...(vatNote ? ['', vatNote] : []),
       '',
       'Everything you need to invoice us — the amount, the reference and who to send it to — is here:',
       opts.invoice_url,
@@ -486,6 +496,7 @@ export function artistFeeTemplate(opts: {
       heading: `Your fee is ${amount}`,
       body:
         paragraph(`Hi ${escapeHtml(opts.full_name)}, <strong>${escapeHtml(opts.show_title)}</strong> is settled. Everything you need to invoice us is on one page — the amount, the reference to put on the invoice, and who to send it to.`) +
+        (vatNote ? paragraph(escapeHtml(vatNote), true) : '') +
         button(opts.invoice_url, 'How to invoice us'),
     }),
   }

@@ -6,7 +6,7 @@ export const metadata = {
   description: 'Who you buy your ticket from, and what applies if a show is cancelled.',
 }
 
-const UPDATED = '5 September 2026'
+const UPDATED = '12 October 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 /**
@@ -48,8 +48,11 @@ export default function TermsOfPurchasePage() {
           you.
         </p>
         <p>
-          Admission to cultural events such as stand-up is outside the scope of Norwegian VAT
-          (merverdiavgiftsloven § 3-7), so no VAT is added to the ticket price.
+          Whether the price includes VAT depends on where the organiser is registered. In Norway,
+          admission to cultural events such as stand-up is outside the scope of VAT
+          (merverdiavgiftsloven § 3-7), so no VAT is added. In Denmark and Sweden, ticket sales are
+          subject to VAT at the local rate (25 % and 6 % respectively), and the price shown already
+          includes it. Your ticket email states which applies.
         </p>
       </LegalSection>
 

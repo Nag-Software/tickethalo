@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { orgNumberLabel, receiptVatNote } from '@/lib/ticket-vat'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -266,7 +267,8 @@ export default async function CheckoutSuccessPage({
           {sellerName && (
             <p className="mt-6 text-[13px] leading-relaxed text-[var(--ev-faint)]">
               Sold by {sellerName}
-              {seller?.org_number ? ` (org. no. ${seller.org_number})` : ''}, the organiser of this show.
+              {seller?.org_number ? ` (${orgNumberLabel(seller.country, 'en')} ${seller.org_number})` : ''}, the organiser of this show.
+              {' '}{receiptVatNote(seller ?? {}, 'en')}
               {seller?.support_email ? (
                 <>
                   {' '}Questions about the show:{' '}
@@ -422,7 +424,7 @@ async function getSeller(showId: string | undefined, sessionId: string | undefin
 
   const { data: club } = await db
     .from('clubs')
-    .select('name, legal_name, org_number, support_email, stripe_account_id')
+    .select('name, legal_name, org_number, support_email, stripe_account_id, country, ticket_vat_bps')
     .eq('id', clubId)
     .maybeSingle()
 

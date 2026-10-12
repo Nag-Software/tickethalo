@@ -138,6 +138,7 @@ export default async function FinancesPage() {
                 <CardTitle>Your earnings</CardTitle>
                 <CardDescription>
                   Your share of ticket sales, after commission — last six months.
+                  {club.ticket_vat_bps > 0 && ` Ticket prices include ${club.ticket_vat_bps / 100}% VAT.`}
                 </CardDescription>
                 <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end text-right">
                   {/* Ett tall å lede med. Proporsjonale sifre: `tabular-nums`
@@ -146,6 +147,14 @@ export default async function FinancesPage() {
                   <div className="mt-1 text-xs text-muted-foreground">
                     {summary.periodTickets} {summary.periodTickets === 1 ? 'ticket' : 'tickets'}
                   </div>
+                  {/* Klubber med moms på billettene: tallet over er det de får
+                      utbetalt. Momsen i det er deres å gjøre opp, og
+                      honorarene regnes av resten. */}
+                  {club.ticket_vat_bps > 0 && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      incl. {money(summary.periodVat)} VAT · {money(summary.periodNet - summary.periodVat)} ex VAT
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -280,7 +289,10 @@ export default async function FinancesPage() {
                 </p>
               </InfoHint>
             </CardTitle>
-            <CardDescription>Open a show to see who gets what.</CardDescription>
+            <CardDescription>
+              Open a show to see who gets what.
+              {club.ticket_vat_bps > 0 && ' Fees are calculated from ticket revenue after VAT.'}
+            </CardDescription>
             {feesTotal > 0 && (
               <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end text-right">
                 <div className="text-2xl font-semibold leading-none">{money(feesTotal)}</div>
@@ -477,8 +489,10 @@ export default async function FinancesPage() {
             <CardHeader>
               <CardTitle>Settlement</CardTitle>
               <CardDescription>
-                Gross ticket sales, less commission and refunds. The commission is exempt from VAT
-                as intermediation of admission to a cultural event.
+                Gross ticket sales, less commission and refunds.{' '}
+                {club.country === 'NO'
+                  ? 'The commission is exempt from VAT as intermediation of admission to a cultural event.'
+                  : `Tickethalo is a Norwegian company and invoices the commission without VAT. As a VAT-registered business in ${club.country === 'DK' ? 'Denmark' : 'Sweden'}, you account for the VAT yourself under reverse charge${club.org_number ? `, using your registration number ${club.org_number}` : ''}.`}
               </CardDescription>
             </CardHeader>
             <CardContent>
