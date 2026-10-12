@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
+import { SetupGuide } from '@/components/admin/setup-guide'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { getRequestPathname } from '@/lib/request-pathname'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
@@ -55,6 +56,9 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
           showClubSwitcher={profile.role === 'superadmin'}
         />
         <SidebarInset>{children}</SidebarInset>
+        {/* Oppstartsguiden nede til høyre, til klubben er klar for første
+            show og har lagt den bort. */}
+        <SetupGuide clubId={clubAccess.selectedClubId} />
       </SidebarProvider>
     </div>
   )

@@ -144,6 +144,8 @@ export type Club = {
    */
   payout_schedule_interval: string | null
   payout_schedule_checked_at: string | null
+  /** Klubben la bort oppstartsguiden. Null = vises så lenge noe gjenstår. Se migrasjon 072. */
+  setup_guide_dismissed_at: string | null
 
   created_at: string
   updated_at: string
@@ -1264,6 +1266,7 @@ export type Database = {
           lineup_deadline_days?: number | null
           payout_schedule_interval?: string | null
           payout_schedule_checked_at?: string | null
+          setup_guide_dismissed_at?: string | null
           created_at?: string
           updated_at?: string
         }
