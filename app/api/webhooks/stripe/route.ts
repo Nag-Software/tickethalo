@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { recordError } from '@/lib/error-log'
 import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -165,8 +166,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     // 500 ber Stripe prøve på nytt. Handlerne er idempotente, så et nytt forsøk
     // er tryggere enn å kvittere for et kjøp vi ikke fullførte.
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`[Stripe Webhook] ${event.type} (${event.id}) failed: ${message}`)
+    await recordError('stripe_webhook', err, { event_type: event.type, event_id: event.id, account: account ?? null })
     return NextResponse.json({ error: 'Event handling failed' }, { status: 500 })
   }
 

@@ -685,6 +685,18 @@ export type Ticket = {
   updated_at: string
 }
 
+/** En feil appen selv meldte fra om. Se lib/error-log.ts og migrasjon 069. */
+export type AppError = {
+  id: string
+  scope: string
+  message: string
+  stack: string | null
+  context: Record<string, unknown>
+  resolved_at: string | null
+  resolved_by: string | null
+  created_at: string
+}
+
 export type EmailLog = {
   id: string
   recipient_email: string
@@ -1123,6 +1135,21 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Ticket>
+        Relationships: []
+      }
+      app_errors: {
+        Row: AppError
+        Insert: {
+          id?: string
+          scope: string
+          message: string
+          stack?: string | null
+          context?: Record<string, unknown>
+          resolved_at?: string | null
+          resolved_by?: string | null
+          created_at?: string
+        }
+        Update: Partial<AppError>
         Relationships: []
       }
       email_logs: {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Building2, ExternalLink, Inbox, LayoutDashboard, LogOut, Mic, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, Building2, ExternalLink, Inbox, LayoutDashboard, LogOut, Mic, SlidersHorizontal } from 'lucide-react'
 import { BrandMark } from '@/components/brand/brand-logo'
 import {
   Sidebar,
@@ -23,6 +23,7 @@ const NAV = [
   { key: 'artists', label: 'Komikere', href: '/superadmin/artists', icon: Mic },
   { key: 'beta', label: 'Betasøknader', href: '/superadmin/beta-requests', icon: Inbox },
   { key: 'booking', label: 'Bookingmotoren', href: '/superadmin/booking', icon: SlidersHorizontal },
+  { key: 'errors', label: 'Feil', href: '/superadmin/errors', icon: AlertTriangle },
 ] as const
 
 /**

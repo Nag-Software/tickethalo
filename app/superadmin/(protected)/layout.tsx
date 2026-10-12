@@ -26,9 +26,10 @@ export default async function SuperadminProtectedLayout({ children }: { children
   // Tallene i menyen er det som venter på noen. De hentes her og ikke på hver
   // side, så en søknad som kommer inn synes uansett hvor i superadmin du står.
   const db = createAdminClient()
-  const [{ count: newBetaRequests }, { count: artistsToReview }] = await Promise.all([
+  const [{ count: newBetaRequests }, { count: artistsToReview }, { count: openErrors }] = await Promise.all([
     db.from('club_beta_requests').select('id', { count: 'exact', head: true }).eq('status', 'new'),
     db.from('artists').select('id', { count: 'exact', head: true }).in('status', ['pending_review', 'flagged']),
+    db.from('app_errors').select('id', { count: 'exact', head: true }).is('resolved_at', null),
   ])
 
   return (
@@ -36,7 +37,7 @@ export default async function SuperadminProtectedLayout({ children }: { children
       <SidebarProvider>
         <SuperadminSidebar
           email={profile.email ?? user.email ?? ''}
-          badges={{ beta: newBetaRequests ?? 0, artists: artistsToReview ?? 0 }}
+          badges={{ beta: newBetaRequests ?? 0, artists: artistsToReview ?? 0, errors: openErrors ?? 0 }}
         />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>

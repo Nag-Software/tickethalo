@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { recordError } from '@/lib/error-log'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
@@ -217,7 +218,13 @@ export async function finalizeCheckoutSession(
     .single()
 
   if (completionError || !completion) {
-    console.error('[Checkout] Failed to complete checkout:', completionError?.message)
+    // Kunden har betalt og fikk ingen billett. Stripe prøver webhooken på
+    // nytt, men noen må se det om det ikke løser seg.
+    await recordError('checkout', `Failed to complete checkout: ${completionError?.message ?? 'no row'}`, {
+      session_id: session.id,
+      show_id: showId,
+      payment_intent_id: paymentIntentId,
+    })
     return { result: 'failed', emailError: completionError?.message }
   }
 
@@ -327,7 +334,10 @@ export async function deliverTicketEmail(params: {
   if (claim === 'no_email') {
     // Checkout krever e-postadresse, så dette skal ikke skje. Ikke en
     // `emailError`: et nytt forsøk fra Stripe ville gitt samme svar.
-    console.error(`[Checkout] ${params.reference} has tickets but no buyer email — nothing to send the ticket to`)
+    await recordError('ticket_email', `${params.reference} has tickets but no buyer email — nothing to send the ticket to`, {
+      order_id: params.orderId,
+      show_id: params.showId,
+    })
     return { emailSent: false }
   }
 
@@ -373,7 +383,18 @@ export async function deliverTicketEmail(params: {
     free: params.free,
   })
 
-  if (!emailResult.success && params.orderId) await releaseTicketEmailClaim(params.orderId)
+  if (!emailResult.success) {
+    // Billetten finnes, men kunden har den ikke. Neste forsøk (Stripes nye
+    // levering, eller kjøperen som laster siden på nytt) prøver igjen —
+    // og feilloggen viser hvem som venter hvis ingen forsøk kommer.
+    await recordError('ticket_email', `Ticket email failed for ${params.reference}: ${emailResult.error ?? 'unknown'}`, {
+      order_id: params.orderId,
+      show_id: params.showId,
+      buyer_email: params.buyerEmail,
+      free: params.free ?? false,
+    })
+    if (params.orderId) await releaseTicketEmailClaim(params.orderId)
+  }
   return { emailSent: emailResult.success, emailError: emailResult.error }
 }
 
