@@ -8,11 +8,10 @@ import { Input } from '@/components/ui/input'
 
 type ForgotPasswordFormProps = {
   callbackPath: string
-  resetPath: string
   loginPath: string
 }
 
-export function ForgotPasswordForm({ callbackPath, resetPath, loginPath }: ForgotPasswordFormProps) {
+export function ForgotPasswordForm({ callbackPath, loginPath }: ForgotPasswordFormProps) {
   const [email, setEmail] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -23,8 +22,13 @@ export function ForgotPasswordForm({ callbackPath, resetPath, loginPath }: Forgo
     setIsSubmitting(true)
     setError(null)
 
+    // Supabase only honours `redirectTo` when it matches the redirect-URL
+    // allowlist *exactly*, query string included. With a `?next=…` on it the
+    // match failed and Supabase fell back to the Site URL — the public front
+    // page — both on success and when the link had expired, so the person
+    // saw no message at all. The callback already defaults to the portal's
+    // reset page, so the bare path is all that is needed.
     const redirectUrl = new URL(callbackPath, window.location.origin)
-    redirectUrl.searchParams.set('next', resetPath)
     const supabase = createClient()
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
       redirectTo: redirectUrl.toString(),
