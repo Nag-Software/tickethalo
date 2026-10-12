@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertSuperadmin } from '@/lib/superadmin-auth'
+import { parseCommissionPercent } from '@/lib/platform-fee'
 
 /*
  * Hver handling her spør selv om superadmin. Layouten gjør det samme for
@@ -83,6 +84,35 @@ export async function deleteClubAction(formData: FormData) {
   revalidatePath('/superadmin/clubs')
   revalidatePath('/superadmin/overview')
   redirect('/superadmin/clubs')
+}
+
+// ─────────────────────────────────────────────────────────────
+// Commission per club
+// ─────────────────────────────────────────────────────────────
+/**
+ * Provisjonen leses av `clubs.platform_fee_bps` ved hvert kjøp, så endringen
+ * gjelder fra neste kjøp. Betalte ordrer beholder provisjonen de ble solgt
+ * med — den står på ordren.
+ */
+export async function updateClubCommissionAction(formData: FormData) {
+  await assertSuperadmin()
+  const clubId = String(formData.get('club_id') ?? '')
+  if (!clubId) return { error: 'Mangler klubb.' }
+
+  const parsed = parseCommissionPercent(formData.get('commission_percent'))
+  if ('error' in parsed) return { error: parsed.error }
+
+  const { error } = await createAdminClient()
+    .from('clubs')
+    .update({ platform_fee_bps: parsed.bps })
+    .eq('id', clubId)
+
+  if (error) return { error: 'Kunne ikke lagre provisjonen.' }
+
+  revalidatePath(`/superadmin/clubs/${clubId}`)
+  revalidatePath('/superadmin/clubs')
+  // Klubbens økonomiside viser prosenten i overskriften.
+  revalidatePath('/admin-app/finances')
 }
 
 // ─────────────────────────────────────────────────────────────

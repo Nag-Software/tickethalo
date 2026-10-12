@@ -20,7 +20,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { describeClubReadiness } from '@/lib/stripe-connect'
 import { getOsloToday } from '@/lib/event-filters'
-import { addClubAdminAction, deleteClubAction, removeClubAdminAction } from '../actions'
+import { MAX_PLATFORM_FEE_PERCENT, MIN_PLATFORM_FEE_PERCENT, formatCommissionPercent } from '@/lib/platform-fee'
+import { addClubAdminAction, deleteClubAction, removeClubAdminAction, updateClubCommissionAction } from '../actions'
 import type { ShowStatus } from '@/types/database'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -38,7 +39,7 @@ export default async function ClubDetailPage({ params }: { params: Promise<{ id:
   // billetter blir de samme — men de telles for seg, så de ikke blir borte.
   const [{ data: club }, { data: memberships }, { data: clubShows }, { count: archivedShows }] = await Promise.all([
     db.from('clubs')
-      .select('id, name, slug, city, description, created_at, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number')
+      .select('id, name, slug, city, description, created_at, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, platform_fee_bps')
       .eq('id', id)
       .maybeSingle(),
     db.from('club_memberships')
@@ -207,6 +208,45 @@ export default async function ClubDetailPage({ params }: { params: Promise<{ id:
               <Label htmlFor="admin-email" className="sr-only">E-post</Label>
               <Input id="admin-email" name="email" type="email" placeholder="admin@klubb.no" required />
               <Button type="submit" size="sm" className="h-9">Legg til</Button>
+            </ToastActionForm>
+          </Section>
+
+          {/* ── Hva Tickethalo tar ─────────────────────────── */}
+          <Section
+            title="Provisjon"
+            description="Andelen av billettprisen Tickethalo tar på hvert kjøp. Gjelder fra neste kjøp; betalte ordrer beholder provisjonen de ble solgt med."
+          >
+            <ToastActionForm
+              action={updateClubCommissionAction}
+              successMessage="Provisjonen er lagret."
+              className="flex flex-col gap-3 rounded-xl border bg-card p-4"
+            >
+              <input type="hidden" name="club_id" value={club.id} />
+              <div className="flex items-end gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="commission-percent">Provisjon i prosent</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="commission-percent"
+                      name="commission_percent"
+                      type="number"
+                      inputMode="decimal"
+                      min={MIN_PLATFORM_FEE_PERCENT}
+                      max={MAX_PLATFORM_FEE_PERCENT}
+                      step={0.5}
+                      defaultValue={formatCommissionPercent(club.platform_fee_bps)}
+                      required
+                      className="w-24 tabular-nums"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <Button type="submit" size="sm" className="h-9">Lagre</Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Standard er 10 %. Stripe-gebyret betales av Tickethalo og utgjør rundt 4 % av billettprisen,
+                så under {MIN_PLATFORM_FEE_PERCENT} % taper vi penger på hvert salg.
+              </p>
             </ToastActionForm>
           </Section>
         </div>

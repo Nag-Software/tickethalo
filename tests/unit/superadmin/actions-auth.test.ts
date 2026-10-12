@@ -10,7 +10,12 @@ vi.mock('@/lib/session', () => ({ getAuthUser: vi.fn(), getSessionProfile: vi.fn
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
 import { setArtistStatusAction } from '@/app/superadmin/(protected)/artists/actions'
-import { addClubAdminAction, deleteClubAction, removeClubAdminAction } from '@/app/superadmin/(protected)/clubs/actions'
+import {
+  addClubAdminAction,
+  deleteClubAction,
+  removeClubAdminAction,
+  updateClubCommissionAction,
+} from '@/app/superadmin/(protected)/clubs/actions'
 import { deleteBetaRequestAction, setBetaRequestStatusAction } from '@/app/superadmin/(protected)/beta-requests/actions'
 
 function form(fields: Record<string, string>) {
@@ -35,6 +40,7 @@ describe('superadmin actions refuse everyone but a superadmin', () => {
     ['add club admin', () => addClubAdminAction(form({ club_id: 'c1', email: 'x@y.test' }))],
     ['remove club admin', () => removeClubAdminAction(form({ membership_id: 'm1', club_id: 'c1' }))],
     ['delete club', () => deleteClubAction(form({ club_id: 'c1' }))],
+    ['update club commission', () => updateClubCommissionAction(form({ club_id: 'c1', commission_percent: '7' }))],
     ['set beta status', () => setBetaRequestStatusAction(form({ id: 'b1', status: 'approved' }))],
     ['delete beta request', () => deleteBetaRequestAction(form({ id: 'b1' }))],
   ]
@@ -75,5 +81,31 @@ describe('setArtistStatusAction', () => {
     expect(await setArtistStatusAction(form({ artist_id: 'a1', status: 'inactive' }))).toEqual({ ok: true })
     expect(update).toHaveBeenCalledWith({ status: 'inactive' })
     expect(eq).toHaveBeenCalledWith('id', 'a1')
+  })
+})
+
+describe('updateClubCommissionAction', () => {
+  beforeEach(() => {
+    vi.mocked(createAdminClient).mockReset()
+  })
+
+  it('answers with the validation error and never touches the database', async () => {
+    signIn('superadmin')
+    expect(await updateClubCommissionAction(form({ club_id: 'c1', commission_percent: '2' }))).toEqual({
+      error: 'Provisjonen må være mellom 5 og 30 %.',
+    })
+    expect(await updateClubCommissionAction(form({ commission_percent: '7' }))).toEqual({ error: 'Mangler klubb.' })
+    expect(createAdminClient).not.toHaveBeenCalled()
+  })
+
+  it('stores the percentage as basis points on the club', async () => {
+    signIn('superadmin')
+    const eq = vi.fn().mockResolvedValue({ error: null })
+    const update = vi.fn(() => ({ eq }))
+    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => ({ update })) } as never)
+
+    expect(await updateClubCommissionAction(form({ club_id: 'c1', commission_percent: '7,5' }))).toBeUndefined()
+    expect(update).toHaveBeenCalledWith({ platform_fee_bps: 750 })
+    expect(eq).toHaveBeenCalledWith('id', 'c1')
   })
 })
