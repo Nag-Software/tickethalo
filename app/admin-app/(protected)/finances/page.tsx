@@ -489,8 +489,10 @@ export default async function FinancesPage() {
             <CardHeader>
               <CardTitle>Settlement</CardTitle>
               <CardDescription>
-                Gross ticket sales, less commission and refunds. The commission is exempt from VAT
-                as intermediation of admission to a cultural event.
+                Gross ticket sales, less commission and refunds.{' '}
+                {club.country === 'NO'
+                  ? 'The commission is exempt from VAT as intermediation of admission to a cultural event.'
+                  : `Tickethalo is a Norwegian company and invoices the commission without VAT. As a VAT-registered business in ${club.country === 'DK' ? 'Denmark' : 'Sweden'}, you account for the VAT yourself under reverse charge${club.org_number ? `, using your registration number ${club.org_number}` : ''}.`}
               </CardDescription>
             </CardHeader>
             <CardContent>

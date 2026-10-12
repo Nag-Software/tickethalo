@@ -4,6 +4,7 @@ import { resend, FROM_EMAIL, REPLY_TO_EMAIL, fromWithName } from '@/lib/resend'
 import { createAdminClient } from '@/lib/supabase/admin'
 import QRCode from 'qrcode'
 import { formatTicketCode } from '@/lib/tickets'
+import { orgNumberLabel, receiptVatNote } from '@/lib/ticket-vat'
 import {
   artistApprovedTemplate,
   artistFeeTemplate,
@@ -274,6 +275,10 @@ export type TicketSeller = {
   legal_name?: string | null
   org_number?: string | null
   support_email?: string | null
+  /** Avgjør om nummeret heter CVR-nr eller Org.nr. Se `lib/ticket-vat.ts`. */
+  country?: string | null
+  /** Moms i billettprisen. 0 eller tom = unntatt (Norge). */
+  ticket_vat_bps?: number | null
 }
 
 export type PurchasedTicket = {
@@ -336,14 +341,16 @@ export async function sendTicketPurchaseEmail(opts: {
 
     const seller = opts.seller ?? null
     const sellerName = seller?.legal_name?.trim() || seller?.name?.trim() || null
+    const orgLabel = orgNumberLabel(seller?.country)
+    const vatNote = receiptVatNote(seller ?? {})
     const sellerLines = [
       sellerName,
-      seller?.org_number ? `Org.nr ${seller.org_number}` : null,
+      seller?.org_number ? `${orgLabel} ${seller.org_number}` : null,
       seller?.support_email,
     ].filter((line): line is string => Boolean(line))
 
     const sellerText = sellerName
-      ? `\nSelger og arrangør: ${sellerLines.join(' · ')}\nBillett formidlet gjennom Tickethalo. Spørsmål om arrangementet rettes til arrangøren.\nBillettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).\n`
+      ? `\nSelger og arrangør: ${sellerLines.join(' · ')}\nBillett formidlet gjennom Tickethalo. Spørsmål om arrangementet rettes til arrangøren.\n${vatNote}\n`
       : ''
 
     const sellerHtml = sellerName
@@ -351,9 +358,9 @@ export async function sendTicketPurchaseEmail(opts: {
                 <div style="margin-top:26px;border-top:1px solid #e4e4e7;padding-top:18px">
                   <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Selger og arrangør</div>
                   <div style="font-size:15px;font-weight:700;color:#18181b;margin-top:6px">${escapeHtml(sellerName)}</div>
-                  ${seller?.org_number ? `<div style="font-size:13px;color:#52525b;margin-top:2px">Org.nr ${escapeHtml(seller.org_number)}</div>` : ''}
+                  ${seller?.org_number ? `<div style="font-size:13px;color:#52525b;margin-top:2px">${orgLabel} ${escapeHtml(seller.org_number)}</div>` : ''}
                   ${seller?.support_email ? `<div style="font-size:13px;color:#52525b;margin-top:2px"><a href="mailto:${escapeHtml(seller.support_email)}" style="color:#52525b">${escapeHtml(seller.support_email)}</a></div>` : ''}
-                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">Billetten er formidlet gjennom Tickethalo. Spørsmål om arrangementet, ombooking og refusjon rettes til arrangøren.<br />Billettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).</p>
+                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">Billetten er formidlet gjennom Tickethalo. Spørsmål om arrangementet, ombooking og refusjon rettes til arrangøren.<br />${escapeHtml(vatNote)}</p>
                 </div>`
       : ''
 

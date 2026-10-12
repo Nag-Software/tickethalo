@@ -6,7 +6,7 @@ export const metadata = {
   description: 'What Tickethalo does, and what the comedy club does.',
 }
 
-const UPDATED = '5 September 2026'
+const UPDATED = '12 October 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 /**
@@ -74,6 +74,11 @@ export default function PlatformTermsPage() {
           The commission is payment for intermediating admission to the organiser&rsquo;s event. It
           is not a subscription, a platform fee or a licence fee, and there is no separate charge
           for using the platform.
+        </p>
+        <p>
+          Tickethalo is a Norwegian company and the commission is invoiced without VAT. An organiser
+          registered for VAT in Denmark or Sweden accounts for VAT on the commission under the
+          reverse-charge rules of its own country, using the organiser&rsquo;s own registration number.
         </p>
       </LegalSection>
 

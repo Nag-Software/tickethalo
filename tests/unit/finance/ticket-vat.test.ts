@@ -3,8 +3,10 @@ import {
   defaultCurrencyFor,
   defaultTicketVatBps,
   formatVatPercent,
+  orgNumberLabel,
   parseClubCountry,
   parseVatPercent,
+  receiptVatNote,
   vatIncludedIn,
 } from '@/lib/ticket-vat'
 
@@ -79,5 +81,25 @@ describe('parseVatPercent', () => {
     expect(formatVatPercent(600)).toBe('6')
     expect(formatVatPercent(0)).toBe('0')
     expect(parseVatPercent(formatVatPercent(1250))).toEqual({ bps: 1250 })
+  })
+})
+
+describe('receipt wording', () => {
+  it('keeps the Norwegian exemption with its legal basis for clubs without VAT', () => {
+    expect(receiptVatNote({ ticket_vat_bps: 0 })).toContain('mval. § 3-7')
+    expect(receiptVatNote({})).toContain('uten merverdiavgift')
+    expect(receiptVatNote({ ticket_vat_bps: null }, 'en')).toContain('No VAT is added')
+  })
+
+  it('states the VAT included in the price for Danish and Swedish clubs', () => {
+    expect(receiptVatNote({ ticket_vat_bps: 2500 })).toBe('Billettprisen er inkl. 25 % moms.')
+    expect(receiptVatNote({ ticket_vat_bps: 600 }, 'en')).toBe('The ticket price includes 6% VAT.')
+  })
+
+  it("calls the registration number what it is called in the seller's country", () => {
+    expect(orgNumberLabel('DK')).toBe('CVR-nr')
+    expect(orgNumberLabel('NO')).toBe('Org.nr')
+    expect(orgNumberLabel('SE', 'en')).toBe('Org. no.')
+    expect(orgNumberLabel(null)).toBe('Org.nr')
   })
 })

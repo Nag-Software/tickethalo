@@ -94,3 +94,35 @@ export function parseVatPercent(raw: FormDataEntryValue | null | undefined): Vat
 export function formatVatPercent(bps: number): string {
   return String(bps / 100)
 }
+
+// ─────────────────────────────────────────────────────────────
+// Hva som står på kvitteringen og i vilkårene
+// ─────────────────────────────────────────────────────────────
+
+/** Hva foretaksnummeret heter der klubben er: «CVR-nr» i Danmark, «Org.nr» ellers. */
+export function orgNumberLabel(country: string | null | undefined, locale: 'nb' | 'en' = 'nb'): string {
+  if (country === 'DK') return 'CVR-nr'
+  return locale === 'en' ? 'Org. no.' : 'Org.nr'
+}
+
+/**
+ * Momssetningen på kvitteringen. Norske billetter er unntatt mva, og det
+ * skal stå med hjemmel, slik det alltid har gjort. Billetter med moms sier
+ * hvor mye som ligger i prisen — prisen kunden så er fortsatt prisen kunden
+ * betalte.
+ */
+export function receiptVatNote(
+  seller: { ticket_vat_bps?: number | null },
+  locale: 'nb' | 'en' = 'nb',
+): string {
+  const bps = seller.ticket_vat_bps ?? 0
+  if (bps > 0) {
+    const percent = formatVatPercent(bps)
+    return locale === 'en'
+      ? `The ticket price includes ${percent}% VAT.`
+      : `Billettprisen er inkl. ${percent} % moms.`
+  }
+  return locale === 'en'
+    ? 'No VAT is added to the ticket price — admission to a cultural event is outside the scope of Norwegian VAT (mval. § 3-7).'
+    : 'Billettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).'
+}
