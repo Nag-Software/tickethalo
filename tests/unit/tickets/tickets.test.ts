@@ -37,19 +37,20 @@ describe('ticket codes', () => {
 // Et show til 2 kr ble publisert med Kjøp-knapp, og Stripe avviste hver
 // betaling (under 3 kr) — kjøperen fikk bare «prøv igjen senere».
 describe('minimum ticket price', () => {
-  it('is 10 in the major unit', () => {
-    expect(MIN_TICKET_PRICE_MINOR).toBe(1000)
+  it('is 50 in the major unit', () => {
+    expect(MIN_TICKET_PRICE_MINOR).toBe(5000)
   })
 
   it('rejects a price between zero and the minimum', () => {
     expect(isTicketPriceBelowMinimum(200)).toBe(true)
-    expect(isTicketPriceBelowMinimum(999)).toBe(true)
+    expect(isTicketPriceBelowMinimum(1000)).toBe(true)
+    expect(isTicketPriceBelowMinimum(4999)).toBe(true)
     expect(isTicketPriceBelowMinimum(-500)).toBe(true)
     expect(isTicketPriceBelowMinimum(Number.NaN)).toBe(true)
   })
 
   it('accepts the minimum, anything above, a free show and an empty price', () => {
-    expect(isTicketPriceBelowMinimum(1000)).toBe(false)
+    expect(isTicketPriceBelowMinimum(5000)).toBe(false)
     expect(isTicketPriceBelowMinimum(25_000)).toBe(false)
     expect(isTicketPriceBelowMinimum(0)).toBe(false)
     expect(isTicketPriceBelowMinimum(null)).toBe(false)
@@ -57,8 +58,8 @@ describe('minimum ticket price', () => {
   })
 
   it('names the minimum in the currency of the show', () => {
-    expect(ticketPriceError(200, 'SEK')).toBe('The ticket price must be at least 10 SEK.')
-    expect(ticketPriceError(200, null)).toBe('The ticket price must be at least 10 NOK.')
-    expect(ticketPriceError(1000, 'NOK')).toBeNull()
+    expect(ticketPriceError(200, 'SEK')).toBe('The ticket price must be at least 50 SEK.')
+    expect(ticketPriceError(200, null)).toBe('The ticket price must be at least 50 NOK.')
+    expect(ticketPriceError(5000, 'NOK')).toBeNull()
   })
 })

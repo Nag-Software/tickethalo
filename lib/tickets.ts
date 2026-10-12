@@ -2,14 +2,16 @@
 export const MAX_TICKETS_PER_ORDER = 10
 
 /**
- * Laveste billettpris, i minste valutaenhet (10 kr).
+ * Laveste billettpris, i minste valutaenhet (50 kr).
  *
  * Stripe avviser betalinger under 3 kr, og da fikk kjøperen bare «prøv igjen
  * senere» på et show bookeren trodde var i salg. Grensen ligger godt over, så
- * provisjonen og Stripe-gebyret også gir mening. 0 er fortsatt lov: et gratis
- * show er et valg, og det selges ikke gjennom Tickethalo.
+ * provisjonen dekker Stripe-gebyret: Tickethalo betaler gebyret selv (3 % av
+ * beløpet pluss 3,13 kr per kjøp inkl. mva), og under 45 kr taper vi penger på
+ * en enkeltbillett. 0 er fortsatt lov: et gratis show er et valg, og det
+ * selges ikke gjennom Tickethalo.
  */
-export const MIN_TICKET_PRICE_MINOR = 1000
+export const MIN_TICKET_PRICE_MINOR = 5000
 
 /** Satt, men for lav til å selges. 0 og tom pris er ikke «for lav». */
 export function isTicketPriceBelowMinimum(priceMinor: number | null | undefined): boolean {

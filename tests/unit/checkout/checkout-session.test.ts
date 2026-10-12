@@ -165,11 +165,11 @@ describe('createCheckoutSession — amount and commission', () => {
   })
 
   it('follows a changed currency on the show', async () => {
-    state.show = openShow({ ticket_price: 4_500, currency: 'SEK' })
+    state.show = openShow({ ticket_price: 5_500, currency: 'SEK' })
     await createCheckoutSession('show_1', 'https://tickethalo.no/events/x')
 
-    expect(sessionParams().line_items[0].price_data).toMatchObject({ currency: 'sek', unit_amount: 4_500 })
-    expect(sessionParams().payment_intent_data.application_fee_amount).toBe(450)
+    expect(sessionParams().line_items[0].price_data).toMatchObject({ currency: 'sek', unit_amount: 5_500 })
+    expect(sessionParams().payment_intent_data.application_fee_amount).toBe(550)
   })
 
   it('gives the session more than 30 minutes, with room for SDK retries', async () => {
