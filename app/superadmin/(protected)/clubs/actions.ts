@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertSuperadmin } from '@/lib/superadmin-auth'
 import { parseCommissionPercent } from '@/lib/platform-fee'
+import { defaultCurrencyFor, defaultTicketVatBps, parseClubCountry, parseVatPercent } from '@/lib/ticket-vat'
 
 /*
  * Hver handling her spør selv om superadmin. Layouten gjør det samme for
@@ -25,6 +26,12 @@ export async function createClubAction(formData: FormData) {
 
   if (!name) return { error: 'Navn er påkrevd.' }
 
+  // Landet avgjør Stripe-kontoens land, valutaen og momsen på billettene.
+  // Satsen kan endres etterpå; landet kan det ikke når Stripe-kontoen finnes.
+  const parsedCountry = parseClubCountry(formData.get('country'))
+  if ('error' in parsedCountry) return { error: parsedCountry.error }
+  const { country } = parsedCountry
+
   const slug = name
     .toLowerCase()
     .replace(/[æ]/g, 'ae')
@@ -36,7 +43,15 @@ export async function createClubAction(formData: FormData) {
   const db = createAdminClient()
   const { data, error } = await db
     .from('clubs')
-    .insert({ name, slug, city, description })
+    .insert({
+      name,
+      slug,
+      city,
+      description,
+      country,
+      currency: defaultCurrencyFor(country),
+      ticket_vat_bps: defaultTicketVatBps(country),
+    })
     .select('id')
     .single()
 
@@ -112,6 +127,45 @@ export async function updateClubCommissionAction(formData: FormData) {
   revalidatePath(`/superadmin/clubs/${clubId}`)
   revalidatePath('/superadmin/clubs')
   // Klubbens økonomiside viser prosenten i overskriften.
+  revalidatePath('/admin-app/finances')
+}
+
+// ─────────────────────────────────────────────────────────────
+// Country and ticket VAT per club
+// ─────────────────────────────────────────────────────────────
+/**
+ * Momsen leses av `clubs.ticket_vat_bps` ved hvert kjøp og låses på ordren,
+ * så endringen gjelder fra neste kjøp. Landet kan ikke byttes etter at
+ * Stripe-kontoen er opprettet: kontoen er opprettet i det landet, og Stripe
+ * flytter ikke en konto mellom land.
+ */
+export async function updateClubTaxAction(formData: FormData) {
+  await assertSuperadmin()
+  const clubId = String(formData.get('club_id') ?? '')
+  if (!clubId) return { error: 'Mangler klubb.' }
+
+  const parsedCountry = parseClubCountry(formData.get('country'))
+  if ('error' in parsedCountry) return { error: parsedCountry.error }
+  const parsedVat = parseVatPercent(formData.get('ticket_vat_percent'))
+  if ('error' in parsedVat) return { error: parsedVat.error }
+
+  const db = createAdminClient()
+  const { data: club } = await db.from('clubs').select('country, stripe_account_id').eq('id', clubId).maybeSingle()
+  if (!club) return { error: 'Fant ikke klubben.' }
+
+  if (club.stripe_account_id && club.country !== parsedCountry.country) {
+    return { error: 'Landet kan ikke endres etter at Stripe-kontoen er opprettet.' }
+  }
+
+  const { error } = await db
+    .from('clubs')
+    .update({ country: parsedCountry.country, ticket_vat_bps: parsedVat.bps })
+    .eq('id', clubId)
+
+  if (error) return { error: 'Kunne ikke lagre land og moms.' }
+
+  revalidatePath(`/superadmin/clubs/${clubId}`)
+  revalidatePath('/superadmin/clubs')
   revalidatePath('/admin-app/finances')
 }
 

@@ -4,18 +4,20 @@ import { requirementFeeLabel } from '@/lib/booking-spots'
 import { clubInvoiceRecipient, feeInvoiceUrl, issueFeeInvoice, syncFeeInvoiceAmount } from '@/lib/fee-invoices'
 import type { ArtistFeeInvoice } from '@/types/database'
 import type { ArtistFeeInvoiceStatus, RequirementCompensationType } from '@/types/database'
-import { clubNetAfterRefunds } from '@/lib/finances'
+import { clubNetExVatAfterRefunds } from '@/lib/finances'
 
 /**
  * Honoraret komikerne skal ha etter at showet er spilt.
  *
  * Grunnlaget er klubbens nettoinntekt på showet — `orders.club_net_amount`,
- * altså billettinntekten minus Tickethalos provisjon, etter refusjoner (se
- * `clubNetAfterRefunds` i `lib/finances.ts`). Stripe-gebyret trekkes
- * ikke herfra: det belastes plattformkontoen og betales av Tickethalo (se
- * migrasjon 047 og `lib/stripe-fees.ts`). Av nettoinntekten går
- * `clubs.artist_share_bps` (90 % som standard) til lineupen; resten blir hos
- * klubben.
+ * altså billettinntekten minus Tickethalos provisjon, etter refusjoner, og
+ * uten momsen der klubben har moms på billettene (se
+ * `clubNetExVatAfterRefunds` i `lib/finances.ts` og `lib/ticket-vat.ts`).
+ * Momsen er klubbens å gjøre opp, ikke inntekt å dele; for norske klubber er
+ * den 0. Stripe-gebyret trekkes heller ikke herfra: det belastes
+ * plattformkontoen og betales av Tickethalo (se migrasjon 047 og
+ * `lib/stripe-fees.ts`). Av nettoinntekten går `clubs.artist_share_bps`
+ * (90 % som standard) til lineupen; resten blir hos klubben.
  *
  * Hva den enkelte får står i lineupen, ikke her: fast beløp eller prosent på
  * `show_requirements`, satt da spoten ble booket. Denne modulen gjør bare to
@@ -164,11 +166,11 @@ async function showNetRevenue(showId: string): Promise<number> {
   // men klubben har ikke lenger hele beløpet.
   const { data: orders } = await db
     .from('orders')
-    .select('club_net_amount, refunded_amount, application_fee_refunded_amount')
+    .select('club_net_amount, refunded_amount, application_fee_refunded_amount, ticket_vat_amount, gross_amount')
     .eq('show_id', showId)
     .eq('status', 'paid')
 
-  return (orders ?? []).reduce((total, order) => total + clubNetAfterRefunds(order), 0)
+  return (orders ?? []).reduce((total, order) => total + clubNetExVatAfterRefunds(order), 0)
 }
 
 async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
@@ -179,7 +181,7 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
 
   const { data: club } = await db
     .from('clubs')
-    .select('id, name, artist_share_bps, legal_name, org_number, invoice_email, support_email')
+    .select('id, name, artist_share_bps, ticket_vat_bps, legal_name, org_number, invoice_email, support_email')
     .eq('id', show.club_id)
     .single()
 
@@ -327,6 +329,9 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
       amount: fee.amount,
       currency: show.currency,
       invoice_url: feeInvoiceUrl(invoice.token),
+      // Komikeren skal vite at grunnlaget er uten moms, så fakturaen ikke
+      // legger moms oppå et beløp som alt er regnet eks. moms.
+      ticket_vat_percent: club.ticket_vat_bps > 0 ? club.ticket_vat_bps / 100 : null,
     })
 
     if (!result.success) {
@@ -496,7 +501,7 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
       .in('show_id', showIds),
     db
       .from('orders')
-      .select('show_id, club_net_amount, refunded_amount, application_fee_refunded_amount')
+      .select('show_id, club_net_amount, refunded_amount, application_fee_refunded_amount, ticket_vat_amount, gross_amount')
       .in('show_id', showIds)
       .eq('status', 'paid'),
     db
@@ -512,7 +517,7 @@ export async function getClubArtistFees(clubId: string, limit = 6): Promise<Show
   const netByShow = new Map<string, number>()
   for (const order of orderRows ?? []) {
     if (!order.show_id) continue
-    netByShow.set(order.show_id, (netByShow.get(order.show_id) ?? 0) + clubNetAfterRefunds(order))
+    netByShow.set(order.show_id, (netByShow.get(order.show_id) ?? 0) + clubNetExVatAfterRefunds(order))
   }
 
   const artistIds = [...new Set(spots.map((spot) => spot.artist_id))]

@@ -28,14 +28,16 @@ import { buildClubIcon, clubIconFilename } from '@/lib/club-icon'
 
 /** Feltene alt Connect-arbeid trenger. Hold listen i sync med `ConnectClub`. */
 export const CLUB_CONNECT_FIELDS =
-  'id, name, slug, currency, legal_name, org_number, support_email, invoice_email, logo_url, ' +
+  'id, name, slug, country, currency, legal_name, org_number, support_email, invoice_email, logo_url, ' +
   'stripe_account_id, charges_enabled, payouts_enabled, onboarding_completed_at, ' +
-  'platform_fee_bps, commission_vat_bps, payout_hold_days, payout_schedule_interval'
+  'platform_fee_bps, commission_vat_bps, ticket_vat_bps, payout_hold_days, payout_schedule_interval'
 
 export type ConnectClub = {
   id: string
   name: string
   slug: string
+  /** ISO 3166-1 alpha-2. Landet Stripe-kontoen opprettes i. Se migrasjon 068. */
+  country: string
   currency: string
   legal_name: string | null
   org_number: string | null
@@ -50,6 +52,8 @@ export type ConnectClub = {
   onboarding_completed_at: string | null
   platform_fee_bps: number
   commission_vat_bps: number
+  /** Moms på billettsalget, regnet ut av prisen. 0 i Norge. Se `lib/ticket-vat.ts`. */
+  ticket_vat_bps: number
   payout_hold_days: number
   /**
    * Utbetalingsplanen slik Stripe sist bekreftet den. Må være `manual` før
@@ -209,7 +213,10 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
     // uten at de trenger et fullt Stripe-oppsett.
     dashboard: 'express',
     identity: {
-      country: 'no',
+      // Landet klubben er registrert i. Stripe krever at det stemmer med
+      // foretaket, og det avgjør hvilke betalingsmåter og utbetalinger
+      // kontoen får. Var hardkodet til Norge før migrasjon 068.
+      country: club.country.toLowerCase(),
       // `entity_type` settes ikke: en klubb kan være AS, forening eller
       // enkeltpersonforetak, og onboardingen spør om det selv.
     },

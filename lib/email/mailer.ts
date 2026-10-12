@@ -255,6 +255,8 @@ export async function sendArtistFeeEmail(opts: {
   amount: number
   currency: string
   invoice_url: string
+  /** Satt når klubben har moms på billettene: grunnlaget er uten den. */
+  ticket_vat_percent?: number | null
 }): Promise<EmailResult> {
   return sendArtistEmail('artist_fee', opts.email, artistFeeTemplate(opts))
 }
