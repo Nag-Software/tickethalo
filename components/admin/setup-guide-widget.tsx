@@ -83,7 +83,7 @@ export function SetupGuideWidget({
   return (
     <aside
       aria-label="Getting started"
-      className="fixed bottom-4 right-4 z-40 w-[calc(100vw-2rem)] max-w-sm rounded-2xl border border-border bg-background text-foreground shadow-xl"
+      className="sticky bottom-4 z-40 mt-auto mb-4 ml-auto mr-4 w-[calc(100%-2rem)] max-w-sm shrink-0 rounded-2xl border border-border bg-background text-foreground shadow-xl"
     >
       <button
         type="button"

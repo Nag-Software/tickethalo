@@ -55,10 +55,14 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
           selectedClubId={clubAccess.selectedClubId}
           showClubSwitcher={profile.role === 'superadmin'}
         />
-        <SidebarInset>{children}</SidebarInset>
-        {/* Oppstartsguiden nede til høyre, til klubben er klar for første
-            show og har lagt den bort. */}
-        <SetupGuide clubId={clubAccess.selectedClubId} />
+        <SidebarInset>
+          {children}
+          {/* Oppstartsguiden nede til høyre, til klubben er klar for første
+              show og har lagt den bort. Den ligger sist i innholdet og er
+              sticky, ikke fixed: da tar den sin egen plass nederst på siden
+              i stedet for å dekke lagre-knappen der. */}
+          <SetupGuide clubId={clubAccess.selectedClubId} />
+        </SidebarInset>
       </SidebarProvider>
     </div>
   )
