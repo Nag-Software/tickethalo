@@ -15,6 +15,7 @@ import {
   formatDate,
   formatNok,
 } from '@/components/superadmin/ui'
+import { PendingButton } from '@/components/pending-button'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -227,7 +228,7 @@ export default async function ClubDetailPage({
               <input type="hidden" name="club_id" value={club.id} />
               <Label htmlFor="admin-email" className="sr-only">E-post</Label>
               <Input id="admin-email" name="email" type="email" placeholder="admin@klubb.no" required />
-              <Button type="submit" size="sm" className="h-9">Legg til</Button>
+              <PendingButton type="submit" size="sm" className="h-9" pendingLabel="Oppretter…">Legg til</PendingButton>
             </ToastActionForm>
           </Section>
 

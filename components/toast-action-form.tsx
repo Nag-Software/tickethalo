@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 type ToastActionFormProps = Omit<React.ComponentProps<'form'>, 'action' | 'onSubmit'> & {
   action: (formData: FormData) => Promise<unknown>
@@ -40,7 +41,7 @@ function isNextControlFlowError(error: unknown) {
   return digest.startsWith('NEXT_REDIRECT') || digest.startsWith('NEXT_NOT_FOUND')
 }
 
-export function ToastActionForm({ action, successMessage, children, ...props }: ToastActionFormProps) {
+export function ToastActionForm({ action, successMessage, children, className, ...props }: ToastActionFormProps) {
   const router = useRouter()
   const [isPending, startTransition] = React.useTransition()
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -48,6 +49,8 @@ export function ToastActionForm({ action, successMessage, children, ...props }: 
   return (
     <form
       {...props}
+      // `group`, så knapper inni kan vise ventetilstanden (se PendingButton).
+      className={cn('group', className)}
       ref={formRef}
       data-pending={isPending ? '' : undefined}
       onSubmit={(event) => {

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { PendingButton } from '@/components/pending-button'
 import { ArrowUpRight, ChevronRight, ExternalLink, Receipt, RefreshCw } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { InfoHint } from '@/components/admin/info-hint'
@@ -212,17 +213,20 @@ export default async function FinancesPage() {
               <div className="flex flex-col gap-2">
                 {!ready && (
                   <ToastActionForm action={startClubOnboardingAction}>
-                    <Button
+                    {/* Oppretter kontoen hos Stripe, laster opp logoen og henter
+                        onboarding-lenken: gjerne 5–10 sekunder før siden bytter. */}
+                    <PendingButton
                       type="submit"
                       // Stripe krever kontakt-e-post for merchant-konfigurasjonen.
                       // Bedre å stenge knappen med en forklaring under enn å la
                       // kallet feile etter at brukeren har trykket.
                       disabled={!canOnboard}
                       className="w-full"
+                      pendingLabel={club.stripe_account_id ? 'Opening Stripe…' : 'Connecting to Stripe…'}
                     >
                       {club.stripe_account_id ? 'Continue setup' : 'Connect Stripe'}
                       <ArrowUpRight data-icon="inline-end" />
-                    </Button>
+                    </PendingButton>
                   </ToastActionForm>
                 )}
 
@@ -237,15 +241,16 @@ export default async function FinancesPage() {
                   <div className="flex gap-2">
                     {club.charges_enabled && (
                       <ToastActionForm action={openClubDashboardAction} className="flex-1">
-                        <Button
+                        <PendingButton
                           type="submit"
                           variant={ready ? 'default' : 'outline'}
                           size="sm"
                           className="w-full"
+                          pendingLabel="Opening Stripe…"
                         >
                           Open Stripe
                           <ExternalLink data-icon="inline-end" />
-                        </Button>
+                        </PendingButton>
                       </ToastActionForm>
                     )}
                     <ToastActionForm
@@ -253,10 +258,10 @@ export default async function FinancesPage() {
                       successMessage="The account is ready to sell."
                       className="flex-1"
                     >
-                      <Button type="submit" variant="ghost" size="sm" className="w-full">
+                      <PendingButton type="submit" variant="ghost" size="sm" className="w-full" pendingLabel="Checking…">
                         <RefreshCw data-icon="inline-start" />
                         Refresh
-                      </Button>
+                      </PendingButton>
                     </ToastActionForm>
                   </div>
                 )}

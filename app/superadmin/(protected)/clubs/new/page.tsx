@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { createClubAction } from '../actions'
+import { PendingButton } from '@/components/pending-button'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -73,7 +74,10 @@ export default async function NewClubPage({
             <Label htmlFor="description">Beskrivelse</Label>
             <Textarea id="description" name="description" rows={3} placeholder="Kort beskrivelse av klubben..." className="resize-none" />
           </div>
-          <Button type="submit" className="w-full">Opprett klubb</Button>
+          {/* Oppretter klubben, kontoen og sender e-posten: et par sekunder. */}
+          <PendingButton type="submit" className="w-full" pendingLabel="Oppretter klubb og sender e-post…">
+            Opprett klubb
+          </PendingButton>
         </ToastActionForm>
       </div>
     </div>
