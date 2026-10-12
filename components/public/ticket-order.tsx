@@ -41,6 +41,10 @@ import { cn } from '@/lib/utils'
  *
  * Summen står på knappen. «250 kr per billett» er ikke det kjøperen betaler
  * når hun har valgt tre — og Stripe skal ikke være første sted hun ser tallet.
+ *
+ * Gratis show (pris 0) har ingen betaling å hente navn og e-post fra, så
+ * arket spør om begge selv og sender billettene direkte
+ * (`lib/checkout/free.ts`). Navnet står på alle billettene i ordren.
  */
 export function TicketOrder({
   showId,
@@ -106,8 +110,10 @@ export function TicketOrder({
     if (autoOpen && triggerRef.current?.getClientRects().length) setOpen(true)
   }, [autoOpen])
 
+  const free = ticketPrice === 0
   const price = formatTicketPrice({ ticket_price: ticketPrice, currency })
-  const total = formatTicketPrice({ ticket_price: (ticketPrice ?? 0) * quantity, currency })
+  const total = free ? 'Free' : formatTicketPrice({ ticket_price: (ticketPrice ?? 0) * quantity, currency })
+  const label = free && triggerLabel === 'Buy tickets' ? 'Reserve tickets' : triggerLabel
 
   function setCount(next: number) {
     setQuantity(Math.max(1, Math.min(limit, next)))
@@ -150,7 +156,7 @@ export function TicketOrder({
         <button type="submit" className={cn(buttonClass, 'whitespace-nowrap')} style={{ borderRadius: 'var(--ev-r-chip)' }}>
           <Ticket className="size-4 group-data-[pending]:hidden" />
           <Loader2 className="hidden size-4 animate-spin group-data-[pending]:block" aria-hidden />
-          {triggerLabel}
+          {label}
         </button>
       </ToastActionForm>
     )
@@ -159,7 +165,7 @@ export function TicketOrder({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger ref={triggerRef} className={buttonClass} style={{ borderRadius: 'var(--ev-r-chip)' }}>
-        <Ticket className="size-4" /> {triggerLabel}
+        <Ticket className="size-4" /> {label}
       </DialogTrigger>
 
       <DialogContent
@@ -179,14 +185,14 @@ export function TicketOrder({
             {title ?? 'How many tickets?'}
           </DialogTitle>
           <DialogDescription className="text-[15px] text-[var(--ev-muted)] sm:text-[14px]">
-            {summary ?? `${price} per ticket.`}
+            {summary ?? (free ? 'Free tickets — sent to your email.' : `${price} per ticket.`)}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-[17px] font-semibold sm:text-[15px]">Tickets</div>
-            <div className="text-[14px] text-[var(--ev-muted)] sm:text-[13px]">{price} each</div>
+            <div className="text-[14px] text-[var(--ev-muted)] sm:text-[13px]">{free ? 'Free' : `${price} each`}</div>
           </div>
           <div
             className="flex items-center gap-1 bg-[var(--ev-card)] p-1"
@@ -217,26 +223,64 @@ export function TicketOrder({
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="quantity" value={quantity} />
 
-          {/* Ett navn for hele ordren — serveren setter det på alle billettene. */}
-          {/* «Optional» står på feltet: uten det ser navnet påkrevd ut, og
-              kjøperen stopper for å finne ut hva som skal stå der. */}
-          <label className="flex flex-col gap-1.5">
-            <span className="flex justify-between gap-3 text-[14px] text-[var(--ev-muted)] sm:text-[13px]">
-              <span>{quantity === 1 ? 'Name on the ticket' : 'Name on the tickets'}</span>
-              <span>Optional</span>
-            </span>
-            <input
-              name="holder_name"
-              placeholder="Your name"
-              maxLength={120}
-              autoComplete="name"
-              className="h-12 w-full bg-[var(--ev-card)] px-4 text-[16px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:h-11 sm:text-[15px]"
-              style={{ borderRadius: 'var(--ev-r-card)' }}
-            />
-            <span className="text-[13px] text-[var(--ev-faint)]">
-              Leave it empty and we use the name from your payment.
-            </span>
-          </label>
+          {free ? (
+            <>
+              {/* Ingen betaling å hente navn og adresse fra: begge må inn her.
+                  Navnet står på alle billettene i ordren. */}
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[14px] text-[var(--ev-muted)] sm:text-[13px]">
+                  {quantity === 1 ? 'Name on the ticket' : 'Name on the tickets'}
+                </span>
+                <input
+                  name="buyer_name"
+                  placeholder="Your name"
+                  maxLength={120}
+                  autoComplete="name"
+                  required
+                  className="h-12 w-full bg-[var(--ev-card)] px-4 text-[16px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:h-11 sm:text-[15px]"
+                  style={{ borderRadius: 'var(--ev-r-card)' }}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[14px] text-[var(--ev-muted)] sm:text-[13px]">Email</span>
+                <input
+                  name="buyer_email"
+                  type="email"
+                  placeholder="you@example.com"
+                  maxLength={254}
+                  autoComplete="email"
+                  inputMode="email"
+                  required
+                  className="h-12 w-full bg-[var(--ev-card)] px-4 text-[16px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:h-11 sm:text-[15px]"
+                  style={{ borderRadius: 'var(--ev-r-card)' }}
+                />
+                <span className="text-[13px] text-[var(--ev-faint)]">
+                  The tickets are sent here. One reservation per email address.
+                </span>
+              </label>
+            </>
+          ) : (
+            // Ett navn for hele ordren — serveren setter det på alle billettene.
+            // «Optional» står på feltet: uten det ser navnet påkrevd ut, og
+            // kjøperen stopper for å finne ut hva som skal stå der.
+            <label className="flex flex-col gap-1.5">
+              <span className="flex justify-between gap-3 text-[14px] text-[var(--ev-muted)] sm:text-[13px]">
+                <span>{quantity === 1 ? 'Name on the ticket' : 'Name on the tickets'}</span>
+                <span>Optional</span>
+              </span>
+              <input
+                name="holder_name"
+                placeholder="Your name"
+                maxLength={120}
+                autoComplete="name"
+                className="h-12 w-full bg-[var(--ev-card)] px-4 text-[16px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:h-11 sm:text-[15px]"
+                style={{ borderRadius: 'var(--ev-r-card)' }}
+              />
+              <span className="text-[13px] text-[var(--ev-faint)]">
+                Leave it empty and we use the name from your payment.
+              </span>
+            </label>
+          )}
 
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline justify-between gap-4 border-t border-[var(--ev-line)] pt-4">
@@ -251,13 +295,15 @@ export function TicketOrder({
               className={cn(defaultTrigger, 'h-14 w-full sm:h-12')}
               style={{ borderRadius: 'var(--ev-r-chip)' }}
             >
-              <span className="group-data-[pending]:hidden">Continue to payment · {total}</span>
+              <span className="group-data-[pending]:hidden">
+                {free ? `Get ${quantity === 1 ? 'the ticket' : `${quantity} tickets`}` : `Continue to payment · ${total}`}
+              </span>
               <span className="hidden items-center gap-2 group-data-[pending]:inline-flex">
-                <Loader2 className="size-4 animate-spin" aria-hidden /> Opening checkout…
+                <Loader2 className="size-4 animate-spin" aria-hidden /> {free ? 'Reserving…' : 'Opening checkout…'}
               </span>
             </button>
             <p className="text-center text-[13px] text-[var(--ev-faint)] sm:text-[12px]">
-              Secure checkout · pay by card
+              {free ? 'Free · no payment needed' : 'Secure checkout · pay by card'}
             </p>
           </div>
         </ToastActionForm>

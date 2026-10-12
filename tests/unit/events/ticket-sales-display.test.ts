@@ -71,8 +71,17 @@ describe('isPubliclySellable', () => {
     expect(isPubliclySellable(priced, readyClub)).toBe(true)
   })
 
-  it.each([null, 0, -100, 200, 999])('refuses a show with price %s', (ticket_price) => {
+  it.each([null, -100, 200, 999])('refuses a show with price %s', (ticket_price) => {
     expect(isPubliclySellable({ ticket_url: null, ticket_price }, readyClub)).toBe(false)
+  })
+
+  // Gratisbilletter går utenom Stripe, så klubbens klarhet for betaling
+  // spiller ingen rolle — bare at prisen faktisk er satt til 0.
+  it('sells a free show even without a payable club', () => {
+    const free = { ticket_url: null, ticket_price: 0 }
+    expect(isPubliclySellable(free, readyClub)).toBe(true)
+    expect(isPubliclySellable(free, { ...readyClub, stripe_account_id: null, charges_enabled: false })).toBe(true)
+    expect(isPubliclySellable(free, null)).toBe(true)
   })
 
   it('refuses a show without a club', () => {

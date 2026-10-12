@@ -155,7 +155,9 @@ export default async function OrdersPage() {
                 // Banken avgjør en åpen disputt. Stripe avviser refusjonen
                 // uansett, så knappen skjules i stedet for å gi en feil.
                 const disputeOpen = isDisputeOpen(o.dispute_status)
-                const canRefund = (o.status === 'paid' || awaitingRefund) && !disputeOpen
+                // Gratisbilletter: ingen betaling, ingenting å refundere.
+                const isFree = o.amount_total === 0 && !o.stripe_payment_intent_id
+                const canRefund = (o.status === 'paid' || awaitingRefund) && !disputeOpen && !isFree
                 const partiallyRefunded = o.status === 'paid' && (o.refunded_amount ?? 0) > 0
                 const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }
                 const isCheckedIn = ticketSummary.total > 0 && ticketSummary.checkedIn === ticketSummary.total
@@ -186,15 +188,15 @@ export default async function OrdersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-medium">{money(o.amount_total)}</div>
+                      <div className="font-medium">{isFree ? 'Free' : money(o.amount_total)}</div>
                       <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} pcs</div>
                     </td>
                     {/* The club is the seller. The amount above is what the customer
                         paid; this is what the club keeps after commission. */}
                     <td className="px-4 py-3">
-                      <div className="font-medium">{money(o.club_net_amount)}</div>
+                      <div className="font-medium">{isFree ? '—' : money(o.club_net_amount)}</div>
                       <div className="text-xs text-muted-foreground">
-                        {o.platform_fee_amount ? `${money(o.platform_fee_amount)} commission` : '—'}
+                        {isFree ? 'No commission' : o.platform_fee_amount ? `${money(o.platform_fee_amount)} commission` : '—'}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -249,7 +251,13 @@ export default async function OrdersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <PaymentMethodBadge method={paymentMethod} />
+                      {isFree ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          Free
+                        </span>
+                      ) : (
+                        <PaymentMethodBadge method={paymentMethod} />
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}

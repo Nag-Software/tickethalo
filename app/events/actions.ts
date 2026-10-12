@@ -1,13 +1,15 @@
 'use server'
 
 import { headers } from 'next/headers'
+import { recordError } from '@/lib/error-log'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
+import { claimFreeTickets, isFreeShow, parseFreeTicketInput } from '@/lib/checkout/free'
 import { appUrl } from '@/lib/app-url'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import {
-  type CheckoutError,
+  CheckoutError,
   type CheckoutErrorCode,
   checkoutErrorForSalesState,
   checkoutErrorMessage,
@@ -24,7 +26,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   const showId = String(formData.get('show_id') ?? '')
   const slug = String(formData.get('slug') ?? '')
 
-  if (!showId) return failure('show_not_found', 'missing show_id in form data', { slug })
+  if (!showId) return await failure('show_not_found', 'missing show_id in form data', { slug })
 
   // Antall og navn kommer fra bestillingsskjemaet. Kortet i lista sender
   // ingen av delene, og får da én billett uten navn — som før.
@@ -57,10 +59,28 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   const db = createAdminClient()
   const { data: show, error: showError } = await db
     .from('shows')
-    .select('ticket_url, status, date, ticket_sales_closed_at, deleted_at')
+    .select('ticket_url, ticket_price, status, date, ticket_sales_closed_at, deleted_at')
     .eq('id', showId)
     .single()
-  if (showError || !show) return failure('show_not_found', showError?.message, { showId, slug })
+  if (showError || !show) return await failure('show_not_found', showError?.message, { showId, slug })
+
+  // Gratis show: billettene utstedes her og nå, uten Stripe. Skjemaet har
+  // spurt om navn og e-post i stedet for å la betalingen hente dem.
+  if (!show.ticket_url && isFreeShow(show)) {
+    const input = parseFreeTicketInput(formData)
+    // Kjøperens feil, ikke vår: logges som advarsel, som de andre salgsfeilene.
+    if (!input.ok) return await checkoutFailure(new CheckoutError('buyer_details_missing'), { showId, slug })
+
+    let orderId: string
+    try {
+      const claim = await claimFreeTickets(showId, origin, input.value)
+      orderId = claim.orderId
+    } catch (error) {
+      return await checkoutFailure(toCheckoutError(error), { showId, slug })
+    }
+
+    redirect(`${origin}/checkout/success?order=${orderId}&s=${showId}`)
+  }
 
   if (show.ticket_url) {
     // En ekstern billettside går utenom `createCheckoutSession`, og dermed
@@ -68,7 +88,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
     // arkivert show fortsatt sendt kjøpere videre — og knappen på siden sier
     // noe annet enn det som skjer når man trykker.
     const salesError = checkoutErrorForSalesState(ticketSalesState(show), `status=${show.status} date=${show.date}`)
-    if (salesError) return checkoutFailure(salesError, { showId, slug })
+    if (salesError) return await checkoutFailure(salesError, { showId, slug })
     redirect(show.ticket_url)
   }
 
@@ -80,7 +100,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
     // Next redacts messages from thrown errors in production, so expected
     // errors are returned as values. The cause only exists here — log it before
     // it is gone, so the Stripe code never has to be guessed from a screenshot.
-    return checkoutFailure(toCheckoutError(error), { showId, slug })
+    return await checkoutFailure(toCheckoutError(error), { showId, slug })
   }
 
   redirect(checkoutUrl)
@@ -91,22 +111,24 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
  * form shows as a toast. Stopped sales and sales that have not opened are the
  * buyer's news, not ours, so they are logged as warnings.
  */
-function checkoutFailure(
+async function checkoutFailure(
   checkoutError: CheckoutError,
   context: Record<string, string | undefined>,
-): CheckoutActionResult {
+): Promise<CheckoutActionResult> {
   const line = `[Checkout] ${describeCheckoutError(checkoutError, context)}`
-  if (checkoutError.isOperatorFault) console.error(line)
-  else console.warn(line)
+  // Vår feil går til feilloggen, så noen ser at et kjøp stoppet. Kundens
+  // egne svar (utsolgt, salget stengt) er ikke feil og logges bare.
+  if (checkoutError.isOperatorFault) {
+    await recordError('checkout', line, { code: checkoutError.code, detail: checkoutError.detail, ...context })
+  } else {
+    console.warn(line)
+  }
 
   return { error: { code: checkoutError.code, message: checkoutError.message } }
 }
 
-function failure(code: CheckoutErrorCode, detail: string | undefined, context: Record<string, string | undefined>) {
-  const parts = Object.entries(context)
-    .filter(([, value]) => value)
-    .map(([key, value]) => `${key}=${value}`)
-  console.error(`[Checkout] [${code}]`, ...parts, detail ?? '')
+async function failure(code: CheckoutErrorCode, detail: string | undefined, context: Record<string, string | undefined>) {
+  await recordError('checkout', `[${code}] ${detail ?? ''}`.trim(), { code, ...context })
 
   return { error: { code, message: checkoutErrorMessage(code) } }
 }

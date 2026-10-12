@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { recordError } from '@/lib/error-log'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
@@ -217,7 +218,13 @@ export async function finalizeCheckoutSession(
     .single()
 
   if (completionError || !completion) {
-    console.error('[Checkout] Failed to complete checkout:', completionError?.message)
+    // Kunden har betalt og fikk ingen billett. Stripe prøver webhooken på
+    // nytt, men noen må se det om det ikke løser seg.
+    await recordError('checkout', `Failed to complete checkout: ${completionError?.message ?? 'no row'}`, {
+      session_id: session.id,
+      show_id: showId,
+      payment_intent_id: paymentIntentId,
+    })
     return { result: 'failed', emailError: completionError?.message }
   }
 
@@ -262,70 +269,20 @@ export async function finalizeCheckoutSession(
     }
   }
 
-  let emailSent = false
-  let emailError: string | undefined
+  const { emailSent, emailError } = await deliverTicketEmail({
+    orderId: completion.order_id,
+    result: completion.result,
+    showId,
+    clubId: session.metadata?.club_id ?? null,
+    buyerEmail,
+    buyerName,
+    ticketCodes,
+    origin: resolveAppOrigin(session),
+    fallbackTitle: session.metadata?.show_title,
+    fallbackDate: session.metadata?.show_date,
+    reference: `session ${session.id}`,
+  })
 
-  // Bare én av webhooken og suksesssiden skal sende, og bare når e-posten
-  // ikke alt har gått. Den som får satt tidsstempelet sender; feiler
-  // sendingen, nullstilles det så neste forsøk (Stripes nye levering, eller
-  // kjøperen som laster siden på nytt) prøver igjen.
-  const claim = buyerEmail && hasTickets && completion.order_id
-    ? await claimTicketEmail(completion.order_id, completion.result)
-    : 'no_email'
-
-  if (claim === 'already_sent') {
-    emailSent = true
-  } else if (claim === 'no_email') {
-    // Checkout krever e-postadresse, så dette skal ikke skje. Ikke en
-    // `emailError`: et nytt forsøk fra Stripe ville gitt samme svar.
-    console.error(`[Checkout] Session ${session.id} has tickets but no buyer email — nothing to send the ticket to`)
-  } else if (claim === 'claimed') {
-    const { data: show } = await admin
-      .from('shows')
-      .select('title, date, start_time, venue_name, venue_address, club_id')
-      .eq('id', showId)
-      .single()
-
-    // Klubben er selger av billetten og må navngis på den.
-    const clubId = session.metadata?.club_id ?? show?.club_id ?? null
-    const { data: club } = clubId
-      ? await admin
-          .from('clubs')
-          .select('name, legal_name, org_number, support_email')
-          .eq('id', clubId)
-          .maybeSingle()
-      : { data: null }
-
-    // Navnene leses fra billettene selv, ikke fra metadataen: der er de
-    // allerede falt tilbake på kjøperens navn der kjøperen ikke oppga noe.
-    const { data: ticketRows } = await admin
-      .from('tickets')
-      .select('ticket_code, holder_name')
-      .in('ticket_code', ticketCodes)
-
-    const holderByCode = new Map((ticketRows ?? []).map((row) => [row.ticket_code, row.holder_name]))
-    const origin = resolveAppOrigin(session)
-
-    const emailResult = await sendTicketPurchaseEmail({
-      email: buyerEmail,
-      buyer_name: buyerName,
-      show_title: show?.title ?? session.metadata?.show_title ?? 'Tickethalo',
-      show_date: show?.date ?? session.metadata?.show_date ?? '',
-      show_time: show?.start_time?.slice(0, 5),
-      venue_name: showVenue(show).venue ?? '',
-      venue_address: showVenue(show).address,
-      tickets: ticketCodes.map((code) => ({
-        code,
-        holderName: holderByCode.get(code) ?? null,
-        verificationUrl: buildTicketVerificationUrl(origin, code),
-      })),
-      seller: club,
-    })
-
-    emailSent = emailResult.success
-    emailError = emailResult.error
-    if (!emailSent && completion.order_id) await releaseTicketEmailClaim(completion.order_id)
-  }
   return {
     result: completion.result,
     orderId: completion.order_id,
@@ -335,6 +292,110 @@ export async function finalizeCheckoutSession(
     emailError,
     chargeId: charge.chargeId,
   }
+}
+
+export type TicketEmailDelivery = { emailSent: boolean; emailError?: string }
+
+/**
+ * Sender billett-e-posten for en ordre med billetter, én gang. Felles for
+ * betalte kjøp (webhooken og suksesssiden) og gratisbilletter
+ * (`lib/checkout/free.ts`): det som skiller dem er hvor beløpet kom fra,
+ * ikke hva kjøperen skal ha i innboksen.
+ *
+ * Bare én av flere samtidige kall sender, og bare når e-posten ikke alt har
+ * gått (`claimTicketEmail`). Feiler sendingen, frigis retten så neste forsøk
+ * prøver igjen.
+ */
+export async function deliverTicketEmail(params: {
+  orderId: string | null
+  result: 'created' | 'duplicate'
+  showId: string
+  clubId: string | null
+  buyerEmail: string
+  buyerName: string
+  ticketCodes: string[]
+  origin: string
+  /** Fra Stripe-metadata når showet ikke lenger kan leses. */
+  fallbackTitle?: string
+  fallbackDate?: string
+  /** Hva som står i loggen når noe mangler: «session cs_…» eller «free order …». */
+  reference: string
+  free?: boolean
+}): Promise<TicketEmailDelivery> {
+  const admin = createAdminClient()
+  const hasTickets = params.ticketCodes.length > 0
+
+  const claim = params.buyerEmail && hasTickets && params.orderId
+    ? await claimTicketEmail(params.orderId, params.result)
+    : 'no_email'
+
+  if (claim === 'already_sent') return { emailSent: true }
+
+  if (claim === 'no_email') {
+    // Checkout krever e-postadresse, så dette skal ikke skje. Ikke en
+    // `emailError`: et nytt forsøk fra Stripe ville gitt samme svar.
+    await recordError('ticket_email', `${params.reference} has tickets but no buyer email — nothing to send the ticket to`, {
+      order_id: params.orderId,
+      show_id: params.showId,
+    })
+    return { emailSent: false }
+  }
+
+  const { data: show } = await admin
+    .from('shows')
+    .select('title, date, start_time, venue_name, venue_address, club_id')
+    .eq('id', params.showId)
+    .single()
+
+  // Klubben er selger av billetten og må navngis på den.
+  const clubId = params.clubId ?? show?.club_id ?? null
+  const { data: club } = clubId
+    ? await admin
+        .from('clubs')
+        .select('name, legal_name, org_number, support_email')
+        .eq('id', clubId)
+        .maybeSingle()
+    : { data: null }
+
+  // Navnene leses fra billettene selv, ikke fra metadataen: der er de
+  // allerede falt tilbake på kjøperens navn der kjøperen ikke oppga noe.
+  const { data: ticketRows } = await admin
+    .from('tickets')
+    .select('ticket_code, holder_name')
+    .in('ticket_code', params.ticketCodes)
+
+  const holderByCode = new Map((ticketRows ?? []).map((row) => [row.ticket_code, row.holder_name]))
+
+  const emailResult = await sendTicketPurchaseEmail({
+    email: params.buyerEmail,
+    buyer_name: params.buyerName,
+    show_title: show?.title ?? params.fallbackTitle ?? 'Tickethalo',
+    show_date: show?.date ?? params.fallbackDate ?? '',
+    show_time: show?.start_time?.slice(0, 5),
+    venue_name: showVenue(show).venue ?? '',
+    venue_address: showVenue(show).address,
+    tickets: params.ticketCodes.map((code) => ({
+      code,
+      holderName: holderByCode.get(code) ?? null,
+      verificationUrl: buildTicketVerificationUrl(params.origin, code),
+    })),
+    seller: club,
+    free: params.free,
+  })
+
+  if (!emailResult.success) {
+    // Billetten finnes, men kunden har den ikke. Neste forsøk (Stripes nye
+    // levering, eller kjøperen som laster siden på nytt) prøver igjen —
+    // og feilloggen viser hvem som venter hvis ingen forsøk kommer.
+    await recordError('ticket_email', `Ticket email failed for ${params.reference}: ${emailResult.error ?? 'unknown'}`, {
+      order_id: params.orderId,
+      show_id: params.showId,
+      buyer_email: params.buyerEmail,
+      free: params.free ?? false,
+    })
+    if (params.orderId) await releaseTicketEmailClaim(params.orderId)
+  }
+  return { emailSent: emailResult.success, emailError: emailResult.error }
 }
 
 type TicketEmailClaim = 'claimed' | 'already_sent' | 'no_email'

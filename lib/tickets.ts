@@ -8,8 +8,8 @@ export const MAX_TICKETS_PER_ORDER = 10
  * senere» på et show bookeren trodde var i salg. Grensen ligger godt over, så
  * provisjonen dekker Stripe-gebyret: Tickethalo betaler gebyret selv (3 % av
  * beløpet pluss 3,13 kr per kjøp inkl. mva), og under 45 kr taper vi penger på
- * en enkeltbillett. 0 er fortsatt lov: et gratis show er et valg, og det
- * selges ikke gjennom Tickethalo.
+ * en enkeltbillett. 0 er fortsatt lov: et gratis show utsteder billetter
+ * uten betaling, utenom Stripe (`lib/checkout/free.ts`).
  */
 export const MIN_TICKET_PRICE_MINOR = 5000
 

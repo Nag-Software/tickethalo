@@ -104,7 +104,9 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       ? null
       : show.ticket_url
         ? 'You will be sent on to an external ticket page.'
-        : 'Secure checkout · pay by card'
+        : show.ticket_price === 0
+          ? 'Free · tickets sent to your email'
+          : 'Secure checkout · pay by card'
 
   const buyButton = (full?: boolean) => (
     <TicketOrder

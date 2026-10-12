@@ -299,6 +299,8 @@ export async function sendTicketPurchaseEmail(opts: {
   venue_address?: string | null
   tickets: PurchasedTicket[]
   seller?: TicketSeller | null
+  /** Gratisbillett: ingen betaling å takke for, og ingen pris å si noe om. */
+  free?: boolean
 }): Promise<EmailResult> {
   const tickets = opts.tickets.filter((ticket) => ticket.code)
   if (tickets.length === 0) return { success: false, error: 'no tickets to send' }
@@ -340,8 +342,11 @@ export async function sendTicketPurchaseEmail(opts: {
       seller?.support_email,
     ].filter((line): line is string => Boolean(line))
 
+    const priceText = opts.free
+      ? ''
+      : '\nBillettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).'
     const sellerText = sellerName
-      ? `\nSelger og arrangør: ${sellerLines.join(' · ')}\nBillett formidlet gjennom Tickethalo. Spørsmål om arrangementet rettes til arrangøren.\nBillettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).\n`
+      ? `\nSelger og arrangør: ${sellerLines.join(' · ')}\nBillett formidlet gjennom Tickethalo. Spørsmål om arrangementet rettes til arrangøren.${priceText}\n`
       : ''
 
     const sellerHtml = sellerName
@@ -351,7 +356,7 @@ export async function sendTicketPurchaseEmail(opts: {
                   <div style="font-size:15px;font-weight:700;color:#18181b;margin-top:6px">${escapeHtml(sellerName)}</div>
                   ${seller?.org_number ? `<div style="font-size:13px;color:#52525b;margin-top:2px">Org.nr ${escapeHtml(seller.org_number)}</div>` : ''}
                   ${seller?.support_email ? `<div style="font-size:13px;color:#52525b;margin-top:2px"><a href="mailto:${escapeHtml(seller.support_email)}" style="color:#52525b">${escapeHtml(seller.support_email)}</a></div>` : ''}
-                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">Billetten er formidlet gjennom Tickethalo. Spørsmål om arrangementet, ombooking og refusjon rettes til arrangøren.<br />Billettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).</p>
+                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">Billetten er formidlet gjennom Tickethalo. Spørsmål om arrangementet${opts.free ? '' : ', ombooking og refusjon'} rettes til arrangøren.${opts.free ? '' : '<br />Billettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).'}</p>
                 </div>`
       : ''
 
@@ -392,7 +397,7 @@ export async function sendTicketPurchaseEmail(opts: {
       replyTo: seller?.support_email?.trim() || REPLY_TO_EMAIL,
       subject,
       attachments,
-      text: `Hei ${opts.buyer_name || opts.email}\n\nTakk for kjøpet. ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${dateLabel}\nTid: ${opts.show_time || 'Tid kommer'}\nSted: ${opts.venue_name || 'Sted kommer'}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
+      text: `Hei ${opts.buyer_name || opts.email}\n\n${opts.free ? 'Du er på lista.' : 'Takk for kjøpet.'} ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${dateLabel}\nTid: ${opts.show_time || 'Tid kommer'}\nSted: ${opts.venue_name || 'Sted kommer'}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
       html: `
         <div style="margin:0;background:#f4f4f5;padding:32px 12px;font-family:Inter,Arial,sans-serif;color:#18181b">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">
@@ -400,7 +405,7 @@ export async function sendTicketPurchaseEmail(opts: {
               <td style="background:#111827;color:#ffffff;padding:28px 30px">
                 <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#a7f3d0;font-weight:700">Tickethalo</div>
                 <h1 style="margin:10px 0 0;font-size:30px;line-height:1.1;font-weight:800">${many ? `Billettene dine er klare` : 'Din billett er klar'}</h1>
-                <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hei ${displayName}, betalingen er godkjent. Vis ${many ? 'QR-kodene' : 'QR-koden'} i døren.</p>
+                <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hei ${displayName}, ${opts.free ? 'du er på lista' : 'betalingen er godkjent'}. Vis ${many ? 'QR-kodene' : 'QR-koden'} i døren.</p>
               </td>
             </tr>
             <tr>

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { recordError } from '@/lib/error-log'
 import { isAuthorizedCronRequest } from '@/lib/cron-auth'
 import { reconcileStripeFees } from '@/lib/stripe-fees'
 
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     `${result.ordersReconciled} orders reconciled, ${result.ordersHeld} held, ` +
     `report requested: ${result.reportRequested}${result.note ? ` — ${result.note}` : ''}`
 
-  if (result.failed) console.error(line)
+  if (result.failed) await recordError('cron', line, { job: 'stripe-fees' })
   else console.log(line)
 
   return NextResponse.json(result, { status: result.failed ? 500 : 200 })

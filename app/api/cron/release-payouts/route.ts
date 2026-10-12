@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { repairMissingChargeFacts } from '@/lib/checkout/finalize'
 import { isAuthorizedCronRequest } from '@/lib/cron-auth'
+import { recordError } from '@/lib/error-log'
 import { releaseDuePayouts, syncOpenPayouts } from '@/lib/payouts'
 import { processRefundQueue } from '@/lib/refunds'
 
@@ -34,7 +35,7 @@ async function runStep<T>(name: string, run: () => Promise<T>): Promise<StepResu
     return { ok: true, result: await run() }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[cron/release-payouts] ${name} failed: ${message}`)
+    await recordError('cron', error, { job: 'release-payouts', step: name })
     return { ok: false, error: message }
   }
 }

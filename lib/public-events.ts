@@ -180,6 +180,9 @@ export function isPubliclySellable(
   club: ClubReadiness | null | undefined,
 ): boolean {
   if (show.ticket_url) return true
+  // Gratisbilletter går utenom Stripe (`lib/checkout/free.ts`), så klubbens
+  // klarhet for betaling spiller ingen rolle. Tom pris er fortsatt ikke salg.
+  if (show.ticket_price === 0) return true
   if (!show.ticket_price || show.ticket_price <= 0) return false
   if (isTicketPriceBelowMinimum(show.ticket_price)) return false
   if (!club) return false
