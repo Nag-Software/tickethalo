@@ -1,6 +1,5 @@
 import Link from 'next/link'
-import { PendingButton } from '@/components/pending-button'
-import { ArrowUpRight, ChevronRight, ExternalLink, Receipt, RefreshCw } from 'lucide-react'
+import { ChevronRight, Receipt } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { InfoHint } from '@/components/admin/info-hint'
 import { EarningsChart } from '@/components/admin/earnings-chart'
@@ -11,22 +10,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
-import {
-  CLUB_CONNECT_FIELDS,
-  type ConnectClub,
-  describeClubReadiness,
-  getAccountBalance,
-} from '@/lib/stripe-connect'
+import { CLUB_CONNECT_FIELDS, type ConnectClub, getAccountBalance, syncAccountStatus } from '@/lib/stripe-connect'
+import { describeClubSetup } from '@/lib/club-setup'
+import { orgNumberFieldLabel, orgNumberPlaceholder } from '@/lib/org-number'
+import { ReadyCard, SetupCard } from './setup-card'
 import { getClubArtistFees } from '@/lib/artist-fees'
 import { getFinanceSummary } from '@/lib/finances'
 import { getReleasableAmount } from '@/lib/payouts'
 import type { ArtistFeeInvoiceStatus, ClubPayoutStatus } from '@/types/database'
-import {
-  openClubDashboardAction,
-  refreshClubStatusAction,
-  saveSellerDetailsAction,
-  startClubOnboardingAction,
-} from './actions'
+import { saveSellerDetailsAction } from './actions'
 
 /**
  * Hvor honorarfakturaen står, sagt til klubben. Saksgangen er vår, men
@@ -67,16 +59,27 @@ export default async function FinancesPage() {
   const { data } = await db.from('clubs').select(CLUB_CONNECT_FIELDS).eq('id', clubId).single()
   if (!data) throw new Error('Could not find the club.')
 
-  const club = data as unknown as ConnectClub
-  const readiness = describeClubReadiness(club)
-  const missing = readiness.filter((item) => !item.done)
-  // Utledet fra sjekklista i stedet for `isClubPayoutReady`: den er et
-  // typepredikat, og ville smalnet `club` til `never` i else-grenene her.
-  const ready = missing.length === 0
+  let club = data as unknown as ConnectClub
+  let setup = describeClubSetup(club)
 
-  // Stripe krever kontakt-e-post for merchant-konfigurasjonen, så kontoen kan
-  // ikke opprettes uten. Resten av lista kan fylles ut underveis.
-  const canOnboard = Boolean(club.support_email?.trim())
+  // Mens Stripe-steget pågår, hentes status fra Stripe hver gang siden
+  // åpnes — også rett etter at klubben kommer tilbake fra onboardingen. Da
+  // trenger ingen å trykke Refresh. Feiler kallet, vises det vi vet fra før.
+  if (setup.step === 'stripe' && club.stripe_account_id) {
+    try {
+      const status = await syncAccountStatus(club.stripe_account_id)
+      club = {
+        ...club,
+        charges_enabled: status.chargesEnabled,
+        payouts_enabled: status.payoutsEnabled,
+        payout_schedule_interval: status.payoutScheduleInterval ?? club.payout_schedule_interval,
+      }
+      setup = describeClubSetup(club)
+    } catch (error) {
+      console.error('[Finances] Could not sync Stripe status on page load:', error)
+    }
+  }
+  const ready = setup.step === 'ready'
 
   const [summary, artistFees, balance, upcoming, { data: payouts }, { data: settlements }] = await Promise.all([
     getFinanceSummary(clubId),
@@ -131,8 +134,11 @@ export default async function FinancesPage() {
       />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
-        {/* ── Earnings + setup ─────────────────────────────── */}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        {/* ── Setup, one step at a time ──────────────────── */}
+        {!ready && <SetupCard club={club} setup={setup} />}
+
+        {/* ── Earnings ─────────────────────────────────────── */}
+        <div className={ready ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]' : 'grid gap-6'}>
           <div className="flex flex-col gap-4">
             <Card size="sm">
               <CardHeader>
@@ -181,101 +187,7 @@ export default async function FinancesPage() {
             </div>
           </div>
 
-          {/* ── Setup guide ────────────────────────────────── */}
-          <Card size="sm" className="h-fit">
-            <CardHeader>
-              <CardTitle>{ready ? 'Ready to sell' : 'Finish the setup'}</CardTitle>
-              <CardDescription>
-                {ready
-                  ? 'Ticket money goes straight into the club’s own Stripe account. Tickethalo only takes the commission.'
-                  : `${readiness.length - missing.length} of ${readiness.length} done. Shows cannot go on sale until the rest is in place.`}
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-4">
-              {/* Er alt på plass, sier overskriften det allerede. En liste med
-                  fem grønne haker og en «fortsett oppsettet»-knapp ville bare
-                  antydet at det gjenstår noe. */}
-              {!ready && (
-                <ul className="flex flex-col gap-2">
-                  {missing.map((item) => (
-                    <li key={item.key} className="flex items-start gap-2 text-sm">
-                      <span
-                        aria-hidden
-                        className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--ev-accent-fill)]"
-                      />
-                      {item.label}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div className="flex flex-col gap-2">
-                {!ready && (
-                  <ToastActionForm action={startClubOnboardingAction}>
-                    {/* Oppretter kontoen hos Stripe, laster opp logoen og henter
-                        onboarding-lenken: gjerne 5–10 sekunder før siden bytter. */}
-                    <PendingButton
-                      type="submit"
-                      // Stripe krever kontakt-e-post for merchant-konfigurasjonen.
-                      // Bedre å stenge knappen med en forklaring under enn å la
-                      // kallet feile etter at brukeren har trykket.
-                      disabled={!canOnboard}
-                      className="w-full"
-                      pendingLabel={club.stripe_account_id ? 'Opening Stripe…' : 'Connecting to Stripe…'}
-                    >
-                      {club.stripe_account_id ? 'Continue setup' : 'Connect Stripe'}
-                      <ArrowUpRight data-icon="inline-end" />
-                    </PendingButton>
-                  </ToastActionForm>
-                )}
-
-                {!canOnboard && (
-                  <p className="text-xs text-muted-foreground">
-                    Add a contact email under <strong>Seller details</strong> first — Stripe needs
-                    it to create the account.
-                  </p>
-                )}
-
-                {club.stripe_account_id && (
-                  <div className="flex gap-2">
-                    {club.charges_enabled && (
-                      <ToastActionForm action={openClubDashboardAction} className="flex-1">
-                        <PendingButton
-                          type="submit"
-                          variant={ready ? 'default' : 'outline'}
-                          size="sm"
-                          className="w-full"
-                          pendingLabel="Opening Stripe…"
-                        >
-                          Open Stripe
-                          <ExternalLink data-icon="inline-end" />
-                        </PendingButton>
-                      </ToastActionForm>
-                    )}
-                    <ToastActionForm
-                      action={refreshClubStatusAction}
-                      successMessage="The account is ready to sell."
-                      className="flex-1"
-                    >
-                      <PendingButton type="submit" variant="ghost" size="sm" className="w-full" pendingLabel="Checking…">
-                        <RefreshCw data-icon="inline-start" />
-                        Refresh
-                      </PendingButton>
-                    </ToastActionForm>
-                  </div>
-                )}
-              </div>
-
-              {club.charges_enabled && (
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  One setting lives in Stripe: turn on receipt emails under{' '}
-                  <em>Customer emails</em>. The customer then gets a payment receipt in the
-                  club&apos;s name. We send the ticket either way.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          {ready && <ReadyCard club={club} />}
         </div>
 
         {/* ── Artist fees ──────────────────────────────────── */}
@@ -400,6 +312,10 @@ export default async function FinancesPage() {
           </CardContent>
         </Card>
 
+        {/* Selgerkortet er steg 1 i oppsettet til det er fylt ut; etterpå
+            er det her klubben redigerer opplysningene. */}
+        {setup.step !== 'seller' && (
+        <>
         {/* ── Seller details ───────────────────────────────── */}
         <Card size="sm">
           <CardHeader>
@@ -420,9 +336,9 @@ export default async function FinancesPage() {
                 />
                 <SellerField
                   name="org_number"
-                  label="Registration number"
+                  label={orgNumberFieldLabel(club.country)}
                   defaultValue={club.org_number ?? ''}
-                  placeholder="999 999 999"
+                  placeholder={orgNumberPlaceholder(club.country)}
                   inputMode="numeric"
                 />
                 <SellerField
@@ -453,6 +369,8 @@ export default async function FinancesPage() {
             </ToastActionForm>
           </CardContent>
         </Card>
+        </>
+        )}
 
         {/* ── Payouts and settlement ───────────────────────── */}
         <div className="grid gap-6 lg:grid-cols-2">

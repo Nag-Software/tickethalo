@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { parseOrgNumber } from '@/lib/org-number'
 import {
   type AccountSyncResult,
   CLUB_CONNECT_FIELDS,
@@ -204,6 +205,52 @@ export async function refreshClubStatusAction(): Promise<ActionError> {
  * and not on the club profile, because they are a precondition for selling —
  * not something the audience sees on the club page.
  */
+/**
+ * Steg 1 i oppsettet: hvem som selger. Samme felter som selgerkortet, minus
+ * fakturaadressen til komikerne — den hører ikke til før salget kan starte,
+ * og et skjema uten feltet skal ikke nullstille det.
+ */
+export async function saveSellerSetupAction(formData: FormData): Promise<ActionError> {
+  try {
+    const club = await currentClub()
+
+    const text = (key: string) => {
+      const value = formData.get(key)
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed.slice(0, 200) : null
+    }
+
+    const legalName = text('legal_name')
+    const supportEmail = text('support_email')
+    const parsedOrg = parseOrgNumber(text('org_number'), club.country)
+
+    if (!legalName) return { error: 'Enter the legal name of the club.' }
+    if ('error' in parsedOrg) return { error: parsedOrg.error }
+    if (!parsedOrg.value) return { error: 'Enter the registration number.' }
+    if (!supportEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(supportEmail)) {
+      return { error: 'Enter a contact email for ticket buyers.' }
+    }
+
+    const { error } = await createAdminClient()
+      .from('clubs')
+      .update({ legal_name: legalName, org_number: parsedOrg.value, support_email: supportEmail })
+      .eq('id', club.id)
+
+    if (error) {
+      console.error(`[Finances] Could not save seller setup: ${error.message}`)
+      return { error: 'Could not save. Try again in a moment.' }
+    }
+
+    revalidatePath(PATH)
+    // Navnet går til Stripe når kontoen finnes. Her finnes den normalt ikke
+    // ennå, og feiler det, retter neste synk det.
+    await trySyncConnectedAccountBranding({ ...club, legal_name: legalName })
+  } catch (error) {
+    return toActionError(error, 'Could not save.')
+  }
+}
+
 export async function saveSellerDetailsAction(formData: FormData): Promise<ActionError> {
   try {
     const club = await currentClub()
@@ -216,10 +263,10 @@ export async function saveSellerDetailsAction(formData: FormData): Promise<Actio
       return trimmed.length > 0 ? trimmed.slice(0, 200) : null
     }
 
-    const orgNumber = text('org_number')?.replace(/\s/g, '') ?? null
-    if (orgNumber && !/^\d{9}$/.test(orgNumber)) {
-      return { error: 'The company registration number must be nine digits.' }
-    }
+    // Ni sifre i Norge, åtte i Danmark, ti i Sverige — se lib/org-number.ts.
+    const parsedOrg = parseOrgNumber(text('org_number'), club.country)
+    if ('error' in parsedOrg) return { error: parsedOrg.error }
+    const orgNumber = parsedOrg.value
 
     const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
