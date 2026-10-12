@@ -180,6 +180,8 @@ export type ClubBetaRequest = {
   source: string | null
   status: ClubBetaRequestStatus
   note: string | null
+  /** Klubben som ble opprettet fra søknaden. Se migrasjon 071. */
+  club_id: string | null
   created_at: string
   updated_at: string
 }
@@ -1418,6 +1420,7 @@ export type Database = {
           source?: string | null
           status?: ClubBetaRequestStatus
           note?: string | null
+          club_id?: string | null
           created_at?: string
           updated_at?: string
         }

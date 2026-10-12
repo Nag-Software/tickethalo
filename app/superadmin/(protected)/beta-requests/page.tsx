@@ -110,13 +110,26 @@ function RequestCard({ request }: { request: ClubBetaRequest }) {
           </div>
         </div>
 
-        {/* Snarveien fra en godkjent søknad til klubben den gjelder. */}
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/superadmin/clubs/new?name=${encodeURIComponent(request.club_name)}`}>
-            <Building2 className="size-4" />
-            Opprett klubb
-          </Link>
-        </Button>
+        {/* Fra søknad til klubb: navn og e-post følger med, kontoen lages
+            ved opprettelsen, og søknaden merkes godkjent. Er klubben alt
+            opprettet, går knappen dit i stedet for å lage en til. */}
+        {request.club_id ? (
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/superadmin/clubs/${request.club_id}`}>
+              <Building2 className="size-4" />
+              Åpne klubben
+            </Link>
+          </Button>
+        ) : request.status === 'declined' ? null : (
+          <Button variant="outline" size="sm" asChild>
+            <Link
+              href={`/superadmin/clubs/new?name=${encodeURIComponent(request.club_name)}&email=${encodeURIComponent(request.email)}&request=${request.id}`}
+            >
+              <Building2 className="size-4" />
+              Opprett klubb
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">

@@ -9,6 +9,7 @@ import {
   artistApprovedTemplate,
   artistFeeTemplate,
   bookingConfirmedTemplate,
+  clubWelcomeTemplate,
   bookingOfferTemplate,
   escapeHtml,
   lineupFullTemplate,
@@ -237,6 +238,13 @@ export async function sendSpotFilledEmail(opts: {
  * Går gjennom samme `deliver` som resten, så den får nye forsøk og en rad i
  * `email_logs`. Hvem som får den og når avgjøres i `lib/actions/booking.ts`.
  */
+/** Klubben er opprettet av superadmin. Se `lib/club-onboarding.ts`. */
+export async function sendClubWelcomeEmail(opts: Parameters<typeof clubWelcomeTemplate>[0] & {
+  email: string
+}): Promise<EmailResult> {
+  return sendArtistEmail('club_welcome', opts.email, clubWelcomeTemplate(opts))
+}
+
 export async function sendLineupFullEmail(opts: Parameters<typeof lineupFullTemplate>[0] & {
   email: string
 }): Promise<EmailResult> {

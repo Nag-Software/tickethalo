@@ -507,6 +507,47 @@ export function artistFeeTemplate(opts: {
 // ─────────────────────────────────────────────────────────────
 
 /**
+ * Klubben er opprettet, og dette er kontoen deres.
+ *
+ * `set_password_url` når kontoen er ny: lenken setter passordet og er det
+ * eneste klubben trenger for å komme inn. Null når brukeren fantes fra før —
+ * da er det bare tilgangen som er ny, og lenken går til innloggingen.
+ */
+export function clubWelcomeTemplate(opts: {
+  club_name: string
+  email: string
+  set_password_url: string | null
+  login_url: string
+}): EmailTemplate {
+  const fresh = Boolean(opts.set_password_url)
+  const intro = fresh
+    ? `${opts.club_name} is set up on Tickethalo. Your login is ${opts.email} — set a password and you are in.`
+    : `${opts.club_name} is set up on Tickethalo, and your existing login ${opts.email} now has access to it.`
+  const expiry = 'The link works for a limited time. If it has expired, choose “Forgot password” on the sign-in page and we send a new one.'
+
+  return {
+    subject: `Welcome to Tickethalo — ${opts.club_name}`,
+    text: [
+      'Hi',
+      '',
+      intro,
+      '',
+      fresh ? 'Set your password here:' : 'Sign in here:',
+      opts.set_password_url ?? opts.login_url,
+      ...(fresh ? ['', expiry] : []),
+    ].join('\n'),
+    html: shell({
+      eyebrow: 'Welcome',
+      heading: fresh ? 'Set your password' : 'You now have access',
+      body:
+        paragraph(escapeHtml(intro)) +
+        button(opts.set_password_url ?? opts.login_url, fresh ? 'Set password' : 'Sign in') +
+        (fresh ? paragraph(escapeHtml(expiry), true) : ''),
+    }),
+  }
+}
+
+/**
  * Lineupen er full — og showet er *ikke* publisert.
  *
  * Showet publiserte seg selv før, og gikk ut uten plakat, tekst og

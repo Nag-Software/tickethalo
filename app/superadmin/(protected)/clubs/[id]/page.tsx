@@ -35,8 +35,16 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 const STATUS_ORDER: ShowStatus[] = ['draft', 'booking', 'fullbooked', 'published', 'completed', 'cancelled']
 
-export default async function ClubDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClubDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ adminError?: string }>
+}) {
   const { id } = await params
+  // Satt av createClubAction når klubben ble laget, men kontoen ikke.
+  const { adminError } = await searchParams
   if (!UUID_PATTERN.test(id)) notFound()
 
   const db = createAdminClient()
@@ -175,8 +183,13 @@ export default async function ClubDetailPage({ params }: { params: Promise<{ id:
           {/* ── Hvem driver klubben ────────────────────────── */}
           <Section
             title={`Admins (${memberships?.length ?? 0})`}
-            description="Brukeren må allerede ha registrert seg. Rollen settes automatisk til admin."
+            description="Finnes ikke brukeren, lages kontoen og en e-post med lenke for å sette passord går ut."
           >
+            {adminError && (
+              <p className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {adminError} Prøv «Legg til» under.
+              </p>
+            )}
             {!memberships || memberships.length === 0 ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
                 Ingen admins ennå — ingen kan logge inn og drive klubben.
@@ -210,7 +223,7 @@ export default async function ClubDetailPage({ params }: { params: Promise<{ id:
               </ul>
             )}
 
-            <ToastActionForm action={addClubAdminAction} successMessage="Admin lagt til." className="flex gap-2">
+            <ToastActionForm action={addClubAdminAction} successMessage="Admin lagt til, og e-post er sendt." className="flex gap-2">
               <input type="hidden" name="club_id" value={club.id} />
               <Label htmlFor="admin-email" className="sr-only">E-post</Label>
               <Input id="admin-email" name="email" type="email" placeholder="admin@klubb.no" required />

@@ -14,14 +14,15 @@ export const metadata = { title: 'Ny klubb — Superadmin' }
 export default async function NewClubPage({
   searchParams,
 }: {
-  searchParams: Promise<{ name?: string }>
+  searchParams: Promise<{ name?: string; email?: string; request?: string }>
 }) {
-  // Fylles ut når du kommer hit fra en betasøknad i /superadmin/beta-requests.
-  const { name } = await searchParams
+  // Fylles ut når du kommer hit fra en betasøknad i /superadmin/beta-requests:
+  // navnet og e-posten fra søknaden, og søknadens ID så den merkes godkjent.
+  const { name, email, request } = await searchParams
 
   return (
     <div>
-      <AdminHeader title="Ny klubb" description="Klubben får admins og Stripe-oppsett etterpå" />
+      <AdminHeader title="Ny klubb" description="Klubben får konto og admin med en gang. Stripe-oppsettet gjør klubben selv etterpå." />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
         <Button variant="ghost" size="sm" asChild className="-mb-2 -ml-2 w-fit text-muted-foreground">
@@ -32,10 +33,18 @@ export default async function NewClubPage({
         </Button>
 
         <ToastActionForm action={createClubAction} className="max-w-lg space-y-5 rounded-xl border bg-card p-6">
+          {request && <input type="hidden" name="beta_request_id" value={request} />}
           <div className="space-y-1.5">
             <Label htmlFor="name">Klubbnavn *</Label>
             <Input id="name" name="name" placeholder="Oslo Comedy Club" defaultValue={name ?? ''} required />
             <p className="text-xs text-muted-foreground">Adressen til klubbsiden lages av navnet.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-email">Klubbens e-post</Label>
+            <Input id="admin-email" name="admin_email" type="email" placeholder="post@klubb.no" defaultValue={email ?? ''} />
+            <p className="text-xs text-muted-foreground">
+              Blir admin for klubben med en gang og får en e-post med lenke for å sette passord. Tom = ingen admin ennå.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="city">By</Label>
