@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { finalizeCheckoutSession } from '@/lib/checkout/finalize'
+import { isFreeOrderSessionId } from '@/lib/checkout/free'
 import { formatTicketCode } from '@/lib/tickets'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
@@ -145,16 +146,50 @@ function noTicketOutcome(reason: OrderCancellationReason, refunded: boolean): Ou
   }
 }
 
+/**
+ * Hva siden viser under overskriften. Betalte kjøp henter det fra Stripe-
+ * sesjonen, gratisbilletter fra ordren selv (`lib/checkout/free.ts`).
+ */
+type Details = {
+  showTitle: string
+  showDate: string | null
+  email: string
+  ticketCodes: string[]
+}
+
 export default async function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string; s?: string }>
+  searchParams: Promise<{ session_id?: string; s?: string; order?: string }>
 }) {
-  const { session_id, s: showId } = await searchParams
-  const seller = await getSeller(showId, session_id)
+  const { session_id, s: showId, order: orderId } = await searchParams
+  // Gratisbilletter har ingen Stripe-sesjon: ordren er alt som finnes.
+  const freeOrder = !session_id && orderId ? await getFreeOrder(orderId) : null
+  const seller = await getSeller(showId ?? freeOrder?.show_id ?? undefined, session_id)
   const session = session_id ? await getSession(session_id, seller?.stripe_account_id ?? null) : null
   const completion = session ? await finalizeCheckoutSession(session, { accountId: seller?.stripe_account_id ?? null }) : null
-  const outcome = resolveOutcome(session_id, session, completion)
+  const outcome = freeOrder ? freeOutcome(freeOrder) : resolveOutcome(session_id, session, completion)
+
+  const ticketCodes = completion?.ticketCodes?.length
+    ? completion.ticketCodes
+    : completion?.ticketCode
+      ? [completion.ticketCode]
+      : []
+  const details: Details | null = session
+    ? {
+        showTitle: session.metadata?.show_title ?? 'Tickethalo',
+        showDate: session.metadata?.show_date ?? null,
+        email: session.customer_details?.email ?? session.customer_email ?? 'Not available',
+        ticketCodes,
+      }
+    : freeOrder
+      ? {
+          showTitle: freeOrder.showTitle,
+          showDate: freeOrder.showDate,
+          email: freeOrder.email,
+          ticketCodes: freeOrder.ticketCodes,
+        }
+      : null
 
   const sellerName = seller?.legal_name?.trim() || seller?.name?.trim() || null
 
@@ -203,28 +238,23 @@ export default async function CheckoutSuccessPage({
 
           {/* The reference is shown even when we could not fetch the payment — it
               is the only thing support has to search for in Stripe. */}
-          {(session || (session_id && outcome.tone !== 'success')) && (
+          {(details || (session_id && outcome.tone !== 'success')) && (
             <dl className="mt-7 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)] text-[14px]">
-              {session && <Row label="Show" value={session.metadata?.show_title ?? 'Tickethalo'} />}
+              {details && <Row label="Show" value={details.showTitle} />}
               {sellerName && <Row label="Seller" value={sellerName} />}
-              {session?.metadata?.show_date && <Row label="Date" value={session.metadata.show_date} />}
-              {session && (
-                <Row
-                  label="Email"
-                  value={session.customer_details?.email ?? session.customer_email ?? 'Not available'}
-                />
-              )}
+              {details?.showDate && <Row label="Date" value={details.showDate} />}
+              {details && <Row label="Email" value={details.email} />}
               {/* Flere billetter i én ordre får hver sin kode — e-posten
                   bærer QR-ene, men koden skal være synlig her også. */}
-              {(completion?.ticketCodes?.length ?? 0) > 1 ? (
+              {(details?.ticketCodes.length ?? 0) > 1 ? (
                 <Row
-                  label={`Ticket codes (${completion!.ticketCodes!.length})`}
-                  value={completion!.ticketCodes!.map(formatTicketCode).join(', ')}
+                  label={`Ticket codes (${details!.ticketCodes.length})`}
+                  value={details!.ticketCodes.map(formatTicketCode).join(', ')}
                   mono
                 />
               ) : (
-                completion?.ticketCode && (
-                  <Row label="Ticket code" value={formatTicketCode(completion.ticketCode)} mono />
+                details?.ticketCodes[0] && (
+                  <Row label="Ticket code" value={formatTicketCode(details.ticketCodes[0])} mono />
                 )
               )}
               {outcome.tone !== 'success' && session_id && <Row label="Reference" value={session_id} mono />}
@@ -302,6 +332,65 @@ async function getSession(sessionId: string, accountId: string | null) {
     console.error('[Checkout Success] Could not retrieve session:', error)
     return null
   }
+}
+
+type FreeOrder = {
+  show_id: string | null
+  showTitle: string
+  showDate: string | null
+  email: string
+  ticketCodes: string[]
+  emailSent: boolean
+}
+
+/**
+ * En gratisordre, kjent igjen på sesjons-ID-en. Andre ordrer vises ikke her:
+ * de har en Stripe-sesjon, og den er nøkkelen til denne siden.
+ */
+async function getFreeOrder(orderId: string): Promise<FreeOrder | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) return null
+
+  const db = createAdminClient()
+  const { data: order } = await db
+    .from('orders')
+    .select('id, show_id, buyer_email, stripe_checkout_session_id, ticket_email_sent_at')
+    .eq('id', orderId)
+    .maybeSingle()
+  if (!order || !isFreeOrderSessionId(order.stripe_checkout_session_id)) return null
+
+  const [{ data: tickets }, { data: show }] = await Promise.all([
+    db.from('tickets').select('ticket_code').eq('order_id', order.id).order('created_at'),
+    order.show_id
+      ? db.from('shows').select('title, date').eq('id', order.show_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+
+  return {
+    show_id: order.show_id,
+    showTitle: show?.title ?? 'Tickethalo',
+    showDate: show?.date ?? null,
+    email: order.buyer_email ?? 'Not available',
+    ticketCodes: (tickets ?? []).map((ticket) => ticket.ticket_code),
+    emailSent: Boolean(order.ticket_email_sent_at),
+  }
+}
+
+/** Ingen betaling å bekrefte: enten finnes billettene, eller så gjør de ikke det. */
+function freeOutcome(order: FreeOrder): Outcome {
+  if (order.ticketCodes.length === 0) {
+    return {
+      tone: 'error',
+      heading: 'No ticket was issued',
+      message: `We could not reserve a ticket for this show. Try again from the show page, or contact us at ${SUPPORT_EMAIL}.`,
+    }
+  }
+  return order.emailSent
+    ? { tone: 'success', heading: "You're on the list", message: 'Your tickets are on their way by email. Show the QR code at the door.' }
+    : {
+        tone: 'warning',
+        heading: "You're on the list",
+        message: 'The tickets could not be emailed automatically. Keep the ticket code below — it gets you in.',
+      }
 }
 
 /**

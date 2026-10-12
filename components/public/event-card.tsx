@@ -169,7 +169,7 @@ export function EventCard({
             soldOut={soldOut}
             salesState={show.salesState}
             remaining={remainingTickets(show)}
-            triggerLabel="Buy"
+            triggerLabel={show.ticket_price === 0 && !show.ticket_url ? 'Reserve' : 'Buy'}
             triggerClassName={cn(
               'relative z-10 ml-auto',
               // h-11 = a 44px touch target on mobile, the minimum for a primary

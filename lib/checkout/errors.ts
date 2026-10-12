@@ -17,6 +17,7 @@ export type CheckoutErrorCode =
   | 'sales_closed'
   | 'sales_not_open'
   | 'price_missing'
+  | 'buyer_details_missing'
   | 'club_not_payable'
   | 'stripe_config'
   | 'stripe_unavailable'
@@ -33,6 +34,8 @@ const MESSAGES: Record<CheckoutErrorCode, string> = {
   // Reserveteksten når datoen mangler — se `checkoutErrorMessage`.
   sales_not_open: 'Tickets for this show are not on sale yet.',
   price_missing: 'The ticket price is missing for this show. We have been notified — please try again later.',
+  // Gratisbilletter: ingen betaling å hente navn og adresse fra.
+  buyer_details_missing: 'Enter your name and a valid email address so we know where to send the tickets.',
   club_not_payable: 'Tickets for this show are not on sale yet. We have been notified — please try again later.',
   stripe_config: 'Payments are not set up correctly for this show. We have been notified — please try again later.',
   stripe_unavailable: 'We cannot reach the payment provider right now. Please try again in a moment.',

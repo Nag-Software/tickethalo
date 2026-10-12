@@ -350,7 +350,9 @@ export function ShowDetailsForm({
               <Input
                 id="show-price"
                 type="number"
-                min={MIN_TICKET_PRICE_MINOR / 100}
+                // 0 er gratis og lov; minsteprisen gjelder bare betalte show,
+                // og den sjekkes på serveren.
+                min={0}
                 step="0.01"
                 value={values.ticket_price}
                 onChange={(event) => update('ticket_price', event.target.value)}
@@ -360,7 +362,8 @@ export function ShowDetailsForm({
               <span className={cn(FIELD_ADDON_CLASS, 'border-l')}>{currency}</span>
             </div>
             <FieldDescription className={FIELD_HINT_CLASS}>
-              Minimum {MIN_TICKET_PRICE_MINOR / 100} {currency}. Currency is set under{' '}
+              Minimum {MIN_TICKET_PRICE_MINOR / 100} {currency}, or 0 for a free show — free tickets are
+              still issued and scanned at the door. Currency is set under{' '}
               <Link href="/admin-app/my-club">My club</Link>.
             </FieldDescription>
           </Field>

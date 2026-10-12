@@ -4,10 +4,11 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
+import { claimFreeTickets, isFreeShow, parseFreeTicketInput } from '@/lib/checkout/free'
 import { appUrl } from '@/lib/app-url'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import {
-  type CheckoutError,
+  CheckoutError,
   type CheckoutErrorCode,
   checkoutErrorForSalesState,
   checkoutErrorMessage,
@@ -57,10 +58,28 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   const db = createAdminClient()
   const { data: show, error: showError } = await db
     .from('shows')
-    .select('ticket_url, status, date, ticket_sales_closed_at, deleted_at')
+    .select('ticket_url, ticket_price, status, date, ticket_sales_closed_at, deleted_at')
     .eq('id', showId)
     .single()
   if (showError || !show) return failure('show_not_found', showError?.message, { showId, slug })
+
+  // Gratis show: billettene utstedes her og nå, uten Stripe. Skjemaet har
+  // spurt om navn og e-post i stedet for å la betalingen hente dem.
+  if (!show.ticket_url && isFreeShow(show)) {
+    const input = parseFreeTicketInput(formData)
+    // Kjøperens feil, ikke vår: logges som advarsel, som de andre salgsfeilene.
+    if (!input.ok) return checkoutFailure(new CheckoutError('buyer_details_missing'), { showId, slug })
+
+    let orderId: string
+    try {
+      const claim = await claimFreeTickets(showId, origin, input.value)
+      orderId = claim.orderId
+    } catch (error) {
+      return checkoutFailure(toCheckoutError(error), { showId, slug })
+    }
+
+    redirect(`${origin}/checkout/success?order=${orderId}&s=${showId}`)
+  }
 
   if (show.ticket_url) {
     // En ekstern billettside går utenom `createCheckoutSession`, og dermed
