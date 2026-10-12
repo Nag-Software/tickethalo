@@ -114,7 +114,7 @@ export async function getFinanceSummary(clubId: string): Promise<FinanceSummary>
   const [{ data: recent }, { data: lifetime }] = await Promise.all([
     db
       .from('orders')
-      .select('club_net_amount, refunded_amount, application_fee_refunded_amount, ticket_vat_amount, gross_amount, created_at')
+      .select('club_net_amount, refunded_amount, application_fee_refunded_amount, ticket_vat_amount, gross_amount, amount_total, created_at')
       .eq('club_id', clubId)
       .eq('status', 'paid')
       .gte('created_at', from),
@@ -133,7 +133,9 @@ export async function getFinanceSummary(clubId: string): Promise<FinanceSummary>
     if (!bucket) continue
 
     bucket.net += clubNetAfterRefunds(order)
-    bucket.tickets += 1
+    // Gratisreservasjoner (beløp 0) er ikke solgte billetter og skal ikke
+    // stå ved siden av inntekten. Eldre ordrer uten beløp telles som før.
+    if (order.amount_total !== 0) bucket.tickets += 1
     periodVat += ticketVatAfterRefunds(order)
   }
 

@@ -257,6 +257,11 @@ describe('refundEligibility', () => {
     })
   })
 
+  it('refuses a free order: nothing was paid, so nothing is refunded', () => {
+    const free = paidOrder({ amount_total: 0, stripe_payment_intent_id: null })
+    expect(refundEligibility(free as never)).toMatchObject({ kind: 'not_refundable', code: 'no_payment' })
+  })
+
   it('accepts a cancelled order that was paid at Stripe but never refunded', () => {
     const order = paidOrder({ status: 'cancelled', cancellation_reason: 'sales_closed' })
     expect(isAwaitingRefund(order as never)).toBe(true)

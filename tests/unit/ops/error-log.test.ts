@@ -2,21 +2,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
-  inserts: [] as Array<{ table: string; row: unknown }>,
+  inserts: [] as Array<{ table: string; row: Record<string, unknown> }>,
   insertResult: { error: null as { message: string } | null },
   throwOnInsert: false,
 }))
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
-    from(table: string) {
-      return {
-        insert: async (row: unknown) => {
-          if (db.throwOnInsert) throw new Error('database unreachable')
-          db.inserts.push({ table, row })
-          return db.insertResult
-        },
-      }
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      if (db.throwOnInsert) throw new Error('database unreachable')
+      db.inserts.push({ table: name, row: args })
+      return db.insertResult
     },
   }),
 }))
@@ -57,11 +53,23 @@ describe('describeError', () => {
 })
 
 describe('recordError', () => {
-  it('writes the error to app_errors and logs it', async () => {
+  it('records the error through record_app_error and logs it', async () => {
     await recordError('ticket_email', new Error('Resend down'), { order_id: 'o1' })
     expect(db.inserts).toHaveLength(1)
-    expect(db.inserts[0]).toMatchObject({ table: 'app_errors', row: { scope: 'ticket_email', message: 'Resend down', context: { order_id: 'o1' } } })
+    expect(db.inserts[0]).toMatchObject({
+      table: 'record_app_error',
+      row: { p_scope: 'ticket_email', p_message: 'Resend down', p_context: { order_id: 'o1' } },
+    })
+    expect(db.inserts[0].row.p_fingerprint).toMatch(/^[0-9a-f]{64}$/)
     expect(console.error).toHaveBeenCalledWith('[ticket_email] Resend down order_id=o1')
+  })
+
+  it('gives the same error the same fingerprint, so retries count up instead of piling up', () => {
+    const first = describeError('stripe_webhook', 'handler threw', { event_id: 'evt_1', event_type: 'charge.refunded' })
+    const retry = describeError('stripe_webhook', 'handler threw', { event_type: 'charge.refunded', event_id: 'evt_1' })
+    const other = describeError('stripe_webhook', 'handler threw', { event_id: 'evt_2', event_type: 'charge.refunded' })
+    expect(retry.fingerprint).toBe(first.fingerprint)
+    expect(other.fingerprint).not.toBe(first.fingerprint)
   })
 
   it('never throws, whether the insert is refused or the database is unreachable', async () => {

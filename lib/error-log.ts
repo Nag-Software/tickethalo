@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -13,6 +14,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * fullført, en billettepost som ikke gikk, en webhook som feilet, en
  * cron-jobb som stoppet. Ikke kundens egne feil (utsolgt, salget stengt);
  * de er svar, ikke feil.
+ *
+ * Samme feil telles, ikke gjentas: Stripe prøver en feilet webhook i dager,
+ * og et show med ødelagt oppsett får ett forsøk per publikummer. Hver feil
+ * får et fingeravtrykk av område, melding og kontekst, og en feil som alt
+ * venter med samme avtrykk telles opp (`record_app_error`, migrasjon 070).
+ * Er den kvittert ut, blir neste forekomst en ny rad — da skal noen se den.
  *
  * Funksjonen kaster aldri. En feil i feilloggen skal ikke velte det som
  * allerede gikk galt, og den skal aldri være grunnen til at et kjøp feiler.
@@ -31,6 +38,13 @@ export type ErrorRecord = {
   message: string
   stack: string | null
   context: Record<string, unknown>
+  /** sha256 av område, melding og kontekst (nøklene sortert). Stacken er ikke med. */
+  fingerprint: string
+}
+
+function fingerprintFor(scope: string, message: string, context: Record<string, unknown>): string {
+  const stable = JSON.stringify(context, Object.keys(context).sort())
+  return createHash('sha256').update(`${scope}|${message}|${stable}`).digest('hex')
 }
 
 /** Det som faktisk skrives. Egen funksjon så den kan testes uten database. */
@@ -48,7 +62,8 @@ export function describeError(scope: ErrorScope, error: unknown, context: Record
     serialised = { unserialisable: String(context) }
   }
 
-  return { scope, message: message || 'Unknown error', stack, context: serialised }
+  const text = message || 'Unknown error'
+  return { scope, message: text, stack, context: serialised, fingerprint: fingerprintFor(scope, text, serialised) }
 }
 
 export async function recordError(scope: ErrorScope, error: unknown, context: Record<string, unknown> = {}): Promise<void> {
@@ -59,7 +74,13 @@ export async function recordError(scope: ErrorScope, error: unknown, context: Re
   console.error(`[${record.scope}] ${record.message}${contextText ? ` ${contextText}` : ''}`)
 
   try {
-    const { error: insertError } = await createAdminClient().from('app_errors').insert(record)
+    const { error: insertError } = await createAdminClient().rpc('record_app_error', {
+      p_scope: record.scope,
+      p_message: record.message,
+      p_stack: record.stack,
+      p_context: record.context,
+      p_fingerprint: record.fingerprint,
+    })
     if (insertError) console.error(`[error-log] Could not record the error: ${insertError.message}`)
   } catch (insertError) {
     const message = insertError instanceof Error ? insertError.message : String(insertError)

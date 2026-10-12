@@ -104,6 +104,15 @@ export function isDisputeOpen(disputeStatus: string | null | undefined): boolean
   return Boolean(disputeStatus) && !CLOSED_DISPUTE_STATUSES.includes(disputeStatus as string)
 }
 
+/**
+ * Gratisordre: ingen betaling ble tatt (`lib/checkout/free.ts`). Beløpet er
+ * 0 og det finnes ingen payment intent, så det er ingenting å refundere —
+ * og ingenting å feile på.
+ */
+export function isFreeOrder(order: Pick<Order, 'amount_total' | 'stripe_payment_intent_id'>): boolean {
+  return order.amount_total === 0 && !order.stripe_payment_intent_id
+}
+
 export type RefundEligibility =
   | { kind: 'already_refunded' }
   | { kind: 'refundable'; paymentIntentId: string; accountId: string; awaitingRefund: boolean }
@@ -124,9 +133,19 @@ export type RefundEligibility =
 export function refundEligibility(
   order: Pick<Order, 'status' | 'stripe_payment_intent_id' | 'stripe_connected_account_id' | 'refunded_at'> & {
     dispute_status?: string | null
+    amount_total?: number | null
   },
 ): RefundEligibility {
   if (order.status === 'refunded') return { kind: 'already_refunded' }
+
+  // En gratisbillett er «betalt» i hovedboken, men ingen penger ble tatt.
+  if (order.status === 'paid' && isFreeOrder({ amount_total: order.amount_total ?? null, stripe_payment_intent_id: order.stripe_payment_intent_id })) {
+    return {
+      kind: 'not_refundable',
+      code: 'no_payment',
+      error: 'No payment was taken for this order, so there is nothing to refund.',
+    }
+  }
 
   const awaitingRefund = isAwaitingRefund(order)
 
@@ -1056,7 +1075,7 @@ export async function refundShow(
   for (let from = 0; ; from += SHOW_ORDER_PAGE_SIZE) {
     const { data, error } = await db
       .from('orders')
-      .select('id, status, stripe_payment_intent_id, refunded_at')
+      .select('id, status, amount_total, stripe_payment_intent_id, refunded_at')
       .eq('show_id', showId)
       .in('status', ['paid', 'cancelled'])
       .order('created_at', { ascending: true })
@@ -1066,6 +1085,9 @@ export async function refundShow(
     if (error) throw new Error(`Could not read the orders for show ${showId}: ${error.message}`)
 
     for (const order of data ?? []) {
+      // Gratisbilletter har ingen penger å sende tilbake, og skal ikke
+      // telle som feilede refusjoner når et gratis show avlyses.
+      if (order.status === 'paid' && isFreeOrder(order)) continue
       if (order.status === 'paid') targets.push({ id: order.id, reason: 'show_cancelled' })
       else if (isAwaitingRefund(order)) targets.push({ id: order.id, reason: 'no_ticket_issued' })
     }

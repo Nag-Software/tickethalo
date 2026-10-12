@@ -698,6 +698,10 @@ export type AppError = {
   message: string
   stack: string | null
   context: Record<string, unknown>
+  /** Like feil som venter samles på én rad. Se migrasjon 070. */
+  fingerprint: string | null
+  occurrences: number
+  last_seen_at: string
   resolved_at: string | null
   resolved_by: string | null
   created_at: string
@@ -1152,6 +1156,9 @@ export type Database = {
           message: string
           stack?: string | null
           context?: Record<string, unknown>
+          fingerprint?: string | null
+          occurrences?: number
+          last_seen_at?: string
           resolved_at?: string | null
           resolved_by?: string | null
           created_at?: string
@@ -1530,6 +1537,17 @@ export type Database = {
           ticket_codes: string[] | null
           duplicate: boolean
         }[]
+      }
+      /** Skriver en feil, eller teller opp en lik feil som venter. Se migrasjon 070. */
+      record_app_error: {
+        Args: {
+          p_scope: string
+          p_message: string
+          p_stack: string | null
+          p_context: Record<string, unknown>
+          p_fingerprint: string
+        }
+        Returns: string
       }
       /** «Klar for utbetaling» fra hovedboken. Se migrasjon 047. */
       club_releasable_amount: {

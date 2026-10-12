@@ -323,23 +323,36 @@ export async function deliverTicketEmail(params: {
   free?: boolean
 }): Promise<TicketEmailDelivery> {
   const admin = createAdminClient()
-  const hasTickets = params.ticketCodes.length > 0
 
-  const claim = params.buyerEmail && hasTickets && params.orderId
-    ? await claimTicketEmail(params.orderId, params.result)
-    : 'no_email'
+  // Ingen billetter, ingen epost. Kallerne kommer bare hit med billetter;
+  // uten er det ingenting å sende og ingenting å melde.
+  if (params.ticketCodes.length === 0) return { emailSent: false }
 
-  if (claim === 'already_sent') return { emailSent: true }
-
-  if (claim === 'no_email') {
-    // Checkout krever e-postadresse, så dette skal ikke skje. Ikke en
-    // `emailError`: et nytt forsøk fra Stripe ville gitt samme svar.
+  // Checkout krever e-postadresse, så dette skal ikke skje. Ikke en
+  // `emailError`: et nytt forsøk fra Stripe ville gitt samme svar.
+  if (!params.buyerEmail) {
     await recordError('ticket_email', `${params.reference} has tickets but no buyer email — nothing to send the ticket to`, {
       order_id: params.orderId,
       show_id: params.showId,
     })
     return { emailSent: false }
   }
+  if (!params.orderId) {
+    await recordError('ticket_email', `${params.reference} has tickets but no order to record the email on`, {
+      show_id: params.showId,
+      buyer_email: params.buyerEmail,
+    })
+    return { emailSent: false }
+  }
+
+  const claim = await claimTicketEmail(params.orderId, params.result)
+
+  // En ny gratisreservasjon fra samme adresse er noen som leter etter
+  // eposten sin: billettene finnes fra før, og de skal sendes én gang til.
+  // Betalte kjøp sendes bare én gang — der er «duplicate» webhooken og
+  // suksesssiden som kappes om samme ordre.
+  const resend = params.free === true && params.result === 'duplicate'
+  if (claim === 'already_sent' && !resend) return { emailSent: true }
 
   const { data: show } = await admin
     .from('shows')
@@ -393,12 +406,14 @@ export async function deliverTicketEmail(params: {
       buyer_email: params.buyerEmail,
       free: params.free ?? false,
     })
-    if (params.orderId) await releaseTicketEmailClaim(params.orderId)
+    // Retten gis bare tilbake når dette forsøket tok den. En gjentatt
+    // sending som feiler, rører ikke stempelet fra den første som gikk.
+    if (claim === 'claimed') await releaseTicketEmailClaim(params.orderId)
   }
   return { emailSent: emailResult.success, emailError: emailResult.error }
 }
 
-type TicketEmailClaim = 'claimed' | 'already_sent' | 'no_email'
+type TicketEmailClaim = 'claimed' | 'already_sent'
 
 /**
  * Tar retten til å sende billett-e-posten for ordren: én betinget

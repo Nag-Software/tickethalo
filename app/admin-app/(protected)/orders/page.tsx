@@ -3,7 +3,7 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { getClubAccess } from '@/lib/club-auth'
 import { CircleHelp, CreditCard } from 'lucide-react'
 import { refundOrderAction } from '@/lib/actions/refund'
-import { isAwaitingRefund, isDisputeOpen } from '@/lib/refunds'
+import { isAwaitingRefund, isDisputeOpen, isFreeOrder } from '@/lib/refunds'
 import { RefundOrderButton } from '@/components/admin/refund-order-button'
 import type { OrderCancellationReason } from '@/types/database'
 
@@ -156,7 +156,7 @@ export default async function OrdersPage() {
                 // uansett, så knappen skjules i stedet for å gi en feil.
                 const disputeOpen = isDisputeOpen(o.dispute_status)
                 // Gratisbilletter: ingen betaling, ingenting å refundere.
-                const isFree = o.amount_total === 0 && !o.stripe_payment_intent_id
+                const isFree = isFreeOrder(o)
                 const canRefund = (o.status === 'paid' || awaitingRefund) && !disputeOpen && !isFree
                 const partiallyRefunded = o.status === 'paid' && (o.refunded_amount ?? 0) > 0
                 const ticketSummary = ticketSummaryMap[o.id] ?? { total: 0, checkedIn: 0 }

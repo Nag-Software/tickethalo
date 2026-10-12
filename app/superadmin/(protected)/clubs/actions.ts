@@ -157,9 +157,16 @@ export async function updateClubTaxAction(formData: FormData) {
     return { error: 'Landet kan ikke endres etter at Stripe-kontoen er opprettet.' }
   }
 
+  // Bytter landet før Stripe er koblet, følger valutaen med: en dansk konto
+  // med NOK som standardvaluta avvises av Stripe eller selger i feil valuta.
+  const countryChanged = club.country !== parsedCountry.country
   const { error } = await db
     .from('clubs')
-    .update({ country: parsedCountry.country, ticket_vat_bps: parsedVat.bps })
+    .update({
+      country: parsedCountry.country,
+      ticket_vat_bps: parsedVat.bps,
+      ...(countryChanged ? { currency: defaultCurrencyFor(parsedCountry.country) } : {}),
+    })
     .eq('id', clubId)
 
   if (error) return { error: 'Kunne ikke lagre land og moms.' }

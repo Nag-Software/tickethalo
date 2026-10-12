@@ -43,8 +43,8 @@ export default async function ErrorsPage() {
   const db = createAdminClient()
 
   const [{ data: unresolvedRows }, { data: resolvedRows }] = await Promise.all([
-    db.from('app_errors').select('*').is('resolved_at', null).order('created_at', { ascending: false }).limit(UNRESOLVED_LIMIT),
-    db.from('app_errors').select('*').not('resolved_at', 'is', null).order('created_at', { ascending: false }).limit(RESOLVED_LIMIT),
+    db.from('app_errors').select('*').is('resolved_at', null).order('last_seen_at', { ascending: false }).limit(UNRESOLVED_LIMIT),
+    db.from('app_errors').select('*').not('resolved_at', 'is', null).order('last_seen_at', { ascending: false }).limit(RESOLVED_LIMIT),
   ])
 
   const unresolved = (unresolvedRows ?? []) as AppError[]
@@ -104,7 +104,13 @@ function ErrorList({ errors, resolvable = false }: { errors: AppError[]; resolva
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Pill tone={resolvable ? 'amber' : 'muted'}>{SCOPE_LABELS[row.scope] ?? row.scope}</Pill>
-                <span className="text-xs tabular-nums text-muted-foreground">{formatTime(row.created_at)}</span>
+                {/* Første og siste forekomst, og hvor mange ganger. Én gang
+                    vises som ett tidspunkt. */}
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {row.occurrences > 1
+                    ? `${row.occurrences} ganger · første ${formatTime(row.created_at)} · siste ${formatTime(row.last_seen_at)}`
+                    : formatTime(row.created_at)}
+                </span>
               </div>
               <p className="mt-1.5 break-words text-sm font-medium">{row.message}</p>
               {context.length > 0 && (
