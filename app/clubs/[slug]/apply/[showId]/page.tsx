@@ -88,10 +88,11 @@ export default async function ApplyForShowPage({ params }: Props) {
       <PublicHeader tone="light" />
 
       <section
-        className="px-4 pb-8 pt-24 md:px-8 md:pb-10 md:pt-28"
+        className="pb-8 pt-24 md:pb-10 md:pt-28"
         style={{ background: 'linear-gradient(180deg, var(--club-wash), transparent 85%)' }}
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        {/* Samme bredde og innrykk som innholdet under, så venstrekanten står. */}
+        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 md:px-8">
           <Link
             href={`/clubs/${club.slug}#apply`}
             className="-ml-2 inline-flex h-11 w-fit items-center gap-2 rounded-full px-2 text-[15px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"

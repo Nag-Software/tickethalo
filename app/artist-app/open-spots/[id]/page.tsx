@@ -105,7 +105,13 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
   return (
     <>
       <PageHeader
-        title={requirement ? `You applied for the ${requirement.role_name} spot` : 'Your application'}
+        title={
+          requirement
+            ? waitlist
+              ? `You’re on the waitlist for the ${requirement.role_name} spot`
+              : `You applied for the ${requirement.role_name} spot`
+            : 'Your application'
+        }
         description={state.lede}
         actions={<Chip tone={state.tone}>{state.label}</Chip>}
       />

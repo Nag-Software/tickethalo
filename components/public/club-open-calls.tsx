@@ -86,7 +86,7 @@ export function ClubOpenCalls({
                         <span className="mt-1 text-[22px] font-semibold tabular-nums">{day}</span>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[17px] font-medium group-hover:text-[var(--ev-accent)] sm:text-[16px]">
+                        <span className="line-clamp-2 text-[17px] font-medium group-hover:text-[var(--ev-accent)] sm:text-[16px]">
                           {call.title}
                         </span>
                         {call.venue && (
