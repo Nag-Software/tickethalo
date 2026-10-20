@@ -543,8 +543,10 @@ export async function runBookingWave(
   let offersCreated = 0
   let candidatesMatched = 0
 
+  let approvedSent = 0
+
   const result = await loadShowPlan(admin, showId, 'run')
-  if (!result.ok) return { offersCreated, candidatesMatched }
+  if (!result.ok) return { offersCreated, candidatesMatched, approvedSent }
   const { plan } = result
 
   if (plan.invalidPendingOfferIds.length > 0) {
@@ -563,7 +565,7 @@ export async function runBookingWave(
   })
 
   candidatesMatched = assignments.length
-  if (assignments.length === 0) return { offersCreated, candidatesMatched }
+  if (assignments.length === 0) return { offersCreated, candidatesMatched, approvedSent: 0 }
 
   const baseUrl = appUrl()
   const { show, expiresAt } = plan
@@ -586,6 +588,7 @@ export async function runBookingWave(
 
     if (offerError || !offer) continue
     offersCreated++
+    if (approved?.[req.id]?.includes(candidate.id)) approvedSent++
 
     const email = {
       email: candidate.email,
@@ -612,7 +615,7 @@ export async function runBookingWave(
     }
   }
 
-  return { offersCreated, candidatesMatched }
+  return { offersCreated, candidatesMatched, approvedSent }
 }
 
 // ─── Forslaget før Start booking ─────────────────────────────────────────

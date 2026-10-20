@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createShow } from '@/lib/actions/shows'
 import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { publishShow } from '@/lib/show-publish'
+import { runBookingWave, suggestLineup, type LineupSuggestion } from '@/lib/booking-engine'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canReviewShow, savePerformanceReview } from '@/lib/artist-reviews'
@@ -589,10 +590,45 @@ export async function addRequirementAction(formData: FormData): Promise<Requirem
   })
 }
 
+/**
+ * Forslaget før Start booking: den første bølgen, plass for plass.
+ *
+ * Bare navn og nivå går til nettleseren. Scoren blir på serveren — se
+ * `suggestLineup` i lib/booking-engine.ts.
+ */
+export async function suggestLineupAction(showId: string): Promise<LineupSuggestion> {
+  await assertShowAccess(showId)
+  return suggestLineup(showId)
+}
+
+/**
+ * Bookerens godkjente forslag fra skjemaet: `{ [plass-id]: [komiker-id, …] }`.
+ *
+ * Alt annet enn den formen gir null, og da starter bookingen som før uten
+ * forslag. Om komikerne fortsatt kan få plassen, avgjør motoren når den
+ * sender — se `planOfferWave`.
+ */
+function approvedPicksFromForm(value: FormDataEntryValue | null): Record<string, string[]> | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const picks: Record<string, string[]> = {}
+    for (const [requirementId, artistIds] of Object.entries(parsed)) {
+      if (!Array.isArray(artistIds)) return null
+      picks[requirementId] = artistIds.filter((id): id is string => typeof id === 'string')
+    }
+    return picks
+  } catch {
+    return null
+  }
+}
+
 export async function startBookingAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
   const db = createAdminClient()
+  const approved = approvedPicksFromForm(formData.get('picks'))
 
   const { data: reqs, error: reqError } = await db
     .from('show_requirements')
@@ -628,8 +664,16 @@ export async function startBookingAction(formData: FormData) {
   // klikk), fylles bare plasser som mangler stempel, så pågående bølger
   // ikke settes tilbake til start.
   await startAutoBooking(showId, undefined, { restart: (started ?? []).length > 0 })
+
+  // Med et godkjent forslag går den første bølgen ut nå, mens bookeren venter,
+  // og akkurat til dem bookeren så. Bølgene etter går som før.
+  const sent = approved ? await runBookingWave(showId, { approved }) : null
   scheduleShowAutomation(showId, 'manual-start')
   revalidatePath(`/admin-app/shows/${showId}`)
+
+  if (!sent) return { ok: true as const, offersSent: null, notSent: 0 }
+  const approvedCount = Object.values(approved ?? {}).reduce((sum, ids) => sum + ids.length, 0)
+  return { ok: true as const, offersSent: sent.offersCreated, notSent: Math.max(0, approvedCount - sent.approvedSent) }
 }
 
 export async function updateShowDetailsAction(formData: FormData) {

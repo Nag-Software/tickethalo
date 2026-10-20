@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ChevronDown, Copy, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { ChevronDown, Copy, Plus, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -22,17 +22,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToastActionForm } from '@/components/toast-action-form'
 import {
   addRequirementAction,
   reorderRequirementsAction,
   updateRequirementAction,
   deleteRequirementAction,
-  startBookingAction,
 } from '../actions'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
 import { RoleIcon } from '@/components/admin/show-booking-card'
-import { LineupCallout, SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
+import { LineupSuggestionCard } from './lineup-suggestion'
+import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1031,37 +1030,13 @@ export function RequirementsTab({
         )
       )}
 
-      {/* ── Start booking CTA ─────────────────────────────────────────────── */}
+      {/* ── Start booking, med forslaget før noe sendes ─────────────────── */}
       {requirements.length > 0 && ['draft', 'booking'].includes(showStatus) && (
-        <ToastActionForm
-          action={startBookingAction}
-          successMessage="Booking started! Offers go out to matching artists."
-        >
-          <input type="hidden" name="show_id" value={showId} />
-          <LineupCallout
-            title="Ready to start booking?"
-            action={
-              <Button type="submit" className="rounded-xl px-5" disabled={!canStartBooking}>
-                Start booking →
-              </Button>
-            }
-          >
-            {canStartBooking ? (
-              <p className="text-sm text-muted-foreground">
-                Sends offers automatically to artists that match the requirements.
-              </p>
-            ) : (
-              <ul className="space-y-0.5">
-                {bookingBlockers.map((reason) => (
-                  <li key={reason} className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                    <TriangleAlert className="size-3 shrink-0" />
-                    {reason}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </LineupCallout>
-        </ToastActionForm>
+        <LineupSuggestionCard
+          showId={showId}
+          canStartBooking={canStartBooking}
+          bookingBlockers={bookingBlockers}
+        />
       )}
     </div>
   )
