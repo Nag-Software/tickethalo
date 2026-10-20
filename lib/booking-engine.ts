@@ -6,12 +6,13 @@ import {
   isEligibleForSpot,
   pendingOffersToWithdraw,
   planOfferWave,
-  rankCandidates,
+  spotOrder,
   waveEntries,
   type ArtistBooking,
+  type SpotQueue,
   type WaveEntry,
 } from '@/lib/booking-rules'
-import { isRushMode, lineupDeadlineAt, offerExpiresAt } from '@/lib/booking-schedule'
+import { isRushMode, lineupDeadlineAt, offerExpiresAt, offerTarget } from '@/lib/booking-schedule'
 import { lineupDeadlineDaysFor, type BookingSettings } from '@/lib/booking-settings'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { skillLevelFromScore, type SkillLevel } from '@/lib/artist-score'
@@ -311,7 +312,7 @@ type PlanMode = 'run' | 'preview'
 export type PlanSkipReason = 'not_running' | 'no_spots' | 'show_day' | 'no_candidates' | 'load_failed'
 
 type ShowPlan = {
-  show: OfferShow & { id: string; title: string; date: string }
+  show: OfferShow & { id: string; title: string; date: string; status: string }
   requirements: EngineRequirement[]
   pool: Candidate[]
   entries: WaveEntry<EngineRequirement>[]
@@ -323,6 +324,17 @@ type ShowPlan = {
   reopenedRequirementIds: ReadonlySet<string | null>
   expiresAt: string
   settings: BookingSettings
+  /** Bookerens kø per plass (`show_requirement_queue`). Tom = motoren rangerer selv. */
+  queues: ReadonlyMap<string, SpotQueue>
+  /** Tilbudene på showet, med statusen slik planen ser den. */
+  offers: Array<{ artist_id: string; show_requirement_id: string | null; status: string }>
+  /** Ventende tilbud fra motoren per plass. */
+  pendingAuto: ReadonlyMap<string, number>
+  /** Hvem som står bekreftet på hver plass. */
+  bookedByRequirement: ReadonlyMap<string, string[]>
+  rush: boolean
+  now: Date
+  lineupDeadline: Date
 }
 
 /**
@@ -393,6 +405,7 @@ async function loadShowPlan(
     { data: offerRows, error: offersError },
     { data: existingSpots, error: spotsError },
     { data: excludedArtists, error: exclusionsError },
+    { data: queueRows, error: queueError },
   ] = await Promise.all([
     // 'declined' må være med. Uten den faller en artist som nettopp takket
     // nei rett tilbake i kandidatlisten, og siden declineBookingOffer kjører
@@ -409,12 +422,17 @@ async function loadShowPlan(
       .select('artist_id, show_requirement_id, status, cancelled_at')
       .eq('show_id', showId),
     admin.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', showId),
+    admin.from('show_requirement_queue')
+      .select('show_requirement_id, artist_id, position, removed')
+      .in('show_requirement_id', requirements.map((req) => req.id))
+      .order('position'),
   ])
 
   // Uten disse radene vet motoren ikke hvem som allerede har tilbud, plass
   // eller er tatt av showet — og ville sendt det til dem på nytt. Da er det
-  // bedre å stå over denne runden.
-  const lookupError = offersError ?? spotsError ?? exclusionsError
+  // bedre å stå over denne runden. Køen også: uten den ville motoren sendt
+  // tilbud til komikere bookeren har tatt ut.
+  const lookupError = offersError ?? spotsError ?? exclusionsError ?? queueError
   if (lookupError) {
     console.error(`[Booking] Could not load offers, spots or exclusions for show ${showId}: ${lookupError.message}`)
     return { ok: false, reason: 'load_failed' }
@@ -476,8 +494,10 @@ async function loadShowPlan(
   )
 
   const filled = new Map<string, number>()
+  const bookedByRequirement = new Map<string, string[]>()
   for (const spot of activeSpots) {
     filled.set(spot.show_requirement_id, (filled.get(spot.show_requirement_id) ?? 0) + 1)
+    bookedByRequirement.set(spot.show_requirement_id, [...(bookedByRequirement.get(spot.show_requirement_id) ?? []), spot.artist_id])
   }
 
   // Motorens egne tilbud og bookerens telles hver for seg — se `offerQuota`.
@@ -489,7 +509,15 @@ async function loadShowPlan(
     counts.set(offer.show_requirement_id, (counts.get(offer.show_requirement_id) ?? 0) + 1)
   }
 
-  const entries = waveEntries({ requirements, pool, involved, filled, pendingAuto, pendingManual, now, settings, rush })
+  const queues = new Map<string, { order: string[]; removed: Set<string> }>()
+  for (const row of queueRows ?? []) {
+    const queue = queues.get(row.show_requirement_id) ?? { order: [], removed: new Set<string>() }
+    if (row.removed) queue.removed.add(row.artist_id)
+    else queue.order.push(row.artist_id)
+    queues.set(row.show_requirement_id, queue)
+  }
+
+  const entries = waveEntries({ requirements, pool, involved, filled, pendingAuto, pendingManual, now, settings, rush, queues })
 
   return {
     ok: true,
@@ -503,6 +531,13 @@ async function loadShowPlan(
       reopenedRequirementIds,
       expiresAt,
       settings,
+      queues,
+      offers: existingOffers,
+      pendingAuto,
+      bookedByRequirement,
+      rush,
+      now,
+      lineupDeadline,
     },
   }
 }
@@ -522,7 +557,8 @@ async function loadShowPlan(
  *     I hastemodus, nær lineup-fristen, gjelder taket med en gang.
  *  3. Plassen med færrest kandidater velger først (`orderByScarcity`), og
  *     tilbudene deles ut i runder, så én plass ikke tømmer listen.
- *  4. Kandidatene står i poengrekkefølge (`rankCandidates`).
+ *  4. Innenfor plassen følges bookerens kø fra «Review your line-up», og
+ *     resten står i poengrekkefølge (`spotOrder`).
  *
  * Funksjonen kan kalles så ofte den vil — etter hvert svar, hver morgen,
  * når bookeren endrer noe. Målet gjør at ingen får flere tilbud enn bølgen
@@ -530,23 +566,15 @@ async function loadShowPlan(
  *
  * Tilbud bookeren sendte selv (`source: 'manual'`) holder setet: motoren
  * trekker dem ikke fordi komikeren ikke matcher plassen, og sender ikke
- * setet til andre mens de venter på svar. *
- * `approved` er bookerens godkjente forslag fra Start booking: de komikerne
- * får tilbudene først, og resten av bølgen fylles fra køen — se
- * `planOfferWave`.
+ * setet til andre mens de venter på svar.
  */
-export async function runBookingWave(
-  showId: string,
-  { approved }: { approved?: Readonly<Record<string, readonly string[]>> } = {},
-) {
+export async function runBookingWave(showId: string) {
   const admin = createAdminClient()
   let offersCreated = 0
   let candidatesMatched = 0
 
-  let approvedSent = 0
-
   const result = await loadShowPlan(admin, showId, 'run')
-  if (!result.ok) return { offersCreated, candidatesMatched, approvedSent }
+  if (!result.ok) return { offersCreated, candidatesMatched }
   const { plan } = result
 
   if (plan.invalidPendingOfferIds.length > 0) {
@@ -561,11 +589,11 @@ export async function runBookingWave(
     pool: plan.pool,
     involved: plan.involved,
     settings: plan.settings,
-    approved,
+    queues: plan.queues,
   })
 
   candidatesMatched = assignments.length
-  if (assignments.length === 0) return { offersCreated, candidatesMatched, approvedSent: 0 }
+  if (assignments.length === 0) return { offersCreated, candidatesMatched }
 
   const baseUrl = appUrl()
   const { show, expiresAt } = plan
@@ -588,7 +616,6 @@ export async function runBookingWave(
 
     if (offerError || !offer) continue
     offersCreated++
-    if (approved?.[req.id]?.includes(candidate.id)) approvedSent++
 
     const email = {
       email: candidate.email,
@@ -615,82 +642,211 @@ export async function runBookingWave(
     }
   }
 
-  return { offersCreated, candidatesMatched, approvedSent }
+  return { offersCreated, candidatesMatched }
 }
 
-// ─── Forslaget før Start booking ─────────────────────────────────────────
+// ─── Køen bookeren ser: «Review your line-up» ────────────────────────────
 
-/** En komiker slik bookeren ser hen i forslaget: navn og nivå, aldri scoren. */
-export type SuggestedComedian = {
+/** En komiker slik bookeren ser hen i køen: navn og nivå, aldri scoren. */
+export type QueueComedian = {
   artistId: string
   name: string
+  initials: string
   skillLevel: SkillLevel
+  /** Siste kveld i klubben, `YYYY-MM-DD`. Null = har aldri spilt der. */
+  lastClubBookingDate: string | null
 }
 
-export type SuggestedSpot = {
+/** Hvor en komiker som alt er spurt på plassen, står. */
+export type QueueOfferState = 'sent' | 'accepted' | 'declined' | 'expired' | 'booked'
+
+export type LineupQueueSpot = {
   requirementId: string
+  /** Plassens nummer i lineupen, 1 først. */
+  position: number
   roleName: string
-  /** Hvorfor plassen ikke har forslag. Null = den har. */
-  note: 'submissions_open' | 'nothing_to_send' | 'no_candidates' | 'taken_by_other_spots' | null
-  /** Den første bølgen: de motoren ville sendt tilbud til nå. */
-  picks: SuggestedComedian[]
-  /** Alle som kan få plassen, i køorden — for å bytte ut et forslag. */
-  eligible: SuggestedComedian[]
+  minSkillLevel: SkillLevel | null
+  /** Hvor mange på listen som passer plassen og kan den kvelden. */
+  matchCount: number
+  /** Hvorfor motoren ikke sender noe på plassen nå. Null = den gjør det. */
+  note: 'submissions_open' | 'filled' | null
+  slotsNeeded: number
+  /** Tilbud som går ut nå (bølge 1, eller neste påfyll om showet er i gang). */
+  nowCount: number
+  /** Tilbud i tillegg i morgen, om ingen har svart. */
+  tomorrowCount: number
+  /** Køen: de som kan få tilbud, i den rekkefølgen de spørres. */
+  queue: QueueComedian[]
+  /** De som alt er spurt eller booket på plassen. Står fast øverst. */
+  asked: Array<QueueComedian & { state: QueueOfferState }>
+  /** Kan legges til: tatt ut av bookeren, eller langt nede i køen. */
+  addable: Array<QueueComedian & { removed: boolean }>
 }
 
-export type LineupSuggestion =
-  | { ok: true; spots: SuggestedSpot[] }
+export type LineupQueue =
+  | {
+    ok: true
+    show: { date: string; venue: string | null; lineupDeadline: string; started: boolean }
+    /** Nær lineup-fristen: alle tilbudene går ut på en gang. */
+    rush: boolean
+    spots: LineupQueueSpot[]
+  }
   | { ok: false; reason: PlanSkipReason }
 
-/** Hvor mange bytte-alternativer hver plass får med seg. Resten er langt nede i køen. */
-const MAX_ELIGIBLE_PER_SPOT = 40
+/** Hvor mange komikere køen viser per plass. Resten ligger under «Add comedian». */
+const MAX_QUEUE_PER_SPOT = 40
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  const letters = parts.length > 1 ? [parts[0], parts[parts.length - 1]] : parts
+  return letters.map((part) => part.charAt(0).toUpperCase()).join('') || '?'
+}
 
 /**
- * Den første bølgen motoren ville sendt om bookingen startet nå.
+ * Køen per plass, slik dialogen «Review your line-up» viser den.
  *
- * Bookerne var redde for å stole blindt på en automatisk booker. Forslaget
- * viser hvem som får tilbud før noe sendes, og lar bookeren bytte. Det er
- * `planOfferWave` som velger, akkurat som i `runBookingWave`.
+ * Regnet av `loadShowPlan` og `spotOrder`, de samme som motoren bruker — så
+ * rekkefølgen bookeren ser, er rekkefølgen tilbudene går ut i. Fordelingen
+ * mellom plassene (hvem som går til hvilken når de står først flere steder)
+ * gjør dialogen selv med `allocateWave`, så den følger med mens bookeren
+ * flytter på folk.
  */
-export async function suggestLineup(showId: string): Promise<LineupSuggestion> {
+export async function getLineupQueue(showId: string): Promise<LineupQueue> {
   const admin = createAdminClient()
   const result = await loadShowPlan(admin, showId, 'preview')
   if (!result.ok) return result
   const { plan } = result
 
-  const assignments = planOfferWave({
-    entries: plan.entries,
-    pool: plan.pool,
-    involved: plan.involved,
-    settings: plan.settings,
-  })
+  const candidateById = new Map(plan.pool.map((candidate) => [candidate.id, candidate]))
+  const toComedian = (candidate: Candidate): QueueComedian => {
+    const name = candidate.stage_name?.trim() || candidate.full_name
+    return {
+      artistId: candidate.id,
+      name,
+      initials: initialsOf(name),
+      skillLevel: skillLevelFromScore(candidate.score),
+      lastClubBookingDate: candidate.lastClubBookingDate,
+    }
+  }
 
-  const toSuggested = (candidate: Candidate): SuggestedComedian => ({
-    artistId: candidate.id,
-    name: candidate.stage_name?.trim() || candidate.full_name,
-    skillLevel: skillLevelFromScore(candidate.score),
-  })
+  // De som alt er spurt, men har falt ut av listen (tatt av klubben, flagget),
+  // står fortsatt med tilbudet sitt. Navnet hentes for dem.
+  const askedIds = [...new Set(plan.offers.map((offer) => offer.artist_id))]
+  const missing = askedIds.filter((id) => !candidateById.has(id))
+  const { data: missingRows } = missing.length > 0
+    ? await admin.from('artists').select('id, full_name, stage_name').in('id', missing)
+    : { data: [] as Array<{ id: string; full_name: string; stage_name: string | null }> }
+  const missingById = new Map((missingRows ?? []).map((row) => [row.id, row]))
 
-  const spots = plan.requirements.map((req): SuggestedSpot => {
-    const picks = assignments.filter((assignment) => assignment.req.id === req.id).map(({ candidate }) => toSuggested(candidate))
-    const eligible = rankCandidates(
-      plan.pool.filter((candidate) => isEligibleForSpot(candidate, req, plan.involved)),
-      plan.settings,
-    ).slice(0, MAX_ELIGIBLE_PER_SPOT).map(toSuggested)
+  const askedComedian = (artistId: string): QueueComedian => {
+    const candidate = candidateById.get(artistId)
+    if (candidate) return toComedian(candidate)
+    const row = missingById.get(artistId)
+    const name = row ? row.stage_name?.trim() || row.full_name : 'Comedian'
+    return { artistId, name, initials: initialsOf(name), skillLevel: 'medium', lastClubBookingDate: null }
+  }
 
+  const tomorrow = new Date(plan.now.getTime() + DAY_MS)
+
+  const spots = plan.requirements.map((req, index): LineupQueueSpot => {
+    const queue = plan.queues.get(req.id)
     const entry = plan.entries.find((row) => row.requirementId === req.id)
-    const note: SuggestedSpot['note'] = req.submissions_open
-      ? 'submissions_open'
-      : !entry
-        ? 'nothing_to_send'
-        : picks.length === 0
-          // De som passer, kan være brukt opp av plassene som valgte før —
-          // det er noe annet enn at ingen passer, og bookeren gjør noe annet med det.
-          ? eligible.length > 0 ? 'taken_by_other_spots' : 'no_candidates'
-          : null
 
-    return { requirementId: req.id, roleName: req.role_name, note, picks, eligible }
+    const eligible = plan.pool.filter((candidate) => isEligibleForSpot(candidate, req, plan.involved))
+    const ordered = spotOrder(eligible, queue, plan.settings)
+    const removed = eligible.filter((candidate) => queue?.removed.has(candidate.id))
+
+    // Tilbudene på plassen, nyeste status per komiker. En bekreftet plass
+    // vinner over tilbudet som førte til den.
+    const states = new Map<string, QueueOfferState>()
+    for (const offer of plan.offers) {
+      if (offer.show_requirement_id !== req.id) continue
+      const state = offer.status as QueueOfferState
+      if (['sent', 'accepted', 'declined', 'expired'].includes(state)) states.set(offer.artist_id, state)
+    }
+    for (const artistId of plan.bookedByRequirement.get(req.id) ?? []) states.set(artistId, 'booked')
+
+    let nowCount = 0
+    let tomorrowCount = 0
+    if (entry) {
+      nowCount = entry.maxNewOffers
+      const today = offerTarget({ autoStartedAt: req.auto_started_at, now: plan.now, settings: plan.settings, rush: plan.rush })
+      const next = offerTarget({ autoStartedAt: req.auto_started_at, now: tomorrow, settings: plan.settings, rush: plan.rush })
+      tomorrowCount = Math.max(0, (next - today) * entry.slotsNeeded)
+    }
+
+    return {
+      requirementId: req.id,
+      position: index + 1,
+      roleName: req.role_name,
+      minSkillLevel: req.min_skill_level && req.min_skill_level !== 'low' ? req.min_skill_level : null,
+      matchCount: plan.pool.filter((candidate) => isEligibleForSpot(candidate, req, new Set())).length,
+      note: req.submissions_open ? 'submissions_open' : entry ? null : 'filled',
+      slotsNeeded: entry?.slotsNeeded ?? 0,
+      nowCount,
+      tomorrowCount,
+      queue: ordered.slice(0, MAX_QUEUE_PER_SPOT).map(toComedian),
+      asked: [...states].map(([artistId, state]) => ({ ...askedComedian(artistId), state })),
+      addable: [
+        ...removed.map((candidate) => ({ ...toComedian(candidate), removed: true })),
+        ...ordered.slice(MAX_QUEUE_PER_SPOT).map((candidate) => ({ ...toComedian(candidate), removed: false })),
+      ],
+    }
   })
 
-  return { ok: true, spots }
+  return {
+    ok: true,
+    show: {
+      date: plan.show.date,
+      venue: showVenue(plan.show).line || null,
+      lineupDeadline: plan.lineupDeadline.toISOString(),
+      started: ENGINE_STATUSES.includes(plan.show.status as (typeof ENGINE_STATUSES)[number]),
+    },
+    rush: plan.rush,
+    spots,
+  }
+}
+
+/** Køene fra dialogen: rekkefølgen per plass, og hvem som er tatt ut. */
+export type LineupQueueInput = Record<string, { order: string[]; removed: string[] }>
+
+/**
+ * Lagrer bookerens kø.
+ *
+ * Bare plasser på dette showet, og bare komikere på klubbens liste. Rader for
+ * komikere dialogen ikke nevner (de som ikke kan den kvelden akkurat nå),
+ * står urørt: et «ta ut» skal ikke forsvinne fordi komikeren en stund ikke
+ * var med i listen.
+ */
+export async function saveLineupQueues(showId: string, clubId: string | null, input: LineupQueueInput) {
+  const admin = createAdminClient()
+  const [{ data: requirementRows, error: reqError }, { data: rosterRows, error: rosterError }] = await Promise.all([
+    admin.from('show_requirements').select('id').eq('show_id', showId),
+    clubId
+      ? admin.from('club_artists').select('artist_id').eq('club_id', clubId)
+      : Promise.resolve({ data: [] as Array<{ artist_id: string }>, error: null }),
+  ])
+  if (reqError ?? rosterError) throw new Error((reqError ?? rosterError)!.message)
+
+  const spotIds = new Set((requirementRows ?? []).map((row) => row.id))
+  const roster = new Set((rosterRows ?? []).map((row) => row.artist_id))
+  const updatedAt = new Date().toISOString()
+
+  const rows = Object.entries(input).flatMap(([requirementId, { order, removed }]) => {
+    if (!spotIds.has(requirementId)) return []
+    const seen = new Set<string>()
+    const queued = order.filter((id) => roster.has(id) && !seen.has(id) && seen.add(id))
+    const out = removed.filter((id) => roster.has(id) && !seen.has(id) && seen.add(id))
+    return [
+      ...queued.map((artistId, index) => ({ show_requirement_id: requirementId, artist_id: artistId, position: index + 1, removed: false, updated_at: updatedAt })),
+      // Etter alle i køen, så en som tas inn igjen, ikke hopper foran.
+      ...out.map((artistId, index) => ({ show_requirement_id: requirementId, artist_id: artistId, position: queued.length + index + 1, removed: true, updated_at: updatedAt })),
+    ]
+  })
+
+  if (rows.length === 0) return
+  const { error } = await admin.from('show_requirement_queue').upsert(rows, { onConflict: 'show_requirement_id,artist_id' })
+  if (error) throw new Error(error.message)
 }

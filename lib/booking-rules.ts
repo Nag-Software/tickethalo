@@ -349,6 +349,7 @@ export function waveEntries<R extends WaveRequirement>({
   now,
   settings,
   rush,
+  queues,
 }: {
   requirements: R[]
   pool: PlanCandidate[]
@@ -359,6 +360,8 @@ export function waveEntries<R extends WaveRequirement>({
   now: Date
   settings: BookingSettings
   rush: boolean
+  /** Bookerens kø per plass. De som er fjernet derfra, er ikke kandidater. */
+  queues?: ReadonlyMap<string, SpotQueue>
 }): WaveEntry<R>[] {
   return requirements.flatMap((req) => {
     if (req.submissions_open) return []
@@ -382,80 +385,152 @@ export function waveEntries<R extends WaveRequirement>({
       slotsNeeded,
       currentPendingOffers,
       maxNewOffers,
-      candidateCount: pool.filter((candidate) => isEligibleForSpot(candidate, req, involved)).length,
+      candidateCount: pool.filter((candidate) =>
+        isEligibleForSpot(candidate, req, involved) && !queues?.get(req.id)?.removed.has(candidate.id),
+      ).length,
     }]
   })
+}
+
+// ─── Bookerens kø ────────────────────────────────────────────────────────
+
+/**
+ * Rekkefølgen bookeren har satt på en plass i «Review your line-up».
+ *
+ * `order` er komiker-id-ene slik bookeren la dem, øverst først. `removed` er
+ * dem bookeren har tatt ut av køen: de får aldri tilbud på plassen.
+ */
+export type SpotQueue = {
+  order: readonly string[]
+  removed: ReadonlySet<string>
+}
+
+/**
+ * Hvem som spørres først på én plass.
+ *
+ * Har bookeren satt en kø, følges den — i hver bølge, ikke bare den første.
+ * Bookerne ville ha kontroll over hvem som spørres, og en kø som bare gjaldt
+ * de to første, ga dem det bare halvveis. Kvalifiserte bookeren ikke har
+ * plassert (nye på listen, eller langt nede i køen), kommer etter, i
+ * motorens egen rekkefølge. Uten kø er dette bare `rankCandidates`.
+ *
+ * Kallet får de som er kvalifisert *nå*. Kø eller ikke: den som er blitt
+ * opptatt eller ikke lenger passer, er allerede ute av listen.
+ */
+export function spotOrder<C extends RankedCandidate>(
+  eligible: C[],
+  queue: SpotQueue | undefined,
+  settings: BookingSettings,
+): C[] {
+  if (!queue) return rankCandidates(eligible, settings)
+
+  const allowed = eligible.filter((candidate) => !queue.removed.has(candidate.id))
+  const position = new Map(queue.order.map((id, index) => [id, index]))
+  const placed = allowed
+    .filter((candidate) => position.has(candidate.id))
+    .sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0))
+  const rest = rankCandidates(allowed.filter((candidate) => !position.has(candidate.id)), settings)
+  return [...placed, ...rest]
+}
+
+/** Én plass slik fordelingen ser den: hvor mange, og hvem i hvilken rekkefølge. */
+export type AllocationSpot = ScarcityEntry & {
+  slotsNeeded: number
+  maxNewOffers: number
+  /** Komiker-id-er, den som skal spørres først øverst. */
+  order: readonly string[]
+}
+
+/**
+ * Fordeler bølgen mellom plassene.
+ *
+ * Plassen med færrest kandidater velger først (`orderByScarcity`), og
+ * tilbudene deles ut i runder — ett sete om gangen per plass — så én plass
+ * ikke tømmer listen før de andre har fått sitt. En komiker får aldri to
+ * tilbud på samme show: står hen først i to køer, går hen til plassen som
+ * velger først, og den andre går videre i sin kø.
+ *
+ * Regner bare på id-er, uten score og kriterier. Derfor kan dialogen der
+ * bookeren setter køen, kjøre akkurat denne funksjonen i nettleseren og vise
+ * hvem som får tilbud — uten at scoren sendes dit.
+ */
+export function allocateWave(
+  spots: readonly AllocationSpot[],
+  involved: ReadonlySet<string> = new Set(),
+): Array<{ requirementId: string; artistId: string }> {
+  if (spots.length === 0) return []
+
+  const ordered = orderByScarcity([...spots])
+  const taken = new Set(involved)
+  const result: Array<{ requirementId: string; artistId: string }> = []
+  const assigned = new Map<string, number>()
+
+  const maxRounds = Math.max(...ordered.map((spot) => Math.ceil(spot.maxNewOffers / Math.max(1, spot.slotsNeeded))))
+
+  for (let round = 0; round < maxRounds; round++) {
+    for (const spot of ordered) {
+      const remaining = spot.maxNewOffers - (assigned.get(spot.requirementId) ?? 0)
+      if (remaining <= 0) continue
+
+      const waveSize = Math.min(spot.slotsNeeded, remaining)
+      const chosen = spot.order.filter((id) => !taken.has(id)).slice(0, waveSize)
+
+      for (const artistId of chosen) {
+        taken.add(artistId)
+        result.push({ requirementId: spot.requirementId, artistId })
+        assigned.set(spot.requirementId, (assigned.get(spot.requirementId) ?? 0) + 1)
+      }
+    }
+  }
+
+  return result
 }
 
 /**
  * Hvem som får tilbud i denne bølgen, plass for plass.
  *
- * Den samme funksjonen gir forslaget bookeren ser før Start booking og
+ * Den samme funksjonen gir dialogen bookeren ser før Start booking og
  * tilbudene motoren faktisk sender. Var de to regnet hver for seg, kunne
- * forslaget vist én lineup og motoren sendt en annen.
+ * dialogen vist én lineup og motoren sendt en annen.
  *
- * Plassen med færrest kandidater velger først (`orderByScarcity`), og
- * tilbudene deles ut i runder — ett sete om gangen per plass — så én plass
- * ikke tømmer listen før de andre har fått sitt. Innenfor plassen står
- * kandidatene i poengrekkefølge (`rankCandidates`).
- *
- * `approved` er bookerens godkjente forslag: komikerne der går først på sin
- * plass, så sant de fortsatt kan. Er noen blitt opptatt siden forslaget,
- * fylles plassen fra køen som vanlig. Uten `approved` er dette nøyaktig
- * motorens vanlige bølge.
+ * Kvalifiseringen skjer her, ved hver kjøring; rekkefølgen per plass er
+ * `spotOrder` (bookerens kø, ellers poengene), og fordelingen mellom
+ * plassene er `allocateWave`.
  */
 export function planOfferWave<C extends PlanCandidate, R extends WaveRequirement>({
   entries,
   pool,
-  involved: alreadyInvolved,
+  involved,
   settings,
-  approved,
+  queues,
 }: {
   entries: WaveEntry<R>[]
   pool: C[]
   involved: ReadonlySet<string>
   settings: BookingSettings
-  approved?: Readonly<Record<string, readonly string[]>>
+  queues?: ReadonlyMap<string, SpotQueue>
 }): Array<{ candidate: C; req: R }> {
   if (entries.length === 0) return []
 
-  const ordered = orderByScarcity(entries)
-  const involved = new Set(alreadyInvolved)
-  const assignments: Array<{ candidate: C; req: R }> = []
-  const assignedByRequirement = new Map<string, number>()
+  const byId = new Map(pool.map((candidate) => [candidate.id, candidate]))
+  const reqById = new Map(entries.map((entry) => [entry.requirementId, entry.req]))
 
-  const assign = (candidate: C, entry: WaveEntry<R>) => {
-    involved.add(candidate.id)
-    assignments.push({ candidate, req: entry.req })
-    assignedByRequirement.set(entry.requirementId, (assignedByRequirement.get(entry.requirementId) ?? 0) + 1)
-  }
+  const spots = entries.map((entry): AllocationSpot => ({
+    requirementId: entry.requirementId,
+    lineupPosition: entry.lineupPosition,
+    candidateCount: entry.candidateCount,
+    slotsNeeded: entry.slotsNeeded,
+    maxNewOffers: entry.maxNewOffers,
+    order: spotOrder(
+      pool.filter((candidate) => isEligibleForSpot(candidate, entry.req, involved)),
+      queues?.get(entry.requirementId),
+      settings,
+    ).map((candidate) => candidate.id),
+  }))
 
-  if (approved) {
-    const byId = new Map(pool.map((candidate) => [candidate.id, candidate]))
-    for (const entry of ordered) {
-      for (const artistId of approved[entry.requirementId] ?? []) {
-        if ((assignedByRequirement.get(entry.requirementId) ?? 0) >= entry.maxNewOffers) break
-        const candidate = byId.get(artistId)
-        if (candidate && isEligibleForSpot(candidate, entry.req, involved)) assign(candidate, entry)
-      }
-    }
-  }
-
-  const maxRounds = Math.max(...ordered.map((entry) => Math.ceil(entry.maxNewOffers / entry.slotsNeeded)))
-
-  for (let round = 0; round < maxRounds; round++) {
-    for (const entry of ordered) {
-      const assigned = assignedByRequirement.get(entry.requirementId) ?? 0
-      const remaining = entry.maxNewOffers - assigned
-      if (remaining <= 0) continue
-
-      const waveSize = Math.min(entry.slotsNeeded, remaining)
-      const eligible = pool.filter((candidate) => isEligibleForSpot(candidate, entry.req, involved))
-      const chosen = rankCandidates(eligible, settings).slice(0, waveSize)
-
-      for (const candidate of chosen) assign(candidate, entry)
-    }
-  }
-
-  return assignments
+  return allocateWave(spots, involved).flatMap(({ requirementId, artistId }) => {
+    const candidate = byId.get(artistId)
+    const req = reqById.get(requirementId)
+    return candidate && req ? [{ candidate, req }] : []
+  })
 }

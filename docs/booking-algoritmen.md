@@ -25,7 +25,9 @@ For hver plass kan klubben si mer om hvem den vil ha:
 
 Dette er bestillingen. Systemet endrer den aldri på egen hånd. Finner det ingen som passer, sier det fra til bookeren i stedet for å sende tilbud til noen som ikke passer.
 
-Før bookingen starter, kan bookeren trykke **Suggest line-up now**. Da viser systemet hvem som ville fått den første bølgen med tilbud, plass for plass — samme utvalg som når bookingen faktisk kjører. Bookeren kan bytte ut hvem som helst med en annen som passer plassen. Trykker bookeren så **Start booking**, går tilbudene ut til akkurat dem, med en gang. Forslaget er valgfritt: Start booking uten forslag lar systemet velge selv, som før.
+Før bookingen starter, kan bookeren trykke **Suggest line-up now**. Da åpnes **Review your line-up**: en kø per plass med alle som passer, i den rekkefølgen systemet ville spurt dem. Stiplede linjer viser hvem som får tilbud når bookingen starter, hvem som spørres i bølge 2, og hvem som bare spørres om ingen sier ja. Bookeren kan dra folk opp og ned, ta noen ut, og legge noen til. Trykker bookeren **Start booking**, lagres køen, og systemet følger den i *hver* bølge — ikke bare den første. Kvalifiserte komikere bookeren ikke har plassert, kommer etter køen i systemets egen rekkefølge, og den som er tatt ut, får aldri tilbud på plassen. Køen kan åpnes igjen etter start fra **Review queue** i lineup-fanen.
+
+Dialogen er valgfri: Start booking uten den lar systemet velge selv, som før.
 
 Når bookeren trykker **Start booking**, tar systemet over.
 
@@ -72,6 +74,8 @@ Fordi scoren er et snitt, kan ingen bygge seg fast på toppen, og en dårlig kve
 **Trekket for show i samme klubb** sprer bookingene. Har komikeren allerede en plass hos klubben innen 30 dager fra showdatoen, går det 10 poeng, altså ett scorepoeng, for hver slik plass. Publikum skal ikke se de samme fem ansiktene hver gang. Show i *andre* klubber teller ikke. Ingen skal straffes for å jobbe.
 
 Står to komikere helt likt, går den som har ventet lengst siden forrige kveld i klubben først. Har en av dem aldri spilt der, går hen først.
+
+Poengene er systemets forslag. Har bookeren satt en kø i **Review your line-up**, går den foran: komikerne spørres i bookerens rekkefølge, og poengene avgjør bare rekkefølgen for dem bookeren ikke har plassert.
 
 ## 4. Tilbudene går ut i bølger
 

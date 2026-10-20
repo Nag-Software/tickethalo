@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  allocateWave,
   planOfferWave,
+  spotOrder,
   waveEntries,
+  type SpotQueue,
   type PlanCandidate,
   type WaveEntry,
   type WaveRequirement,
@@ -155,48 +158,117 @@ describe('the wave', () => {
   })
 })
 
-describe('the booker’s approved suggestion', () => {
-  const pool = ['a', 'b', 'c', 'd'].map((id, index) => comedian(id, { score: 9 - index }))
+const queue = (order: string[], removed: string[] = []): SpotQueue => ({ order, removed: new Set(removed) })
+
+describe('the booker’s queue', () => {
+  const pool = ['a', 'b', 'c', 'd', 'e'].map((id, index) => comedian(id, { score: 9 - index }))
   const req = spot('s1')
 
-  it('is exactly the normal wave when nothing is approved', () => {
+  it('is exactly the engine’s ranking when the booker has not set one', () => {
     const plain = planOfferWave({ entries: [entry(req, pool)], pool, involved: new Set(), settings })
-    const empty = planOfferWave({ entries: [entry(req, pool)], pool, involved: new Set(), settings, approved: {} })
+    const empty = planOfferWave({ entries: [entry(req, pool)], pool, involved: new Set(), settings, queues: new Map() })
+    expect(picks(plain)).toEqual(['s1:a', 's1:b'])
     expect(picks(empty)).toEqual(picks(plain))
   })
 
-  it('sends the comedians the booker picked, not the top of the queue', () => {
+  it('asks the comedians in the booker’s order, not by points', () => {
     const result = planOfferWave({
       entries: [entry(req, pool)],
       pool,
       involved: new Set(),
       settings,
-      approved: { s1: ['d', 'c'] },
+      queues: new Map([['s1', queue(['d', 'c', 'a', 'b', 'e'])]]),
     })
     expect(picks(result)).toEqual(['s1:d', 's1:c'])
   })
 
-  it('fills from the queue when an approved comedian can no longer take it', () => {
+  it('keeps following the queue in later waves, after the first ones have offers', () => {
+    // Dag 2: d og c har tilbud ute (de er «involvert»), og bølgen gir to til.
+    const result = planOfferWave({
+      entries: [entry(req, pool)],
+      pool,
+      involved: new Set(['d', 'c']),
+      settings,
+      queues: new Map([['s1', queue(['d', 'c', 'e', 'b', 'a'])]]),
+    })
+    expect(picks(result)).toEqual(['s1:e', 's1:b'])
+  })
+
+  it('puts eligible comedians the booker has not placed after the queue, in the engine’s order', () => {
+    const order = spotOrder(pool, queue(['e', 'c']), settings).map((candidate) => candidate.id)
+    expect(order).toEqual(['e', 'c', 'a', 'b', 'd'])
+  })
+
+  it('never offers the spot to someone the booker removed, and does not count them', () => {
+    const queues = new Map([['s1', queue(['a', 'b', 'c'], ['a', 'b'])]])
+    const result = planOfferWave({ entries: [entry(req, pool)], pool, involved: new Set(), settings, queues })
+    expect(picks(result)).toEqual(['s1:c', 's1:d'])
+
+    const [row] = waveEntries({
+      requirements: [req],
+      pool,
+      involved: new Set(),
+      filled: new Map(),
+      pendingAuto: new Map(),
+      pendingManual: new Map(),
+      now,
+      settings,
+      rush: false,
+      queues,
+    })
+    expect(row.candidateCount).toBe(3)
+  })
+
+  it('skips a queued comedian who has become unavailable since', () => {
     const busyPool = pool.map((candidate) => candidate.id === 'd' ? { ...candidate, unavailable: true } : candidate)
     const result = planOfferWave({
       entries: [entry(req, busyPool)],
       pool: busyPool,
       involved: new Set(),
       settings,
-      approved: { s1: ['d', 'c'] },
+      queues: new Map([['s1', queue(['d', 'c', 'e'])]]),
     })
-    expect(picks(result)).toEqual(['s1:c', 's1:a'])
+    expect(picks(result)).toEqual(['s1:c', 's1:e'])
   })
 
-  it('never sends more than the wave allows, and never the same comedian twice', () => {
-    const other = spot('s2', { lineup_position: 2 })
+  it('gives a comedian first in two queues to the scarcer spot, and moves the other on', () => {
+    const host = spot('host', { role_name: 'Host', lineup_position: 2 })
+    const hostPool = pool.map((candidate) =>
+      candidate.id === 'a' || candidate.id === 'b' ? { ...candidate, category: ['konferansier', 'stand-up'] as PlanCandidate['category'] } : candidate,
+    )
     const result = planOfferWave({
-      entries: [entry(req, pool), entry(other, pool)],
-      pool,
+      entries: [entry(req, hostPool, { candidateCount: 5 }), entry(host, hostPool, { candidateCount: 2 })],
+      pool: hostPool,
       involved: new Set(),
       settings,
-      approved: { s1: ['a', 'b', 'c'], s2: ['a', 'd'] },
+      queues: new Map([['s1', queue(['a', 'c', 'd'])], ['host', queue(['a', 'b'])]]),
     })
-    expect(picks(result)).toEqual(['s1:a', 's1:b', 's2:d', 's2:c'])
+    // Host har færrest kandidater og velger først: a går dit. Stand-up går videre til c.
+    expect(picks(result)).toEqual(['host:a', 's1:c', 'host:b', 's1:d'])
+  })
+})
+
+describe('allocating a wave from ids alone', () => {
+  it('gives the same result as the full plan, so the dialog and the engine agree', () => {
+    const pool = ['a', 'b', 'c', 'd'].map((id, index) => comedian(id, { score: 9 - index }))
+    const first = spot('first', { lineup_position: 1 })
+    const second = spot('second', { lineup_position: 2 })
+    const queues = new Map([['second', queue(['d', 'a'])]])
+
+    const plan = planOfferWave({ entries: [entry(first, pool), entry(second, pool)], pool, involved: new Set(), settings, queues })
+    const allocation = allocateWave([
+      { requirementId: 'first', lineupPosition: 1, candidateCount: 4, slotsNeeded: 1, maxNewOffers: 2, order: spotOrder(pool, undefined, settings).map((c) => c.id) },
+      { requirementId: 'second', lineupPosition: 2, candidateCount: 4, slotsNeeded: 1, maxNewOffers: 2, order: spotOrder(pool, queues.get('second'), settings).map((c) => c.id) },
+    ])
+
+    expect(allocation.map(({ requirementId, artistId }) => `${requirementId}:${artistId}`)).toEqual(picks(plan))
+  })
+
+  it('never hands out someone who is already involved', () => {
+    const allocation = allocateWave(
+      [{ requirementId: 's', lineupPosition: 1, candidateCount: 3, slotsNeeded: 1, maxNewOffers: 2, order: ['a', 'b', 'c'] }],
+      new Set(['a']),
+    )
+    expect(allocation.map((row) => row.artistId)).toEqual(['b', 'c'])
   })
 })

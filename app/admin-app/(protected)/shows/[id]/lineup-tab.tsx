@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Copy, MoreVertical, Trash2 } from 'lucide-react'
+import { Copy, ListOrdered, MoreVertical, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -15,6 +15,8 @@ import {
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
+import { LineupQueueDialog } from './lineup-queue-dialog'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { PublishShowDialog } from '@/components/admin/publish-show-dialog'
 import type { PublishReadinessItem } from '@/lib/publish-readiness'
@@ -225,6 +227,8 @@ export function LineupTab({
   // "Move" panel per requirement
   const [openMoveReqId, setOpenMoveReqId] = useState<string | null>(null)
   const [moveOfferId, setMoveOfferId] = useState('')
+
+  const [queueOpen, setQueueOpen] = useState(false)
 
   // "Swap comedian" panel per spot
   const [swapSpotId, setSwapSpotId] = useState<string | null>(null)
@@ -627,6 +631,22 @@ export function LineupTab({
           pendingTotal={pendingSubmissionTotal}
           disabled={showStatus === 'completed' || showStatus === 'cancelled'}
         />
+      )}
+
+      {/* Køen motoren følger. Etter start kan bookeren fortsatt se og endre
+          hvem som spørres når noen sier nei — se lineup-queue-dialog.tsx. */}
+      {['booking', 'fullbooked', 'published'].includes(showStatus) && requirements.length > 0 && (
+        <div className={cn(spotCardClass, 'flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5')}>
+          <ListOrdered className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Offer queue</p>
+            <p className="text-xs text-muted-foreground">See who gets asked next on each spot, and change the order.</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setQueueOpen(true)}>
+            Review queue
+          </Button>
+          <LineupQueueDialog showId={showId} open={queueOpen} onOpenChange={setQueueOpen} mode="review" />
+        </div>
       )}
 
       {requirements.map((req, index) => {

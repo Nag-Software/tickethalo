@@ -30,7 +30,7 @@ import {
 } from '../actions'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
 import { RoleIcon } from '@/components/admin/show-booking-card'
-import { LineupSuggestionCard } from './lineup-suggestion'
+import { StartBookingCard } from './lineup-queue-dialog'
 import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
@@ -1045,7 +1045,7 @@ export function RequirementsTab({
 
       {/* ── Start booking, med forslaget før noe sendes ─────────────────── */}
       {requirements.length > 0 && ['draft', 'booking'].includes(showStatus) && (
-        <LineupSuggestionCard
+        <StartBookingCard
           showId={showId}
           canStartBooking={canStartBooking}
           bookingBlockers={bookingBlockers}
