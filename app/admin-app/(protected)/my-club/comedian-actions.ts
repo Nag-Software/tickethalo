@@ -11,6 +11,8 @@ import { getAuthUser, getSessionProfile } from '@/lib/session'
 export type ComedianLinkFormState = {
   error?: string
   success?: string
+  /** E-posten som ble prøvd, så skjemaet kan beholde den etter en feil. */
+  email?: string
 }
 
 const ERROR_MESSAGES: Record<ComedianLinkErrorCode, string> = {
@@ -47,11 +49,12 @@ export async function linkComedianAction(
   const current = await currentLogin()
   if (!current) return { error: 'Your session has expired. Sign in again.' }
 
+  const email = String(formData.get('email') ?? '')
   const result = await linkExistingComedianAccount(current, {
-    email: String(formData.get('email') ?? ''),
+    email,
     password: String(formData.get('password') ?? ''),
   })
-  if (!result.ok) return { error: ERROR_MESSAGES[result.code] }
+  if (!result.ok) return { error: ERROR_MESSAGES[result.code], email }
 
   // Bryteren står i layouten, så hele portalen må tegnes på nytt.
   revalidatePath('/admin-app', 'layout')

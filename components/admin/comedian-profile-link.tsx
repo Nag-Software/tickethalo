@@ -38,11 +38,26 @@ export type LinkedComedian = {
  * klubb ser sitt eget kort. Se `lib/comedian-link.ts`.
  */
 export function ComedianProfileLink({ comedian }: { comedian: LinkedComedian | null }) {
+  // Begge skjemaene bor her og ikke i kortene under: en vellykket kobling
+  // eller frakobling tegner siden på nytt med det andre kortet, og toasten
+  // må overleve at kortet som sendte skjemaet forsvinner.
+  const [linkState, linkAction, linking] = useActionState<ComedianLinkFormState, FormData>(linkComedianAction, {})
+  const [disconnectState, disconnectAction, disconnecting] = useActionState<ComedianLinkFormState, FormData>(
+    disconnectComedianAction,
+    {}
+  )
+  useToastState(linkState)
+  useToastState(disconnectState)
+
   return (
     <FieldFrame>
       <FieldSection id="comedian-profile" title="Comedian profile">
         <div className="col-span-12">
-          {comedian ? <Connected comedian={comedian} /> : <NotConnected />}
+          {comedian ? (
+            <Connected comedian={comedian} formAction={disconnectAction} pending={disconnecting} />
+          ) : (
+            <NotConnected formAction={linkAction} pending={linking} email={linkState.email} />
+          )}
         </div>
       </FieldSection>
     </FieldFrame>
@@ -56,10 +71,11 @@ function useToastState(state: ComedianLinkFormState) {
   }, [state])
 }
 
-function NotConnected() {
-  const [showLogin, setShowLogin] = useState(false)
-  const [state, formAction, pending] = useActionState<ComedianLinkFormState, FormData>(linkComedianAction, {})
-  useToastState(state)
+type FormProps = { formAction: (formData: FormData) => void; pending: boolean }
+
+function NotConnected({ formAction, pending, email }: FormProps & { email?: string }) {
+  // Står åpent etter et feil passord, så e-posten ikke må skrives på nytt.
+  const [showLogin, setShowLogin] = useState(Boolean(email))
 
   return (
     <div className="space-y-4">
@@ -109,6 +125,8 @@ function NotConnected() {
                 name="email"
                 type="email"
                 autoComplete="off"
+                defaultValue={email}
+                key={email}
                 required
                 className={FIELD_INPUT_CLASS}
               />
@@ -138,12 +156,8 @@ function NotConnected() {
   )
 }
 
-function Connected({ comedian }: { comedian: LinkedComedian }) {
+function Connected({ comedian, formAction, pending }: FormProps & { comedian: LinkedComedian }) {
   const [open, setOpen] = useState(false)
-  const [state, formAction, pending] = useActionState<ComedianLinkFormState, FormData>(disconnectComedianAction, {})
-  useToastState(state)
-  // Etter en vellykket frakobling tegnes siden på nytt uten koblingen, og
-  // dette kortet (med dialogen) byttes ut med «Do you also perform?».
 
   const createdHere = !comedian.ownLoginEmail
 

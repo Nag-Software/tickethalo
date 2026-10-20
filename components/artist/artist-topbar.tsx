@@ -63,7 +63,7 @@ export function ArtistTopbar({
               href={item.href}
               aria-current={isActive(item.href, item.exact) ? 'page' : undefined}
               className={cn(
-                'flex h-7 items-center rounded-full px-3.5 text-[12.5px] font-medium transition-colors',
+                'flex h-7 items-center whitespace-nowrap rounded-full px-3.5 text-[12.5px] font-medium transition-colors',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
                 isActive(item.href, item.exact)
                   ? 'bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)]'
@@ -76,17 +76,26 @@ export function ArtistTopbar({
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden max-w-[180px] truncate text-[13px] text-[var(--ev-muted)] lg:inline">
+          {/* Med bryteren ved siden av er det ikke plass til navnet før xl. */}
+          <span
+            className={cn(
+              'hidden max-w-[180px] truncate text-[13px] text-[var(--ev-muted)]',
+              clubPortalHref ? 'xl:inline' : 'lg:inline'
+            )}
+          >
             {name}
           </span>
 
           {clubPortalHref ? (
             <Link
               href={clubPortalHref}
-              className="hidden h-9 items-center gap-1.5 rounded-full bg-[var(--ev-card)] px-3.5 text-[12.5px] font-medium text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] md:inline-flex"
+              aria-label="Switch to club"
+              title="Switch to club"
+              className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--ev-card)] px-2.5 text-[12.5px] font-medium text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] md:inline-flex lg:px-3.5"
             >
               <Building2 className="size-4" aria-hidden />
-              Switch to club
+              {/* Bare ikonet mellom md og lg, der lenkene ellers ikke får plass. */}
+              <span className="hidden lg:inline">Switch to club</span>
             </Link>
           ) : null}
 
@@ -149,9 +158,10 @@ export function ArtistTopbar({
             <form action="/artist-app/logout" method="post">
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+                title={logOutLabel}
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
               >
-                <LogOut className="size-4" /> {logOutLabel}
+                <LogOut className="size-4" /> {clubPortalHref ? 'Log out of both' : 'Log out'}
               </button>
             </form>
           </div>
