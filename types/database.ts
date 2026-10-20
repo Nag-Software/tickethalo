@@ -776,6 +776,19 @@ export type ArtistPerformanceReview = {
   updated_at: string
 }
 
+/**
+ * Komikerens score på tvers av klubbene (migrasjon 075). Bare superadmin kan
+ * lese den, og bookingen bruker den ikke — se `globalScore` i lib/artist-score.ts.
+ */
+export type ArtistGlobalScore = {
+  artist_id: string
+  /** Null = ingen klubb har vurdert komikeren. */
+  score: number | null
+  review_count: number
+  club_count: number
+  updated_at: string
+}
+
 export type ShowArtistBookingExclusion = {
   id: string
   show_id: string
@@ -863,6 +876,18 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ArtistUnavailableDate>
+        Relationships: []
+      }
+      artist_global_scores: {
+        Row: ArtistGlobalScore
+        Insert: {
+          artist_id: string
+          score?: number | null
+          review_count?: number
+          club_count?: number
+          updated_at?: string
+        }
+        Update: Partial<ArtistGlobalScore>
         Relationships: []
       }
       artist_performance_reviews: {

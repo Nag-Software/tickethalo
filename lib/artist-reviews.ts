@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { scoreFromRatings, SCORE_WINDOW } from '@/lib/artist-score'
+import { globalScore, scoreFromRatings, SCORE_WINDOW } from '@/lib/artist-score'
 import { osloEndOfDay } from '@/lib/booking-schedule'
 import type { PerformanceRating } from '@/types/database'
 
@@ -69,6 +69,53 @@ export async function recalculateClubArtistScore(db: Db, clubId: string | null, 
 }
 
 /**
+ * Regner komikerens globale score på nytt, og lagrer den.
+ *
+ * Den globale scoren er bare for superadmin og påvirker ikke bookingen. Den
+ * regnes fra vurderingene, ikke fra `club_artists.score`, så en klubb som har
+ * koblet fra komikeren fortsatt teller med det den har sett — og hver klubbs
+ * del regnes med `scoreFromRatings`, nøyaktig som den lokale scoren.
+ */
+export async function recalculateGlobalArtistScore(db: Db, artistId: string) {
+  // PostgREST gir høyst 1000 rader uten videre. Ingen komiker er i nærheten
+  // av så mange vurderinger, men taket skal stå her og ikke overraske.
+  const { data, error } = await db
+    .from('artist_performance_reviews')
+    .select('club_id, rating, created_at')
+    .eq('artist_id', artistId)
+    .not('club_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(5000)
+
+  if (error) throw new Error(error.message)
+
+  const ratingsByClub = new Map<string, PerformanceRating[]>()
+  for (const row of data ?? []) {
+    if (!row.club_id) continue
+    const ratings = ratingsByClub.get(row.club_id) ?? []
+    ratings.push(row.rating as PerformanceRating)
+    ratingsByClub.set(row.club_id, ratings)
+  }
+
+  const result = globalScore(
+    [...ratingsByClub.values()].map((ratings) => ({ score: scoreFromRatings(ratings), reviewCount: ratings.length })),
+  )
+
+  const { error: upsertError } = await db
+    .from('artist_global_scores')
+    .upsert({
+      artist_id: artistId,
+      score: result.score,
+      review_count: result.reviewCount,
+      club_count: result.clubCount,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'artist_id' })
+  if (upsertError) throw new Error(upsertError.message)
+
+  return result
+}
+
+/**
  * Lagrer én vurdering, og oppdaterer scoren.
  *
  * Én vurdering per bekreftet plass (unik kolonne i migrasjon 023), så en
@@ -89,7 +136,17 @@ export async function savePerformanceReview(db: Db, input: LineupReviewInput): P
     }, { onConflict: 'confirmed_spot_id' })
 
   if (error) throw new Error(error.message)
-  return recalculateClubArtistScore(db, input.clubId, input.artistId)
+  const score = await recalculateClubArtistScore(db, input.clubId, input.artistId)
+
+  // Den globale scoren er bare til innsyn. Feiler den, skal ikke vurderingen
+  // klubben nettopp ga, se ut som den feilet — den lokale scoren er lagret.
+  try {
+    await recalculateGlobalArtistScore(db, input.artistId)
+  } catch (globalError) {
+    console.error(`[Reviews] Could not update the global score for ${input.artistId}: ${(globalError as Error).message}`)
+  }
+
+  return score
 }
 
 /** Vurderingene klubben har gitt på ett show, slått opp på plass. */
