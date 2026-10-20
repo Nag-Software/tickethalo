@@ -121,6 +121,7 @@ export type Candidate = {
   email: string
   full_name: string
   stage_name: string | null
+  profile_image_url: string | null
   admin_energy_level: EnergyLevel | null
   gender: ArtistGender | null
   category: ArtistType[] | null
@@ -178,7 +179,7 @@ async function loadCandidates(
     { data: clubShows, error: clubShowError },
   ] = await Promise.all([
     admin.from('artists')
-      .select('id, email, full_name, stage_name, gender')
+      .select('id, email, full_name, stage_name, profile_image_url, gender')
       .eq('status', 'approved')
       .in('id', bookableIds),
     admin.from('artist_unavailable_dates')
@@ -264,6 +265,7 @@ async function loadCandidates(
     email: artist.email,
     full_name: artist.full_name,
     stage_name: artist.stage_name ?? null,
+    profile_image_url: artist.profile_image_url ?? null,
     admin_energy_level: artist.admin_energy_level,
     gender: (artist.gender ?? null) as ArtistGender | null,
     category: artist.category,
@@ -652,6 +654,8 @@ export type QueueComedian = {
   artistId: string
   name: string
   initials: string
+  /** Profilbildet. Bookeren kjenner komikerne på ansiktet, ikke på initialene. */
+  imageUrl: string | null
   skillLevel: SkillLevel
   /** Siste kveld i klubben, `YYYY-MM-DD`. Null = har aldri spilt der. */
   lastClubBookingDate: string | null
@@ -726,6 +730,7 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
       artistId: candidate.id,
       name,
       initials: initialsOf(name),
+      imageUrl: candidate.profile_image_url,
       skillLevel: skillLevelFromScore(candidate.score),
       lastClubBookingDate: candidate.lastClubBookingDate,
     }
@@ -736,8 +741,8 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
   const askedIds = [...new Set(plan.offers.map((offer) => offer.artist_id))]
   const missing = askedIds.filter((id) => !candidateById.has(id))
   const { data: missingRows } = missing.length > 0
-    ? await admin.from('artists').select('id, full_name, stage_name').in('id', missing)
-    : { data: [] as Array<{ id: string; full_name: string; stage_name: string | null }> }
+    ? await admin.from('artists').select('id, full_name, stage_name, profile_image_url').in('id', missing)
+    : { data: [] as Array<{ id: string; full_name: string; stage_name: string | null; profile_image_url: string | null }> }
   const missingById = new Map((missingRows ?? []).map((row) => [row.id, row]))
 
   const askedComedian = (artistId: string): QueueComedian => {
@@ -745,7 +750,7 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
     if (candidate) return toComedian(candidate)
     const row = missingById.get(artistId)
     const name = row ? row.stage_name?.trim() || row.full_name : 'Comedian'
-    return { artistId, name, initials: initialsOf(name), skillLevel: 'medium', lastClubBookingDate: null }
+    return { artistId, name, initials: initialsOf(name), imageUrl: row?.profile_image_url ?? null, skillLevel: 'medium', lastClubBookingDate: null }
   }
 
   const tomorrow = new Date(plan.now.getTime() + DAY_MS)

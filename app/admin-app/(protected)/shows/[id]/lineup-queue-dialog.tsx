@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, GripVertical, Plus, RefreshCw, Sparkles, Triang
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { Avatar as UiAvatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { SkillLevelBadge } from '@/components/admin/artist-badges'
@@ -213,6 +214,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
         artistId: row.artistId,
         name: row.name,
         initials: row.initials,
+        imageUrl: row.imageUrl,
         skillLevel: row.skillLevel,
         lastClubBookingDate: row.lastClubBookingDate,
       }],
@@ -496,7 +498,7 @@ function SpotQueue({
         <ul className="space-y-1.5" aria-label="Already asked">
           {spot.asked.map((row) => (
             <li key={row.artistId} className="flex items-center gap-2.5 rounded-xl border border-dashed px-2.5 py-2 opacity-80">
-              <Avatar initials={row.initials} />
+              <Avatar comedian={row} />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{row.name}</span>
               <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', STATE_CLASS[row.state])}>
                 {STATE_TEXT[row.state]}
@@ -545,12 +547,13 @@ function SpotQueue({
                 )}
               >
                 <GripVertical className="hidden size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing sm:block" aria-hidden />
-                <span className="w-4 shrink-0 text-center text-xs font-semibold tabular-nums text-muted-foreground sm:w-5">{index + 1}</span>
-                {/* Initialene er pynt; på en smal skjerm trenger navnet plassen. */}
-                <span className="hidden sm:contents"><Avatar initials={row.initials} /></span>
+                {/* Nummeret viker for bildet på mobil: rekkefølgen ses uansett,
+                    ansiktet er det bookeren kjenner igjen. */}
+                <span className="hidden w-5 shrink-0 text-center text-xs font-semibold tabular-nums text-muted-foreground sm:block">{index + 1}</span>
+                <Avatar comedian={row} />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">{row.name}</span>
+                    <span className="truncate text-sm font-medium" title={row.name}>{row.name}</span>
                     <span className="shrink-0"><SkillLevelBadge level={row.skillLevel} compact /></span>
                   </div>
                   {/* Brytes på mobil i stedet for å kuttes: det er grunnen til
@@ -601,7 +604,7 @@ function SpotQueue({
                     }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-muted"
                   >
-                    <Avatar initials={row.initials} />
+                    <Avatar comedian={row} />
                     <span className="min-w-0 flex-1 truncate text-sm">{row.name}</span>
                     {row.removed && <span className="shrink-0 text-[11px] text-muted-foreground">Removed</span>}
                     <SkillLevelBadge level={row.skillLevel} compact />
@@ -616,11 +619,13 @@ function SpotQueue({
   )
 }
 
-function Avatar({ initials }: { initials: string }) {
+/** Profilbildet, med initialene bare til bildet har lastet eller om det mangler. */
+function Avatar({ comedian }: { comedian: Pick<QueueComedian, 'name' | 'initials' | 'imageUrl'> }) {
   return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground/80">
-      {initials}
-    </span>
+    <UiAvatar className="size-9 shrink-0 sm:size-10">
+      {comedian.imageUrl && <AvatarImage src={comedian.imageUrl} alt="" className="object-cover" />}
+      <AvatarFallback className="text-[11px] font-semibold">{comedian.initials}</AvatarFallback>
+    </UiAvatar>
   )
 }
 
