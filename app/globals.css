@@ -295,13 +295,17 @@
    react-day-picker leverer rutenettet; utseendet er portalens eget.
    Dagene er trykkflater man kan dra over, så de er store nok til en
    tommel og har ingen egen ramme — fargen sier alt.
+
+   Cellene deler bredden likt og krymper på smale telefoner i stedet
+   for å skyve uka ut av panelet; 2.5rem er bare taket.
    ───────────────────────────────────────────────────────────── */
 .ev-calendar [data-cal-date] {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 100%;
+  max-width: 2.5rem;
+  aspect-ratio: 1;
   border-radius: 999px;
   font-size: 13.5px;
   font-weight: 500;
