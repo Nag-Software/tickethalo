@@ -101,8 +101,11 @@ export default async function NewShowPage({
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <Field name="capacity" label="Capacity" type="number" min={1} defaultValue={template.capacity?.toString() ?? ''} />
-                  <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01}
-                    defaultValue={template.ticket_price ? String(template.ticket_price / 100) : ''} />
+                  {/* Prisene ligger på billettypene, og de kopieres fra malen. */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Ticket types</span>
+                    <p className="py-2.5 text-sm text-muted-foreground">Copied from this show. Change them on the new show.</p>
+                  </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Currency</label>
                     <select name="currency" defaultValue={normalizeCurrency(template.currency)}
@@ -174,6 +177,7 @@ export default async function NewShowPage({
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Field name="capacity" label="Capacity" type="number" min={1} />
+              {/* Blir showets første billettype («Standard»). Flere legges til på showet. */}
               <Field name="ticket_price" label="Ticket price" type="number" min={0} step={0.01} placeholder="199" />
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Currency</label>

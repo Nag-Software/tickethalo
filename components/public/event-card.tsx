@@ -5,7 +5,7 @@ import { TicketOrder } from '@/components/public/ticket-order'
 import type { PublicShow } from '@/lib/public-events'
 // Ikke fra `lib/public-events`: kortet rendres i en klientkomponent, og den
 // modulen drar med seg Stripe-SDK-en. Se `lib/public-show-format.ts`.
-import { formatShowTime, formatTicketPrice, remainingTickets, ticketFillPercent } from '@/lib/public-show-format'
+import { formatShowPrice, formatShowTime, remainingTickets, ticketFillPercent } from '@/lib/public-show-format'
 import { formatDayLabel } from '@/lib/event-filters'
 import { showVenue } from '@/lib/show-venue'
 
@@ -25,7 +25,7 @@ import { showVenue } from '@/lib/show-venue'
 /** Capacity as calm microcopy, not as a badge. Null when there is no urgency. */
 function capacityNote(show: PublicShow): { text: string; urgent: boolean } | null {
   const remaining = remainingTickets(show)
-  if (remaining === 0) return { text: 'Sold out', urgent: false }
+  if (show.soldOut) return { text: 'Sold out', urgent: false }
   // "3 left" pushes a ticket that cannot be bought right now. The button says why.
   if (show.salesState.kind !== 'open') return null
 
@@ -45,7 +45,8 @@ export function EventCard({
   priority?: boolean
 }) {
   const href = `/events/${show.slug ?? show.id}`
-  const soldOut = remainingTickets(show) === 0
+  const soldOut = show.soldOut
+  const allFree = show.ticketTypes.length > 0 && show.ticketTypes.every((type) => type.unitAmount === 0)
   const capacity = capacityNote(show)
   const { venue } = showVenue(show)
   const place = [venue, show.clubCity].filter(Boolean).join(', ')
@@ -146,7 +147,7 @@ export function EventCard({
             than pushing it out over the edge. */}
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 pt-2.5 sm:gap-x-2.5">
           <span className="text-[17px] font-semibold tabular-nums text-[var(--ev-text)] sm:text-[13px] sm:font-medium">
-            {formatTicketPrice(show)}
+            {formatShowPrice(show)}
           </span>
           {capacity && (
             <span
@@ -163,13 +164,14 @@ export function EventCard({
             showId={show.id}
             slug={show.slug ?? show.id}
             title={show.title}
-            ticketPrice={show.ticket_price}
             currency={show.currency}
+            ticketTypes={show.ticketTypes}
+            hasLockedTypes={show.hasLockedTypes}
             external={Boolean(show.ticket_url)}
             soldOut={soldOut}
             salesState={show.salesState}
             remaining={remainingTickets(show)}
-            triggerLabel={show.ticket_price === 0 && !show.ticket_url ? 'Reserve' : 'Buy'}
+            triggerLabel={allFree && !show.ticket_url ? 'Reserve' : 'Buy'}
             triggerClassName={cn(
               'relative z-10 ml-auto',
               // h-11 = a 44px touch target on mobile, the minimum for a primary

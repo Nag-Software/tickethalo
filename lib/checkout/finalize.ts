@@ -6,6 +6,7 @@ import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
 import { refundOrder } from '@/lib/refunds'
 import type { Order, OrderCancellationReason } from '@/types/database'
 import { showVenue } from '@/lib/show-venue'
+import { DEFAULT_TICKET_TYPE_NAME, decodeItemMetadata } from '@/lib/ticket-types'
 
 export type FinalizeCheckoutResult = {
   result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show' | 'sales_closed' | 'missing_show' | 'unpaid' | 'failed'
@@ -184,9 +185,15 @@ export async function finalizeCheckoutSession(
   const buyerEmail = session.customer_details?.email ?? session.customer_email ?? ''
   const buyerName = session.customer_details?.name ?? ''
 
-  // Antall og navn ble lagt på sesjonen da den ble opprettet — se
-  // `createCheckoutSession`. Uten dem er det én navnløs billett, som før.
-  const quantity = Math.max(1, Number(session.metadata?.quantity ?? 1) || 1)
+  const buyerPhone = session.customer_details?.phone ?? null
+
+  // Linjene per billettype ble lagt på sesjonen da den ble opprettet — se
+  // `createCheckoutSession`. Sesjoner fra før billettypene har bare antall
+  // (og kanskje navn per billett); da tar RPC-en showets første type.
+  const items = decodeItemMetadata(session.metadata)
+  const quantity = items
+    ? items.reduce((sum, item) => sum + item.quantity, 0)
+    : Math.max(1, Number(session.metadata?.quantity ?? 1) || 1)
   const holderNames = Array.from(
     { length: quantity },
     (_, index) => session.metadata?.[`ticket_name_${index + 1}`]?.trim() || '',
@@ -214,6 +221,9 @@ export async function finalizeCheckoutSession(
       p_payment_method_type: charge.paymentMethodType,
       p_quantity: quantity,
       p_ticket_names: holderNames,
+      p_items: items,
+      p_buyer_phone: buyerPhone,
+      p_marketing_opt_in: session.metadata?.marketing_opt_in === '1',
     })
     .single()
 
@@ -374,10 +384,20 @@ export async function deliverTicketEmail(params: {
   // allerede falt tilbake på kjøperens navn der kjøperen ikke oppga noe.
   const { data: ticketRows } = await admin
     .from('tickets')
-    .select('ticket_code, holder_name')
+    .select('ticket_code, holder_name, ticket_type_id')
     .in('ticket_code', params.ticketCodes)
 
   const holderByCode = new Map((ticketRows ?? []).map((row) => [row.ticket_code, row.holder_name]))
+  const typeIds = [...new Set((ticketRows ?? []).map((row) => row.ticket_type_id).filter((id): id is string => Boolean(id)))]
+  const { data: typeRows } = typeIds.length
+    ? await admin.from('show_ticket_types').select('id, name').in('id', typeIds)
+    : { data: [] as Array<{ id: string; name: string }> }
+  const typeNameById = new Map((typeRows ?? []).map((row) => [row.id, row.name]))
+  // Navnet står bare når showet har flere typer å skille mellom.
+  const showTypeName = typeIds.length > 1 || (typeRows ?? []).some((row) => row.name !== DEFAULT_TICKET_TYPE_NAME)
+  const typeByCode = new Map(
+    (ticketRows ?? []).map((row) => [row.ticket_code, showTypeName && row.ticket_type_id ? typeNameById.get(row.ticket_type_id) ?? null : null]),
+  )
 
   const emailResult = await sendTicketPurchaseEmail({
     email: params.buyerEmail,
@@ -390,6 +410,7 @@ export async function deliverTicketEmail(params: {
     tickets: params.ticketCodes.map((code) => ({
       code,
       holderName: holderByCode.get(code) ?? null,
+      typeName: typeByCode.get(code) ?? null,
       verificationUrl: buildTicketVerificationUrl(params.origin, code),
     })),
     seller: club,

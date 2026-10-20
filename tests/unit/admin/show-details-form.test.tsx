@@ -17,7 +17,6 @@ const VALUES: ShowDetailsValues = {
   club_location_id: 'loc-backstage',
   save_location: '',
   capacity: '70',
-  ticket_price: '275',
   description: '',
 }
 
@@ -37,6 +36,7 @@ function renderForm(initialValues: ShowDetailsValues = VALUES) {
       locations={LOCATIONS}
       eventsBaseUrl="https://tickethalo.com/events/"
       initialValues={initialValues}
+      ticketTypes={<p>Ticket types go here</p>}
       action={action}
     />,
   )
@@ -83,7 +83,9 @@ describe('show details form', () => {
     const tickets = screen.getByRole('group', { name: 'Tickets' })
     expect(within(tickets).getByLabelText('Capacity')).toHaveValue(70)
     expect(within(tickets).getByText('seats')).toBeInTheDocument()
-    expect(within(tickets).getByText('NOK')).toBeInTheDocument()
+    // Prisene står på billettypene, som rendres i samme gruppe.
+    expect(within(tickets).getByText('Ticket types go here')).toBeInTheDocument()
+    expect(within(tickets).queryByLabelText('Ticket price')).not.toBeInTheDocument()
 
     expect(within(screen.getByRole('group', { name: 'About' })).getByLabelText('Description')).toBeInTheDocument()
   })

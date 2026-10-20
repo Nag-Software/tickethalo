@@ -5,9 +5,10 @@ import { recordError } from '@/lib/error-log'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
-import { claimFreeTickets, isFreeShow, parseFreeTicketInput } from '@/lib/checkout/free'
+import { claimFreeTickets, parseFreeTicketInput } from '@/lib/checkout/free'
 import { appUrl } from '@/lib/app-url'
-import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
+import { getUnlockedTicketTypes } from '@/lib/public-events'
+import { type PublicTicketType, normalizePromoCode, parseOrderItems } from '@/lib/ticket-types'
 import {
   CheckoutError,
   type CheckoutErrorCode,
@@ -28,20 +29,12 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
 
   if (!showId) return await failure('show_not_found', 'missing show_id in form data', { slug })
 
-  // Antall og navn kommer fra bestillingsskjemaet. Kortet i lista sender
-  // ingen av delene, og får da én billett uten navn — som før.
-  const quantity = Math.min(
-    Math.max(1, Number(formData.get('quantity') ?? 1) || 1),
-    MAX_TICKETS_PER_ORDER,
-  )
-  const names = formData
-    .getAll('holder_name')
-    .slice(0, quantity)
-    .map((value) => String(value).trim().slice(0, 120))
-  // Skjemaet har ett navnefelt for hele ordren: det navnet står på alle
-  // billettene, så gruppa finner seg selv i gjestelista. Flere felt (ett per
-  // billett) tas fortsatt imot som de kommer.
-  const holderNames = names.length === 1 && quantity > 1 ? Array.from({ length: quantity }, () => names[0]) : names
+  // Antall per type (`qty_<typeId>`), koden som låste opp en type, og om
+  // kjøperen vil ha e-post om nye show. Navnet på billettene kommer fra
+  // betalingen, eller fra skjemaet når kurven er gratis.
+  const items = parseOrderItems(formData.entries())
+  const promoCode = normalizePromoCode(String(formData.get('promo_code') ?? ''))
+  const marketingOptIn = formData.get('marketing_opt_in') === 'on' || formData.get('marketing_opt_in') === '1'
 
   // Opprinnelsen havner i suksesslenken og i QR-koden på billetten. Den
   // skal være det faste domenet (`APP_URL`), ikke det kjøperen tilfeldigvis
@@ -59,14 +52,15 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   const db = createAdminClient()
   const { data: show, error: showError } = await db
     .from('shows')
-    .select('ticket_url, ticket_price, status, date, ticket_sales_closed_at, deleted_at')
+    .select('ticket_url, status, date, ticket_sales_closed_at, deleted_at')
     .eq('id', showId)
     .single()
   if (showError || !show) return await failure('show_not_found', showError?.message, { showId, slug })
 
-  // Gratis show: billettene utstedes her og nå, uten Stripe. Skjemaet har
-  // spurt om navn og e-post i stedet for å la betalingen hente dem.
-  if (!show.ticket_url && isFreeShow(show)) {
+  // En kurv med bare gratis typer: billettene utstedes her og nå, uten
+  // Stripe. Skjemaet har spurt om navn og e-post i stedet for å la
+  // betalingen hente dem. Prisene sjekkes på nytt i `claimFreeTickets`.
+  if (!show.ticket_url && items.length > 0 && (await isFreeCart(db, showId, items.map((item) => item.typeId)))) {
     const input = parseFreeTicketInput(formData)
     // Kjøperens feil, ikke vår: logges som advarsel, som de andre salgsfeilene.
     if (!input.ok) return await checkoutFailure(new CheckoutError('buyer_details_missing'), { showId, slug })
@@ -94,7 +88,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
 
   let checkoutUrl: string
   try {
-    const session = await createCheckoutSession(showId, sourceUrl, { quantity, holderNames })
+    const session = await createCheckoutSession(showId, sourceUrl, { items, promoCode, marketingOptIn })
     checkoutUrl = session.url
   } catch (error) {
     // Next redacts messages from thrown errors in production, so expected
@@ -104,6 +98,26 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   }
 
   redirect(checkoutUrl)
+}
+
+/**
+ * Typene en kode låser opp. Ingen feil som sier om koden finnes et annet
+ * sted: en tom liste er svaret på alt som ikke låser opp noe her.
+ */
+export async function unlockTicketTypesAction(showId: string, code: string): Promise<{ types: PublicTicketType[] }> {
+  if (typeof showId !== 'string' || typeof code !== 'string') return { types: [] }
+  try {
+    return { types: await getUnlockedTicketTypes(showId, code.slice(0, 80)) }
+  } catch (error) {
+    await recordError('checkout', `Could not unlock ticket types: ${error instanceof Error ? error.message : String(error)}`, { showId })
+    return { types: [] }
+  }
+}
+
+/** Alle de valgte typene koster 0 nå. Ukjente typer gjør kurven betalt — checkout avviser dem. */
+async function isFreeCart(db: ReturnType<typeof createAdminClient>, showId: string, typeIds: string[]): Promise<boolean> {
+  const { data } = await db.from('show_ticket_types').select('id, unit_amount').eq('show_id', showId).in('id', typeIds)
+  return (data ?? []).length === new Set(typeIds).size && (data ?? []).every((type) => type.unit_amount === 0)
 }
 
 /**

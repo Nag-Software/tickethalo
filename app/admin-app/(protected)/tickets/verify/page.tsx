@@ -31,7 +31,7 @@ export default async function VerifyTicketPage({
   const { data: ticket } = candidates.length
     ? await db
       .from('tickets')
-      .select('id, ticket_code, status, checked_in_at, holder_name, show_id, order_id')
+      .select('id, ticket_code, status, checked_in_at, holder_name, show_id, order_id, ticket_type_id')
       .in('ticket_code', candidates)
       .maybeSingle()
     : { data: null }
@@ -45,9 +45,14 @@ export default async function VerifyTicketPage({
   const allowed =
     !show ? false : access.isSuperadmin || (show.club_id != null && access.clubIds.includes(show.club_id))
 
-  const { data: order } = ticket && allowed
-    ? await db.from('orders').select('buyer_name, buyer_email').eq('id', ticket.order_id).maybeSingle()
-    : { data: null }
+  const [{ data: order }, { data: ticketType }] = await Promise.all([
+    ticket && allowed
+      ? db.from('orders').select('buyer_name, buyer_email').eq('id', ticket.order_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    ticket?.ticket_type_id && allowed
+      ? db.from('show_ticket_types').select('name').eq('id', ticket.ticket_type_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
 
   return (
     <div>
@@ -67,7 +72,9 @@ export default async function VerifyTicketPage({
             <CardContent className="flex flex-col gap-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-[0.1em] text-muted-foreground">Ticket</p>
+                  <p className="text-xs uppercase tracking-[0.1em] text-muted-foreground">
+                    Ticket{ticketType?.name ? ` · ${ticketType.name}` : ''}
+                  </p>
                   <h2 className="mt-1 truncate text-2xl font-bold tracking-tight">
                     {ticket.holder_name ?? order?.buyer_name ?? 'Unnamed ticket'}
                   </h2>

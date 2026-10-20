@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { PublishShowDialog } from '@/components/admin/publish-show-dialog'
 import { ShowDetailsForm } from './show-details-form'
+import { TicketTypesEditor } from './ticket-types-editor'
+import type { AdminTicketType } from '@/lib/admin-ticket-types'
 import { publishReadiness } from '@/lib/publish-readiness'
 import { appPath } from '@/lib/app-url'
 import type { LineupArtist } from '@/components/admin/interactive-lineup'
@@ -45,9 +47,12 @@ export function OverviewTab({
   hasRequirements,
   allSlotsFilled,
   locations,
+  ticketTypes,
   updateShowDetailsAction,
 }: {
   show: OverviewShow
+  /** Showets aktive billettyper, med antall solgt. */
+  ticketTypes: AdminTicketType[]
   /** Klubbens lagrede lokasjoner, til Venue-feltet. */
   locations: VenueLocation[]
   spots: BookingSpot[]
@@ -89,6 +94,7 @@ export function OverviewTab({
           eventsBaseUrl={appPath('/events/')}
           action={updateShowDetailsAction}
           locations={locations}
+          ticketTypes={<TicketTypesEditor showId={show.id} currency={show.currency} initialTypes={ticketTypes} />}
           initialValues={{
             title: show.title,
             slug: show.slug,
@@ -100,7 +106,6 @@ export function OverviewTab({
             club_location_id: show.club_location_id ?? '',
             save_location: '',
             capacity: show.capacity == null ? '' : String(show.capacity),
-            ticket_price: show.ticket_price == null ? '' : String(show.ticket_price / 100),
             description: show.description ?? '',
           }}
         />

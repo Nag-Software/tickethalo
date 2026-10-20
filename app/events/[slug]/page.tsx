@@ -7,8 +7,8 @@ import { TicketOrder } from '@/components/public/ticket-order'
 import {
   formatShortDate,
   formatShowDate,
+  formatShowPrice,
   formatShowTime,
-  formatTicketPrice,
   getPublicLineup,
   getPublishedShowBySlug,
   remainingTickets,
@@ -21,10 +21,11 @@ import { Footer } from '@/components/Footer'
 import { NaturalPosterImage } from '@/components/public/natural-poster-image'
 import { showVenue } from '@/lib/show-venue'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
+import { parseCartParam } from '@/lib/ticket-types'
 
 type Props = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tickets?: string }>
+  searchParams: Promise<{ tickets?: string; items?: string }>
 }
 
 export const dynamic = 'force-dynamic'
@@ -56,16 +57,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function EventDetailPage({ params, searchParams }: Props) {
   const { slug } = await params
   // Satt av avbruddssiden (`/checkout/cancel`): kjøperen som gikk ut av
-  // betalingen kommer tilbake til arket med det samme antallet.
-  const { tickets } = await searchParams
-  const resumeQuantity = Math.floor(Number(tickets))
-  const resume = resumeQuantity >= 1 && resumeQuantity <= MAX_TICKETS_PER_ORDER
+  // betalingen kommer tilbake til arket med den samme kurven. `tickets` er
+  // lenker fra før billettypene: antallet går til den første typen.
+  const { tickets, items } = await searchParams
   const show = await getPublishedShowBySlug(slug)
   if (!show) notFound()
+  const legacyQuantity = Math.floor(Number(tickets))
+  const firstType = show.ticketTypes.find((type) => type.available)
+  const resumeCart =
+    items
+      ? parseCartParam(items)
+      : firstType && legacyQuantity >= 1 && legacyQuantity <= MAX_TICKETS_PER_ORDER
+        ? { [firstType.id]: legacyQuantity }
+        : {}
+  const resume = Object.keys(resumeCart).length > 0
 
   const lineup = await getPublicLineup(show.id)
   const remaining = remainingTickets(show)
-  const soldOut = remaining === 0
+  const soldOut = show.soldOut
   const fillPercent = ticketFillPercent(show)
   // Navn og adresse: kjøperen skal finne fram, ikke bare vite hva stedet heter.
   const showLocation = showVenue(show).line
@@ -91,7 +100,8 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
           ? { text: 'Almost sold out', urgent: true }
           : null
 
-  const price = formatTicketPrice(show)
+  const price = formatShowPrice(show)
+  const allFree = show.ticketTypes.length > 0 && show.ticketTypes.every((type) => type.unitAmount === 0)
   const orderSummary = [formatShortDate(show.date), show.start_time?.slice(0, 5), showVenue(show).venue]
     .filter(Boolean)
     .join(' · ')
@@ -104,7 +114,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       ? null
       : show.ticket_url
         ? 'You will be sent on to an external ticket page.'
-        : show.ticket_price === 0
+        : allFree
           ? 'Free · tickets sent to your email'
           : 'Secure checkout · pay by card'
 
@@ -114,14 +124,15 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       slug={show.slug}
       title={show.title}
       summary={orderSummary}
-      ticketPrice={show.ticket_price}
       currency={show.currency}
+      ticketTypes={show.ticketTypes}
+      hasLockedTypes={show.hasLockedTypes}
       external={Boolean(show.ticket_url)}
       soldOut={soldOut}
       salesState={show.salesState}
       remaining={remaining}
       full={full}
-      initialQuantity={resume ? resumeQuantity : 1}
+      initialQuantities={resume ? resumeCart : undefined}
       autoOpen={resume}
     />
   )

@@ -501,6 +501,7 @@ export function ScannerClient({
                   </div>
                   <div className="text-[11px] text-zinc-500 truncate mt-0.5">
                     <span className="font-mono tracking-wider">{formatTicketCode(ticket.ticket_code)}</span>
+                    {ticket.type_name && <span className="ml-2 font-sans">· {ticket.type_name}</span>}
                     {ticket.checked_in_at && (
                       <span className="ml-2 text-emerald-600 font-sans">
                         · at{' '}

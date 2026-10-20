@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { format, isValid, parseISO } from 'date-fns'
 import { toast } from 'sonner'
 import { CalendarDays, Check, Clock, Copy, LoaderCircle, TriangleAlert } from 'lucide-react'
@@ -27,7 +26,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Textarea } from '@/components/ui/textarea'
 import { VenuePicker } from '@/components/admin/venue-picker'
 import type { VenueLocation } from '@/lib/show-venue'
-import { MIN_TICKET_PRICE_MINOR } from '@/lib/tickets'
 import { cn } from '@/lib/utils'
 
 /**
@@ -50,7 +48,6 @@ export type ShowDetailsValues = {
   /** 'true' mens bookeren har krysset av for å lagre stedet under My club. */
   save_location: string
   capacity: string
-  ticket_price: string
   description: string
 }
 
@@ -68,7 +65,6 @@ const FIELD_KEYS = [
   'club_location_id',
   'save_location',
   'capacity',
-  'ticket_price',
   'description',
 ] as const
 
@@ -114,13 +110,15 @@ function splitEventsBaseUrl(url: string) {
 
 export function ShowDetailsForm({
   showId,
-  currency,
   eventsBaseUrl,
   initialValues,
   locations,
+  ticketTypes,
   action,
 }: {
   showId: string
+  /** Billettypene — egne bokser som lagrer seg selv (`TicketTypesEditor`). */
+  ticketTypes?: React.ReactNode
   /** Lokasjonene klubben har ført under My club — det Venue-feltet søker i. */
   locations: VenueLocation[]
   currency: string
@@ -342,31 +340,11 @@ export function ShowDetailsForm({
               />
               <span className={cn(FIELD_ADDON_CLASS, 'border-l')}>seats</span>
             </div>
-            <FieldDescription className={FIELD_HINT_CLASS}>Leave empty for unlimited.</FieldDescription>
-          </Field>
-          <Field className="col-span-12 min-w-0 gap-1.5 @md:col-span-6">
-            <FieldLabel htmlFor="show-price">Ticket price</FieldLabel>
-            <div className={FIELD_GROUP_CLASS}>
-              <Input
-                id="show-price"
-                type="number"
-                // 0 er gratis og lov; minsteprisen gjelder bare betalte show,
-                // og den sjekkes på serveren.
-                min={0}
-                step="0.01"
-                value={values.ticket_price}
-                onChange={(event) => update('ticket_price', event.target.value)}
-                placeholder="0"
-                className={cn(FIELD_INPUT_CLASS, NUMBER_INPUT_CLASS)}
-              />
-              <span className={cn(FIELD_ADDON_CLASS, 'border-l')}>{currency}</span>
-            </div>
             <FieldDescription className={FIELD_HINT_CLASS}>
-              Minimum {MIN_TICKET_PRICE_MINOR / 100} {currency}, or 0 for a free show — free tickets are
-              still issued and scanned at the door. Currency is set under{' '}
-              <Link href="/admin-app/my-club">My club</Link>.
+              The most tickets the show sells across all types. Leave empty for unlimited.
             </FieldDescription>
           </Field>
+          {ticketTypes}
         </FieldSection>
 
         <FieldSection id="show-details-about" title="About">

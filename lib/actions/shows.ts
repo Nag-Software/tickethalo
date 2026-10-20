@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DEFAULT_TICKET_TYPE_NAME } from '@/lib/ticket-types'
 
 /**
  * 6.4 Create show (draft)
@@ -17,6 +18,7 @@ export async function createShow(input: {
   venue_address?: string | null
   club_location_id?: string | null
   capacity?: number
+  /** Prisen på showets første billettype, «Standard». */
   ticket_price?: number
   currency?: string
   club_id?: string | null
@@ -36,7 +38,6 @@ export async function createShow(input: {
       venue_address: input.venue_address ?? null,
       club_location_id: input.club_location_id ?? null,
       capacity: input.capacity ?? null,
-      ticket_price: input.ticket_price ?? null,
       currency: input.currency ?? 'NOK',
       club_id: input.club_id ?? null,
       status: 'draft',
@@ -45,8 +46,19 @@ export async function createShow(input: {
     .single()
 
   if (error) throw new Error(error.message)
+
+  // Prisen er showets første billettype. `shows.ticket_price` følger av den
+  // (triggeren i migrasjon 073).
+  if (input.ticket_price !== undefined) {
+    const { error: typeError } = await admin
+      .from('show_ticket_types')
+      .insert({ show_id: data.id, name: DEFAULT_TICKET_TYPE_NAME, price: input.ticket_price, position: 0 })
+    if (typeError) throw new Error(`The event was created, but its ticket price could not be saved: ${typeError.message}`)
+  }
+
   return data
 }
+
 
 /*
  * `updateShowStatus` er fjernet.

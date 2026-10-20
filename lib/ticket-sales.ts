@@ -45,6 +45,12 @@ function parseDate(date: string): { year: number; month: number; day: number } {
   return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) }
 }
 
+function parseTime(time: string | null | undefined): { hours: number; minutes: number; seconds: number } {
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(time ?? '')
+  if (!match) return { hours: 0, minutes: 0, seconds: 0 }
+  return { hours: Number(match[1]), minutes: Number(match[2]), seconds: Number(match[3] ?? 0) }
+}
+
 function formatDate(epochMs: number): string {
   return new Date(epochMs).toISOString().slice(0, 10)
 }
@@ -70,10 +76,19 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
 
 /** Midnatt i `timeZone` på en kalenderdato, som et UTC-tidspunkt. */
 export function startOfDayInZone(date: string, timeZone = TICKET_SALES_TIME_ZONE): Date {
-  const { year, month, day } = parseDate(date)
-  const wallClock = Date.UTC(year, month - 1, day)
+  return instantInZone(date, null, timeZone)
+}
 
-  // To runder holder: midnatt faller aldri i et sommertidshull i Norge.
+/**
+ * Veggklokke i `timeZone` (`YYYY-MM-DD` og `HH:MM[:SS]`) som et UTC-tidspunkt.
+ * Uten klokkeslett er det midnatt. Samme regning som `at time zone` i SQL.
+ */
+export function instantInZone(date: string, time: string | null | undefined, timeZone = TICKET_SALES_TIME_ZONE): Date {
+  const { year, month, day } = parseDate(date)
+  const { hours, minutes, seconds } = parseTime(time)
+  const wallClock = Date.UTC(year, month - 1, day, hours, minutes, seconds)
+
+  // Tre runder holder også rundt overgangen til og fra sommertid.
   let guess = wallClock
   for (let round = 0; round < 3; round += 1) {
     const next = wallClock - zoneOffsetMs(new Date(guess), timeZone)
@@ -82,6 +97,43 @@ export function startOfDayInZone(date: string, timeZone = TICKET_SALES_TIME_ZONE
   }
 
   return new Date(guess)
+}
+
+function nextDate(date: string): string {
+  const { year, month, day } = parseDate(date)
+  return formatDate(Date.UTC(year, month - 1, day) + DAY_MS)
+}
+
+export type ShowTimes = {
+  /** `YYYY-MM-DD`, showets dato i norsk tid. */
+  date: string
+  start_time?: string | null
+  end_time?: string | null
+}
+
+/**
+ * Når showet starter, for salgets del. Uten starttid er det midnatt etter
+ * datoen — samme grense som før billettypene, da salget stoppet når datoen
+ * var passert. Speiler `show_event_starts_at` i migrasjon 073.
+ */
+export function eventStartsAt(show: ShowTimes): Date {
+  if (!show.start_time) return startOfDayInZone(nextDate(show.date))
+  return instantInZone(show.date, show.start_time)
+}
+
+/**
+ * Når showet slutter. En sluttid som ikke er etter starttiden er etter
+ * midnatt. Uten sluttid: midnatt etter datoen, men aldri før starten.
+ * Speiler `show_event_ends_at` i migrasjon 073.
+ */
+export function eventEndsAt(show: ShowTimes): Date {
+  const start = eventStartsAt(show)
+  if (!show.end_time) {
+    const midnight = startOfDayInZone(nextDate(show.date))
+    return midnight.getTime() >= start.getTime() ? midnight : start
+  }
+  const crossesMidnight = Boolean(show.start_time) && show.end_time.slice(0, 5) <= (show.start_time ?? '').slice(0, 5)
+  return instantInZone(crossesMidnight ? nextDate(show.date) : show.date, show.end_time)
 }
 
 /** Dagens dato i norsk tid, `YYYY-MM-DD`. */

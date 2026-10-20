@@ -137,6 +137,8 @@ export type TicketRow = {
   checked_in_at: string | null
   /** Navnet billetten gjelder. Null på billetter kjøpt før migrasjon 036. */
   holder_name: string | null
+  /** Billettypen, når showet har flere enn én. */
+  type_name: string | null
   buyer_name: string | null
   buyer_email: string | null
 }
@@ -146,7 +148,7 @@ export async function getTicketsForShow(showId: string): Promise<TicketRow[]> {
   const db = createAdminClient()
   const { data: tickets } = await db
     .from('tickets')
-    .select('id, ticket_code, status, checked_in_at, order_id, holder_name')
+    .select('id, ticket_code, status, checked_in_at, order_id, holder_name, ticket_type_id')
     .eq('show_id', showId)
     .order('created_at')
     .limit(2000)
@@ -161,12 +163,17 @@ export async function getTicketsForShow(showId: string): Promise<TicketRow[]> {
 
   const orderMap = Object.fromEntries((orders ?? []).map(o => [o.id, o]))
 
+  // Typen står bare i lista når det finnes flere å skille mellom i døra.
+  const { data: types } = await db.from('show_ticket_types').select('id, name').eq('show_id', showId)
+  const typeNames = (types ?? []).length > 1 ? new Map((types ?? []).map((type) => [type.id, type.name])) : null
+
   return tickets.map(t => ({
     id: t.id,
     ticket_code: t.ticket_code,
     status: t.status as TicketRow['status'],
     checked_in_at: t.checked_in_at,
     holder_name: t.holder_name,
+    type_name: (t.ticket_type_id && typeNames?.get(t.ticket_type_id)) || null,
     buyer_name: orderMap[t.order_id]?.buyer_name ?? null,
     buyer_email: orderMap[t.order_id]?.buyer_email ?? null,
   }))

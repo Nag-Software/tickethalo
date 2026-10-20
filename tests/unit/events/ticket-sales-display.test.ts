@@ -46,6 +46,19 @@ describe('toPublicTicketSalesState', () => {
     expect(ticketSalesButtonLabel(state)).toBe('Not on sale')
   })
 
+  it('says sales have ended when every ticket type is past its sales period, before the show is over', () => {
+    // Showet er i dag, men salget stoppet da det startet (standard for hver type).
+    const state = toPublicTicketSalesState(ticketSalesState(show('2026-09-16'), now), true, { typesEnded: true })
+    expect(state).toEqual({ kind: 'sales_ended' })
+    expect(ticketSalesButtonLabel(state)).toBe('Sales ended')
+  })
+
+  it('does not let ended types hide a closed or passed show', () => {
+    const closed = ticketSalesState(show('2026-10-01', { ticket_sales_closed_at: '2026-09-15T08:00:00Z' }), now)
+    expect(toPublicTicketSalesState(closed, true, { typesEnded: true })).toEqual({ kind: 'closed' })
+    expect(toPublicTicketSalesState(ticketSalesState(show('2026-09-15'), now), true, { typesEnded: true })).toEqual({ kind: 'ended' })
+  })
+
   it.each([
     [show('2026-12-15'), { kind: 'not_yet_open', openDate: '2026-09-17' }],
     [show('2026-10-01', { ticket_sales_closed_at: '2026-09-15T08:00:00Z' }), { kind: 'closed' }],

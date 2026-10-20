@@ -322,7 +322,12 @@ export type Show = {
   venue_address: string | null
   /** Lokasjonen fra My club showet er lenket til. Se migrasjon 060 og `lib/show-venue.ts`. */
   club_location_id: string | null
+  /** Taket for hele showet (salen). Hver billettype kan ha sitt eget i tillegg. */
   capacity: number | null
+  /**
+   * Avledet «fra»-pris: laveste pris kjøperen betaler blant aktive offentlige
+   * billettyper. Skrives av en trigger (migrasjon 073) — ikke sett den selv.
+   */
   ticket_price: number | null
   currency: string
   ticket_url: string | null
@@ -579,9 +584,53 @@ export type Order = {
   refund_reason: string | null
   /** Når billett-e-posten gikk ut. Tom på en ordre med billetter = skal sendes. */
   ticket_email_sent_at: string | null
+  /** Telefonen kjøperen oppga hos Stripe. Se migrasjon 073. */
+  buyer_phone: string | null
+  /** Kjøperen vil ha e-post om nye show fra klubben (`club_id`). Av som standard. */
+  marketing_opt_in: boolean
+  marketing_opt_in_at: string | null
 
   created_at: string
   updated_at: string
+}
+
+export type TicketSalesEndMode = 'event_start' | 'event_end' | 'days_before' | 'custom'
+
+/** En billettype på et show. Se migrasjon 073 og lib/ticket-types.ts. */
+export type ShowTicketType = {
+  id: string
+  show_id: string
+  name: string
+  /** Full pris i minste valutaenhet. 0 = gratis. */
+  price: number
+  /** Rabatt i basispunkter: 2500 = 25 %. */
+  discount_bps: number
+  /** Generert: det kjøperen betaler, `price` minus rabatten. */
+  unit_amount: number
+  /** Hvor mange av typen som kan selges. Null = bare showets kapasitet. */
+  quantity: number | null
+  /** Låser typen opp. Store bokstaver. Null = offentlig. Aldri til nettleseren. */
+  promo_code: string | null
+  sales_end_mode: TicketSalesEndMode
+  sales_end_days: number | null
+  sales_end_at: string | null
+  position: number
+  stripe_product_id: string | null
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** En linje i en ordre, låst ved kjøpet. */
+export type OrderItem = {
+  id: string
+  order_id: string
+  ticket_type_id: string | null
+  type_name: string
+  quantity: number
+  unit_amount: number
+  platform_fee_amount: number | null
+  created_at: string
 }
 
 export type ClubPayout = {
@@ -690,6 +739,10 @@ export type Ticket = {
   status: TicketStatus
   /** Navnet billetten gjelder. Null for billetter kjøpt før migrasjon 036. */
   holder_name: string | null
+  /** Typen billetten ble solgt som. Se migrasjon 073. */
+  ticket_type_id: string | null
+  /** Det kjøperen betalte for billetten, etter rabatt. */
+  unit_amount: number | null
   checked_in_at: string | null
   created_at: string
   updated_at: string
@@ -1130,10 +1183,50 @@ export type Database = {
           refunded_at?: string | null
           refund_reason?: string | null
           ticket_email_sent_at?: string | null
+          buyer_phone?: string | null
+          marketing_opt_in?: boolean
+          marketing_opt_in_at?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: Partial<Order>
+        Relationships: []
+      }
+      order_items: {
+        Row: OrderItem
+        Insert: {
+          id?: string
+          order_id: string
+          ticket_type_id?: string | null
+          type_name: string
+          quantity: number
+          unit_amount: number
+          platform_fee_amount?: number | null
+          created_at?: string
+        }
+        Update: Partial<OrderItem>
+        Relationships: []
+      }
+      show_ticket_types: {
+        Row: ShowTicketType
+        Insert: {
+          id?: string
+          show_id: string
+          name: string
+          price: number
+          discount_bps?: number
+          quantity?: number | null
+          promo_code?: string | null
+          sales_end_mode?: TicketSalesEndMode
+          sales_end_days?: number | null
+          sales_end_at?: string | null
+          position?: number
+          stripe_product_id?: string | null
+          archived_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<ShowTicketType, 'unit_amount'>>
         Relationships: []
       }
       tickets: {
@@ -1145,6 +1238,8 @@ export type Database = {
           customer_id?: string | null
           ticket_code?: string
           status?: TicketStatus
+          ticket_type_id?: string | null
+          unit_amount?: number | null
           checked_in_at?: string | null
           created_at?: string
           updated_at?: string
@@ -1470,6 +1565,15 @@ export type Database = {
         }
         Relationships: []
       }
+      /** Solgte billetter per billettype. Se migrasjon 073. */
+      ticket_type_counts: {
+        Row: {
+          ticket_type_id: string
+          show_id: string
+          sold_tickets: number
+        }
+        Relationships: []
+      }
       /** Komikerkatalogen bak «Discover comedians». Se migrasjon 035. */
       artist_directory: {
         Row: {
@@ -1535,6 +1639,15 @@ export type Database = {
           p_quantity?: number | null
           /** Navn per billett, i samme rekkefølge. */
           p_ticket_names?: string[] | null
+          /** Linjene per billettype. Null = showets første type. Se migrasjon 073. */
+          p_items?: Array<{
+            type_id: string | null
+            quantity: number
+            unit_amount: number
+            platform_fee_amount: number | null
+          }> | null
+          p_buyer_phone?: string | null
+          p_marketing_opt_in?: boolean | null
         }
         Returns: {
           result: 'created' | 'duplicate' | 'sold_out' | 'invalid_show' | 'sales_closed'

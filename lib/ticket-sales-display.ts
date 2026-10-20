@@ -17,6 +17,8 @@ export type PublicTicketSalesState =
   /** `openDate` er `YYYY-MM-DD`, norsk dato salget åpner kl. 00:00. */
   | { kind: 'not_yet_open'; openDate: string }
   | { kind: 'closed' }
+  /** Showet er ikke over, men alle billettypene er ferdig solgt i salgsperioden sin. */
+  | { kind: 'sales_ended' }
   | { kind: 'ended' }
   | { kind: 'unavailable' }
 
@@ -31,9 +33,16 @@ export type PublicTicketSalesState =
  * ikke noe hun kan gjøre noe med. Før salget åpner står datoen likevel —
  * klubben har tid til å rette oppsettet, og datoen er det kjøperen trenger.
  */
-export function toPublicTicketSalesState(state: TicketSalesState, sellable: boolean): PublicTicketSalesState {
+export function toPublicTicketSalesState(
+  state: TicketSalesState,
+  sellable: boolean,
+  options: { typesEnded?: boolean } = {},
+): PublicTicketSalesState {
   switch (state.kind) {
     case 'open':
+      // Salgsperioden til hver type (standard: til showet starter) kan være
+      // over før showdagen er det. Da er salget slutt, ikke «ikke i salg».
+      if (options.typesEnded) return { kind: 'sales_ended' }
       return sellable ? { kind: 'open' } : { kind: 'unavailable' }
     case 'not_yet_open':
       return { kind: 'not_yet_open', openDate: state.openDate }
@@ -82,6 +91,8 @@ export function ticketSalesButtonLabel(state: PublicTicketSalesState): string | 
       return `On sale ${formatSalesOpenDateShort(state.openDate)}`
     case 'closed':
       return 'Sales closed'
+    case 'sales_ended':
+      return 'Sales ended'
     case 'ended':
       return 'Show has ended'
     case 'unavailable':
