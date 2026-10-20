@@ -38,8 +38,8 @@ export type EmailResult = { success: boolean; resendId?: string; error?: string 
  * Alt annet (ugyldig adresse, feil nøkkel, uverifisert domene) gir samme svar
  * neste gang også.
  */
-const RETRYABLE_ERRORS = new Set(['rate_limit_exceeded', 'application_error', 'internal_server_error'])
-const RETRY_DELAYS_MS = [700, 1800]
+export const RETRYABLE_ERRORS = new Set(['rate_limit_exceeded', 'application_error', 'internal_server_error'])
+export const RETRY_DELAYS_MS = [700, 1800]
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -83,6 +83,15 @@ async function deliver(templateName: string, payload: CreateEmailOptions): Promi
   console.error(`[Email] ${templateName} to ${recipient} failed: ${failure}`)
   await logDelivery({ templateName, recipient, subject: payload.subject, error: failure })
   return { success: false, error: failure }
+}
+
+/**
+ * Én ferdig bygd e-post gjennom samme utsending som resten: nye forsøk og en
+ * rad i `email_logs`. For e-poster som ikke har en egen mal her, som
+ * testutsendelsen i «Send e-mail about show».
+ */
+export async function sendPreparedEmail(templateName: string, payload: CreateEmailOptions): Promise<EmailResult> {
+  return deliver(templateName, payload)
 }
 
 async function logDelivery(entry: {

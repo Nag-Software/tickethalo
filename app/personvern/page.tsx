@@ -6,7 +6,7 @@ export const metadata = {
   description: 'What we store when you buy a ticket, why, and for how long.',
 }
 
-const UPDATED = '21 August 2026'
+const UPDATED = '20 October 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 export default function PrivacyPage() {
@@ -19,6 +19,7 @@ export default function PrivacyPage() {
       <LegalSection title="What we store">
         <ul className="flex list-disc flex-col gap-1.5 pl-5">
           <li>Your name and email address, from the payment</li>
+          <li>Your phone number, if you give it at checkout</li>
           <li>Which show you bought a ticket for, and when</li>
           <li>The ticket code, and whether the ticket has been scanned at the door</li>
           <li>The amount paid, the currency and a payment reference</li>
@@ -47,15 +48,39 @@ export default function PrivacyPage() {
         <ul className="flex list-disc flex-col gap-1.5 pl-5">
           <li>Supabase — database and file storage, hosted in the EU</li>
           <li>Stripe — payments and payment records</li>
-          <li>Resend — sending your ticket by email</li>
+          <li>Resend — sending your ticket, and emails from organisers you have signed up to</li>
           <li>Vercel — hosting the website</li>
         </ul>
+      </LegalSection>
+
+      <LegalSection title="Emails from the organiser">
+        <p>
+          When you buy a ticket you can tick a box to get emails from the organiser about upcoming
+          shows. It is off unless you tick it. If you do, your name, email address and phone number
+          (if you gave one) are added to that organiser&rsquo;s email list, together with when you
+          said yes and what you said yes to. Organisers can also import people who have agreed to
+          hear from them elsewhere, and must confirm that they have before they can.
+        </p>
+        <p>
+          The list belongs to the organiser, who decides what to send and is responsible for it.
+          Tickethalo stores the list and sends the emails on the organiser&rsquo;s behalf. Each
+          organiser has their own list — saying yes to one does not put you on another. The legal
+          basis is your consent.
+        </p>
+        <p>
+          Every email has an unsubscribe link, and unsubscribing takes effect at once. We keep your
+          address marked as unsubscribed so it is not added again by mistake. To be removed
+          completely, ask the organiser or write to us.
+        </p>
       </LegalSection>
 
       <LegalSection title="How long">
         <p>
           Purchase and ticket records are kept for as long as accounting law requires — in Norway,
           five years after the end of the financial year. After that they are deleted or anonymised.
+        </p>
+        <p>
+          You stay on an organiser&rsquo;s email list until you unsubscribe or ask to be deleted.
         </p>
       </LegalSection>
 

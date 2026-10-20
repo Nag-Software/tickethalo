@@ -17,8 +17,8 @@ import { type PublicTicketSalesState, ticketSalesButtonLabel } from '@/lib/ticke
 import { DEFAULT_TICKET_TYPE_NAME, type PublicTicketType, formatDiscount } from '@/lib/ticket-types'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import { cn } from '@/lib/utils'
+import { checkoutOptInLabel } from '@/lib/marketing/contacts'
 
-export const MARKETING_OPT_IN_LABEL = 'Yes, I want to receive emails so that I don’t miss upcoming shows.'
 
 const FIELD_CLASS =
   'h-12 w-full bg-[var(--ev-card)] px-4 text-[16px] text-[var(--ev-text)] outline-none placeholder:text-[var(--ev-faint)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:h-11 sm:text-[15px]'
@@ -71,6 +71,7 @@ export function TicketOrder({
   triggerLabel = 'Buy tickets',
   initialQuantities,
   autoOpen,
+  clubName,
 }: {
   showId: string
   slug: string
@@ -107,6 +108,11 @@ export function TicketOrder({
    * desktop og bunnlinja på mobil — og bare den som faktisk vises skal åpne.
    */
   autoOpen?: boolean
+  /**
+   * Klubben som arrangerer. Avkrysningen for e-post sier hvem den gjelder —
+   * samtykket er til klubbens liste, ikke til Tickethalo.
+   */
+  clubName?: string | null
 }) {
   const orderLimit = Math.max(1, Math.min(maxPerOrder, remaining ?? maxPerOrder))
   const [open, setOpen] = useState(false)
@@ -305,7 +311,7 @@ export function TicketOrder({
               name="marketing_opt_in"
               className="mt-0.5 size-5 shrink-0 accent-[var(--ev-accent-fill)] sm:size-4"
             />
-            <span>{MARKETING_OPT_IN_LABEL}</span>
+            <span>{checkoutOptInLabel(clubName)}</span>
           </label>
 
           <div className="flex flex-col gap-3">

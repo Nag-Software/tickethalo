@@ -134,6 +134,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       full={full}
       initialQuantities={resume ? resumeCart : undefined}
       autoOpen={resume}
+      clubName={show.clubName}
     />
   )
 
