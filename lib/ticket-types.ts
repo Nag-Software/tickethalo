@@ -386,10 +386,10 @@ export function sortTicketTypes<T extends { position?: number; created_at?: stri
   )
 }
 
-/** Rabatten som tekst: 2500 → «25 %». */
+/** Rabatten som tekst på det engelske arket: 2500 → «25%». */
 export function formatDiscount(discountBps: number): string {
   const percent = discountBps / 100
-  return `${Number.isInteger(percent) ? percent : percent.toFixed(1)} %`
+  return `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`
 }
 
 /** Navnet på betalingssiden: showet, og typen når det er noe å skille mellom. */

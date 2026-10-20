@@ -39,15 +39,17 @@ export function formatAmount(amount: number, currency: string) {
 
 /**
  * Prisen på kortet og showsiden. Med flere priser står den laveste som
- * «From NOK 150»; ellers prisen alene. Låste typer er ikke med — de er ikke
- * noe alle kan kjøpe.
+ * «From NOK 150»; ellers prisen alene. Er den laveste gratis, står spennet
+ * («Free – NOK 400») — «From Free» sier ingenting. Låste typer er ikke med —
+ * de er ikke noe alle kan kjøpe.
  */
 export function formatShowPrice(show: Pick<Show, 'ticket_price' | 'currency'> & { ticketTypes?: Array<{ unitAmount: number }> }) {
   const amounts = [...new Set((show.ticketTypes ?? []).map((type) => type.unitAmount))]
   if (amounts.length === 0) return formatTicketPrice(show)
   const lowest = Math.min(...amounts)
-  const label = formatAmount(lowest, show.currency)
-  return amounts.length > 1 ? `From ${label}` : label
+  if (amounts.length === 1) return formatAmount(lowest, show.currency)
+  if (lowest === 0) return `Free – ${formatAmount(Math.max(...amounts), show.currency)}`
+  return `From ${formatAmount(lowest, show.currency)}`
 }
 
 export function remainingTickets(show: Pick<Show, 'capacity'> & { soldTickets: number }) {
