@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatScore, scoreFromRatings } from '@/lib/artist-score'
+import { formatScore, globalScore, meetsSkillLevel, NEUTRAL_SCORE, scoreFromRatings, skillLevelFromScore } from '@/lib/artist-score'
 import type { PerformanceRating } from '@/types/database'
 
 const repeat = (rating: PerformanceRating, times: number): PerformanceRating[] =>
@@ -66,5 +66,67 @@ describe('scoren som tekst', () => {
   it('viser en strek når scoren mangler', () => {
     expect(formatScore(null)).toBe('–')
     expect(formatScore(undefined)).toBe('–')
+  })
+})
+
+// Tersklene er bestemt av eieren 2026-10-20: under 4 Low, over 7 High.
+describe('skill level fra scoren', () => {
+  it('følger tersklene, med 4,0 og 7,0 som Medium', () => {
+    expect(skillLevelFromScore(0)).toBe('low')
+    expect(skillLevelFromScore(3.9)).toBe('low')
+    expect(skillLevelFromScore(4)).toBe('medium')
+    expect(skillLevelFromScore(7)).toBe('medium')
+    expect(skillLevelFromScore(7.1)).toBe('high')
+    expect(skillLevelFromScore(10)).toBe('high')
+  })
+
+  it('gir Medium til den som ikke er vurdert ennå', () => {
+    expect(skillLevelFromScore(NEUTRAL_SCORE)).toBe('medium')
+    expect(skillLevelFromScore(scoreFromRatings([]))).toBe('medium')
+    expect(skillLevelFromScore(null)).toBe('medium')
+  })
+
+  it('krever to sterke kvelder for High, og to svake gir Low', () => {
+    expect(skillLevelFromScore(scoreFromRatings(['strong']))).toBe('medium')
+    expect(skillLevelFromScore(scoreFromRatings(['strong', 'strong']))).toBe('high')
+    expect(skillLevelFromScore(scoreFromRatings(['weak', 'weak']))).toBe('low')
+  })
+
+  it('slipper inn nivået og alt over', () => {
+    expect(meetsSkillLevel(2, null)).toBe(true)
+    expect(meetsSkillLevel(2, 'low')).toBe(true)
+    expect(meetsSkillLevel(2, 'medium')).toBe(false)
+    expect(meetsSkillLevel(5, 'medium')).toBe(true)
+    expect(meetsSkillLevel(8, 'medium')).toBe(true)
+    expect(meetsSkillLevel(7, 'high')).toBe(false)
+    expect(meetsSkillLevel(7.1, 'high')).toBe(true)
+  })
+})
+
+describe('den globale scoren', () => {
+  it('er tom når ingen klubb har vurdert komikeren', () => {
+    expect(globalScore([])).toEqual({ score: null, reviewCount: 0, clubCount: 0 })
+    expect(globalScore([{ score: 5, reviewCount: 0 }])).toEqual({ score: null, reviewCount: 0, clubCount: 0 })
+  })
+
+  it('vekter hver klubb med hvor mange vurderinger den har gitt', () => {
+    // (8 × 3 + 2 × 1) / 4 = 6,5 — ikke det uvektede snittet 5,0.
+    expect(globalScore([{ score: 8, reviewCount: 3 }, { score: 2, reviewCount: 1 }])).toEqual({
+      score: 6.5,
+      reviewCount: 4,
+      clubCount: 2,
+    })
+  })
+
+  it('tar ikke med klubber som bare står på nøytrale 5,0 uten vurderinger', () => {
+    expect(globalScore([{ score: 9, reviewCount: 2 }, { score: 5, reviewCount: 0 }])).toEqual({
+      score: 9,
+      reviewCount: 2,
+      clubCount: 1,
+    })
+  })
+
+  it('runder til én desimal', () => {
+    expect(globalScore([{ score: 8.3, reviewCount: 2 }, { score: 6.7, reviewCount: 1 }]).score).toBe(7.8)
   })
 })

@@ -4,6 +4,7 @@ import {
   hasScheduleConflict,
   matchesHardRequirements,
   type ArtistBooking,
+  type HardRequirement,
   type RequirementBlocker,
 } from '@/lib/booking-rules'
 import { osloDateString } from '@/lib/booking-schedule'
@@ -90,7 +91,7 @@ export async function loadBookingAttention(
       .select('id, lineup_deadline_days, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, support_email')
       .in('id', clubIds),
     db.from('show_requirements')
-      .select('id, show_id, role_name, quantity, lineup_position, energy_level, required_gender, submissions_open, auto_started_at')
+      .select('id, show_id, role_name, quantity, lineup_position, energy_level, required_gender, min_skill_level, submissions_open, auto_started_at')
       .in('show_id', showIds),
     db.from('confirmed_spots')
       .select('id, show_id, artist_id, show_requirement_id, status')
@@ -224,6 +225,7 @@ export async function loadBookingAttention(
         role_name: req.role_name,
         energy_level: req.energy_level,
         required_gender: req.required_gender,
+        min_skill_level: req.min_skill_level ?? null,
       }
 
       const matching = availableThatEvening.filter((artist) => matchesHardRequirements(artist, criteria))
@@ -274,12 +276,12 @@ export async function loadBookingAttention(
  * Kravet som slipper inn flest om det lempes.
  *
  * Rollen er ikke med: den er selve plassen, og å «lempe» den er å bestille
- * noe annet. Energi og kjønn er derimot ønsker bookeren ofte kan gi slipp på
- * når alternativet er en tom plass.
+ * noe annet. Energi, kjønn og skill level er derimot ønsker bookeren ofte kan
+ * gi slipp på når alternativet er en tom plass.
  */
 function bestRelaxation(
-  criteria: { role_name: string; energy_level: string; required_gender: string },
-  pool: Array<{ id: string; admin_energy_level: unknown; gender: unknown; category: unknown }>,
+  criteria: HardRequirement,
+  pool: Array<{ id: string; admin_energy_level: unknown; gender: unknown; category: unknown; score: number }>,
   involved: ReadonlySet<string>,
 ): { blocker: RequirementBlocker; count: number } | null {
   const countWith = (relaxed: typeof criteria) =>
@@ -294,6 +296,9 @@ function bestRelaxation(
   }
   if (criteria.required_gender !== 'any') {
     options.push({ blocker: 'gender', count: countWith({ ...criteria, required_gender: 'any' }) })
+  }
+  if (criteria.min_skill_level && criteria.min_skill_level !== 'low') {
+    options.push({ blocker: 'skill', count: countWith({ ...criteria, min_skill_level: null }) })
   }
 
   const best = options.sort((a, b) => b.count - a.count)[0]

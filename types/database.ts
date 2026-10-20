@@ -13,6 +13,9 @@ export type EnergyLevel = 'high' | 'medium' | 'low' | 'uncertain'
 export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
 export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'completed' | 'cancelled'
 export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
+
+/** Låst til de tre nivåene i lib/artist-score.ts. */
+export type SkillLevel = 'low' | 'medium' | 'high'
 export type RequirementCompensationType = 'fixed' | 'percent'
 export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 'filled_by_other' | 'cancelled'
 /**
@@ -427,6 +430,11 @@ export type ShowRequirement = {
   lineup_position: number
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  /**
+   * Minste skill level komikeren må ha for plassen, avledet av klubbens
+   * score (`skillLevelFromScore` i lib/artist-score.ts). Null = alle.
+   */
+  min_skill_level: SkillLevel | null
   /**
    * Plassen tar imot søknader fra komikere. Uavhengig av rollens øvrige
    * krav — men en åpen plass holdes utenfor bookingautomatikken, se
@@ -989,6 +997,7 @@ export type Database = {
           lineup_position?: number
           energy_level?: RequirementEnergy
           required_gender?: RequirementGender
+          min_skill_level?: SkillLevel | null
           submissions_open?: boolean
           auto_started_at?: string | null
           compensation_type?: RequirementCompensationType | null

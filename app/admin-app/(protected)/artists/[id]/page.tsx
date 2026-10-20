@@ -7,7 +7,8 @@ import { EMPTY_REVIEW, clubArtistReview } from '@/lib/club-artist-profile'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { ArtistProfileCard } from '@/components/admin/artist-profile-card'
-import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge } from '@/components/admin/artist-badges'
+import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge, SkillLevelBadge } from '@/components/admin/artist-badges'
+import { skillLevelFromScore } from '@/lib/artist-score'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -114,6 +115,12 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
 
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <ArtistStatusBadge status={artist.status} />
+                {/* Nivået, ikke scoren: bookeren setter krav etter det på lineup-plassene. */}
+                {inClub && (
+                  <span title="Based on your club's reviews after each show">
+                    <SkillLevelBadge level={skillLevelFromScore(review.score)} />
+                  </span>
+                )}
                 {review.admin_energy_level && <ArtistEnergyBadge level={review.admin_energy_level} />}
                 {review.is_flagged && <FlaggedBadge />}
               </div>

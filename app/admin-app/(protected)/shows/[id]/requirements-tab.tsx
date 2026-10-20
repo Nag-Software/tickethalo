@@ -33,7 +33,7 @@ import {
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { LineupCallout, SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
+import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,7 @@ type Requirement = {
   role_name: string
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  min_skill_level: SkillLevel | null
   submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
@@ -54,6 +55,8 @@ type ReqState = {
   role_name: string
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  /** `low` = alle. Lagres som null. */
+  min_skill_level: SkillLevel
   submissions_open: boolean
   compensation_type: RequirementCompensationType | ''
   compensation_amount: string
@@ -90,6 +93,12 @@ type Props = {
    * `ensurePercentAllocationWithinLimit` håndhever på serveren.
    */
   percentLimit: number
+  /**
+   * Hvor mange på klubbens liste som passer hver plass, slik den er lagret —
+   * og hvor mange det hadde vært uten kravet til skill level. Se
+   * `requirementMatchCounts` i page.tsx.
+   */
+  matchCounts: Record<string, { total: number; withoutSkill: number }>
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -100,6 +109,7 @@ const WIZARD_INITIAL: WizardState = {
   role_name: '',
   energy_level: 'any',
   required_gender: 'any',
+  min_skill_level: 'low',
   submissions_open: false,
   compensation_type: '',
   compensation_amount: '',
@@ -129,6 +139,12 @@ const GENDER_OPTIONS: { value: RequirementGender; label: string; icon: string }[
   { value: 'woman', label: 'Woman', icon: '♀' },
   { value: 'man', label: 'Man', icon: '♂' },
   { value: 'non_binary', label: 'Non-binary', icon: '⚧' },
+]
+
+const SKILL_OPTIONS: { value: SkillLevel; label: string }[] = [
+  { value: 'low', label: 'Low or higher' },
+  { value: 'medium', label: 'Medium or higher' },
+  { value: 'high', label: 'Only High' },
 ]
 
 const ENERGY_LABELS: Record<RequirementEnergy, string> = {
@@ -194,6 +210,7 @@ function stateFromRequirement(requirement: Requirement): ReqState {
     role_name: canonicalRoleLabel(requirement.role_name) ?? ARTIST_ROLE_LABEL_OPTIONS[0],
     energy_level: requirement.energy_level,
     required_gender: requirement.required_gender,
+    min_skill_level: requirement.min_skill_level ?? 'low',
     submissions_open: requirement.submissions_open,
     compensation_type: requirement.compensation_type ?? '',
     compensation_amount: requirement.compensation_amount != null ? formatEditableNumber(requirement.compensation_amount / 100) : '',
@@ -210,6 +227,7 @@ function buildFormData(showId: string, reqId: string, state: ReqState): FormData
   fd.set('quantity', '1')
   fd.set('energy_level', state.energy_level)
   fd.set('required_gender', state.required_gender)
+  fd.set('min_skill_level', state.min_skill_level)
   fd.set('submissions_open', String(state.submissions_open))
   fd.set('compensation_type', state.compensation_type)
   fd.set('compensation_amount', state.compensation_amount)
@@ -222,6 +240,7 @@ function isSameReqState(left: ReqState, right: ReqState) {
     && left.role_name === right.role_name
     && left.energy_level === right.energy_level
     && left.required_gender === right.required_gender
+    && left.min_skill_level === right.min_skill_level
     && left.submissions_open === right.submissions_open
     && left.compensation_type === right.compensation_type
     && left.compensation_amount === right.compensation_amount
@@ -373,6 +392,7 @@ export function RequirementsTab({
   rosterSize,
   pendingByRequirement,
   percentLimit,
+  matchCounts,
 }: Props) {
   const router = useRouter()
 
@@ -448,8 +468,13 @@ export function RequirementsTab({
 
   React.useEffect(() => {
     const cachedDrafts = loadRequirementDrafts(showId)
+    // Et utkast lagret før et felt fantes (som `min_skill_level`), mangler
+    // feltet. Det fylles fra plassen, så kontrollen ikke står uten verdi.
     const validDrafts = Object.fromEntries(
-      Object.entries(cachedDrafts).filter(([id]) => sortedRequirements.some((requirement) => requirement.id === id))
+      Object.entries(cachedDrafts).flatMap(([id, draft]) => {
+        const requirement = sortedRequirements.find((row) => row.id === id)
+        return requirement ? [[id, { ...stateFromRequirement(requirement), ...draft }]] : []
+      })
     )
 
     if (Object.keys(validDrafts).length === 0) {
@@ -619,6 +644,7 @@ export function RequirementsTab({
     fd.set('quantity', '1')
     fd.set('energy_level', state.energy_level)
     fd.set('required_gender', state.required_gender)
+    fd.set('min_skill_level', state.min_skill_level)
     fd.set('submissions_open', String(state.submissions_open))
     fd.set('compensation_type', state.compensation_type)
     fd.set('compensation_amount', state.compensation_amount)
@@ -696,6 +722,7 @@ export function RequirementsTab({
     fd.set('quantity', '1')
     fd.set('energy_level', wizard.energy_level)
     fd.set('required_gender', wizard.required_gender)
+    fd.set('min_skill_level', wizard.min_skill_level)
     fd.set('submissions_open', String(wizard.submissions_open))
     fd.set('compensation_type', wizard.compensation_type)
     fd.set('compensation_amount', wizard.compensation_amount)
@@ -869,7 +896,7 @@ export function RequirementsTab({
                 </div>
 
                 {/* ── Criteria ── */}
-                <div className="mb-2.5 ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-4">
+                <div className="ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-5">
                   <FieldCell label="Energy">
                     <Select
                       value={state.energy_level}
@@ -901,6 +928,25 @@ export function RequirementsTab({
                         <SelectGroup>
                           <SelectLabel>Select gender</SelectLabel>
                           {GENDER_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </FieldCell>
+
+                  <FieldCell label="Skill">
+                    <Select
+                      value={state.min_skill_level}
+                      onValueChange={(value) => updateField(req.id, 'min_skill_level', value)}
+                    >
+                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectLabel>Minimum skill level</SelectLabel>
+                          {SKILL_OPTIONS.map((opt) => (
                             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                           ))}
                         </SelectGroup>
@@ -953,6 +999,8 @@ export function RequirementsTab({
                     )}
                   </FieldCell>
                 </div>
+
+                <MatchCount counts={matchCounts[req.id]} dirty={dirtyIds.has(req.id)} />
               </div>
             )
           })}
@@ -1016,6 +1064,38 @@ export function RequirementsTab({
         </ToastActionForm>
       )}
     </div>
+  )
+}
+
+/**
+ * Hvor mange på listen som passer plassen.
+ *
+ * Et for strengt nivå er usynlig ellers: plassen ser fin ut, og motoren
+ * sender bare ingenting. Tallet er klubbens liste mot kravene til plassen —
+ * ikke hvem som er ledig den kvelden, som forslaget under tar hensyn til.
+ */
+function MatchCount({ counts, dirty }: { counts?: { total: number; withoutSkill: number }; dirty: boolean }) {
+  if (!counts || dirty) return <div className="h-2.5" />
+
+  const { total, withoutSkill } = counts
+  const comedians = (n: number) => `${n} ${n === 1 ? 'comedian' : 'comedians'}`
+  const narrowedBySkill = withoutSkill > total
+
+  return (
+    <p
+      className={cn(
+        'mb-2.5 ml-3.5 mr-3.5 mt-1.5 text-xs sm:ml-[2.9rem] sm:mr-4',
+        total === 0 ? 'font-medium text-amber-700 dark:text-amber-400' : 'text-muted-foreground'
+      )}
+    >
+      {total === 0
+        ? narrowedBySkill
+          ? `No comedians on your list match — ${comedians(withoutSkill)} would with a lower skill level.`
+          : 'No comedians on your list match this spot.'
+        : narrowedBySkill
+          ? `${comedians(total)} on your list match · ${withoutSkill} without the skill level`
+          : `${comedians(total)} on your list match this spot`}
+    </p>
   )
 }
 

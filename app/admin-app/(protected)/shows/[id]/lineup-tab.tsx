@@ -30,8 +30,9 @@ import {
   cancelOfferAction,
   updateOfferStatusAction,
   openRequirementEnergyLevelsAction,
+  openRequirementSkillLevelAction,
 } from '../actions'
-import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
+import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
 type Artist = {
   id: string
@@ -55,6 +56,7 @@ type Requirement = {
   lineup_position: number
   energy_level: RequirementEnergy
   required_gender: RequirementGender
+  min_skill_level: SkillLevel | null
   submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
@@ -107,6 +109,12 @@ const ENERGY_LABELS: Record<RequirementEnergy, string> = {
   uncertain: 'Unknown',
 }
 
+const SKILL_REQUIREMENT_LABELS: Record<SkillLevel, string> = {
+  low: 'Low or higher',
+  medium: 'Medium or higher',
+  high: 'Only High',
+}
+
 const GENDER_LABELS: Record<RequirementGender, string> = {
   any: 'Any',
   woman: 'Women',
@@ -157,6 +165,9 @@ function requirementSummary(requirement: Requirement, currency: string) {
   return [
     `Energy ${ENERGY_LABELS[requirement.energy_level] ?? requirement.energy_level}`,
     `Gender ${GENDER_LABELS[requirement.required_gender] ?? requirement.required_gender}`,
+    ...(requirement.min_skill_level && requirement.min_skill_level !== 'low'
+      ? [`Skill ${SKILL_REQUIREMENT_LABELS[requirement.min_skill_level]}`]
+      : []),
     fee,
   ]
 }
@@ -172,6 +183,7 @@ export function LineupTab({
   artistMap,
   selectableArtists,
   energyRelaxationSuggestions,
+  skillRelaxationSuggestions,
   allSlotsFilled,
   publishReadiness,
   submissionsAudience,
@@ -189,6 +201,8 @@ export function LineupTab({
   artistMap: Record<string, Artist>
   selectableArtists: SelectableArtist[]
   energyRelaxationSuggestions: Record<string, { candidates: number }>
+  /** Plasser der ingen når opp til nivået, og hvor mange som passer uten det. */
+  skillRelaxationSuggestions: Record<string, { candidates: number }>
   allSlotsFilled: boolean
   /** Det event-siden mangler før publisering — se `lib/publish-readiness.ts`. */
   publishReadiness: PublishReadinessItem[]
@@ -332,6 +346,7 @@ export function LineupTab({
       fd.set('quantity', String(req.quantity))
       fd.set('energy_level', req.energy_level)
       fd.set('required_gender', req.required_gender)
+      fd.set('min_skill_level', req.min_skill_level ?? 'low')
       fd.set('compensation_type', req.compensation_type ?? '')
       // Beløpet ligger i minor units her, og handlingen ganger opp igjen.
       fd.set('compensation_amount', req.compensation_amount == null ? '' : String(req.compensation_amount / 100))
@@ -486,6 +501,21 @@ export function LineupTab({
     })
   }
 
+  function handleOpenSkillLevel(reqId: string) {
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      fd.set('req_id', reqId)
+      try {
+        await openRequirementSkillLevelAction(fd)
+        toast.success('Skill level opened up. Booking retries automatically.')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not open up the skill level')
+      }
+    })
+  }
+
   function handleOpenEnergyLevels(reqId: string) {
     startTransition(async () => {
       const fd = new FormData()
@@ -610,6 +640,7 @@ export function LineupTab({
         const isInfoOpen = openInfoReqId === req.id
         const summaryItems = requirementSummary(req, showCurrency)
         const energySuggestion = energyRelaxationSuggestions[req.id]
+        const skillSuggestion = showStatus === 'booking' ? skillRelaxationSuggestions[req.id] : undefined
         const energyPromptStartedAt = energyPromptStartedAtByReq[req.id]
         const movableOffers = allOffers.filter(o => o.status === 'sent' && o.show_requirement_id !== req.id)
         const shouldShowEnergyPrompt = Boolean(
@@ -994,6 +1025,30 @@ export function LineupTab({
                       className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
                     >
                       Open up energy levels
+                    </button>
+                  </div>
+                </div>
+              ) : skillSuggestion ? (
+                // Uten ventetid, i motsetning til energien over: ingen når opp
+                // til nivået, så motoren har ingenting å sende — det blir ikke
+                // bedre av å vente.
+                <div className="border-t bg-amber-50/40 px-4 py-4 dark:bg-amber-950/10 sm:px-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                        No one available reaches the skill level — open it up?
+                      </p>
+                      <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
+                        {`${skillSuggestion.candidates} candidate${skillSuggestion.candidates === 1 ? '' : 's'} match the spot without the skill requirement.`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSkillLevel(req.id)}
+                      disabled={isPending}
+                      className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      Open up skill level
                     </button>
                   </div>
                 </div>

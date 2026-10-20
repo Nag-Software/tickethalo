@@ -21,8 +21,8 @@ const settings = DEFAULT_BOOKING_SETTINGS
 const standUpSpot: HardRequirement = { role_name: 'Stand-up', energy_level: 'low', required_gender: 'man' }
 const hostSpot: HardRequirement = { role_name: 'Host', energy_level: 'any', required_gender: 'any' }
 
-const lowEnergyStandUp: MatchableArtist = { category: ['stand-up'], admin_energy_level: 'low', gender: 'man' }
-const unratedStandUp: MatchableArtist = { category: ['stand-up', 'open mic'], admin_energy_level: null, gender: 'man' }
+const lowEnergyStandUp: MatchableArtist = { category: ['stand-up'], admin_energy_level: 'low', gender: 'man', score: 5 }
+const unratedStandUp: MatchableArtist = { category: ['stand-up', 'open mic'], admin_energy_level: null, gender: 'man', score: 5 }
 
 function offer(overrides: Partial<ExistingOffer> = {}): ExistingOffer {
   return {
@@ -78,8 +78,29 @@ describe('hard requirements', () => {
     expect(requirementBlocker(lowEnergyStandUp, standUpSpot)).toBeNull()
   })
 
+  it('lets an unreviewed comedian (5,0 = Medium) through Medium or higher, but not Only High', () => {
+    expect(matchesHardRequirements(lowEnergyStandUp, { ...standUpSpot, min_skill_level: 'medium' })).toBe(true)
+    expect(matchesHardRequirements(lowEnergyStandUp, { ...standUpSpot, min_skill_level: 'high' })).toBe(false)
+  })
+
+  it('lets everyone through when no skill level is set, or Low or higher', () => {
+    const weak: MatchableArtist = { ...lowEnergyStandUp, score: 0 }
+    expect(matchesHardRequirements(weak, standUpSpot)).toBe(true)
+    expect(matchesHardRequirements(weak, { ...standUpSpot, min_skill_level: null })).toBe(true)
+    expect(matchesHardRequirements(weak, { ...standUpSpot, min_skill_level: 'low' })).toBe(true)
+    expect(matchesHardRequirements(weak, { ...standUpSpot, min_skill_level: 'medium' })).toBe(false)
+  })
+
+  it('names skill as the blocker, and only after role, energy and gender', () => {
+    const weak: MatchableArtist = { ...lowEnergyStandUp, score: 1.7 }
+    const strict: HardRequirement = { ...standUpSpot, min_skill_level: 'high' }
+    expect(requirementBlocker(weak, strict)).toBe('skill')
+    expect(requirementBlocker({ ...weak, gender: 'woman' }, strict)).toBe('gender')
+    expect(requirementBlocker({ ...weak, score: 8.3 }, strict)).toBeNull()
+  })
+
   it('reports the role first, because that is the one the booker cannot relax', () => {
-    const wrongEverything: MatchableArtist = { category: ['headliner'], admin_energy_level: 'high', gender: 'woman' }
+    const wrongEverything: MatchableArtist = { category: ['headliner'], admin_energy_level: 'high', gender: 'woman', score: 1 }
     expect(requirementBlocker(wrongEverything, standUpSpot)).toBe('role')
   })
 })
@@ -210,6 +231,19 @@ describe('pending offers the engine withdraws', () => {
   it('still withdraws a manual offer when the club can no longer book the comedian', () => {
     // Ikke i `bookableArtists`: fjernet fra listen, flagget eller ikke godkjent.
     expect(withdraw([offer({ source: 'manual' })], { artists: {} })).toEqual(['offer-1'])
+  })
+
+  it('withdraws an engine offer when the booker raises the skill level above the comedian', () => {
+    const offers = [offer({ id: 'auto', source: 'auto' }), offer({ id: 'manual', source: 'manual', artist_id: 'artist-2' })]
+    const weak: MatchableArtist = { ...lowEnergyStandUp, score: 2 }
+    const result = pendingOffersToWithdraw({
+      offers,
+      bookableArtists: new Map([['artist-1', weak], ['artist-2', weak]]),
+      requirements: new Map([['spot-standup', { ...standUpSpot, min_skill_level: 'medium' as const }]]),
+      excludedArtistIds: new Set(),
+    })
+    // Bookerens eget tilbud står: hen valgte komikeren, kanskje nettopp på tvers av nivået.
+    expect(result).toEqual(['auto'])
   })
 
   it('withdraws an offer whose spot is gone', () => {
