@@ -315,7 +315,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
                     aria-current={isSelected ? 'true' : undefined}
                     className={cn(
                       'flex min-w-36 shrink-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors sm:min-w-0',
-                      isSelected ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                      isSelected ? 'bg-muted text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
                     )}
                   >
                     <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--ev-accent-fill)]/10 text-[11px] font-bold text-[var(--ev-accent-fill)]">
@@ -359,7 +359,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
 
         {/* ── Footer ── */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t px-4 py-3 sm:px-5">
-          <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+          <div className="min-w-0 basis-full text-xs text-muted-foreground sm:flex-1 sm:basis-auto">
             {mode === 'start' && !canStartBooking ? (
               <span className="font-medium text-amber-700 dark:text-amber-400">{bookingBlockers[0] ?? 'Fix the lineup spots first'}</span>
             ) : data ? (
@@ -369,7 +369,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
               </>
             ) : null}
           </div>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
+          <Button type="button" variant="ghost" className="ml-auto sm:ml-0" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
           <Button
@@ -444,18 +444,21 @@ function SpotQueue({
 
   // Skillelinjene telles bare over dem som faktisk spørres her: en som får
   // tilbudet på en annen plass, hoppes over av motoren.
+  // Den første linjen står alltid øverst: også en som går til en annen
+  // plass, står i bølgen — hen bare hoppes over her.
   let counted = 0
   const items = rows.map((row, index) => {
     const elsewhere = offeredFor.get(row.artistId)
     const takenElsewhere = elsewhere != null && elsewhere !== spot.requirementId
     let divider: Divider | null = null
+    if (index === 0 && spot.nowCount > 0) divider = rush ? 'rush' : 'now'
     if (!takenElsewhere) {
-      if (rush) {
-        if (counted === 0 && spot.nowCount > 0) divider = 'rush'
-        else if (counted === spot.nowCount) divider = 'later'
-      } else if (counted === 0 && spot.nowCount > 0) divider = 'now'
-      else if (counted === spot.nowCount && spot.tomorrowCount > 0) divider = 'tomorrow'
-      else if (counted === spot.nowCount + spot.tomorrowCount) divider = 'later'
+      if (counted > 0 || spot.nowCount === 0) {
+        if (rush) {
+          if (counted === spot.nowCount) divider = 'later'
+        } else if (counted === spot.nowCount && spot.tomorrowCount > 0) divider = 'tomorrow'
+        else if (counted === spot.nowCount + spot.tomorrowCount) divider = 'later'
+      }
       counted++
     }
     return { row, index, divider, takenFor: takenElsewhere ? spotById.get(elsewhere) ?? null : null }
@@ -542,14 +545,17 @@ function SpotQueue({
                 )}
               >
                 <GripVertical className="hidden size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing sm:block" aria-hidden />
-                <span className="w-5 shrink-0 text-center text-xs font-semibold tabular-nums text-muted-foreground">{index + 1}</span>
-                <Avatar initials={row.initials} />
+                <span className="w-4 shrink-0 text-center text-xs font-semibold tabular-nums text-muted-foreground sm:w-5">{index + 1}</span>
+                {/* Initialene er pynt; på en smal skjerm trenger navnet plassen. */}
+                <span className="hidden sm:contents"><Avatar initials={row.initials} /></span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{row.name}</span>
-                    <SkillLevelBadge level={row.skillLevel} compact />
+                    <span className="shrink-0"><SkillLevelBadge level={row.skillLevel} compact /></span>
                   </div>
-                  <p className="truncate text-[11px] text-muted-foreground">
+                  {/* Brytes på mobil i stedet for å kuttes: det er grunnen til
+                      at raden står der, og den må kunne leses. */}
+                  <p className="text-[11px] leading-snug text-muted-foreground sm:truncate">
                     {takenFor
                       ? `Gets the offer for #${takenFor.position} ${takenFor.roleName} instead`
                       : lastHereText(row.lastClubBookingDate, today)}
@@ -626,7 +632,7 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+      className="flex size-7 items-center justify-center rounded-lg text-muted-foreground sm:size-8 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
     >
       {children}
     </button>
