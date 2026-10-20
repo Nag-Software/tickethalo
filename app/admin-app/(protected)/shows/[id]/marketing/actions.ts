@@ -388,7 +388,8 @@ export async function setAutoPosterAction(formData: FormData) {
   const showId = requireText(formData.get('show_id'), 'Show is missing.')
   await assertShowAccess(showId)
 
-  const enabled = formData.get('enabled') === 'true'
+  // Parkert sammen med AI-plakaten: bryteren kan bare skrus av.
+  const enabled = false
   const db = createAdminClient()
   const { error } = await db.from('shows').update({ auto_poster_enabled: enabled }).eq('id', showId)
   if (error) throw new Error(error.message)

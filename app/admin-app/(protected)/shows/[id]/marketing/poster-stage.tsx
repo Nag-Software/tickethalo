@@ -33,8 +33,8 @@ export function PosterStage({
   posterUrl,
   posterSource,
   palette,
-  canGenerate,
-  generateHint,
+  canGenerate = false,
+  generateHint = null,
   uploadAction,
   generateAction,
   clearAction,
@@ -45,10 +45,11 @@ export function PosterStage({
   posterUrl: string | null
   posterSource: PosterSource | null
   palette: MarketingPalette
-  canGenerate: boolean
-  generateHint: string | null
+  canGenerate?: boolean
+  generateHint?: string | null
   uploadAction: (formData: FormData) => Promise<{ posterUrl: string }>
-  generateAction: (formData: FormData) => Promise<{ posterUrl: string | null }>
+  /** AI-plakaten er parkert; uten denne vises ingen genereringsknapper. */
+  generateAction?: (formData: FormData) => Promise<{ posterUrl: string | null }>
   clearAction: (formData: FormData) => Promise<void>
   /** Med en mal er bakgrunnen malens egen, og det finnes ingen å bytte. */
   hasTemplate: boolean
@@ -96,22 +97,24 @@ export function PosterStage({
             {posterUrl ? 'Replace' : 'Upload poster'}
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isPending || !canGenerate}
-            title={generateHint ?? undefined}
-            onClick={() => {
-              const formData = new FormData()
-              formData.set('show_id', showId)
-              run('generate', () => generateAction(formData), { success: 'New poster is ready. The previous one is kept below.' })
-            }}
-          >
-            {isRunning('generate') ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
-            {posterUrl ? 'Regenerate' : 'Generate poster'}
-          </Button>
+          {generateAction && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isPending || !canGenerate}
+              title={generateHint ?? undefined}
+              onClick={() => {
+                const formData = new FormData()
+                formData.set('show_id', showId)
+                run('generate', () => generateAction(formData), { success: 'New poster is ready. The previous one is kept below.' })
+              }}
+            >
+              {isRunning('generate') ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
+              {posterUrl ? 'Regenerate' : 'Generate poster'}
+            </Button>
+          )}
 
-          {posterSource === 'ai' && !hasTemplate && (
+          {generateAction && posterSource === 'ai' && !hasTemplate && (
             <Button
               variant="ghost"
               size="sm"
@@ -192,7 +195,9 @@ export function PosterStage({
             <ImageOff className="size-6 text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">No poster yet</p>
             <p className="max-w-xs text-xs text-muted-foreground">
-              Upload your own artwork, or generate one from your template, brand colours and photo slots. Photos, names and dates are always placed exactly — the AI only paints the background.
+              {generateAction
+                ? 'Upload your own artwork, or generate one from your template, brand colours and photo slots. Photos, names and dates are always placed exactly — the AI only paints the background.'
+                : 'Upload your own artwork. It is shown on the event page and in the app.'}
             </p>
             <Button size="sm" variant="outline" disabled={isPending} onClick={() => inputRef.current?.click()}>
               <Upload aria-hidden />

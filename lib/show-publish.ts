@@ -13,6 +13,9 @@ import { showVenue } from '@/lib/show-venue'
 
 type LineupRequirement = { id: string; role_name: string; quantity: number }
 
+/** AI-plakaten ved publisering er parkert. Se `publishShow`. */
+const AUTO_POSTER_PARKED: boolean = true
+
 /**
  * Første plass som ikke er fylt, eller null når lineupen er full.
  *
@@ -104,7 +107,11 @@ export async function publishShow(showId: string) {
   // plakat, og en generert plakat som overrasker dem på publiseringstidspunktet
   // er verre enn ingen plakat. `auto_poster_enabled` er av som standard, og
   // klubben skrur den på per show i markedsføringsfanen om den vil ha den.
-  if (!posterUrl && show.auto_poster_enabled) {
+  //
+  // Parkert: AI-plakaten er tatt ut av markedsføringsfanen, så den kjører
+  // ikke ved publisering heller — heller ikke for show der bryteren ble
+  // skrudd på før den forsvant. Snu `AUTO_POSTER_PARKED` for å hente den inn igjen.
+  if (!AUTO_POSTER_PARKED && !posterUrl && show.auto_poster_enabled) {
     const { data: clubBrand } = show.club_id
       ? await admin.from('clubs').select('brand_color').eq('id', show.club_id).maybeSingle()
       : { data: null }
