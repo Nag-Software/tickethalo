@@ -610,3 +610,49 @@ function joinList(items: string[]) {
   if (items.length <= 1) return items.join('')
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
+
+/**
+ * En plass med venteliste har fått et ledig sete — til klubben.
+ *
+ * Motoren rører ikke plasser som er åpne for søknader, så ingen andre fyller
+ * setet. Uten denne e-posten ville komikerne på ventelisten stått der til
+ * bookeren tilfeldigvis åpnet søknadsfanen.
+ */
+export function waitlistSpotOpenTemplate(opts: {
+  full_name?: string | null
+  show_title: string
+  show_date: string
+  role_name: string
+  /** Komikerne på ventelisten, i søknadsrekkefølge. */
+  waitlist: string[]
+  submissions_url: string
+}): EmailTemplate {
+  const date = showDateLabel(opts.show_date)
+  const greeting = opts.full_name?.trim() ? `Hi ${opts.full_name.trim()}` : 'Hi'
+  const count = opts.waitlist.length
+  const people = count === 1 ? '1 comedian is' : `${count} comedians are`
+  const names = opts.waitlist.slice(0, 5).join(', ') + (count > 5 ? ` and ${count - 5} more` : '')
+
+  return {
+    subject: `Spot open on ${opts.show_title} — ${count} on the waitlist`,
+    text: [
+      greeting,
+      '',
+      `A ${opts.role_name} spot on ${opts.show_title} on ${date} just opened up, and ${people} on the waitlist for it: ${names}.`,
+      '',
+      'Nothing happens until you pick someone. Approving sends them a normal booking offer.',
+      '',
+      'See the waitlist:',
+      opts.submissions_url,
+    ].join('\n'),
+    html: shell({
+      eyebrow: 'Spot open',
+      heading: `${count} on the waitlist`,
+      body:
+        paragraph(`${escapeHtml(greeting)}, a <strong>${escapeHtml(opts.role_name)}</strong> spot on <strong>${escapeHtml(opts.show_title)}</strong> on ${escapeHtml(date)} just opened up.`) +
+        details([['Waitlist', names]]) +
+        paragraph('Nothing happens until you pick someone. Approving sends them a normal booking offer.', true) +
+        button(opts.submissions_url, 'See the waitlist'),
+    }),
+  }
+}

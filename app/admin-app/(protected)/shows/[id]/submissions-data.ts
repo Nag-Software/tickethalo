@@ -35,6 +35,12 @@ export type SubmissionItem = {
   flagged: boolean
   /** Statusen på tilbudet søknaden ble til. */
   offerStatus: BookingOffer['status'] | null
+  /**
+   * Ubesvart søknad på en full plass. Klubben kan si nei, men ikke ja før
+   * noen faller fra — da blir den en vanlig ventende søknad igjen. Se
+   * `spotAvailability` i lib/open-spots.ts.
+   */
+  waitlist: boolean
   /** Hvorfor «Approve» er stengt. Null = kan godtas. */
   blocker: string | null
 }
@@ -128,6 +134,8 @@ export async function loadSubmissionGroups(
             .map((role) => formatArtistRole(role))
             .filter((role): role is string => Boolean(role))
 
+          const waitlist = OPEN_STATUSES.includes(row.status) && isFull && !showClosed && !bookedArtists.has(row.artist_id)
+
           const blocker = !OPEN_STATUSES.includes(row.status)
             ? null
             : showClosed
@@ -135,7 +143,7 @@ export async function loadSubmissionGroups(
               : bookedArtists.has(row.artist_id)
                 ? 'Already in the lineup'
                 : isFull
-                  ? 'This spot is filled'
+                  ? 'On the waitlist — the spot is full'
                   : artistsWithOpenOffer.has(row.artist_id)
                     ? 'Has an offer waiting'
                     : null
@@ -159,6 +167,7 @@ export async function loadSubmissionGroups(
             onRoster: Boolean(review),
             flagged: Boolean(review?.is_flagged),
             offerStatus: row.booking_offer_id ? offerById.get(row.booking_offer_id)?.status ?? null : null,
+            waitlist,
             blocker,
           }]
         })

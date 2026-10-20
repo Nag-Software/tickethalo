@@ -9,6 +9,7 @@ import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForO
 import { publishShow } from '@/lib/show-publish'
 import { getLineupQueue, runBookingWave, saveLineupQueues, type LineupQueue, type LineupQueueInput } from '@/lib/booking-engine'
 import { runAfterResponse } from '@/lib/background'
+import { notifyClubWaitlist } from '@/lib/waitlist'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canReviewShow, savePerformanceReview } from '@/lib/artist-reviews'
 import { rollBackIfSeatWasTaken } from '@/lib/booking-seats'
@@ -1258,6 +1259,10 @@ export async function removeSpotAndReopenAction(formData: FormData) {
     revalidatePath(`/admin-app/shows/${showId}`)
     revalidatePath('/admin-app/bookings')
   })
+
+  // Er plassen åpen for søknader, fyller ikke motoren den — da er det
+  // ventelisten klubben skal ta av, og den skal klubben få høre om.
+  runAfterResponse(`waitlist-${spot.show_requirement_id}`, () => notifyClubWaitlist(spot.show_requirement_id))
 
   revalidatePath(`/admin-app/shows/${showId}`)
 }

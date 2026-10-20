@@ -1,26 +1,35 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
-import type { ArtistStatus, SubmissionStatus, SubmissionsAudience } from '@/types/database'
+import type { ArtistStatus, ConfirmedSpotStatus, SubmissionStatus, SubmissionsAudience } from '@/types/database'
 import { showVenue } from '@/lib/show-venue'
 
 /**
  * Plassene én komiker kan søke på.
  *
- * Dette er den eneste offentlige inngangen til open calls — klubbsiden selger
- * billetter og har bare en grå linje som peker hit. Derfor ligger hele
- * synlighetsregelen her, ett sted, i stedet for som filtre spredd i sidene.
+ * Inngangene til open calls er komikerportalen («Open spots») og
+ * «Apply for a spot» nederst på den offentlige klubbsiden. Begge leser
+ * reglene herfra, så synlighetsregelen står ett sted i stedet for som filtre
+ * spredd i sidene.
  *
  * En plass er synlig når *alle* disse holder:
- *   1. showet er i `booking` og ikke har vært
+ *   1. showet er i gang med booking eller lagt ut (`APPLY_SHOW_STATUSES`) og
+ *      ikke har vært
  *   2. plassen er åpnet av klubben (`submissions_open`)
  *   3. fristen har ikke gått (`submissions_close_at`)
  *   4. publikummet slipper komikeren inn (`submissions_audience`)
  *   5. klubben har ikke flagget komikeren
- *   6. plassen er ikke allerede fylt
- *   7. komikeren har ikke plass på showet fra før
- *   8. komikeren har ikke markert dagen som opptatt
+ *   6. komikeren har ikke plass på showet fra før
+ *   7. komikeren har ikke markert dagen som opptatt
  *
- * Punkt 7 er ikke en høflighet: migrasjon 007 har en unik indeks på
+ * En full plass er fortsatt synlig, og søknaden blir en plass på
+ * ventelisten. Eieren vil ha det slik (2026-10-20): faller noen fra, skal
+ * klubben ha folk å ta av. Ventelisten er ikke lagret noe sted — den er
+ * ubesvarte søknader på en plass som er full (`spotAvailability`). Et lagret
+ * flagg ville drevet fra sannheten: den som søkte på en ledig plass som så
+ * ble full, står like mye på venteliste, og blir plassen ledig igjen, er
+ * alle søknadene godkjennbare uten at noe må skrives om.
+ *
+ * Punkt 6 er ikke en høflighet: migrasjon 007 har en unik indeks på
  * (show_id, artist_id) blant aktive plasser. En komiker kan ikke ha to
  * plasser på samme show, så det ville vært en søknad som aldri kunne bli
  * noe.
@@ -28,12 +37,85 @@ import { showVenue } from '@/lib/show-venue'
 
 type Db = ReturnType<typeof createAdminClient>
 
+// ─── Reglene ─────────────────────────────────────────────────────────────
+
+/**
+ * Showene som tar imot søknader. Samme liste som `ENGINE_STATUSES` i
+ * lib/booking-engine.ts, og av samme grunn: et show som er fullbooket eller
+ * lagt ut kan miste en komiker, og da skal plassen kunne fylles igjen — her
+ * fra ventelisten. Kopiert i stedet for importert, så den offentlige
+ * klubbsiden ikke drar motoren og e-postoppsettet med seg.
+ */
+export const APPLY_SHOW_STATUSES = ['booking', 'fullbooked', 'published'] as const
+
+/** Statusene til en søknad bookeren fortsatt kan ta stilling til. */
+export const OPEN_SUBMISSION_STATUSES: SubmissionStatus[] = ['pending', 'shortlisted']
+
+const ACTIVE_SPOT_STATUSES: ConfirmedSpotStatus[] = ['confirmed', 'completed', 'paid']
+
+type ApplyShowFields = {
+  status: string
+  date: string
+  submissions_close_at: string | null
+}
+
+/** Punkt 1 og 3. Null = showet tar imot søknader. */
+export function showClosedReason(show: ApplyShowFields, now: Date = new Date()): string | null {
+  if (!(APPLY_SHOW_STATUSES as readonly string[]).includes(show.status)) {
+    return 'This show is not taking submissions.'
+  }
+  if (show.date < now.toISOString().slice(0, 10)) return 'This show has already been.'
+  if (show.submissions_close_at && new Date(show.submissions_close_at) < now) {
+    return 'The deadline for this show has passed.'
+  }
+  return null
+}
+
+/**
+ * Punkt 4 og 5. `review` er komikerens rad i `club_artists` hos klubben —
+ * eller ingenting, når klubben ikke har knyttet hen til seg.
+ */
+export function audienceBlockReason({
+  audience,
+  review,
+}: {
+  audience: SubmissionsAudience | null
+  review: { is_flagged: boolean } | null | undefined
+}): string | null {
+  if (review?.is_flagged) return 'You cannot apply for spots at this club.'
+  if ((audience ?? 'roster') === 'roster' && !review) {
+    return 'This show is only open to comedians the club already works with.'
+  }
+  return null
+}
+
+/** Hvor mange seter som står ledige, og om en søknad nå havner på ventelisten. */
+export function spotAvailability({ quantity, filled }: { quantity: number; filled: number }) {
+  return {
+    spotsLeft: Math.max(0, quantity - filled),
+    waitlist: filled >= quantity,
+  }
+}
+
+function countBy<T>(rows: T[], key: (row: T) => string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const id = key(row)
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return counts
+}
+
+// ─── Komikerportalen ─────────────────────────────────────────────────────
+
 export type OpenSpot = {
   requirementId: string
   roleName: string
-  /** Plasser igjen på rollen. Alltid > 0 — fylte roller vises ikke. */
+  /** Seter igjen på rollen. 0 = full, og en søknad blir venteliste. */
   spotsLeft: number
   quantity: number
+  /** Plassen er full. Se `spotAvailability`. */
+  waitlist: boolean
   feeLabel: string
   /** Hvor mange som har søkt på rollen, inkludert komikeren selv. */
   applicantCount: number
@@ -89,7 +171,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
     .from('shows')
     .select('id, title, date, start_time, venue_name, venue_address, currency, club_id, submissions_audience, submissions_close_at')
     .in('id', showIds)
-    .eq('status', 'booking')
+    .in('status', [...APPLY_SHOW_STATUSES])
     .is('deleted_at', null)
     .gte('date', today)
     .or(`submissions_close_at.is.null,submissions_close_at.gt.${now}`)
@@ -122,12 +204,12 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
     db.from('confirmed_spots')
       .select('show_requirement_id')
       .in('show_requirement_id', requirementIds)
-      .in('status', ['confirmed', 'completed', 'paid']),
+      .in('status', ACTIVE_SPOT_STATUSES),
     db.from('confirmed_spots')
       .select('show_id')
       .eq('artist_id', artistId)
       .in('show_id', liveShowIds)
-      .in('status', ['confirmed', 'completed', 'paid']),
+      .in('status', ACTIVE_SPOT_STATUSES),
     db.from('show_submissions')
       .select('id, show_requirement_id, status')
       .eq('artist_id', artistId)
@@ -136,7 +218,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
       .select('show_id')
       .eq('artist_id', artistId)
       .in('show_id', liveShowIds),
-    // Punkt 8 — dagene komikeren selv har sagt at hen ikke kan.
+    // Punkt 7 — dagene komikeren selv har sagt at hen ikke kan.
     db.from('artist_unavailable_dates')
       .select('unavailable_date')
       .eq('artist_id', artistId)
@@ -148,7 +230,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
     .from('show_submissions')
     .select('show_requirement_id')
     .in('show_requirement_id', requirementIds)
-    .in('status', ['pending', 'shortlisted'])
+    .in('status', OPEN_SUBMISSION_STATUSES)
 
   const clubName = new Map((clubs ?? []).map((club) => [club.id, club.name]))
   const membership = new Map((memberships ?? []).map((row) => [row.club_id, row]))
@@ -163,37 +245,30 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
   const result: OpenSpotShow[] = []
 
   for (const show of shows) {
-    // Punkt 7 — hen står allerede på plakaten.
+    // Punkt 6 — hen står allerede på plakaten.
     if (bookedShows.has(show.id)) continue
-    // Punkt 8 — hen har sagt at dagen ikke går. Da skal plassen ikke stå der
+    // Punkt 7 — hen har sagt at dagen ikke går. Da skal plassen ikke stå der
     // og se søkbar ut; søknaden ville blitt avvist av samme grunn.
     if (unavailable.has(show.date)) continue
 
-    const review = show.club_id ? membership.get(show.club_id) : undefined
-    // Punkt 5 — flagget hos denne klubben, uansett publikum.
-    if (review?.is_flagged) continue
-    // Punkt 4 — 'roster' krever at klubben har knyttet komikeren til seg.
+    // Punkt 4 og 5.
     const audience = (show.submissions_audience ?? 'roster') as SubmissionsAudience
-    if (audience === 'roster' && !review) continue
+    const review = show.club_id ? membership.get(show.club_id) : undefined
+    if (audienceBlockReason({ audience, review })) continue
 
     const spots = requirements
       .filter((req) => req.show_id === show.id)
-      .flatMap<OpenSpot>((req) => {
-        const spotsLeft = req.quantity - (filledByRequirement.get(req.id) ?? 0)
+      .map<OpenSpot>((req) => {
         const submission = mySubmission.get(req.id)
-        // Punkt 6. En plass komikeren allerede har søkt på blir stående selv
-        // om den er full — hen skal se hva som skjedde med søknaden sin.
-        if (spotsLeft <= 0 && !submission) return []
-
-        return [{
+        return {
           requirementId: req.id,
           roleName: req.role_name,
-          spotsLeft: Math.max(0, spotsLeft),
           quantity: req.quantity,
+          ...spotAvailability({ quantity: req.quantity, filled: filledByRequirement.get(req.id) ?? 0 }),
           feeLabel: requirementFeeLabel(req, show.currency || 'NOK'),
           applicantCount: applicantsByRequirement.get(req.id) ?? 0,
           submission: submission ? { id: submission.id, status: submission.status as SubmissionStatus } : null,
-        }]
+        }
       })
 
     if (spots.length === 0) continue
@@ -220,14 +295,197 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
   })
 }
 
-function countBy<T>(rows: T[], key: (row: T) => string): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const row of rows) {
-    const id = key(row)
-    counts.set(id, (counts.get(id) ?? 0) + 1)
-  }
-  return counts
+// ─── Den offentlige klubbsiden ───────────────────────────────────────────
+
+/** Den som ser på klubbsiden. Null = ikke innlogget som komiker. */
+export type OpenCallViewer = {
+  artistId: string
+  status: ArtistStatus | string
+} | null
+
+export type OpenCallSpot = {
+  requirementId: string
+  roleName: string
+  quantity: number
+  spotsLeft: number
+  waitlist: boolean
+  /** Null når klubben ikke har satt noe honorar — da står det ingenting. */
+  feeLabel: string | null
 }
+
+export type OpenCall = {
+  showId: string
+  title: string
+  description: string | null
+  date: string
+  startTime: string | null
+  endTime: string | null
+  venue: string | null
+  address: string | null
+  closeAt: string | null
+  audience: SubmissionsAudience
+  spots: OpenCallSpot[]
+  /** Hver eneste åpne plass er full — hele showet er venteliste. */
+  waitlistOnly: boolean
+}
+
+/**
+ * Showene på klubbsiden under «Apply for a spot».
+ *
+ * Utlogget ser bare show åpne for alle (`everyone`). En innlogget komiker
+ * ser i tillegg klubbens roster-show når klubben har knyttet hen til seg —
+ * og ingenting når hen er flagget. Lista viser altså bare det seeren faktisk
+ * kan søke på, så et roster-show aldri står og frister noen som blir avvist.
+ *
+ * Punkt 6 og 7 (allerede booket, opptatt dag) gjelder ikke her: showet er
+ * fortsatt åpent, og showvisningen sier hvorfor akkurat denne komikeren ikke
+ * kan søke.
+ */
+export async function getClubOpenCalls(
+  clubId: string,
+  viewer: OpenCallViewer,
+  { showId, db = createAdminClient(), now = new Date() }: { showId?: string; db?: Db; now?: Date } = {},
+): Promise<OpenCall[]> {
+  let showQuery = db
+    .from('shows')
+    .select('id, title, description, date, start_time, end_time, venue_name, venue_address, currency, status, submissions_audience, submissions_close_at')
+    .eq('club_id', clubId)
+    .in('status', [...APPLY_SHOW_STATUSES])
+    .is('deleted_at', null)
+    .gte('date', now.toISOString().slice(0, 10))
+    .order('date')
+    .order('start_time')
+
+  if (showId) showQuery = showQuery.eq('id', showId)
+
+  const { data: shows, error: showError } = await showQuery
+  if (showError) throw new Error(showError.message)
+
+  const liveShows = (shows ?? []).filter((show) => !showClosedReason(show, now))
+  if (liveShows.length === 0) return []
+
+  const [{ data: requirements, error: reqError }, { data: review }] = await Promise.all([
+    db.from('show_requirements')
+      .select('id, show_id, role_name, quantity, compensation_type, compensation_amount, compensation_percent, lineup_position')
+      .in('show_id', liveShows.map((show) => show.id))
+      .eq('submissions_open', true)
+      .order('lineup_position'),
+    viewer
+      ? db.from('club_artists').select('is_flagged').eq('club_id', clubId).eq('artist_id', viewer.artistId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+
+  if (reqError) throw new Error(reqError.message)
+  if (!requirements?.length) return []
+
+  const { data: filledSpots } = await db
+    .from('confirmed_spots')
+    .select('show_requirement_id')
+    .in('show_requirement_id', requirements.map((req) => req.id))
+    .in('status', ACTIVE_SPOT_STATUSES)
+
+  const filledByRequirement = countBy(filledSpots ?? [], (row) => row.show_requirement_id)
+
+  return liveShows.flatMap<OpenCall>((show) => {
+    const audience = (show.submissions_audience ?? 'roster') as SubmissionsAudience
+    const visible = viewer
+      ? !audienceBlockReason({ audience, review })
+      : audience === 'everyone'
+    if (!visible) return []
+
+    const spots = requirements
+      .filter((req) => req.show_id === show.id)
+      .map<OpenCallSpot>((req) => {
+        const fee = requirementFeeLabel(req, show.currency || 'NOK')
+        return {
+          requirementId: req.id,
+          roleName: req.role_name,
+          quantity: req.quantity,
+          ...spotAvailability({ quantity: req.quantity, filled: filledByRequirement.get(req.id) ?? 0 }),
+          feeLabel: fee === 'Not set' ? null : fee,
+        }
+      })
+
+    if (spots.length === 0) return []
+
+    const { venue, address } = showVenue(show)
+    return [{
+      showId: show.id,
+      title: show.title,
+      description: show.description,
+      date: show.date,
+      startTime: show.start_time,
+      endTime: show.end_time,
+      venue,
+      address,
+      closeAt: show.submissions_close_at,
+      audience,
+      spots,
+      waitlistOnly: spots.every((spot) => spot.waitlist),
+    }]
+  })
+}
+
+/** Hva en innlogget komiker kan gjøre på én plass i showvisningen. */
+export type OpenCallSpotState =
+  | { kind: 'apply' }
+  | { kind: 'applied'; submissionId: string; status: SubmissionStatus }
+  | { kind: 'blocked'; reason: string }
+
+/**
+ * Komikerens forhold til showets plasser: egen søknad, eller hvorfor hen
+ * ikke kan søke. Punkt 1–5 er allerede sjekket av `getClubOpenCalls` — her
+ * står det som gjelder komikeren selv.
+ *
+ * En søknad vinner over en sperre: har hen søkt, skal hen se søknaden sin,
+ * også om dagen senere ble markert som opptatt.
+ */
+export async function getOpenCallStateForArtist(
+  call: OpenCall,
+  viewer: NonNullable<OpenCallViewer>,
+  db: Db = createAdminClient(),
+): Promise<Map<string, OpenCallSpotState>> {
+  const [{ data: submissions }, { data: ownSpot }, { data: unavailable }] = await Promise.all([
+    db.from('show_submissions')
+      .select('id, show_requirement_id, status')
+      .eq('artist_id', viewer.artistId)
+      .in('show_requirement_id', call.spots.map((spot) => spot.requirementId)),
+    db.from('confirmed_spots')
+      .select('id')
+      .eq('show_id', call.showId)
+      .eq('artist_id', viewer.artistId)
+      .in('status', ACTIVE_SPOT_STATUSES)
+      .maybeSingle(),
+    db.from('artist_unavailable_dates')
+      .select('id')
+      .eq('artist_id', viewer.artistId)
+      .eq('unavailable_date', call.date)
+      .maybeSingle(),
+  ])
+
+  const gate = artistCanApply({ status: viewer.status })
+  const blocker = !gate.ok
+    ? gate.reason
+    : ownSpot
+      ? 'You already have a spot on this show.'
+      : unavailable
+        ? 'You have marked this date as unavailable. Clear it in your calendar to apply.'
+        : null
+
+  const mine = new Map((submissions ?? []).map((row) => [row.show_requirement_id, row]))
+
+  return new Map(call.spots.map((spot) => {
+    const submission = mine.get(spot.requirementId)
+    const state: OpenCallSpotState = submission
+      ? { kind: 'applied', submissionId: submission.id, status: submission.status as SubmissionStatus }
+      : blocker
+        ? { kind: 'blocked', reason: blocker }
+        : { kind: 'apply' }
+    return [spot.requirementId, state]
+  }))
+}
+
+// ─── Søknaden ────────────────────────────────────────────────────────────
 
 /**
  * Kaster hvis komikeren ikke har lov til å søke på plassen.
@@ -237,7 +495,9 @@ function countBy<T>(rows: T[], key: (row: T) => string): Map<string, number> {
  * uten å ha vært innom noen liste. Samme lærdom som `assertArtistBookableForShow`
  * i lib/club-artists.ts.
  *
- * Returnerer showet og plassen, så kalleren slipper å hente dem på nytt.
+ * En full plass avvises ikke — søknaden blir venteliste, og `waitlist` sier
+ * det til kalleren. Returnerer også showet og plassen, så kalleren slipper å
+ * hente dem på nytt.
  */
 export async function assertArtistCanApply(db: Db, artistId: string, requirementId: string) {
   const { data: requirement } = await db
@@ -264,21 +524,15 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
   if (!gate.ok) throw new Error(gate.reason)
 
   if (!show) throw new Error('This show does not exist.')
-  if (show.status !== 'booking') throw new Error('This show is not taking submissions.')
-  if (show.date < new Date().toISOString().slice(0, 10)) throw new Error('This show has already been.')
-  if (show.submissions_close_at && new Date(show.submissions_close_at) < new Date()) {
-    throw new Error('The deadline for this show has passed.')
-  }
+  const closed = showClosedReason(show)
+  if (closed) throw new Error(closed)
 
-  const audience = (show.submissions_audience ?? 'roster') as SubmissionsAudience
   const { data: review } = show.club_id
     ? await db.from('club_artists').select('is_flagged').eq('club_id', show.club_id).eq('artist_id', artistId).maybeSingle()
     : { data: null }
 
-  if (review?.is_flagged) throw new Error('You cannot apply for spots at this club.')
-  if (audience === 'roster' && !review) {
-    throw new Error('This show is only open to comedians the club already works with.')
-  }
+  const blocked = audienceBlockReason({ audience: show.submissions_audience as SubmissionsAudience, review })
+  if (blocked) throw new Error(blocked)
 
   // Komikeren har selv markert dagen. Plassen vises ikke i listen av samme
   // grunn, men handlingen er et kallbart endepunkt og må si det selv.
@@ -297,17 +551,36 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
     db.from('confirmed_spots')
       .select('*', { count: 'exact', head: true })
       .eq('show_requirement_id', requirementId)
-      .in('status', ['confirmed', 'completed', 'paid']),
+      .in('status', ACTIVE_SPOT_STATUSES),
     db.from('confirmed_spots')
       .select('id')
       .eq('show_id', show.id)
       .eq('artist_id', artistId)
-      .in('status', ['confirmed', 'completed', 'paid'])
+      .in('status', ACTIVE_SPOT_STATUSES)
       .maybeSingle(),
   ])
 
   if (ownSpot) throw new Error('You already have a spot on this show.')
-  if ((filled ?? 0) >= requirement.quantity) throw new Error('This spot has been filled.')
 
-  return { requirement, show }
+  const { waitlist } = spotAvailability({ quantity: requirement.quantity, filled: filled ?? 0 })
+  return { requirement, show, waitlist }
+}
+
+/**
+ * Søknadens status slik komikeren leser den — i portalen og på klubbens
+ * søkevisning. En ubesvart søknad på en full plass er venteliste, og skal
+ * si det: «Waiting for the club» høres ut som at klubben bare er treg.
+ */
+export function submissionStatusLabel(status: SubmissionStatus, waitlist: boolean): string {
+  if (waitlist && OPEN_SUBMISSION_STATUSES.includes(status)) return 'You’re on the waitlist'
+
+  switch (status) {
+    case 'pending': return 'Waiting for the club'
+    case 'shortlisted': return 'Shortlisted'
+    case 'accepted': return 'Offer sent — check your bookings'
+    case 'declined': return 'Not this time'
+    case 'withdrawn': return 'You withdrew'
+    case 'filled_by_other': return 'Filled by someone else'
+    default: return status
+  }
 }
