@@ -137,6 +137,9 @@ export function SubmissionsTab({
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => matchesFilter(item, filter)),
+      // Ventelisten filtrert bort under «Waiting»: plassen er ikke stille,
+      // den er full — og det skal stå.
+      hiddenWaitlist: filter === 'waiting' ? group.items.filter((item) => item.waitlist).length : 0,
     }))
     // En åpen plass uten søknader blir stående under «Waiting» og «All»: den
     // sier at det er stille, ikke at plassen er borte.
@@ -220,7 +223,13 @@ export function SubmissionsTab({
       )}
 
       {visibleGroups.map((group) => (
-        <SpotGroup key={group.requirementId} group={group} lineupHref={lineupHref} />
+        <SpotGroup
+          key={group.requirementId}
+          group={group}
+          lineupHref={lineupHref}
+          hiddenWaitlist={group.hiddenWaitlist}
+          onShowWaitlist={() => setFilter('waitlist')}
+        />
       ))}
     </div>
   )
@@ -228,7 +237,17 @@ export function SubmissionsTab({
 
 // ─── Én plass ────────────────────────────────────────────────────────────────
 
-function SpotGroup({ group, lineupHref }: { group: SubmissionGroup; lineupHref: string }) {
+function SpotGroup({
+  group,
+  lineupHref,
+  hiddenWaitlist,
+  onShowWaitlist,
+}: {
+  group: SubmissionGroup
+  lineupHref: string
+  hiddenWaitlist: number
+  onShowWaitlist: () => void
+}) {
   const isFull = group.filled >= group.quantity
   const waitlist = group.items.filter((item) => item.waitlist)
   const others = group.items.filter((item) => !item.waitlist)
@@ -266,7 +285,18 @@ function SpotGroup({ group, lineupHref }: { group: SubmissionGroup; lineupHref: 
         </div>
       </header>
 
-      {group.items.length === 0 ? (
+      {group.items.length === 0 && hiddenWaitlist > 0 ? (
+        <p className="border-t px-4 py-5 text-[13px] text-muted-foreground sm:px-5">
+          The spot is full. {hiddenWaitlist} on the waitlist.{' '}
+          <button
+            type="button"
+            onClick={onShowWaitlist}
+            className="cursor-pointer underline underline-offset-[3px] hover:text-foreground"
+          >
+            See the waitlist
+          </button>
+        </p>
+      ) : group.items.length === 0 ? (
         <p className="border-t px-4 py-5 text-[13px] text-muted-foreground sm:px-5">
           No applications for this spot yet.{' '}
           <Link href={lineupHref} className="underline underline-offset-[3px] hover:text-foreground">
