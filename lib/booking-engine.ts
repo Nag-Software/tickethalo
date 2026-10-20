@@ -631,7 +631,7 @@ export type SuggestedSpot = {
   requirementId: string
   roleName: string
   /** Hvorfor plassen ikke har forslag. Null = den har. */
-  note: 'submissions_open' | 'nothing_to_send' | 'no_candidates' | null
+  note: 'submissions_open' | 'nothing_to_send' | 'no_candidates' | 'taken_by_other_spots' | null
   /** Den første bølgen: de motoren ville sendt tilbud til nå. */
   picks: SuggestedComedian[]
   /** Alle som kan få plassen, i køorden — for å bytte ut et forslag. */
@@ -684,7 +684,9 @@ export async function suggestLineup(showId: string): Promise<LineupSuggestion> {
       : !entry
         ? 'nothing_to_send'
         : picks.length === 0
-          ? 'no_candidates'
+          // De som passer, kan være brukt opp av plassene som valgte før —
+          // det er noe annet enn at ingen passer, og bookeren gjør noe annet med det.
+          ? eligible.length > 0 ? 'taken_by_other_spots' : 'no_candidates'
           : null
 
     return { requirementId: req.id, roleName: req.role_name, note, picks, eligible }

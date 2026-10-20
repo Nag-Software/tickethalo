@@ -413,6 +413,9 @@ export function RequirementsTab({
   const [draggingId, setDraggingId] = React.useState<string | null>(null)
   const [dropTarget, setDropTarget] = React.useState<{ id: string; edge: DragEdge } | null>(null)
   const debounceTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const savedStates = React.useRef<Record<string, ReqState>>(
+    Object.fromEntries(sortedRequirements.map((requirement) => [requirement.id, stateFromRequirement(requirement)]))
+  )
   const reqStatesRef = React.useRef(reqStates)
 
   const persistReq = React.useCallback(
@@ -430,6 +433,14 @@ export function RequirementsTab({
           if (!result.ok) {
             toast.error(result.error)
             return
+          }
+          // Antallet som passer plassen regnes på serveren. Er et kriterium
+          // endret, hentes siden på nytt, så tallet under plassen følger med.
+          const saved = savedStates.current[id]
+          if (!saved || saved.role_name !== state.role_name || saved.energy_level !== state.energy_level
+            || saved.required_gender !== state.required_gender || saved.min_skill_level !== state.min_skill_level) {
+            savedStates.current[id] = state
+            router.refresh()
           }
           setDirtyIds((prev) => {
             const latestState = reqStatesRef.current[id]
@@ -451,7 +462,7 @@ export function RequirementsTab({
           toast.error((err as Error)?.message ?? 'Saving failed')
         })
     },
-    [showId]
+    [router, showId]
   )
 
   React.useEffect(() => {
@@ -895,7 +906,9 @@ export function RequirementsTab({
                 </div>
 
                 {/* ── Criteria ── */}
-                <div className="ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-5">
+                {/* Fem felt: kriteriene på én rad og honoraret på neste til
+                    skjermen er bred nok til alle fem. */}
+                <div className="ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-3 xl:grid-cols-5">
                   <FieldCell label="Energy">
                     <Select
                       value={state.energy_level}

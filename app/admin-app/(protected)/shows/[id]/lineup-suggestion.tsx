@@ -29,6 +29,7 @@ const NOTE_TEXT: Record<NonNullable<SuggestedSpot['note']>, string> = {
   submissions_open: 'Open for submissions — comedians apply, so no offers go out automatically.',
   nothing_to_send: 'Nothing to send — this spot is already covered.',
   no_candidates: 'No one on your list matches this spot and is free that evening.',
+  taken_by_other_spots: 'Everyone who fits is already suggested for another spot. Offers go out here as soon as someone says no.',
 }
 
 type Picks = Record<string, SuggestedComedian[]>
@@ -103,11 +104,35 @@ export function LineupSuggestionCard({
     })
   }
 
+  /**
+   * Bytter ut ett forslag.
+   *
+   * En liten klubb har ofte bare noen få som passer, og da er alle allerede
+   * foreslått på en annen plass. Velger bookeren en av dem, byttes de: den
+   * som går ut, tar den andre plassen om hen passer der. Ellers står den
+   * plassen med én mindre, og motoren fyller fra køen når bookingen starter.
+   */
   function replace(requirementId: string, index: number, comedian: SuggestedComedian) {
     setPicks((prev) => {
-      const next = [...(prev[requirementId] ?? [])]
-      next[index] = comedian
-      return { ...prev, [requirementId]: next }
+      const outgoing = prev[requirementId]?.[index]
+      const next: Picks = { ...prev }
+
+      for (const [otherId, list] of Object.entries(prev)) {
+        if (otherId === requirementId) continue
+        const at = list.findIndex((pick) => pick.artistId === comedian.artistId)
+        if (at < 0) continue
+        const otherSpot = suggestion?.spots.find((spot) => spot.requirementId === otherId)
+        const outgoingFits = outgoing && otherSpot?.eligible.some((option) => option.artistId === outgoing.artistId)
+        const updated = [...list]
+        if (outgoingFits) updated[at] = outgoing
+        else updated.splice(at, 1)
+        next[otherId] = updated
+      }
+
+      const own = [...(next[requirementId] ?? [])]
+      own[index] = comedian
+      next[requirementId] = own
+      return next
     })
     setReplacing(null)
   }
@@ -126,27 +151,29 @@ export function LineupSuggestionCard({
 
   if (!suggestion) {
     return (
-      <LineupCallout
-        title="Ready to start booking?"
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" className="rounded-xl" onClick={() => startBooking(false)} disabled={busy || !canStartBooking}>
-              {isStarting ? 'Starting…' : 'Start booking →'}
-            </Button>
-            <Button type="button" className="rounded-xl px-5" onClick={suggest} disabled={busy}>
-              <Sparkles data-icon="inline-start" />
-              {isSuggesting ? 'Suggesting…' : 'Suggest line-up now'}
-            </Button>
-          </div>
-        }
-      >
+      // Knappene står under teksten og ikke i `action`: to knapper ved siden
+      // av forklaringen klemte den til et par ord per linje.
+      <LineupCallout title="Ready to start booking?">
         <p className="text-sm text-muted-foreground">{EXPLANATION}</p>
         {blockers}
+        <div className="flex flex-wrap items-center gap-2 pt-2.5">
+          <Button type="button" className="rounded-xl px-5" onClick={suggest} disabled={busy}>
+            <Sparkles data-icon="inline-start" />
+            {isSuggesting ? 'Suggesting…' : 'Suggest line-up now'}
+          </Button>
+          <Button type="button" variant="outline" className="rounded-xl" onClick={() => startBooking(false)} disabled={busy || !canStartBooking}>
+            {isStarting ? 'Starting…' : 'Start booking without a suggestion →'}
+          </Button>
+        </div>
       </LineupCallout>
     )
   }
 
-  const chosenIds = new Set(Object.values(picks).flat().map((comedian) => comedian.artistId))
+  // Hvilken plass hver foreslått komiker står på, så byttelisten kan si det.
+  const spotOfPick = new Map<string, string>()
+  suggestion.spots.forEach((spot, spotIndex) => {
+    for (const pick of picks[spot.requirementId] ?? []) spotOfPick.set(pick.artistId, `#${spotIndex + 1} ${spot.roleName}`)
+  })
 
   return (
     <div className={cn(spotCardClass, 'px-4 py-4 sm:px-5')}>
@@ -183,7 +210,10 @@ export function LineupSuggestionCard({
                 <ul className="mt-1.5 space-y-1 pl-[30px]">
                   {spotPicks.map((comedian, index) => {
                     const isReplacing = replacing?.requirementId === spot.requirementId && replacing.index === index
-                    const alternatives = spot.eligible.filter((option) => !chosenIds.has(option.artistId))
+                    const inThisSpot = new Set(spotPicks.map((pick) => pick.artistId))
+                    const alternatives = spot.eligible.filter((option) => !inThisSpot.has(option.artistId))
+                    const free = alternatives.filter((option) => !spotOfPick.has(option.artistId))
+                    const elsewhere = alternatives.filter((option) => spotOfPick.has(option.artistId))
                     return (
                       <li key={`${comedian.artistId}-${index}`} className="flex flex-wrap items-center gap-2 text-sm">
                         <span className="min-w-0 truncate font-medium">{comedian.name}</span>
@@ -203,11 +233,24 @@ export function LineupSuggestionCard({
                             <option value="" disabled>
                               {alternatives.length > 0 ? 'Pick another comedian…' : 'No one else matches'}
                             </option>
-                            {alternatives.map((option) => (
-                              <option key={option.artistId} value={option.artistId}>
-                                {option.name} · {SKILL_LEVEL_LABELS[option.skillLevel]}
-                              </option>
-                            ))}
+                            {free.length > 0 && (
+                              <optgroup label="Not suggested yet">
+                                {free.map((option) => (
+                                  <option key={option.artistId} value={option.artistId}>
+                                    {option.name} · {SKILL_LEVEL_LABELS[option.skillLevel]}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {elsewhere.length > 0 && (
+                              <optgroup label="Swap with another spot">
+                                {elsewhere.map((option) => (
+                                  <option key={option.artistId} value={option.artistId}>
+                                    {option.name} · {SKILL_LEVEL_LABELS[option.skillLevel]} — now {spotOfPick.get(option.artistId)}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         ) : (
                           <button
