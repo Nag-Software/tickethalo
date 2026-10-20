@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import { getRequestPathname } from '@/lib/request-pathname'
-import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { getPortalAccessForAuthUser, getPortalDestinationForAuthUser } from '@/lib/portal-auth'
 import { getArtistForAuthUser, getAuthUser } from '@/lib/session'
 import { ArtistTopbar } from '@/components/artist/artist-topbar'
+import { RememberPortal } from '@/components/portal/remember-portal'
 
 export const metadata = { title: 'Comedian Portal — Tickethalo' }
 
@@ -24,13 +25,18 @@ export default async function ArtistLayout({ children }: { children: React.React
     redirect(`/artist-app/login?next=${encodeURIComponent(pathname)}`)
   }
 
-  const destination = await getPortalDestinationForAuthUser(user.id)
-  if (destination && destination !== '/artist-app' && !destination.startsWith('/artist-app?') && !destination.startsWith('/artist-app/')) {
-    redirect(destination)
+  // En klubbinnlogging med egen komikerprofil hører hjemme i begge
+  // portalene. Bare de uten komikerprofil (og superadmin) sendes videre.
+  const access = await getPortalAccessForAuthUser(user.id)
+  if (!access.comedian) {
+    const destination = await getPortalDestinationForAuthUser(user.id)
+    if (destination && destination !== '/artist-app' && !destination.startsWith('/artist-app?') && !destination.startsWith('/artist-app/')) {
+      redirect(destination)
+    }
   }
 
-  // Samme oppslag som `getPortalDestinationForAuthUser` nettopp gjorde — det
-  // er cachet per request, så det koster ingen ny runde.
+  // Samme oppslag som `getPortalAccessForAuthUser` nettopp gjorde — det er
+  // cachet per request, så det koster ingen ny runde.
   const artist = await getArtistForAuthUser(user.id)
 
   if (!artist) redirect('/artist-app/signup?error=missing')
@@ -40,7 +46,12 @@ export default async function ArtistLayout({ children }: { children: React.React
       className="ev-surface flex min-h-svh flex-col bg-[var(--ev-bg)] text-[var(--ev-text)]"
       data-tone="light"
     >
-      <ArtistTopbar name={artist.stage_name ?? artist.full_name} email={artist.email} />
+      <ArtistTopbar
+        name={artist.stage_name ?? artist.full_name}
+        email={artist.email}
+        clubPortalHref={access.club ? '/admin-app/shows' : null}
+      />
+      {access.club ? <RememberPortal side="artist" /> : null}
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-7 px-4 py-7 md:px-6 md:py-9 lg:px-8">
         {children}
       </main>

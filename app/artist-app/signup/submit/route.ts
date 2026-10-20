@@ -1,38 +1,18 @@
 import { NextResponse } from 'next/server'
 import { registerArtist } from '@/lib/actions/artist'
-import { isApprovedHeadshot } from '@/lib/headshot-check'
 import { createClient } from '@/lib/supabase/server'
-import { lookupCountry, type CountryCode } from '@/lib/geo'
-import { normalizeLanguages } from '@/lib/languages'
-import { socialLinksFromForm } from '@/lib/social-links'
-import type { ArtistGender } from '@/types/database'
+import { parseArtistSignupForm, toSignupErrorCode } from '@/lib/artist-signup-form'
 
 const signupPath = '/artist-app/signup'
 
 export async function POST(request: Request) {
   const origin = `${request.headers.get('x-forwarded-proto') ?? 'http'}://${request.headers.get('host') ?? new URL(request.url).host}`
   const formData = await request.formData()
-  const email = String(formData.get('email') ?? '').trim().toLowerCase()
 
   try {
-    validateSignupForm(formData)
-    await validateHeadshot(formData)
+    const { email, password = '', profile } = await parseArtistSignupForm(formData, 'new-account')
 
-    const password = String(formData.get('password') ?? '')
-
-    await registerArtist({
-      email,
-      password,
-      full_name: String(formData.get('full_name') ?? ''),
-      phone: optionalString(formData.get('phone')),
-      bio: optionalString(formData.get('bio')),
-      city: optionalString(formData.get('city')),
-      country: country(formData.get('country')),
-      languages: normalizeLanguages(formData.getAll('language').map((value) => String(value))),
-      gender: gender(formData.get('gender')),
-      social_links: socialLinksFromForm(formData) ?? undefined,
-      profile_image_file: fileOrUndefined(formData.get('profile_image_file')),
-    })
+    await registerArtist({ email, password, ...profile })
 
     const supabase = await createClient()
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
@@ -48,83 +28,4 @@ export async function POST(request: Request) {
     const code = toSignupErrorCode(error)
     return NextResponse.redirect(new URL(`${signupPath}?error=${code}`, origin), 303)
   }
-}
-
-function toSignupErrorCode(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : ''
-  if (message.includes('already') || message.includes('duplicate')) return 'email_exists'
-  if (message.includes('passwords do not match')) return 'password_mismatch'
-  if (message.includes('password')) return 'invalid_password'
-  if (message.includes('email')) return 'invalid_email'
-  if (message.includes('video')) return 'invalid_video'
-  if (message.includes('headshot')) return 'photo_unchecked'
-  if (message.includes('required')) return 'missing'
-  return 'failed'
-}
-
-function validateSignupForm(formData: FormData) {
-  const requiredTextFields = ['full_name', 'email', 'password', 'phone', 'city', 'gender']
-  const password = optionalString(formData.get('password'))
-  const passwordConfirmation = optionalString(formData.get('password_confirm'))
-  const hasMissingText = requiredTextFields.some((field) => !optionalString(formData.get(field)))
-  const hasImage = Boolean(fileOrUndefined(formData.get('profile_image_file')))
-  const hasCountry = Boolean(country(formData.get('country')))
-  const hasLanguage = normalizeLanguages(formData.getAll('language').map((value) => String(value))).length > 0
-  const video = optionalString(formData.get('showcase'))
-
-  if (hasMissingText || !hasImage || !hasCountry || !hasLanguage) {
-    throw new Error('Required fields missing')
-  }
-
-  if (password !== passwordConfirmation) {
-    throw new Error('Passwords do not match')
-  }
-
-  if (video && !isVideoUrl(video)) {
-    throw new Error('Invalid video URL')
-  }
-}
-
-/**
- * Bildet må være det skjemaet fikk godkjent — kvitteringen er signert for
- * akkurat de bytene. Se `lib/headshot-check.ts`.
- */
-async function validateHeadshot(formData: FormData) {
-  const photo = fileOrUndefined(formData.get('profile_image_file'))
-  if (!photo) return
-  const image = Buffer.from(await photo.arrayBuffer())
-  if (!isApprovedHeadshot(image, optionalString(formData.get('profile_image_check')))) {
-    throw new Error('Headshot not approved')
-  }
-}
-
-function optionalString(value: FormDataEntryValue | null) {
-  const text = String(value ?? '').trim()
-  return text.length > 0 ? text : undefined
-}
-
-/** Kun land vi faktisk har i tabellen — ellers blir kolonnen fritekst igjen. */
-function country(value: FormDataEntryValue | null): CountryCode | undefined {
-  const text = optionalString(value)?.toUpperCase()
-  return text && lookupCountry(text) ? (text as CountryCode) : undefined
-}
-
-const GENDER_VALUES: readonly ArtistGender[] = ['woman', 'man', 'non_binary', 'prefer_not_to_say']
-
-function gender(value: FormDataEntryValue | null): ArtistGender | undefined {
-  const text = optionalString(value)
-  return GENDER_VALUES.find((allowed) => allowed === text)
-}
-
-function isVideoUrl(value: string) {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-function fileOrUndefined(value: FormDataEntryValue | null) {
-  return value instanceof File && value.size > 0 ? value : undefined
 }

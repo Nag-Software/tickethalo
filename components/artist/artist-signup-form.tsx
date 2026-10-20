@@ -54,20 +54,36 @@ const GENDER_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ] as const
 
+/**
+ * Komikerens registreringsskjema.
+ *
+ * Med `existingAccount` lages profilen på innloggingen brukeren alt har — en
+ * klubbeier som også står på scenen. Da faller passordfeltene bort, og
+ * e-posten er bare adressen tilbudene går til, forhåndsutfylt med
+ * innloggingens. Se `lib/artist-signup-form.ts`.
+ */
 export function ArtistSignupForm({
   className,
   action = "/artist-app/signup/submit",
   errorMessage,
   successMessage,
+  existingAccount,
   ...props
 }: React.ComponentProps<"div"> & {
   action?: string
   errorMessage?: string
   successMessage?: string
+  existingAccount?: { email: string }
 }) {
+  const fields = useMemo(
+    () => existingAccount
+      ? requiredFields.filter((field) => field.id !== "password" && field.id !== "password_confirm")
+      : requiredFields,
+    [existingAccount]
+  )
   const [values, setValues] = useState<Record<RequiredFieldId, boolean>>({
     full_name: false,
-    email: false,
+    email: Boolean(existingAccount?.email),
     password: false,
     password_confirm: false,
     profile_image_file: false,
@@ -109,11 +125,11 @@ export function ArtistSignupForm({
   }, [errorMessage, successMessage])
 
   const completed = useMemo(
-    () => requiredFields.filter((field) => values[field.id]).length,
-    [values]
+    () => fields.filter((field) => values[field.id]).length,
+    [fields, values]
   )
-  const progress = Math.round((completed / requiredFields.length) * 100)
-  const missing = requiredFields.filter((field) => !values[field.id])
+  const progress = Math.round((completed / fields.length) * 100)
+  const missing = fields.filter((field) => !values[field.id])
   const passwordsDoNotMatch = passwordConfirmation.length > 0 && password !== passwordConfirmation
 
   // Stabil, ellers kjører bildevelgerens effekt på nytt ved hver render.
@@ -145,15 +161,19 @@ export function ArtistSignupForm({
             >
               <BrandLogo className="h-5" />
             </Link>
-            <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">Application</h2>
+            <h2 className="mt-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em]">
+              {existingAccount ? "Comedian profile" : "Application"}
+            </h2>
             <p className="mt-2 text-[14px] leading-relaxed text-[var(--ev-muted)]">
-              Your application is sent to the booking team for review.
+              {existingAccount
+                ? "The profile lives on the login you already use. Switch between club and comedian without logging out."
+                : "Your application is sent to the booking team for review."}
             </p>
 
             <div className="mt-6 rounded-xl bg-[var(--ev-bg)] p-4">
               <div className="mb-2.5 flex items-center justify-between gap-3 text-[13px]">
                 <span className="text-[var(--ev-muted)]">Completed</span>
-                <span className="font-semibold tabular-nums">{completed}/{requiredFields.length}</span>
+                <span className="font-semibold tabular-nums">{completed}/{fields.length}</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ev-card-hover)]">
                 <div
@@ -185,7 +205,20 @@ export function ArtistSignupForm({
           <section className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <LabeledInput icon={User} id="full_name" name="full_name" label="Full Name" autoComplete="name" onValue={(value) => updateTextField("full_name", value)} required />
-              <LabeledInput icon={AtSign} id="email" name="email" label="Email" type="email" placeholder="name@example.com" autoComplete="email" onValue={(value) => updateTextField("email", value)} required />
+              <LabeledInput
+                icon={AtSign}
+                id="email"
+                name="email"
+                label={existingAccount ? "Email for booking offers" : "Email"}
+                type="email"
+                placeholder="name@example.com"
+                autoComplete="email"
+                defaultValue={existingAccount?.email}
+                onValue={(value) => updateTextField("email", value)}
+                required
+              />
+              {existingAccount ? null : (
+              <>
               <LabeledInput icon={Lock} id="password" name="password" label="Password" type="password" minLength={8} autoComplete="new-password" onValue={(value) => { setPassword(value); updateTextField("password", value) }} required />
               <div>
                 <LabeledInput
@@ -206,6 +239,8 @@ export function ArtistSignupForm({
                   </p>
                 )}
               </div>
+              </>
+              )}
               <LabeledInput icon={Phone} id="phone" name="phone" label="Phone" type="tel" autoComplete="tel" onValue={(value) => updateTextField("phone", value)} required />
               <div className="space-y-2">
                 <label htmlFor="location" className="text-[13px] font-medium">Location</label>
@@ -292,7 +327,7 @@ export function ArtistSignupForm({
               disabled={missing.length > 0 || passwordsDoNotMatch}
             >
               <BadgeCheck className="size-4" />
-              Register Artist Profile
+              {existingAccount ? "Create comedian profile" : "Register Artist Profile"}
             </Button>
           </div>
         </form>

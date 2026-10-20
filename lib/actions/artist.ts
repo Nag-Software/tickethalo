@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendArtistApprovedEmail } from '@/lib/email/mailer'
 
 import { runAfterResponse } from '@/lib/background'
-import { canonicalRoleValues } from '@/lib/artist-roles'
+import { insertArtistProfile } from '@/lib/artist-profile-insert'
 import type { ArtistGender } from '@/types/database'
 import { appPath } from '@/lib/app-url'
 
@@ -22,11 +22,6 @@ export interface RegisterArtistInput {
   gender?: ArtistGender
   social_links?: Record<string, string>
   profile_image_file?: File
-}
-
-function normalizeCategoryValues(value: string[] | undefined) {
-  const normalized = canonicalRoleValues(value)
-  return normalized.length > 0 ? normalized : null
 }
 
 /**
@@ -59,40 +54,8 @@ export async function registerArtist(input: RegisterArtistInput) {
     })
     if (profileError) throw new Error(profileError.message)
 
-    // 3. Upload profile image if provided
-    let profile_image_url: string | undefined
-    if (input.profile_image_file) {
-      const ext = input.profile_image_file.name.split('.').pop()
-      const path = `${authUserId}/profile.${ext}`
-      const { error: uploadError } = await admin.storage
-        .from('artist-images')
-        .upload(path, input.profile_image_file, { upsert: true })
-      if (!uploadError) {
-        const { data: urlData } = admin.storage.from('artist-images').getPublicUrl(path)
-        profile_image_url = urlData.publicUrl
-      }
-    }
-
-    // 4. Create the artist as approved so the new user can enter immediately.
-    const { data: artist, error: artistError } = await admin.from('artists').insert({
-      auth_user_id: authUserId,
-      full_name: input.full_name,
-      stage_name: input.stage_name ?? null,
-      email: normalizedEmail,
-      phone: input.phone ?? null,
-      profile_image_url: profile_image_url ?? null,
-      bio: input.bio ?? null,
-      category: normalizeCategoryValues(input.category),
-      city: input.city ?? null,
-      country: input.country ?? null,
-      languages: input.languages?.length ? input.languages : null,
-      gender: input.gender ?? null,
-      social_links: input.social_links ?? null,
-      // Ingen kø. Alle slipper inn med én gang, og superadmin tar ut igjen
-      // dem som ikke skal være her — se `updateArtistStatusAction`.
-      status: 'approved',
-    }).select('id').single()
-    if (artistError || !artist) throw new Error(artistError?.message ?? 'Failed to create artist')
+    // 3–4. Headshot + the artist row, approved so the new user can enter immediately.
+    const artist = await insertArtistProfile(admin, { authUserId, email: normalizedEmail, profile: input })
 
     // 5. Komikeren er inne med det samme, så e-posten er portalenken — ikke
     //    en kvittering på en søknad ingen behandler. Lenken går til

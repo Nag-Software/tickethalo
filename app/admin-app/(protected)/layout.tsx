@@ -3,7 +3,8 @@ import { AdminSidebar } from '@/components/admin/admin-sidebar'
 import { SetupGuide } from '@/components/admin/setup-guide'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { getRequestPathname } from '@/lib/request-pathname'
-import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { getPortalAccessForAuthUser, getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { RememberPortal } from '@/components/portal/remember-portal'
 import { getClubAccess } from '@/lib/club-auth'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
 
@@ -31,7 +32,10 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
     redirect(`${adminPrefix}/login?error=unauthorized`)
   }
 
-  const clubAccess = await getClubAccess()
+  // Bryteren til komikerportalen vises bare for den som selv har en
+  // komikerprofil på denne innloggingen — aldri for medadmins i samme klubb.
+  const [clubAccess, portalAccess] = await Promise.all([getClubAccess(), getPortalAccessForAuthUser(user.id)])
+  const hasComedianSide = portalAccess.club && portalAccess.comedian
   const selectedClub = clubAccess.clubs.find((club) => club.id === clubAccess.selectedClubId) ?? null
 
   const sidebarUser = {
@@ -54,7 +58,9 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
           clubs={clubAccess.clubs}
           selectedClubId={clubAccess.selectedClubId}
           showClubSwitcher={profile.role === 'superadmin'}
+          comedianPortalHref={hasComedianSide ? '/artist-app' : null}
         />
+        {hasComedianSide ? <RememberPortal side="club" /> : null}
         <SidebarInset>
           {children}
           {/* Oppstartsguiden nede til høyre, til klubben er klar for første

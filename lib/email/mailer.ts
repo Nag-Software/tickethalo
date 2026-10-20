@@ -10,6 +10,7 @@ import {
   artistFeeTemplate,
   bookingConfirmedTemplate,
   clubWelcomeTemplate,
+  comedianLoginTemplate,
   bookingOfferTemplate,
   escapeHtml,
   lineupFullTemplate,
@@ -243,6 +244,11 @@ export async function sendClubWelcomeEmail(opts: Parameters<typeof clubWelcomeTe
   email: string
 }): Promise<EmailResult> {
   return sendArtistEmail('club_welcome', opts.email, clubWelcomeTemplate(opts))
+}
+
+/** Komikerprofilen er koblet fra en klubbinnlogging. Se `lib/comedian-link.ts`. */
+export async function sendComedianLoginEmail(opts: Parameters<typeof comedianLoginTemplate>[0]): Promise<EmailResult> {
+  return sendArtistEmail('comedian_login', opts.email, comedianLoginTemplate(opts))
 }
 
 export async function sendLineupFullEmail(opts: Parameters<typeof lineupFullTemplate>[0] & {

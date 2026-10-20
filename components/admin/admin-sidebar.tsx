@@ -14,6 +14,7 @@ import {
   Wallet,
   Settings,
   LogOut,
+  MicVocal,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -42,9 +43,17 @@ interface AdminSidebarProps {
   clubs?: Array<{ id: string; name: string; city: string | null; logo_url: string | null }>
   selectedClubId?: string | null
   showClubSwitcher?: boolean
+  /** Satt bare når innloggingen selv har en komikerprofil. Se `getPortalAccessForAuthUser`. */
+  comedianPortalHref?: string | null
 }
 
-export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClubSwitcher = false }: AdminSidebarProps) {
+export function AdminSidebar({
+  user,
+  clubs = [],
+  selectedClubId = null,
+  showClubSwitcher = false,
+  comedianPortalHref = null,
+}: AdminSidebarProps) {
   const rawPathname = usePathname()
   const pathPrefix = '/admin-app'
   const pathname = rawPathname.replace(/^\/admin-app/, '') || '/'
@@ -104,11 +113,22 @@ export function AdminSidebar({ user, clubs = [], selectedClubId = null, showClub
 
       <SidebarFooter>
         <SidebarMenu>
+          {comedianPortalHref ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Switch to comedian">
+                <Link href={comedianPortalHref}>
+                  <MicVocal />
+                  <span>Switch to comedian</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
           <SidebarMenuItem>
             <div className="px-2 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Log out">
+            {/* Én innlogging eier begge sidene, så utloggingen gjelder begge. */}
+            <SidebarMenuButton asChild tooltip={comedianPortalHref ? 'Log out of club and comedian' : 'Log out'}>
               <form action={`${pathPrefix}/logout`} method="post">
                 <button type="submit" className="flex w-full items-center gap-2">
                   <LogOut className="size-4" />
