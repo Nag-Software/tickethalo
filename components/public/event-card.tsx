@@ -171,6 +171,7 @@ export function EventCard({
             soldOut={soldOut}
             salesState={show.salesState}
             remaining={remainingTickets(show)}
+            clubName={show.clubName}
             triggerLabel={allFree && !show.ticket_url ? 'Reserve' : 'Buy'}
             triggerClassName={cn(
               'relative z-10 ml-auto',

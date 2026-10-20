@@ -1,96 +1,114 @@
+import QRCode from 'qrcode'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildMarketingSlots } from '@/lib/marketing/slots'
 import { resolvePalette } from '@/lib/marketing/palette'
-import { ChecklistCard } from './checklist-card'
+import { loadShowMaterial } from '@/lib/marketing/show-material'
+import { showEmailBody, showEmailSubject, showMaterialText } from '@/lib/marketing/copy'
+import { getAuthUser, getSessionProfile } from '@/lib/session'
 import { PosterArchive, type ArchivedPoster } from './poster-archive'
 import { PosterStage } from './poster-stage'
+import { ShowMaterialCard } from './show-material-card'
+import { SendEmailCard, type CampaignSummary } from './send-email-card'
 import {
   clearShowPosterAction,
   deleteMarketingDesignAction,
-  toggleMarketingTaskAction,
   uploadShowPosterAction,
   useDesignAsPosterAction,
 } from './actions'
 
 /**
- * Markedsføringsfanen på et show.
+ * Markedsføringsfanen på et show — tre ting (ClickUp 869fgj7fu):
  *
- * Klubben laster opp sin egen plakat, ser de forrige og krysser av
- * sjekklisten. Det er alt fanen gjør nå.
+ *  1. Upload poster — klubbens egen plakat, og de forrige.
+ *  2. Show marketing material — komikerbilder, QR-kode og tekst, og alt i én zip.
+ *  3. Send e-mail about show — til klubbens e-postliste (Marketing i menyen).
  *
  * AI-plakaten er parkert, ikke slettet: AutoPosterToggle, BrandColorsCard,
  * TemplatePicker, SlotMatcher, ExportPanel og genereringsknappene i
- * PosterStage rendres ikke lenger, men komponentene, actions og
- * `lib/poster/*` / `lib/marketing/*` ligger der til den skal tilbake.
+ * PosterStage rendres ikke, men komponentene, actions og `lib/poster/*` /
+ * `lib/marketing/*` ligger der til den skal tilbake. Sjekklisten
+ * (ChecklistCard) er parkert på samme måte — fanen skal ha tre funksjoner.
  */
 
 export async function MarketingTab({ showId }: { showId: string }) {
   const db = createAdminClient()
 
-  const { data: show } = await db
-    .from('shows')
-    .select('id, club_id, title, slug, date, start_time, venue_name, venue_address, description, ticket_price, currency, ticket_url, poster_url, poster_source, marketing_palette, selected_marketing_design_id, status')
-    .eq('id', showId)
-    .single()
-
-  if (!show) return null
-
-  const [
-    { data: club },
-    { data: requirements },
-    { data: spots },
-    { data: storedSlots },
-    { data: tasks },
-  ] = await Promise.all([
-    show.club_id
-      ? db.from('clubs').select('brand_color').eq('id', show.club_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    db.from('show_requirements').select('id, role_name, quantity, lineup_position').eq('show_id', showId),
-    db.from('confirmed_spots').select('artist_id, show_requirement_id, status').eq('show_id', showId),
-    db.from('show_marketing_slots').select('slot_index, artist_id, image_url').eq('show_id', showId).order('slot_index'),
-    db.from('marketing_tasks').select('id, task_key, label, is_completed').eq('show_id', showId).order('created_at'),
+  const [{ data: show }, material] = await Promise.all([
+    db
+      .from('shows')
+      .select('id, club_id, title, poster_url, poster_source, marketing_palette, selected_marketing_design_id')
+      .eq('id', showId)
+      .single(),
+    loadShowMaterial(showId),
   ])
+
+  if (!show || !material) return null
 
   // Malene ligger i klubbens bibliotek. Filer lastet opp på dette showet
   // hentes i samme spørring, så begge deler vises i én liste.
   const designsQuery = db
     .from('show_marketing_designs')
-    .select('id, show_id, club_id, kind, label, file_name, file_url, slot_count, source, lineup_snapshot, layout_status, poster_layout, created_at')
+    .select('id, show_id, club_id, kind, file_url, source, lineup_snapshot, created_at')
     .order('created_at', { ascending: false })
 
   // `.or()` tar en rå filterstreng, så begge id-ene sjekkes mot UUID-formen
   // først — de kommer fra ruten og fra basen, men strengen skal ikke kunne
   // bære med seg noe annet enn en id.
   const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-  const { data: designs } = show.club_id && isUuid(showId) && isUuid(show.club_id)
-    ? await designsQuery.or(`show_id.eq.${showId},club_id.eq.${show.club_id}`)
-    : await designsQuery.eq('show_id', showId)
 
-  const artistIds = [...new Set((spots ?? []).map((spot) => spot.artist_id))]
-  const { data: artists } = artistIds.length
-    ? await db.from('artists').select('id, full_name, stage_name, profile_image_url').in('id', artistIds)
-    : { data: [] }
+  const [
+    { data: club },
+    { data: designs },
+    { count: recipientCount },
+    { data: campaignRows },
+    user,
+  ] = await Promise.all([
+    show.club_id
+      ? db.from('clubs').select('brand_color').eq('id', show.club_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    show.club_id && isUuid(showId) && isUuid(show.club_id)
+      ? designsQuery.or(`show_id.eq.${showId},club_id.eq.${show.club_id}`)
+      : designsQuery.eq('show_id', showId),
+    show.club_id
+      ? db.from('club_contacts').select('id', { count: 'exact', head: true }).eq('club_id', show.club_id).is('unsubscribed_at', null)
+      : Promise.resolve({ count: 0 }),
+    db
+      .from('email_campaigns')
+      .select('id, created_at, created_by, status, recipient_count, sent_count, failed_count')
+      .eq('show_id', showId)
+      .eq('kind', 'show_promo')
+      .order('created_at', { ascending: false })
+      .limit(10),
+    getAuthUser(),
+  ])
+
+  const profile = user ? await getSessionProfile(user.id) : null
+  const senderIds = [...new Set((campaignRows ?? []).map((row) => row.created_by).filter((id): id is string => Boolean(id)))]
+  const { data: senders } = senderIds.length
+    ? await db.from('profiles').select('id, full_name, email').in('id', senderIds)
+    : { data: [] as Array<{ id: string; full_name: string | null; email: string }> }
+  const senderName = new Map((senders ?? []).map((sender) => [sender.id, sender.full_name?.trim() || sender.email]))
+
+  const campaigns: CampaignSummary[] = (campaignRows ?? []).map((row) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    createdBy: row.created_by ? senderName.get(row.created_by) ?? null : null,
+    status: row.status,
+    recipientCount: row.recipient_count,
+    sentCount: row.sent_count,
+    failedCount: row.failed_count,
+  }))
 
   const selectedTemplate = (designs ?? [])
     .find((design) => design.kind === 'template' && design.id === show.selected_marketing_design_id) ?? null
-
-  const slots = buildMarketingSlots({
-    requirements: requirements ?? [],
-    spots: spots ?? [],
-    artists: artists ?? [],
-    stored: storedSlots ?? [],
-    templateSlotCount: selectedTemplate?.slot_count ?? null,
-  })
-
   const palette = resolvePalette(show.marketing_palette, club?.brand_color ?? null)
 
   // En plakat er utdatert når lineupen den ble laget for ikke lenger er
   // lineupen showet har. Opplastede plakater har ingen kjent lineup.
-  const currentLineup = new Set(slots.map((slot) => slot.artistId).filter(Boolean))
+  const currentLineup = new Set(material.comedians.map((comedian) => comedian.artistId))
   const archive: ArchivedPoster[] = (designs ?? [])
     .filter((design) => design.kind === 'poster' && design.show_id === showId)
     .map((design) => {
-      const snapshot = (design.lineup_snapshot ?? []).map((entry) => entry.artist_id).filter(Boolean)
+      const snapshot = (design.lineup_snapshot ?? []).map((entry) => entry.artist_id).filter((id): id is string => Boolean(id))
       const isOutdated = design.lineup_snapshot != null
         && (snapshot.length !== currentLineup.size || snapshot.some((id) => !currentLineup.has(id)))
       return {
@@ -103,41 +121,60 @@ export async function MarketingTab({ showId }: { showId: string }) {
       }
     })
 
+  const qrDataUrl = await QRCode.toDataURL(material.publicUrl, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
+  const materialText = showMaterialText({
+    ...material.copy,
+    bios: material.comedians.map((comedian) => ({ name: comedian.name, bio: comedian.bio })),
+  })
+  const clubName = material.club?.name ?? 'your club'
+
   return (
     <div className="space-y-6">
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="space-y-6">
-          <PosterStage
-            showId={show.id}
-            showTitle={show.title}
-            posterUrl={show.poster_url}
-            posterSource={show.poster_source}
-            palette={palette}
-            uploadAction={uploadShowPosterAction}
-            clearAction={clearShowPosterAction}
-            hasTemplate={Boolean(selectedTemplate)}
-          />
+        <PosterStage
+          showId={show.id}
+          showTitle={show.title}
+          posterUrl={show.poster_url}
+          posterSource={show.poster_source}
+          palette={palette}
+          uploadAction={uploadShowPosterAction}
+          clearAction={clearShowPosterAction}
+          hasTemplate={Boolean(selectedTemplate)}
+        />
 
-          <PosterArchive
-            showId={show.id}
-            posters={archive}
-            restoreAction={useDesignAsPosterAction}
-            deleteAction={deleteMarketingDesignAction}
-          />
-        </div>
-
-        <div className="space-y-6">
-          <ChecklistCard
-            showId={show.id}
-            tasks={(tasks ?? []).map((task) => ({
-              id: task.id,
-              label: task.label ?? task.task_key ?? 'Marketing task',
-              isCompleted: task.is_completed,
-            }))}
-            action={toggleMarketingTaskAction}
-          />
-        </div>
+        <PosterArchive
+          showId={show.id}
+          posters={archive}
+          restoreAction={useDesignAsPosterAction}
+          deleteAction={deleteMarketingDesignAction}
+        />
       </div>
+
+      <ShowMaterialCard
+        comedians={material.comedians.map((comedian) => ({
+          artistId: comedian.artistId,
+          name: comedian.name,
+          imageUrl: comedian.imageUrl,
+        }))}
+        qrDataUrl={qrDataUrl}
+        publicUrl={material.publicUrl}
+        text={materialText}
+        downloadHref={`/admin-app/shows/${show.id}/marketing/material`}
+      />
+
+      <SendEmailCard
+        showId={show.id}
+        clubName={clubName}
+        showTitle={show.title}
+        posterUrl={show.poster_url}
+        publicUrl={material.publicUrl}
+        defaultSubject={showEmailSubject({ clubName, date: material.show.date, title: show.title })}
+        defaultBody={showEmailBody(material.copy)}
+        recipientCount={recipientCount ?? 0}
+        isPublished={material.show.status === 'published'}
+        userEmail={profile?.email ?? null}
+        campaigns={campaigns}
+      />
     </div>
   )
 }

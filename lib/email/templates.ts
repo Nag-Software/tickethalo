@@ -30,6 +30,9 @@ const INK = '#2e0c01'
 const MUTED = '#6d5147'
 const ACCENT = '#ff5b24'
 
+/** Fargene over, for maler som ligger i egne filer (lib/email/show-promo.ts). */
+export const EMAIL_PALETTE = { BG, CARD, LINE, INK, MUTED, ACCENT } as const
+
 const PORTAL_BOOKINGS = appPath('/artist-app/bookings')
 const PORTAL_DATES = appPath('/artist-app/availability')
 

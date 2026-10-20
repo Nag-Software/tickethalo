@@ -791,6 +791,76 @@ export type EmailLog = {
   sent_at: string | null
 }
 
+/** Hvor en kontakt sa ja: avkrysning i checkout, CSV-import, eller (reservert) påmeldingsskjema. */
+export type ClubContactSource = 'purchase' | 'import' | 'signup'
+
+/** Klubbens e-postliste. Se migrasjon 077. Kan få e-post når `unsubscribed_at` er null. */
+export type ClubContact = {
+  id: string
+  club_id: string
+  /** Alltid små bokstaver. */
+  email: string
+  name: string | null
+  phone: string | null
+  source: ClubContactSource
+  consent_at: string
+  consent_text: string | null
+  consent_order_id: string | null
+  consent_import_id: string | null
+  last_show_id: string | null
+  last_purchase_at: string | null
+  unsubscribed_at: string | null
+  unsubscribe_token: string
+  created_at: string
+  updated_at: string
+}
+
+export type ClubContactImport = {
+  id: string
+  club_id: string
+  imported_by: string | null
+  file_name: string | null
+  consent_statement: string
+  rows_total: number
+  added: number
+  updated: number
+  skipped: number
+  created_at: string
+}
+
+export type EmailCampaignStatus = 'sending' | 'sent' | 'failed'
+export type EmailCampaignRecipientStatus = 'pending' | 'sent' | 'failed'
+
+/** Én utsendelse til mange. Se migrasjon 078 og lib/email/bulk.ts. */
+export type EmailCampaign = {
+  id: string
+  club_id: string
+  show_id: string | null
+  /** 'show_promo' = «Send e-mail about show». */
+  kind: string
+  subject: string
+  body: string
+  created_by: string | null
+  status: EmailCampaignStatus
+  recipient_count: number
+  sent_count: number
+  failed_count: number
+  created_at: string
+  completed_at: string | null
+}
+
+export type EmailCampaignRecipient = {
+  campaign_id: string
+  email: string
+  contact_id: string | null
+  name: string | null
+  unsubscribe_url: string | null
+  status: EmailCampaignRecipientStatus
+  resend_id: string | null
+  error: string | null
+  sent_at: string | null
+}
+
 export type MarketingTask = {
   id: string
   show_id: string
@@ -947,6 +1017,82 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ArtistUnavailableDate>
+        Relationships: []
+      }
+      club_contacts: {
+        Row: ClubContact
+        Insert: {
+          id?: string
+          club_id: string
+          email: string
+          name?: string | null
+          phone?: string | null
+          source: ClubContactSource
+          consent_at: string
+          consent_text?: string | null
+          consent_order_id?: string | null
+          consent_import_id?: string | null
+          last_show_id?: string | null
+          last_purchase_at?: string | null
+          unsubscribed_at?: string | null
+          unsubscribe_token?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<ClubContact>
+        Relationships: []
+      }
+      club_contact_imports: {
+        Row: ClubContactImport
+        Insert: {
+          id?: string
+          club_id: string
+          imported_by?: string | null
+          file_name?: string | null
+          consent_statement: string
+          rows_total?: number
+          added?: number
+          updated?: number
+          skipped?: number
+          created_at?: string
+        }
+        Update: Partial<ClubContactImport>
+        Relationships: []
+      }
+      email_campaigns: {
+        Row: EmailCampaign
+        Insert: {
+          id?: string
+          club_id: string
+          show_id?: string | null
+          kind: string
+          subject: string
+          body: string
+          created_by?: string | null
+          status?: EmailCampaignStatus
+          recipient_count?: number
+          sent_count?: number
+          failed_count?: number
+          created_at?: string
+          completed_at?: string | null
+        }
+        Update: Partial<EmailCampaign>
+        Relationships: []
+      }
+      email_campaign_recipients: {
+        Row: EmailCampaignRecipient
+        Insert: {
+          campaign_id: string
+          email: string
+          contact_id?: string | null
+          name?: string | null
+          unsubscribe_url?: string | null
+          status?: EmailCampaignRecipientStatus
+          resend_id?: string | null
+          error?: string | null
+          sent_at?: string | null
+        }
+        Update: Partial<EmailCampaignRecipient>
         Relationships: []
       }
       show_requirement_queue: {
