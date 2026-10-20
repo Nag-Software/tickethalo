@@ -4,18 +4,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * `createCheckoutSession` mot falske Stripe- og Supabase-klienter.
  *
- * Det som testes er pengene: at beløpet Stripe belaster alltid er showets pris
- * nå, at provisjonen regnes av det samme beløpet, og at klubber uten kjent
- * utbetalingsplan får den slått opp før klarheten avgjøres.
+ * Det som testes er pengene: at beløpet Stripe belaster alltid er prisen på
+ * billettypen nå (etter rabatt), at provisjonen regnes av det samme beløpet,
+ * og at klubber uten kjent utbetalingsplan får den slått opp før klarheten
+ * avgjøres.
  */
 
 type Row = Record<string, unknown>
 
+const STANDARD = '11111111-1111-4111-8111-111111111111'
+const STUDENT = '22222222-2222-4222-8222-222222222222'
+const VIP = '33333333-3333-4333-8333-333333333333'
+const FREE = '44444444-4444-4444-8444-444444444444'
+
 const state = vi.hoisted(() => ({
   show: null as Row | null,
   club: null as Row | null,
+  types: [] as Row[],
   soldTickets: 0,
-  showUpdates: [] as Row[],
+  soldByType: [] as Row[],
+  typeUpdates: [] as Array<{ values: Row; id: unknown }>,
 }))
 
 const stripeMock = vi.hoisted(() => ({
@@ -32,10 +40,14 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from(table: string) {
       let update: Row | null = null
+      let updateId: unknown = null
       const builder = {
         select: () => builder,
-        eq: () => builder,
         in: () => builder,
+        eq(column: string, value: unknown) {
+          if (column === 'id') updateId = value
+          return builder
+        },
         update(values: Row) {
           update = values
           return builder
@@ -45,12 +57,17 @@ vi.mock('@/lib/supabase/admin', () => ({
           if (table === 'clubs') return { data: state.club, error: null }
           throw new Error(`unexpected single() on ${table}`)
         },
+        maybeSingle: async () => {
+          if (table === 'show_ticket_counts') return { data: { sold_tickets: state.soldTickets }, error: null }
+          throw new Error(`unexpected maybeSingle() on ${table}`)
+        },
         then(resolve: (value: unknown) => void) {
-          if (table === 'tickets') return resolve({ count: state.soldTickets, error: null })
-          if (table === 'shows' && update) {
-            state.showUpdates.push(update)
+          if (table === 'show_ticket_types' && update) {
+            state.typeUpdates.push({ values: update, id: updateId })
             return resolve({ error: null })
           }
+          if (table === 'show_ticket_types') return resolve({ data: state.types, error: null })
+          if (table === 'ticket_type_counts') return resolve({ data: state.soldByType, error: null })
           throw new Error(`unexpected await on ${table}`)
         },
       }
@@ -96,11 +113,8 @@ function openShow(overrides: Row = {}): Row {
     slug: 'friday-laughs',
     date,
     start_time: '20:00:00',
-    ticket_price: 30_000,
+    end_time: '22:00:00',
     currency: 'NOK',
-    stripe_product_id: 'prod_cached',
-    // En gammel pris fra før endringen. Den skal aldri brukes igjen.
-    stripe_price_id: 'price_stale_25000',
     capacity: 100,
     status: 'published',
     club_id: 'club_1',
@@ -109,6 +123,28 @@ function openShow(overrides: Row = {}): Row {
     ...overrides,
   }
 }
+
+function ticketType(overrides: Row = {}): Row {
+  return {
+    id: STANDARD,
+    name: 'Standard',
+    price: 30_000,
+    discount_bps: 0,
+    quantity: null,
+    promo_code: null,
+    sales_end_mode: 'event_start',
+    sales_end_days: null,
+    sales_end_at: null,
+    archived_at: null,
+    position: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    stripe_product_id: 'prod_cached',
+    ...overrides,
+  }
+}
+
+const url = 'https://tickethalo.no/events/friday-laughs'
+const one = (typeId = STANDARD, quantity = 1) => ({ items: [{ typeId, quantity }] })
 
 function sessionParams(call = 0) {
   return stripeMock.checkout.sessions.create.mock.calls[call][0]
@@ -127,19 +163,18 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.show = openShow()
   state.club = readyClub()
+  state.types = [ticketType()]
   state.soldTickets = 0
-  state.showUpdates = []
+  state.soldByType = []
+  state.typeUpdates = []
   ensureKnown.mockImplementation(async (club: Row) => club)
   stripeMock.checkout.sessions.create.mockResolvedValue({ id: 'cs_1', url: 'https://checkout.stripe.com/cs_1' })
   stripeMock.products.create.mockResolvedValue({ id: 'prod_new' })
 })
 
 describe('createCheckoutSession — amount and commission', () => {
-  it('charges the current ticket price with an inline price and never reuses a cached price', async () => {
-    const result = await createCheckoutSession('show_1', 'https://tickethalo.no/events/friday-laughs', {
-      quantity: 3,
-      holderNames: ['Ada', '', 'Bo'],
-    })
+  it('charges the current price of the type with an inline price, and never a cached price', async () => {
+    const result = await createCheckoutSession('show_1', url, { items: [{ typeId: STANDARD, quantity: 3 }] })
 
     expect(result).toEqual({ url: 'https://checkout.stripe.com/cs_1', sessionId: 'cs_1' })
     expect(stripeMock.prices.create).not.toHaveBeenCalled()
@@ -150,23 +185,82 @@ describe('createCheckoutSession — amount and commission', () => {
     expect(params.line_items).toEqual([
       { quantity: 3, price_data: { currency: 'nok', unit_amount: 30_000, product: 'prod_cached' } },
     ])
-    expect(JSON.stringify(params)).not.toContain('price_stale_25000')
 
     // 10 % av 300 kr, ganger tre billetter — av samme beløp som belastes.
     expect(params.payment_intent_data.application_fee_amount).toBe(9_000)
     expect(params.metadata).toMatchObject({
       application_fee_amount: '9000',
       quantity: '3',
-      ticket_name_1: 'Ada',
-      ticket_name_3: 'Bo',
+      item_1: `${STANDARD}:3:30000:9000`,
+      marketing_opt_in: '0',
     })
-    expect(params.metadata).not.toHaveProperty('ticket_name_2')
-    expect(state.showUpdates).toEqual([])
+    expect(state.typeUpdates).toEqual([])
+  })
+
+  it('takes the commission on the price after the type discount, line by line', async () => {
+    state.types = [
+      ticketType(),
+      ticketType({ id: STUDENT, name: 'Student', price: 30_000, discount_bps: 2500, stripe_product_id: 'prod_student', position: 1 }),
+    ]
+
+    await createCheckoutSession('show_1', url, {
+      items: [
+        { typeId: STANDARD, quantity: 1 },
+        { typeId: STUDENT, quantity: 2 },
+      ],
+    })
+
+    const params = sessionParams()
+    expect(params.line_items).toEqual([
+      { quantity: 1, price_data: { currency: 'nok', unit_amount: 30_000, product: 'prod_cached' } },
+      { quantity: 2, price_data: { currency: 'nok', unit_amount: 22_500, product: 'prod_student' } },
+    ])
+    // 3 000 + 2 × 2 250
+    expect(params.payment_intent_data.application_fee_amount).toBe(7_500)
+    expect(params.metadata).toMatchObject({
+      application_fee_amount: '7500',
+      quantity: '3',
+      item_1: `${STANDARD}:1:30000:3000`,
+      item_2: `${STUDENT}:2:22500:4500`,
+    })
+  })
+
+  it('lets a free type ride along as a zero line in a paid cart', async () => {
+    state.types = [ticketType(), ticketType({ id: FREE, name: 'Guest list', price: 0, stripe_product_id: 'prod_free', position: 1 })]
+
+    await createCheckoutSession('show_1', url, {
+      items: [
+        { typeId: STANDARD, quantity: 1 },
+        { typeId: FREE, quantity: 1 },
+      ],
+    })
+
+    expect(sessionParams().line_items[1]).toEqual({
+      quantity: 1,
+      price_data: { currency: 'nok', unit_amount: 0, product: 'prod_free' },
+    })
+    expect(sessionParams().payment_intent_data.application_fee_amount).toBe(3_000)
+  })
+
+  it('collects the phone number and passes the opt-in on', async () => {
+    await createCheckoutSession('show_1', url, { ...one(), marketingOptIn: true })
+
+    expect(sessionParams().phone_number_collection).toEqual({ enabled: true })
+    expect(sessionParams().metadata.marketing_opt_in).toBe('1')
+    expect(sessionParams().allow_promotion_codes).toBe(false)
+  })
+
+  it('sends the cart to the cancel page', async () => {
+    await createCheckoutSession('show_1', url, one(STANDARD, 2))
+    expect(sessionParams().cancel_url).toBe(
+      `https://tickethalo.no/checkout/cancel?event=friday-laughs&items=${encodeURIComponent(`${STANDARD}:2`)}`,
+    )
   })
 
   it('follows a changed currency on the show', async () => {
-    state.show = openShow({ ticket_price: 5_500, currency: 'SEK' })
-    await createCheckoutSession('show_1', 'https://tickethalo.no/events/x')
+    state.show = openShow({ currency: 'SEK' })
+    state.types = [ticketType({ price: 5_500 })]
+    await createCheckoutSession('show_1', url, one())
 
     expect(sessionParams().line_items[0].price_data).toMatchObject({ currency: 'sek', unit_amount: 5_500 })
     expect(sessionParams().payment_intent_data.application_fee_amount).toBe(550)
@@ -174,7 +268,7 @@ describe('createCheckoutSession — amount and commission', () => {
 
   it('gives the session more than 30 minutes, with room for SDK retries', async () => {
     const before = Math.floor(Date.now() / 1000)
-    await createCheckoutSession('show_1', 'https://tickethalo.no/events/x')
+    await createCheckoutSession('show_1', url, one())
     const after = Math.floor(Date.now() / 1000)
 
     const ttl = sessionParams().expires_at
@@ -183,20 +277,72 @@ describe('createCheckoutSession — amount and commission', () => {
   })
 })
 
+describe('createCheckoutSession — the cart', () => {
+  it('refuses an empty cart', async () => {
+    const error = await checkoutError(createCheckoutSession('show_1', url, { items: [] }))
+    expect(error.code).toBe('no_tickets_selected')
+  })
+
+  it('refuses a locked type without its code, and sells it with the code', async () => {
+    state.types = [ticketType({ id: VIP, name: 'VIP', promo_code: 'FRIENDS' })]
+
+    const refused = await checkoutError(createCheckoutSession('show_1', url, one(VIP)))
+    expect(refused.code).toBe('promo_code_invalid')
+
+    await createCheckoutSession('show_1', url, { ...one(VIP), promoCode: ' friends ' })
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a type whose sales period is over', async () => {
+    state.types = [ticketType({ sales_end_mode: 'days_before', sales_end_days: 30 })]
+    const error = await checkoutError(createCheckoutSession('show_1', url, one()))
+    expect(error.code).toBe('ticket_type_unavailable')
+  })
+
+  it('refuses more than the type has left', async () => {
+    state.types = [ticketType({ quantity: 10 })]
+    state.soldByType = [{ ticket_type_id: STANDARD, sold_tickets: 9 }]
+
+    const error = await checkoutError(createCheckoutSession('show_1', url, one(STANDARD, 2)))
+    expect(error.code).toBe('ticket_type_sold_out')
+  })
+
+  it('refuses an order that does not fit in the remaining capacity of the show', async () => {
+    state.soldTickets = 99
+
+    const error = await checkoutError(createCheckoutSession('show_1', url, one(STANDARD, 2)))
+    expect(error.code).toBe('sold_out')
+  })
+
+  it('refuses a free cart — that goes around Stripe', async () => {
+    state.types = [ticketType({ price: 0 })]
+    const error = await checkoutError(createCheckoutSession('show_1', url, one()))
+    expect(error.code).toBe('unknown')
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled()
+  })
+})
+
 describe('createCheckoutSession — product on the club account', () => {
-  it('creates and remembers a product when the show has none', async () => {
-    state.show = openShow({ stripe_product_id: null })
-    await createCheckoutSession('show_1', 'https://tickethalo.no/events/x')
+  it('creates and remembers a product per type that has none', async () => {
+    state.types = [ticketType({ stripe_product_id: null })]
+    await createCheckoutSession('show_1', url, one())
 
     expect(stripeMock.products.create).toHaveBeenCalledWith(
-      { name: 'Friday Laughs', metadata: { show_id: 'show_1', event_slug: 'friday-laughs' } },
+      { name: 'Friday Laughs', metadata: { show_id: 'show_1', event_slug: 'friday-laughs', ticket_type_id: STANDARD } },
       { stripeAccount: 'acct_club' },
     )
     expect(sessionParams().line_items[0].price_data.product).toBe('prod_new')
-    expect(state.showUpdates).toEqual([{ stripe_product_id: 'prod_new' }])
+    expect(state.typeUpdates).toEqual([{ values: { stripe_product_id: 'prod_new' }, id: STANDARD }])
   })
 
-  it('replaces a cached product the club account does not know, once', async () => {
+  it('names the product after the type when there is more than one', async () => {
+    state.types = [ticketType(), ticketType({ id: STUDENT, name: 'Student', stripe_product_id: null, position: 1 })]
+    await createCheckoutSession('show_1', url, one(STUDENT))
+
+    expect(stripeMock.products.create.mock.calls[0][0].name).toBe('Friday Laughs · Student')
+  })
+
+  it('replaces cached products the club account does not know, once', async () => {
     stripeMock.checkout.sessions.create
       .mockRejectedValueOnce({
         type: 'StripeInvalidRequestError',
@@ -205,12 +351,12 @@ describe('createCheckoutSession — product on the club account', () => {
       })
       .mockResolvedValueOnce({ id: 'cs_2', url: 'https://checkout.stripe.com/cs_2' })
 
-    const result = await createCheckoutSession('show_1', 'https://tickethalo.no/events/x')
+    const result = await createCheckoutSession('show_1', url, one())
 
     expect(result.sessionId).toBe('cs_2')
     expect(stripeMock.products.create).toHaveBeenCalledTimes(1)
     expect(sessionParams(1).line_items[0].price_data.product).toBe('prod_new')
-    expect(state.showUpdates).toEqual([{ stripe_product_id: 'prod_new' }])
+    expect(state.typeUpdates).toEqual([{ values: { stripe_product_id: 'prod_new' }, id: STANDARD }])
   })
 
   it('does not retry other Stripe errors', async () => {
@@ -220,7 +366,7 @@ describe('createCheckoutSession — product on the club account', () => {
       message: 'Something else',
     })
 
-    const error = await checkoutError(createCheckoutSession('show_1', 'https://tickethalo.no/events/x'))
+    const error = await checkoutError(createCheckoutSession('show_1', url, one()))
     expect(error.code).toBe('stripe_config')
     expect(stripeMock.products.create).not.toHaveBeenCalled()
     expect(stripeMock.checkout.sessions.create).toHaveBeenCalledTimes(1)
@@ -232,7 +378,7 @@ describe('createCheckoutSession — club readiness', () => {
     state.club = readyClub({ payout_schedule_interval: null })
     ensureKnown.mockImplementation(async (club: Row) => ({ ...club, payout_schedule_interval: 'manual' }))
 
-    await createCheckoutSession('show_1', 'https://tickethalo.no/events/x')
+    await createCheckoutSession('show_1', url, one())
 
     expect(ensureKnown).toHaveBeenCalledWith(expect.objectContaining({ id: 'club_1', payout_schedule_interval: null }))
     expect(stripeMock.checkout.sessions.create).toHaveBeenCalledTimes(1)
@@ -242,37 +388,28 @@ describe('createCheckoutSession — club readiness', () => {
     state.club = readyClub({ payout_schedule_interval: null })
     ensureKnown.mockImplementation(async (club: Row) => ({ ...club, payout_schedule_interval: 'daily' }))
 
-    const error = await checkoutError(createCheckoutSession('show_1', 'https://tickethalo.no/events/x'))
+    const error = await checkoutError(createCheckoutSession('show_1', url, one()))
     expect(error.code).toBe('club_not_payable')
     expect(error.detail).toContain('schedule=daily')
     expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled()
   })
 
-  it('refuses a show without a price before touching Stripe', async () => {
-    state.show = openShow({ ticket_price: 0 })
+  it('refuses a show without ticket types before touching Stripe', async () => {
+    state.types = []
 
-    const error = await checkoutError(createCheckoutSession('show_1', 'https://tickethalo.no/events/x'))
+    const error = await checkoutError(createCheckoutSession('show_1', url, one()))
     expect(error.code).toBe('price_missing')
     expect(ensureKnown).not.toHaveBeenCalled()
     expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled()
   })
 
   it('refuses a price below the minimum before touching Stripe', async () => {
-    state.show = openShow({ ticket_price: 200 })
+    state.types = [ticketType({ price: 200 })]
 
-    const error = await checkoutError(createCheckoutSession('show_1', 'https://tickethalo.no/events/x'))
+    const error = await checkoutError(createCheckoutSession('show_1', url, one()))
     expect(error.code).toBe('price_missing')
     expect(error.detail).toContain('below the minimum')
     expect(ensureKnown).not.toHaveBeenCalled()
     expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled()
-  })
-
-  it('refuses an order that does not fit in the remaining capacity', async () => {
-    state.soldTickets = 99
-
-    const error = await checkoutError(
-      createCheckoutSession('show_1', 'https://tickethalo.no/events/x', { quantity: 2, holderNames: [] }),
-    )
-    expect(error.code).toBe('sold_out')
   })
 })

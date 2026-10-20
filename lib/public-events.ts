@@ -2,6 +2,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { type ClubReadiness, isClubPayoutReady } from '@/lib/stripe-connect'
 import { osloDate, ticketSalesState } from '@/lib/ticket-sales'
 import { isTicketPriceBelowMinimum } from '@/lib/tickets'
+import {
+  type PublicTicketType,
+  type TicketTypeRule,
+  normalizePromoCode,
+  sortTicketTypes,
+  ticketTypeAvailability,
+  toPublicTicketType,
+} from '@/lib/ticket-types'
 import { type PublicTicketSalesState, toPublicTicketSalesState } from '@/lib/ticket-sales-display'
 import type { Artist, Club, ConfirmedSpot, Show, ShowRequirement } from '@/types/database'
 
@@ -11,6 +19,8 @@ export {
   formatShortDate,
   formatShowDate,
   formatShowTime,
+  formatAmount,
+  formatShowPrice,
   formatTicketPrice,
   remainingTickets,
   ticketFillPercent,
@@ -27,6 +37,16 @@ export type PublicShow = PublicShowRow & {
   clubLegalName: string | null
   clubOrgNumber: string | null
   soldTickets: number
+  /**
+   * Billettypene alle kan kjøpe: offentlige, ikke arkivert og fortsatt i
+   * salg. Utsolgte er med, merket. Låste typer sendes aldri hit — de hentes
+   * med koden (`getUnlockedTicketTypes`).
+   */
+  ticketTypes: PublicTicketType[]
+  /** Showet har typer som låses opp med en kode, og som fortsatt selges. */
+  hasLockedTypes: boolean
+  /** Ingenting igjen å kjøpe: salen er full, eller alle offentlige typer er utsolgt. */
+  soldOut: boolean
   /**
    * Om billetten kan kjøpes nå, regnet ut på serveren da siden ble hentet.
    * Tar med pris og klubbens Stripe-oppsett, ikke bare salgsvinduet — se
@@ -50,6 +70,11 @@ const SHOW_COLUMNS =
  * Det sidene viser om klubben, pluss feltene klarheten avhenger av. Klarhetsfeltene
  * brukes bare til salgsstatusen og sendes aldri videre til klienten.
  */
+const TYPE_COLUMNS =
+  'id, show_id, name, price, discount_bps, quantity, promo_code, sales_end_mode, sales_end_days, sales_end_at, archived_at, position, created_at' as const
+
+type PublicTypeRow = TicketTypeRule & { show_id: string; created_at: string }
+
 const CLUB_COLUMNS =
   'id, name, slug, city, logo_url, legal_name, org_number, support_email, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval' as const
 
@@ -185,8 +210,7 @@ export function isPubliclySellable(
   if (show.ticket_price === 0) return true
   if (!show.ticket_price || show.ticket_price <= 0) return false
   if (isTicketPriceBelowMinimum(show.ticket_price)) return false
-  if (!club) return false
-  return isClubPayoutReady({ ...club, payout_schedule_interval: club.payout_schedule_interval ?? 'manual' })
+  return clubCanTakePayment(club)
 }
 
 /**
@@ -208,18 +232,30 @@ async function withTicketCounts(shows: PublicShowRow[]): Promise<PublicShow[]> {
   const clubIds = [...new Set(shows.map((show) => show.club_id).filter((clubId): clubId is string => Boolean(clubId)))]
   const showIds = shows.map((show) => show.id)
 
-  const [{ data: clubs }, { data: ticketCounts }] = await Promise.all([
+  const [{ data: clubs }, { data: ticketCounts }, { data: typeRows }, { data: typeCounts }] = await Promise.all([
     clubIds.length > 0
       ? db.from('clubs').select(CLUB_COLUMNS).in('id', clubIds)
       : Promise.resolve({ data: [] as PublicClubRow[] }),
     db.from('show_ticket_counts').select('show_id, sold_tickets').in('show_id', showIds),
+    db.from('show_ticket_types').select(TYPE_COLUMNS).in('show_id', showIds).is('archived_at', null),
+    db.from('ticket_type_counts').select('ticket_type_id, sold_tickets').in('show_id', showIds),
   ])
 
   const clubMap = new Map((clubs ?? []).map((club) => [club.id, club]))
   const soldByShow = new Map((ticketCounts ?? []).map((row) => [row.show_id, row.sold_tickets]))
+  const soldByType = new Map((typeCounts ?? []).map((row) => [row.ticket_type_id, row.sold_tickets]))
+  const typesByShow = new Map<string, PublicTypeRow[]>()
+  for (const type of (typeRows ?? []) as PublicTypeRow[]) {
+    typesByShow.set(type.show_id, [...(typesByShow.get(type.show_id) ?? []), type])
+  }
 
   return shows.map((show) => {
     const club = show.club_id ? clubMap.get(show.club_id) : null
+    const soldTickets = soldByShow.get(show.id) ?? 0
+    const types = publicTypesFor(show, typesByShow.get(show.id) ?? [], soldTickets, soldByType, club, now)
+    const salesState = toPublicTicketSalesState(ticketSalesState(show, now), isPubliclySellable(show, club), {
+      typesEnded: !show.ticket_url && types.allEnded,
+    })
 
     return {
       ...show,
@@ -229,8 +265,100 @@ async function withTicketCounts(shows: PublicShowRow[]): Promise<PublicShow[]> {
       clubLogoUrl: club?.logo_url ?? null,
       clubLegalName: club?.legal_name ?? null,
       clubOrgNumber: club?.org_number ?? null,
-      soldTickets: soldByShow.get(show.id) ?? 0,
-      salesState: toPublicTicketSalesState(ticketSalesState(show, now), isPubliclySellable(show, club)),
+      soldTickets,
+      ticketTypes: types.public,
+      hasLockedTypes: types.hasLocked,
+      soldOut: types.soldOut,
+      salesState,
     }
   })
+}
+
+/** Klubben kan ta betalt nå — samme vurdering som `isPubliclySellable`. */
+function clubCanTakePayment(club: ClubReadiness | null | undefined) {
+  if (!club) return false
+  return isClubPayoutReady({ ...club, payout_schedule_interval: club.payout_schedule_interval ?? 'manual' })
+}
+
+/**
+ * Typene showet viser, og hva de sier om showet som helhet. En type der
+ * salgsperioden er over, vises ikke; er alle over, er salget slutt.
+ */
+function publicTypesFor(
+  show: Pick<Show, 'date' | 'start_time' | 'end_time' | 'capacity'>,
+  rows: PublicTypeRow[],
+  soldTickets: number,
+  soldByType: Map<string, number>,
+  club: ClubReadiness | null | undefined,
+  now: Date,
+) {
+  const showRemaining = show.capacity === null ? null : Math.max(show.capacity - soldTickets, 0)
+  const payable = clubCanTakePayment(club)
+  const listed = sortTicketTypes(rows).map((row) => ({
+    row,
+    availability: ticketTypeAvailability(row, show, { type: soldByType.get(row.id) ?? 0, showRemaining }, now),
+  }))
+
+  const live = listed.filter((entry) => entry.availability.kind !== 'ended')
+  const publicTypes = live
+    .filter((entry) => !entry.row.promo_code)
+    .map((entry) => toPublicTicketType(entry.row, entry.availability, { payable }))
+  const hasLocked = live.some((entry) => Boolean(entry.row.promo_code) && entry.availability.kind === 'on_sale')
+
+  return {
+    public: publicTypes,
+    hasLocked,
+    allEnded: listed.length > 0 && live.length === 0,
+    soldOut:
+      showRemaining === 0 ||
+      (publicTypes.length > 0 && publicTypes.every((type) => type.soldOut) && !hasLocked),
+  }
+}
+
+/**
+ * Typene en kode låser opp på showet, slik bestillingsarket viser dem. Tom
+ * liste når koden ikke låser opp noe — kjøperen får ikke vite om koden
+ * finnes for en annen type eller et annet show.
+ */
+export async function getUnlockedTicketTypes(showId: string, code: string): Promise<PublicTicketType[]> {
+  const promo = normalizePromoCode(code)
+  if (!promo) return []
+
+  const db = createAdminClient()
+  const { data: show } = await db
+    .from('shows')
+    .select('id, date, start_time, end_time, capacity, club_id, status, deleted_at')
+    .eq('id', showId)
+    .eq('status', 'published')
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!show) return []
+
+  const { data: rows } = await db
+    .from('show_ticket_types')
+    .select(TYPE_COLUMNS)
+    .eq('show_id', showId)
+    .eq('promo_code', promo)
+    .is('archived_at', null)
+  if (!rows || rows.length === 0) return []
+
+  const [{ data: club }, { data: showCount }, { data: typeCounts }] = await Promise.all([
+    show.club_id
+      ? db.from('clubs').select(CLUB_COLUMNS).eq('id', show.club_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    db.from('show_ticket_counts').select('sold_tickets').eq('show_id', showId).maybeSingle(),
+    db.from('ticket_type_counts').select('ticket_type_id, sold_tickets').eq('show_id', showId),
+  ])
+
+  const showRemaining = show.capacity === null ? null : Math.max(show.capacity - (showCount?.sold_tickets ?? 0), 0)
+  const soldByType = new Map((typeCounts ?? []).map((row) => [row.ticket_type_id, row.sold_tickets]))
+  const payable = clubCanTakePayment(club as PublicClubRow | null)
+
+  return sortTicketTypes(rows as PublicTypeRow[])
+    .map((row) => ({
+      row,
+      availability: ticketTypeAvailability(row, show, { type: soldByType.get(row.id) ?? 0, showRemaining }),
+    }))
+    .filter((entry) => entry.availability.kind !== 'ended')
+    .map((entry) => toPublicTicketType(entry.row, entry.availability, { payable }))
 }

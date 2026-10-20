@@ -293,6 +293,8 @@ export type PurchasedTicket = {
   code: string
   /** Navnet billetten gjelder. Null viser kjøperens eget navn. */
   holderName?: string | null
+  /** Billettypen, f.eks. «Student». Vises ved siden av nummeret. */
+  typeName?: string | null
   /** Adressen QR-koden peker på. Én per billett. */
   verificationUrl: string
 }
@@ -304,6 +306,13 @@ export type PurchasedTicket = {
  * fire, skal du ikke lete i fire tråder i døra. Hver QR er sin egen
  * vedlegg-CID, fordi e-postklienter ikke deler bilder mellom blokker.
  */
+/** «Billett 2 av 3 · Student». Typen står bare når den finnes. */
+export function ticketLabel(ticket: Pick<PurchasedTicket, 'typeName'>, index: number, count: number) {
+  const base = count > 1 ? `Billett ${index + 1} av ${count}` : 'Billett'
+  const type = ticket.typeName?.trim()
+  return type ? `${base} · ${type}` : base
+}
+
 export async function sendTicketPurchaseEmail(opts: {
   email: string
   buyer_name: string
@@ -380,7 +389,7 @@ export async function sendTicketPurchaseEmail(opts: {
     const ticketBlocks = tickets
       .map((ticket, index) => {
         const holder = escapeHtml(ticket.holderName?.trim() || opts.buyer_name || '')
-        const label = many ? `Billett ${index + 1} av ${tickets.length}` : 'Billett'
+        const label = ticketLabel(ticket, index, tickets.length)
         return `
                 <div style="margin-top:${index === 0 ? '26' : '14'}px;border:1px solid #e4e4e7;border-radius:14px;padding:18px">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
@@ -402,7 +411,7 @@ export async function sendTicketPurchaseEmail(opts: {
     const ticketText = tickets
       .map((ticket, index) => {
         const holder = ticket.holderName?.trim() || opts.buyer_name || ''
-        const label = many ? `Billett ${index + 1} av ${tickets.length}` : 'Billett'
+        const label = ticketLabel(ticket, index, tickets.length)
         return `${label}${holder ? ` — ${holder}` : ''}\nBillettkode: ${formatTicketCode(ticket.code)}\nQR-verifisering: ${ticket.verificationUrl}`
       })
       .join('\n\n')

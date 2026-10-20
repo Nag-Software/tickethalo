@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createShow } from '@/lib/actions/shows'
+import { copyTicketTypes } from '@/lib/ticket-types-copy'
 import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { publishShow } from '@/lib/show-publish'
 import { runAfterResponse } from '@/lib/background'
@@ -461,12 +462,6 @@ export async function cloneShowAction(formData: FormData) {
   const db = createAdminClient()
   const venue = await resolveShowVenue(db, clubId, venueSelectionFromForm(formData))
 
-  const priceError = ticketPriceError(
-    optionalMoneyToMinor(formData.get('ticket_price')),
-    optionalText(formData.get('currency')),
-  )
-  if (priceError) throw new Error(priceError)
-
   // Create the new show
   const show = await createShow({
     title: formData.get('title') as string,
@@ -476,10 +471,12 @@ export async function cloneShowAction(formData: FormData) {
     end_time: optionalText(formData.get('end_time')) ?? undefined,
     ...venue,
     capacity: optionalInteger(formData.get('capacity')) ?? undefined,
-    ticket_price: optionalMoneyToMinor(formData.get('ticket_price')) ?? undefined,
     currency: optionalText(formData.get('currency')) ?? 'NOK',
     club_id: clubId,
   })
+
+  // Billettypene følger malen.
+  await copyTicketTypes(templateId, show.id)
 
   // Collect requirements from indexed form fields (req_0_*, req_1_*, …)
   const newReqs: Array<{
@@ -662,10 +659,6 @@ export async function updateShowDetailsAction(formData: FormData) {
   })
   if (!check.ok) return { error: check.error }
 
-  const ticketPrice = optionalMoneyToMinor(formData.get('ticket_price'))
-  const priceError = ticketPriceError(ticketPrice, check.currency)
-  if (priceError) return { error: priceError }
-
   // Stedet avgjøres mot klubbens egne lokasjoner — se `resolveShowVenue`.
   // `venue_name` ble før satt til null her ved hver lagring, og det var
   // grunnen til at komikeren leste «Venue: Coming» på et show med full adresse.
@@ -685,7 +678,8 @@ export async function updateShowDetailsAction(formData: FormData) {
     end_time: optionalText(formData.get('end_time')),
     ...venue,
     capacity: optionalInteger(formData.get('capacity')),
-    ticket_price: ticketPrice,
+    // Prisen står på billettypene (`ticket-type-actions.ts`); `ticket_price`
+    // er avledet av dem.
     currency: check.currency,
   }).eq('id', showId)
 
@@ -693,6 +687,12 @@ export async function updateShowDetailsAction(formData: FormData) {
   // is the one failure the booker can actually fix, so it comes back as a value.
   if (error?.code === '23505') return { error: 'That slug is already used by another show.' }
   if (error) throw new Error(error.message)
+
+  // Produktene per billettype bærer også tittelen («Show · Type»).
+  if (title !== current.title) {
+    const { error: productError } = await db.from('show_ticket_types').update({ stripe_product_id: null }).eq('show_id', showId)
+    if (productError) console.warn(`[Shows] Could not reset Stripe products for show ${showId}: ${productError.message}`)
+  }
 
   // Et kjøp som ble startet mens salget var åpent, kan fortsatt betales i en
   // halvtime. Er salgsvinduet for den nye datoen ikke åpnet, ville den

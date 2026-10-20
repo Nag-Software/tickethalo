@@ -18,6 +18,10 @@ export type CheckoutErrorCode =
   | 'sales_not_open'
   | 'price_missing'
   | 'buyer_details_missing'
+  | 'no_tickets_selected'
+  | 'ticket_type_unavailable'
+  | 'ticket_type_sold_out'
+  | 'promo_code_invalid'
   | 'club_not_payable'
   | 'stripe_config'
   | 'stripe_unavailable'
@@ -36,6 +40,11 @@ const MESSAGES: Record<CheckoutErrorCode, string> = {
   price_missing: 'The ticket price is missing for this show. We have been notified — please try again later.',
   // Gratisbilletter: ingen betaling å hente navn og adresse fra.
   buyer_details_missing: 'Enter your name and a valid email address so we know where to send the tickets.',
+  no_tickets_selected: 'Pick at least one ticket.',
+  // Typen kan ha blitt arkivert, eller salgsperioden er over siden siden ble lastet.
+  ticket_type_unavailable: 'One of the ticket types you picked is no longer on sale. Reload the page and pick again.',
+  ticket_type_sold_out: 'There are not enough tickets left of the type you picked. Pick fewer, or another type.',
+  promo_code_invalid: 'That promo code does not unlock any tickets for this show.',
   club_not_payable: 'Tickets for this show are not on sale yet. We have been notified — please try again later.',
   stripe_config: 'Payments are not set up correctly for this show. We have been notified — please try again later.',
   stripe_unavailable: 'We cannot reach the payment provider right now. Please try again in a moment.',

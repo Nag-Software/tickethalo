@@ -2,36 +2,51 @@ import Link from 'next/link'
 import { XCircle } from 'lucide-react'
 import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
-import { formatShortDate, formatTicketPrice, getPublishedShowBySlug, remainingTickets } from '@/lib/public-events'
+import { formatAmount, formatShortDate, getPublishedShowBySlug, remainingTickets } from '@/lib/public-events'
 import { showVenue } from '@/lib/show-venue'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
+import { parseCartParam } from '@/lib/ticket-types'
 
 export const metadata = { title: 'Payment cancelled — Tickethalo' }
 
 export default async function CheckoutCancelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ event?: string; tickets?: string }>
+  searchParams: Promise<{ event?: string; tickets?: string; items?: string }>
 }) {
-  const { event, tickets } = await searchParams
+  const { event, tickets, items } = await searchParams
   const eventHref = event ? `/events/${event}` : '/events'
 
   // Ordren kjøperen gikk ut av. Uten den måtte hun tilbake til showet, åpne
   // kjøpet og velge antall på nytt — her er det ett trykk. Kan billettene ikke
   // lenger kjøpes (utsolgt, salget stengt), vises bare veien tilbake.
   const show = event ? await getPublishedShowBySlug(event) : null
-  const requested = Math.floor(Number(tickets))
-  const quantity = requested >= 1 && requested <= MAX_TICKETS_PER_ORDER ? requested : 1
+  // `tickets` er lenker fra før billettypene: antallet gjelder den første typen.
+  const legacy = Math.floor(Number(tickets))
+  const firstType = show?.ticketTypes.find((type) => type.available)
+  const cart = items
+    ? parseCartParam(items)
+    : firstType && legacy >= 1 && legacy <= MAX_TICKETS_PER_ORDER
+      ? { [firstType.id]: legacy }
+      : {}
+  const lines = (show?.ticketTypes ?? [])
+    .filter((type) => type.available && (cart[type.id] ?? 0) > 0)
+    .map((type) => ({ type, quantity: Math.min(cart[type.id], type.remaining ?? cart[type.id]) }))
+  const quantity = lines.reduce((sum, line) => sum + line.quantity, 0)
   const remaining = show ? remainingTickets(show) : null
+  const cartParam = lines.map((line) => `${line.type.id}:${line.quantity}`).join(',')
   const order =
-    show && !show.ticket_url && show.salesState.kind === 'open' && (remaining === null || remaining >= quantity)
+    show && !show.ticket_url && show.salesState.kind === 'open' && quantity > 0 && (remaining === null || remaining >= quantity)
       ? {
           title: show.title,
           summary: [formatShortDate(show.date), show.start_time?.slice(0, 5), showVenue(show).venue]
             .filter(Boolean)
             .join(' · '),
-          total: formatTicketPrice({ ticket_price: (show.ticket_price ?? 0) * quantity, currency: show.currency }),
-          href: `${eventHref}?tickets=${quantity}`,
+          total: formatAmount(
+            lines.reduce((sum, line) => sum + line.type.unitAmount * line.quantity, 0),
+            show.currency,
+          ),
+          href: `${eventHref}?items=${encodeURIComponent(cartParam)}`,
         }
       : null
 

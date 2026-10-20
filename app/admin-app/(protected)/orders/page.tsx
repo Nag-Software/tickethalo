@@ -100,7 +100,7 @@ export default async function OrdersPage() {
   const { data: orders, error: ordersError } = clubAccess.clubIds.length
     ? await db
         .from('orders')
-        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, created_at, payment_method_type, platform_fee_amount, club_net_amount, refunded_amount, refunded_at, refund_reason, stripe_payment_intent_id, cancellation_reason, dispute_status, last_refund_error')
+        .select('id, show_id, amount_total, currency, status, buyer_email, buyer_name, buyer_phone, created_at, payment_method_type, platform_fee_amount, club_net_amount, refunded_amount, refunded_at, refund_reason, stripe_payment_intent_id, cancellation_reason, dispute_status, last_refund_error')
         .in('club_id', clubAccess.clubIds)
         .order('created_at', { ascending: false })
         .limit(100)
@@ -120,7 +120,17 @@ export default async function OrdersPage() {
   const { data: ticketRows } = orderIds.length
     ? await db.from('tickets').select('order_id, status').in('order_id', orderIds)
     : { data: [] as Array<{ order_id: string; status: string }> }
+  const { data: itemRows } = orderIds.length
+    ? await db.from('order_items').select('order_id, type_name, quantity').in('order_id', orderIds)
+    : { data: [] as Array<{ order_id: string; type_name: string; quantity: number }> }
   const showMap = Object.fromEntries((showRows ?? []).map(s => [s.id, s]))
+
+  // «2 × Student · 1 × Standard». Bare når ordren har mer enn én type — ellers
+  // sier antallet alt.
+  const itemSummaryMap = (itemRows ?? []).reduce<Record<string, string[]>>((accumulator, item) => {
+    accumulator[item.order_id] = [...(accumulator[item.order_id] ?? []), `${item.quantity} × ${item.type_name}`]
+    return accumulator
+  }, {})
 
   const ticketSummaryMap = (ticketRows ?? []).reduce<Record<string, { total: number; checkedIn: number }>>((accumulator, ticket) => {
     const current = accumulator[ticket.order_id] ?? { total: 0, checkedIn: 0 }
@@ -176,6 +186,7 @@ export default async function OrdersPage() {
                     <td className="px-4 py-3">
                       <div className="font-medium">{o.buyer_name ?? '—'}</div>
                       <div className="text-xs text-muted-foreground">{o.buyer_email}</div>
+                      {o.buyer_phone && <div className="text-xs text-muted-foreground">{o.buyer_phone}</div>}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {show ? (
@@ -189,7 +200,11 @@ export default async function OrdersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{isFree ? 'Free' : money(o.amount_total)}</div>
-                      <div className="text-xs text-muted-foreground">{ticketSummary.total || 0} pcs</div>
+                      <div className="text-xs text-muted-foreground">
+                        {(itemSummaryMap[o.id]?.length ?? 0) > 1
+                          ? itemSummaryMap[o.id].join(' · ')
+                          : `${ticketSummary.total || 0} pcs`}
+                      </div>
                     </td>
                     {/* The club is the seller. The amount above is what the customer
                         paid; this is what the club keeps after commission. */}

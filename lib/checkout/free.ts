@@ -2,14 +2,18 @@ import { createHash } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { CheckoutError, checkoutErrorForSalesState } from '@/lib/checkout/errors'
 import { deliverTicketEmail } from '@/lib/checkout/finalize'
+import { resolveCheckoutLines } from '@/lib/checkout/lines'
 import { ticketSalesState } from '@/lib/ticket-sales'
-import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
+import { type OrderItemInput, type OrderLine, normalizePromoCode, parseOrderItems } from '@/lib/ticket-types'
 
 /**
  * Gratisbilletter: samme billett, uten Stripe.
  *
- * Et show med pris 0 utsteder ekte billetter — QR-kode, kapasitet, innsjekk
- * og gjesteliste — men ingen betaling finnes å vente på. Bestillingen går
+ * En billettype med pris 0 utsteder ekte billetter — QR-kode, kapasitet,
+ * innsjekk og gjesteliste — men ingen betaling finnes å vente på. En kurv
+ * med bare gratis typer går derfor rett fra skjemaet til
+ * `complete_checkout_order`; en kurv med minst én betalt type går gjennom
+ * Stripe, og de gratis billettene følger med som linjer på 0. Bestillingen går
  * derfor rett fra skjemaet til `complete_checkout_order`, med beløp 0 og
  * uten noen Stripe-referanser. Ordren får `stripe_fee_status =
  * not_applicable` av seg selv (ingen payment intent), og alt som leter etter
@@ -22,11 +26,6 @@ import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
  * at én person tømmer et show.
  */
 
-/** Pris 0 er et gratis show. Tom pris (null) er et show uten pris, som ikke selges. */
-export function isFreeShow(show: { ticket_price: number | null }): boolean {
-  return show.ticket_price === 0
-}
-
 export function freeOrderSessionId(showId: string, email: string): string {
   const digest = createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 32)
   return `free_${showId}_${digest}`
@@ -38,9 +37,11 @@ export function isFreeOrderSessionId(sessionId: string | null | undefined): bool
 }
 
 export type FreeTicketInput = {
-  quantity: number
+  items: OrderItemInput[]
+  promoCode: string | null
   email: string
   name: string
+  marketingOptIn: boolean
 }
 
 /**
@@ -48,12 +49,20 @@ export type FreeTicketInput = {
  * og navnet står på den — ingen betaling finnes å hente dem fra.
  */
 export function parseFreeTicketInput(formData: FormData): { ok: true; value: FreeTicketInput } | { ok: false } {
-  const quantity = Math.min(Math.max(1, Number(formData.get('quantity') ?? 1) || 1), MAX_TICKETS_PER_ORDER)
   const email = String(formData.get('buyer_email') ?? '').trim().slice(0, 254)
   const name = String(formData.get('buyer_name') ?? '').trim().slice(0, 120)
 
   if (!name || !isPlausibleEmail(email)) return { ok: false }
-  return { ok: true, value: { quantity, email, name } }
+  return {
+    ok: true,
+    value: {
+      items: parseOrderItems(formData.entries()),
+      promoCode: normalizePromoCode(String(formData.get('promo_code') ?? '')),
+      email,
+      name,
+      marketingOptIn: formData.get('marketing_opt_in') === 'on' || formData.get('marketing_opt_in') === '1',
+    },
+  }
 }
 
 /** Nok til å stoppe tomme og åpenbart gale adresser; postkassen avgjør resten. */
@@ -70,7 +79,7 @@ export type FreeTicketClaim = {
 }
 
 const SHOW_COLUMNS =
-  'id, title, slug, date, start_time, ticket_price, currency, capacity, status, club_id, ticket_sales_closed_at, deleted_at'
+  'id, title, slug, date, start_time, end_time, currency, capacity, status, club_id, ticket_sales_closed_at, deleted_at'
 
 /**
  * Utsteder gratisbilletter til showet. Kaster `CheckoutError` når det ikke
@@ -85,26 +94,17 @@ export async function claimFreeTickets(showId: string, origin: string, input: Fr
   const salesError = checkoutErrorForSalesState(ticketSalesState(show), `status=${show.status} date=${show.date}`)
   if (salesError) throw salesError
 
-  // Prisen kan ha blitt satt mellom sidevisningen og klikket. Da er det et
-  // betalt kjøp, og det skal ikke snike seg gjennom her.
-  if (!isFreeShow(show)) throw new CheckoutError('unknown', { detail: `show ${show.id} is not free (price=${show.ticket_price})` })
-
-  // Kapasiteten sjekkes endelig i `complete_checkout_order`, men et utsolgt
-  // show skal helst stoppes før ordren finnes: en kansellert gratisordre
-  // ville ellers stått i veien for adressen til noen ryddet den bort.
-  if (show.capacity !== null) {
-    const { count } = await admin
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('show_id', showId)
-      .in('status', ['valid', 'used'])
-    if ((count ?? 0) + input.quantity > show.capacity) {
-      throw new CheckoutError('sold_out', { detail: `sold=${count ?? 0} capacity=${show.capacity} wanted=${input.quantity}` })
-    }
-  }
+  // Typene, antallet og plassen sjekkes mot det som står nå. En pris kan ha
+  // blitt satt mellom sidevisningen og klikket — da er det et betalt kjøp, og
+  // det skal ikke snike seg gjennom her. Kapasiteten sjekkes endelig i
+  // `complete_checkout_order`, men et utsolgt show skal helst stoppes før
+  // ordren finnes: en kansellert gratisordre ville ellers stått i veien for
+  // adressen til noen ryddet den bort.
+  const { lines, free } = await resolveCheckoutLines(show, input)
+  if (!free) throw new CheckoutError('unknown', { detail: `show ${show.id}: the cart is not free` })
 
   const sessionId = freeOrderSessionId(show.id, input.email)
-  let completion = await completeFreeOrder(show, sessionId, input)
+  let completion = await completeFreeOrder(show, sessionId, input, lines)
 
   // En kansellert gratisordre fra et tidligere forsøk (utsolgt i kappløpet,
   // salget stengt en stund) ligger på samme sesjons-ID og gir «duplicate»
@@ -121,7 +121,7 @@ export async function claimFreeTickets(showId: string, origin: string, input: Fr
     if (cleanupError) {
       throw new CheckoutError('unknown', { detail: `could not clear stale free order ${completion.orderId}: ${cleanupError.message}` })
     }
-    completion = await completeFreeOrder(show, sessionId, input)
+    completion = await completeFreeOrder(show, sessionId, input, lines)
   }
 
   switch (completion.result) {
@@ -168,6 +168,7 @@ async function completeFreeOrder(
   show: { id: string; currency: string; club_id: string | null },
   sessionId: string,
   input: FreeTicketInput,
+  lines: OrderLine[],
 ): Promise<Completion> {
   const { data, error } = await createAdminClient()
     .rpc('complete_checkout_order', {
@@ -181,9 +182,16 @@ async function completeFreeOrder(
       // 0, ikke null: da får ordren klubbandel 0 i stedet for en tom verdi
       // som ser ut som en betaling ingen har lest ennå.
       p_platform_fee_amount: 0,
-      p_quantity: input.quantity,
+      p_quantity: lines.reduce((sum, line) => sum + line.quantity, 0),
       // Navnet på billettene er kjøperens eget — RPC-en faller tilbake på det.
       p_ticket_names: [],
+      p_items: lines.map((line) => ({
+        type_id: line.typeId,
+        quantity: line.quantity,
+        unit_amount: 0,
+        platform_fee_amount: 0,
+      })),
+      p_marketing_opt_in: input.marketingOptIn,
     })
     .single()
 

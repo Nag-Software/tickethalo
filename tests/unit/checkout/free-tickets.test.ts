@@ -9,8 +9,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Row = Record<string, unknown>
 
+const FREE = '44444444-4444-4444-8444-444444444444'
+const PAID = '55555555-5555-4555-8555-555555555555'
+
 const state = vi.hoisted(() => ({
   show: null as Row | null,
+  types: [] as Row[],
   soldTickets: 0,
   rpcResults: [] as Row[],
   rpcCalls: [] as Row[],
@@ -41,8 +45,13 @@ vi.mock('@/lib/supabase/admin', () => ({
           if (table === 'shows') return { data: state.show, error: state.show ? null : { message: 'not found' } }
           throw new Error(`unexpected single() on ${table}`)
         },
+        maybeSingle: async () => {
+          if (table === 'show_ticket_counts') return { data: { sold_tickets: state.soldTickets }, error: null }
+          throw new Error(`unexpected maybeSingle() on ${table}`)
+        },
         then(resolve: (value: unknown) => void) {
-          if (table === 'tickets') return resolve({ count: state.soldTickets, error: null })
+          if (table === 'show_ticket_types') return resolve({ data: state.types, error: null })
+          if (table === 'ticket_type_counts') return resolve({ data: [], error: null })
           if (table === 'orders' && deleting) {
             state.deletedOrders.push(filters)
             return resolve({ error: null })
@@ -71,7 +80,7 @@ function openShow(overrides: Row = {}): Row {
     slug: 'open-mic',
     date,
     start_time: '20:00:00',
-    ticket_price: 0,
+    end_time: null,
     currency: 'NOK',
     capacity: 50,
     status: 'published',
@@ -82,7 +91,32 @@ function openShow(overrides: Row = {}): Row {
   }
 }
 
-const input = { quantity: 2, email: 'Ada@Example.com', name: 'Ada' }
+function ticketType(overrides: Row = {}): Row {
+  return {
+    id: FREE,
+    name: 'Standard',
+    price: 0,
+    discount_bps: 0,
+    quantity: null,
+    promo_code: null,
+    sales_end_mode: 'event_start',
+    sales_end_days: null,
+    sales_end_at: null,
+    archived_at: null,
+    position: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    stripe_product_id: null,
+    ...overrides,
+  }
+}
+
+const input = {
+  items: [{ typeId: FREE, quantity: 2 }],
+  promoCode: null,
+  email: 'Ada@Example.com',
+  name: 'Ada',
+  marketingOptIn: false,
+}
 
 async function checkoutError(promise: Promise<unknown>) {
   const error = await promise.then(() => null, (reason: unknown) => reason)
@@ -92,6 +126,7 @@ async function checkoutError(promise: Promise<unknown>) {
 
 beforeEach(() => {
   state.show = openShow()
+  state.types = [ticketType()]
   state.soldTickets = 0
   state.rpcResults = []
   state.rpcCalls = []
@@ -120,6 +155,8 @@ describe('claimFreeTickets', () => {
       p_club_id: 'club_1',
       p_quantity: 2,
       p_ticket_names: [],
+      p_items: [{ type_id: FREE, quantity: 2, unit_amount: 0, platform_fee_amount: 0 }],
+      p_marketing_opt_in: false,
     })
     expect(state.rpcCalls[0]).not.toHaveProperty('p_payment_intent_id')
     expect(state.rpcCalls[0]).not.toHaveProperty('p_connected_account_id')
@@ -155,12 +192,25 @@ describe('claimFreeTickets', () => {
     await expect(claimFreeTickets('show_1', 'https://tickethalo.com', input)).resolves.toMatchObject({ result: 'created' })
   })
 
-  it('refuses a show that is not free', async () => {
-    state.show = openShow({ ticket_price: 20_000 })
+  it('passes the opt-in on to the order', async () => {
+    await claimFreeTickets('show_1', 'https://tickethalo.com', { ...input, marketingOptIn: true })
+    expect(state.rpcCalls[0]).toMatchObject({ p_marketing_opt_in: true })
+  })
+
+  it('refuses a cart with a type that is not free', async () => {
+    state.types = [ticketType({ price: 20_000 })]
 
     const error = await checkoutError(claimFreeTickets('show_1', 'https://tickethalo.com', input))
 
     expect(error.code).toBe('unknown')
+    expect(state.rpcCalls).toHaveLength(0)
+  })
+
+  it('refuses a type that belongs to another show', async () => {
+    const error = await checkoutError(
+      claimFreeTickets('show_1', 'https://tickethalo.com', { ...input, items: [{ typeId: PAID, quantity: 1 }] }),
+    )
+    expect(error.code).toBe('ticket_type_unavailable')
     expect(state.rpcCalls).toHaveLength(0)
   })
 
@@ -244,21 +294,31 @@ describe('parseFreeTicketInput', () => {
   }
 
   it('needs a name and a plausible email', () => {
-    expect(parseFreeTicketInput(form({ quantity: '3', buyer_name: ' Ada ', buyer_email: ' ada@example.com ' }))).toEqual({
+    expect(
+      parseFreeTicketInput(
+        form({ [`qty_${FREE}`]: '3', buyer_name: ' Ada ', buyer_email: ' ada@example.com ', marketing_opt_in: 'on' }),
+      ),
+    ).toEqual({
       ok: true,
-      value: { quantity: 3, email: 'ada@example.com', name: 'Ada' },
+      value: {
+        items: [{ typeId: FREE, quantity: 3 }],
+        promoCode: null,
+        email: 'ada@example.com',
+        name: 'Ada',
+        marketingOptIn: true,
+      },
     })
     expect(parseFreeTicketInput(form({ buyer_name: '', buyer_email: 'ada@example.com' }))).toEqual({ ok: false })
     expect(parseFreeTicketInput(form({ buyer_name: 'Ada', buyer_email: 'not-an-email' }))).toEqual({ ok: false })
     expect(parseFreeTicketInput(form({ buyer_name: 'Ada', buyer_email: 'ada@example' }))).toEqual({ ok: false })
   })
 
-  it('keeps the quantity within one order', () => {
-    expect(parseFreeTicketInput(form({ quantity: '99', buyer_name: 'Ada', buyer_email: 'ada@example.com' }))).toMatchObject({
-      value: { quantity: 10 },
-    })
-    expect(parseFreeTicketInput(form({ quantity: '0', buyer_name: 'Ada', buyer_email: 'ada@example.com' }))).toMatchObject({
-      value: { quantity: 1 },
-    })
+  it('keeps the opt-in off unless it was ticked, and the cart within one order', () => {
+    expect(
+      parseFreeTicketInput(form({ [`qty_${FREE}`]: '99', buyer_name: 'Ada', buyer_email: 'ada@example.com' })),
+    ).toMatchObject({ value: { items: [{ typeId: FREE, quantity: 10 }], marketingOptIn: false } })
+    expect(
+      parseFreeTicketInput(form({ [`qty_${FREE}`]: '0', buyer_name: 'Ada', buyer_email: 'ada@example.com' })),
+    ).toMatchObject({ value: { items: [] } })
   })
 })

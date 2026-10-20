@@ -17,16 +17,16 @@ import {
   toCheckoutError,
 } from '@/lib/checkout/errors'
 import { ticketSalesState } from '@/lib/ticket-sales'
-import { MAX_TICKETS_PER_ORDER, isTicketPriceBelowMinimum } from '@/lib/tickets'
+import { isTicketPriceBelowMinimum } from '@/lib/tickets'
+import { type OrderItemInput, type OrderLine, encodeItemMetadata, productName } from '@/lib/ticket-types'
+import { type TypeForCheckout, resolveCheckoutLines } from '@/lib/checkout/lines'
 
 type ShowForCheckout = {
   id: string
   title: string
   slug: string
   date: string
-  ticket_price: number | null
   currency: string
-  stripe_product_id: string | null
 }
 
 /**
@@ -48,9 +48,12 @@ type ShowForCheckout = {
 const CHECKOUT_SESSION_TTL_SECONDS = 35 * 60
 
 export type TicketOrderInput = {
-  quantity: number
-  /** Navn per billett, i samme rekkefølge. Kortere enn `quantity` er lov. */
-  holderNames: string[]
+  /** Antall per billettype. */
+  items: OrderItemInput[]
+  /** Koden kjøperen tastet inn for å låse opp en type. */
+  promoCode?: string | null
+  /** Kjøperen vil ha e-post om nye show fra klubben. */
+  marketingOptIn?: boolean
 }
 
 /**
@@ -63,17 +66,12 @@ export type TicketOrderInput = {
  *
  * Always throws `CheckoutError` — the caller turns the code into a message.
  */
-export async function createCheckoutSession(
-  showId: string,
-  requestUrl: string,
-  order: TicketOrderInput = { quantity: 1, holderNames: [] },
-) {
+export async function createCheckoutSession(showId: string, requestUrl: string, order: TicketOrderInput) {
   const admin = createAdminClient()
-  const quantity = Math.min(Math.max(1, Math.floor(order.quantity || 1)), MAX_TICKETS_PER_ORDER)
 
   const { data: show, error } = await admin
     .from('shows')
-    .select('id, title, slug, date, start_time, ticket_price, currency, stripe_product_id, capacity, status, club_id, ticket_sales_closed_at, deleted_at')
+    .select('id, title, slug, date, start_time, end_time, currency, capacity, status, club_id, ticket_sales_closed_at, deleted_at')
     .eq('id', showId)
     .single()
 
@@ -97,11 +95,17 @@ export async function createCheckoutSession(
   )
   if (salesError) throw salesError
 
-  if (!show.ticket_price || show.ticket_price <= 0) throw new CheckoutError('price_missing')
-  // Skjemaet slipper ikke inn en pris under minsteprisen, men show fra før
+  const { lines, types } = await resolveCheckoutLines(show, order)
+  if (lines.every((line) => line.unitAmount === 0)) {
+    // Gratis kurver går utenom Stripe (`lib/checkout/free.ts`). Kommer en hit,
+    // har kalleren valgt feil vei.
+    throw new CheckoutError('unknown', { detail: `free cart for show ${show.id} sent to Stripe checkout` })
+  }
+  // Skjemaet slipper ikke inn en pris under minsteprisen, men typer fra før
   // grensen kan ha en. Stripe ville avvist de laveste uansett (under 3 kr).
-  if (isTicketPriceBelowMinimum(show.ticket_price)) {
-    throw new CheckoutError('price_missing', { detail: `price=${show.ticket_price} is below the minimum` })
+  const tooLow = lines.find((line) => line.unitAmount > 0 && isTicketPriceBelowMinimum(line.unitAmount))
+  if (tooLow) {
+    throw new CheckoutError('price_missing', { detail: `type ${tooLow.typeId} price=${tooLow.unitAmount} is below the minimum` })
   }
 
   // Klubber fra før migrasjon 047 har ingen kjent utbetalingsplan. Uten dette
@@ -122,40 +126,27 @@ export async function createCheckoutSession(
   // Garantert av `isClubPayoutReady` — kontoen er en del av det den sjekker.
   const account = club.stripe_account_id as string
 
-  // Check remaining capacity
-  if (show.capacity !== null) {
-    const { count: soldCount } = await admin
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('show_id', showId)
-      .in('status', ['valid', 'used'])
-
-    // Hele bestillingen må få plass — den samme regelen som oppgjøret
-    // håndhever når betalingen kommer tilbake (migrasjon 036).
-    if ((soldCount ?? 0) + quantity > show.capacity) {
-      throw new CheckoutError('sold_out', { detail: `sold=${soldCount}/${show.capacity} wanted=${quantity}` })
-    }
-  }
-
   const origin = new URL(requestUrl).origin
-  const cachedProductId = show.stripe_product_id
-  const productId = cachedProductId ?? (await createProduct(show, account))
+  const typeMap = new Map(types.map((type) => [type.id, type]))
+  const lineTypes = lines.map((line) => typeMap.get(line.typeId) as TypeForCheckout)
+  const cached = lineTypes.filter((type) => type.stripe_product_id).map((type) => type.stripe_product_id as string)
 
+  let productIds = await productsFor(show, lineTypes, types.length, account, false)
   let session: Stripe.Checkout.Session
   try {
-    session = await createSession(show, club, productId, origin, quantity, order.holderNames)
+    session = await createSession(show, club, lines, productIds, origin, order)
   } catch (sessionError) {
     // Produkt-ID-er hører til én Stripe-konto. Etter overgangen til Connect,
-    // eller om klubben har koblet til en ny konto, er den lagrede ID-en ukjent
-    // for kontoen vi selger på. Lag produktet på nytt én gang før vi gir opp.
-    if (!cachedProductId || !isMissingStripeResource(sessionError, productId)) {
+    // eller om klubben har koblet til en ny konto, er de lagrede ID-ene ukjente
+    // for kontoen vi selger på. Lag produktene på nytt én gang før vi gir opp.
+    if (!cached.some((productId) => isMissingStripeResource(sessionError, productId))) {
       throw toCheckoutError(sessionError)
     }
 
-    console.warn(`[Checkout] Product ${productId} for show ${show.id} is unknown to ${account} — creating a replacement`)
-    const replacementId = await createProduct(show, account)
+    console.warn(`[Checkout] Products for show ${show.id} are unknown to ${account} — creating replacements`)
+    productIds = await productsFor(show, lineTypes, types.length, account, true)
     try {
-      session = await createSession(show, club, replacementId, origin, quantity, order.holderNames)
+      session = await createSession(show, club, lines, productIds, origin, order)
     } catch (retryError) {
       throw toCheckoutError(retryError)
     }
@@ -173,20 +164,36 @@ async function loadClub(clubId: string | null): Promise<ConnectClub | null> {
 }
 
 /**
- * Lager produktet for showet på klubbens konto og husker ID-en på showet.
+ * Stripe-produktet per type, i samme rekkefølge som linjene. Lagres på typen
+ * og gjenbrukes; `fresh` lager nye (kontoen kjente ikke de lagrede).
  *
  * Bare produktet gjenbrukes, aldri en pris. En lagret pris ble ikke laget på
  * nytt når bookeren endret billettprisen eller klubben byttet valuta: kjøperen
  * betalte den gamle prisen, mens provisjonen ble regnet av den nye — og klubben
  * satt igjen med noe annet enn 90 %. Beløpet settes nå i hver sesjon.
  */
-async function createProduct(show: ShowForCheckout, account: string) {
+async function productsFor(
+  show: ShowForCheckout,
+  types: TypeForCheckout[],
+  typeCount: number,
+  account: string,
+  fresh: boolean,
+): Promise<string[]> {
+  return Promise.all(
+    types.map((type) =>
+      !fresh && type.stripe_product_id ? type.stripe_product_id : createProduct(show, type, typeCount, account),
+    ),
+  )
+}
+
+async function createProduct(show: ShowForCheckout, type: TypeForCheckout, typeCount: number, account: string) {
   let product: Stripe.Product
   try {
     product = await stripe.products.create(
       {
-        name: show.title,
-        metadata: { show_id: show.id, event_slug: show.slug },
+        // Stripe tar 250 tegn i navnet.
+        name: productName(show.title, type.name, typeCount).slice(0, 250),
+        metadata: { show_id: show.id, event_slug: show.slug, ticket_type_id: type.id },
       },
       { stripeAccount: account },
     )
@@ -197,10 +204,10 @@ async function createProduct(show: ShowForCheckout, account: string) {
   // Ikke kastet: produktet virker for denne sesjonen uansett. Mislykkes
   // lagringen, lages bare et nytt produkt ved neste kjøp.
   const { error } = await createAdminClient()
-    .from('shows')
+    .from('show_ticket_types')
     .update({ stripe_product_id: product.id })
-    .eq('id', show.id)
-  if (error) console.warn(`[Checkout] Could not store product ${product.id} for show ${show.id}: ${error.message}`)
+    .eq('id', type.id)
+  if (error) console.warn(`[Checkout] Could not store product ${product.id} for ticket type ${type.id}: ${error.message}`)
 
   return product.id
 }
@@ -208,40 +215,44 @@ async function createProduct(show: ShowForCheckout, account: string) {
 function createSession(
   show: ShowForCheckout,
   club: ConnectClub,
-  productId: string,
+  lines: OrderLine[],
+  productIds: string[],
   origin: string,
-  quantity: number,
-  holderNames: string[],
+  order: TicketOrderInput,
 ) {
-  // Beløpet og provisjonen leses av samme rad i samme kall. Da kan kjøperen
-  // aldri belastes en annen pris enn den provisjonen er regnet av, og klubben
-  // sitter alltid igjen med nøyaktig sin andel.
-  const unitAmount = show.ticket_price!
-  // Provisjonen er per billett, så den skal ganges opp med antallet.
-  const commission = commissionFor(unitAmount, club) * quantity
-  // Regnes her og ikke hos kalleren: prøves sesjonen på nytt med et nytt
-  // produkt, skal fristen gjelde fra det nye forsøket.
+  // Beløpene og provisjonen regnes av de samme linjene i samme kall. Da kan
+  // kjøperen aldri belastes en annen pris enn den provisjonen er regnet av,
+  // og klubben sitter alltid igjen med nøyaktig sin andel. Provisjonen
+  // regnes av prisen kjøperen betaler etter typens rabatt.
+  const fees = lines.map((line) => commissionFor(line.unitAmount, club) * line.quantity)
+  const commission = fees.reduce((sum, fee) => sum + fee, 0)
+  const quantity = lines.reduce((sum, line) => sum + line.quantity, 0)
+  // Regnes her og ikke hos kalleren: prøves sesjonen på nytt med nye
+  // produkter, skal fristen gjelde fra det nye forsøket.
   const expiresAt = Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_TTL_SECONDS
+  const cartParam = lines.map((line) => `${line.typeId}:${line.quantity}`).join(',')
 
   return stripe.checkout.sessions.create(
     {
       mode: 'payment',
-      line_items: [
-        {
-          quantity,
-          price_data: {
-            currency: show.currency.toLowerCase(),
-            unit_amount: unitAmount,
-            product: productId,
-          },
+      // Én linje per type. Gratis typer i en kurv med betalte går med som
+      // linjer på 0, så kjøperen ser hele bestillingen hos Stripe.
+      line_items: lines.map((line, index) => ({
+        quantity: line.quantity,
+        price_data: {
+          currency: show.currency.toLowerCase(),
+          unit_amount: line.unitAmount,
+          product: productIds[index],
         },
-      ],
+      })),
+      // Telefonen lagres på ordren og kunden. Navn og e-post kommer også herfra.
+      phone_number_collection: { enabled: true },
       expires_at: expiresAt,
       // `s` lar suksesssiden finne fram til riktig Connect-konto. Sesjonen
       // finnes bare på klubbens konto, så uten den kan den ikke hentes.
       success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&s=${show.id}`,
-      // `tickets` lar avbruddssiden tilby det samme antallet på nytt.
-      cancel_url: `${origin}/checkout/cancel?event=${show.slug}&tickets=${quantity}`,
+      // `items` lar avbruddssiden tilby den samme kurven på nytt.
+      cancel_url: `${origin}/checkout/cancel?event=${show.slug}&items=${encodeURIComponent(cartParam)}`,
       metadata: {
         show_id: show.id,
         // Stripe tar 500 tegn per verdi; tittelen har ingen grense hos oss.
@@ -256,9 +267,16 @@ function createSession(
         // tilbake på denne når betalingen ikke kan leses fra Stripe — ellers
         // ville ordren stått uten klubbens andel, og klubben aldri fått den utbetalt.
         application_fee_amount: String(commission),
-        // Ett navn per nøkkel framfor én JSON-streng: Stripe tåler 50 nøkler
-        // à 500 tegn, men en samlet streng ville sprengt grensen på lange navn.
-        ...ticketNameMetadata(holderNames, quantity),
+        marketing_opt_in: order.marketingOptIn ? '1' : '0',
+        // Linjene, én nøkkel per type — se `encodeItemMetadata`.
+        ...encodeItemMetadata(
+          lines.map((line, index) => ({
+            typeId: line.typeId,
+            quantity: line.quantity,
+            unitAmount: line.unitAmount,
+            platformFeeAmount: fees[index],
+          })),
+        ),
       },
       payment_intent_data: {
         // Formidlingsprovisjonen. Resten blir stående på klubbens konto.
@@ -269,26 +287,13 @@ function createSession(
           club_id: club.id,
         },
       },
-      // Rabattkoder er av. Provisjonen regnes av full pris når sesjonen lages
-      // og følger ikke rabatten: en kode på 100 % gir «no_payment_required»
-      // som oppgjøret avviser som ubetalt — kjøperen får ingen billett — og
-      // en kode over 90 % gir en provisjon større enn beløpet, som Stripe
-      // avviser i Checkout. Skal koder inn, må provisjonen regnes av det
-      // kjøperen faktisk betaler.
+      // Stripes egne rabattkoder er av. Provisjonen regnes av prisen når
+      // sesjonen lages og følger ikke en Stripe-rabatt: en kode på 100 % gir
+      // «no_payment_required» som oppgjøret avviser som ubetalt, og en kode
+      // over 90 % gir en provisjon større enn beløpet. Rabatter ligger på
+      // billettypen i stedet, og er med i prisen provisjonen regnes av.
       allow_promotion_codes: false,
     },
     { stripeAccount: club.stripe_account_id! },
   )
-}
-
-/** `ticket_name_1` … `ticket_name_n`, tomme navn utelatt. */
-function ticketNameMetadata(holderNames: string[], quantity: number) {
-  const entries: Record<string, string> = {}
-
-  for (let index = 0; index < quantity; index += 1) {
-    const name = holderNames[index]?.trim().slice(0, 120)
-    if (name) entries[`ticket_name_${index + 1}`] = name
-  }
-
-  return entries
 }

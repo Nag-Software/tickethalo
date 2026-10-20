@@ -24,6 +24,9 @@ import { assertShowAccess } from '@/lib/club-auth'
 import { clubLocations } from '@/lib/show-venue-write'
 import { showVenue } from '@/lib/show-venue'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
+import type { AdminTicketType } from '@/lib/admin-ticket-types'
+import { sortTicketTypes } from '@/lib/ticket-types'
+import type { ShowTicketType } from '@/types/database'
 import type { ArtistGender, RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'submissions' | 'marketing' | 'tickets'
@@ -54,14 +57,16 @@ export default async function ShowDetailPage({
     salesOverview,
     { data: club },
     locations,
+    { data: ticketTypeRows },
+    { data: ticketTypeCounts },
   ] = await Promise.all([
     db.from('shows').select('*').eq('id', id).single(),
     db.from('show_requirements').select('*').eq('show_id', id).order('lineup_position').order('created_at'),
     db.from('booking_offers').select('*').eq('show_id', id).order('created_at', { ascending: false }),
     db.from('confirmed_spots').select('*').eq('show_id', id),
     shouldLoadTickets
-      ? db.from('tickets').select('id, ticket_code, status, customer_id, holder_name').eq('show_id', id).limit(500)
-      : Promise.resolve({ data: [] as Array<{ id: string; ticket_code: string; status: string; customer_id: string | null; holder_name: string | null }> }),
+      ? db.from('tickets').select('id, ticket_code, status, customer_id, holder_name, ticket_type_id').eq('show_id', id).limit(500)
+      : Promise.resolve({ data: [] as Array<{ id: string; ticket_code: string; status: string; customer_id: string | null; holder_name: string | null; ticket_type_id: string | null }> }),
     // The overview card shows ticket sales, but never the rows — a count is enough.
     tab === 'overview'
       ? db.from('tickets').select('id', { count: 'exact', head: true }).eq('show_id', id).in('status', ['valid', 'used'])
@@ -76,11 +81,39 @@ export default async function ShowDetailPage({
       : Promise.resolve({ data: null as { artist_share_bps: number } | null }),
     // Venue-feltet under Details søker i klubbens lagrede lokasjoner.
     tab === 'overview' ? clubLocations(db, showClubId ?? null) : Promise.resolve([]),
+    // Billettypene: editoren under Details, og typen på hver billett.
+    tab === 'overview' || shouldLoadTickets
+      ? db
+          .from('show_ticket_types')
+          .select('id, name, price, discount_bps, quantity, promo_code, sales_end_mode, sales_end_days, sales_end_at, position, archived_at, created_at')
+          .eq('show_id', id)
+      : Promise.resolve({ data: [] as ShowTicketType[] }),
+    tab === 'overview' || shouldLoadTickets
+      ? db.from('ticket_type_counts').select('ticket_type_id, sold_tickets').eq('show_id', id)
+      : Promise.resolve({ data: [] as Array<{ ticket_type_id: string; sold_tickets: number }> }),
   ])
 
   if (!show) notFound()
 
   const percentLimit = (club?.artist_share_bps ?? 10000) / 100
+
+  const soldByType = new Map((ticketTypeCounts ?? []).map((row) => [row.ticket_type_id, row.sold_tickets]))
+  const typeNameById = new Map((ticketTypeRows ?? []).map((type) => [type.id, type.name]))
+  const adminTicketTypes: AdminTicketType[] = sortTicketTypes(
+    (ticketTypeRows ?? []).filter((type) => !type.archived_at),
+  ).map((type) => ({
+    id: type.id,
+    name: type.name,
+    price: type.price,
+    discount_bps: type.discount_bps,
+    quantity: type.quantity,
+    promo_code: type.promo_code,
+    sales_end_mode: type.sales_end_mode,
+    sales_end_days: type.sales_end_days,
+    sales_end_at: type.sales_end_at,
+    position: type.position,
+    sold: soldByType.get(type.id) ?? 0,
+  }))
 
   // `select('*')` gir `ticket_sales_closed_at` og `deleted_at`. Merkelappen
   // leser samme regel som checkout, så admin og kjøperen aldri er uenige.
@@ -335,6 +368,7 @@ export default async function ShowDetailPage({
             hasRequirements={(requirements ?? []).length > 0}
             allSlotsFilled={allSlotsFilled}
             locations={locations}
+            ticketTypes={adminTicketTypes}
             updateShowDetailsAction={updateShowDetailsAction}
           />
         )}
@@ -435,9 +469,19 @@ export default async function ShowDetailPage({
           <>
           {salesOverview && <ShowSalesPanel overview={salesOverview} />}
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-muted-foreground">
-              {tickets?.length ?? 0} tickets
-            </p>
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground">
+                {tickets?.length ?? 0} tickets
+              </p>
+              {/* Solgt per type — bare når det er flere å skille mellom. */}
+              {(ticketTypeRows ?? []).length > 1 && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {sortTicketTypes(ticketTypeRows ?? [])
+                    .map((type) => `${type.name}: ${soldByType.get(type.id) ?? 0}${type.quantity !== null ? `/${type.quantity}` : ''}`)
+                    .join(' · ')}
+                </p>
+              )}
+            </div>
             <Link
               href={`/admin-app/scanner/${id}`}
               target="_blank"
@@ -451,6 +495,7 @@ export default async function ShowDetailPage({
               <thead>
                 <tr className="bg-muted/30 border-b text-xs text-muted-foreground">
                   <th className="text-left px-4 py-2.5 font-medium">Guest</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Type</th>
                   <th className="text-left px-4 py-2.5 font-medium">Ticket code</th>
                   <th className="text-left px-4 py-2.5 font-medium">Status</th>
                 </tr>
@@ -460,6 +505,9 @@ export default async function ShowDetailPage({
                   <tr key={t.id} className="border-b last:border-0">
                     <td className="px-4 py-3">
                       {t.holder_name ?? <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {(t.ticket_type_id && typeNameById.get(t.ticket_type_id)) ?? '—'}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs tracking-wider">{formatTicketCode(t.ticket_code)}</td>
                     <td className="px-4 py-3">
