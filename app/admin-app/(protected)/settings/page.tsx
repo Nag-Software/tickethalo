@@ -1,40 +1,39 @@
 import { AdminHeader } from '@/components/admin/admin-header'
 
+/*
+ * Bare om nøkkelen er satt, aldri noe av verdien. Siden er åpen for alle
+ * klubbadministratorer, og selv fire tegn av service role-nøkkelen hører
+ * ikke hjemme der.
+ */
 const integrations = [
   {
     group: 'Payments',
     items: [
-      { name: 'Stripe', key: 'STRIPE_SECRET_KEY', envVar: process.env.STRIPE_SECRET_KEY, desc: 'Payment processor' },
-      { name: 'Stripe Webhook Secret', key: 'STRIPE_WEBHOOK_SECRET', envVar: process.env.STRIPE_WEBHOOK_SECRET, desc: 'Webhook signing' },
+      { name: 'Stripe', key: 'STRIPE_SECRET_KEY', configured: Boolean(process.env.STRIPE_SECRET_KEY), desc: 'Payment processor' },
+      { name: 'Stripe Webhook Secret', key: 'STRIPE_WEBHOOK_SECRET', configured: Boolean(process.env.STRIPE_WEBHOOK_SECRET), desc: 'Webhook signing' },
     ],
   },
   {
     group: 'Database',
     items: [
-      { name: 'Supabase URL', key: 'NEXT_PUBLIC_SUPABASE_URL', envVar: process.env.NEXT_PUBLIC_SUPABASE_URL, desc: 'Database URL' },
-      { name: 'Supabase Publishable Key', key: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', envVar: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, desc: 'Anon/publishable key' },
-      { name: 'Supabase Service Role Key', key: 'SUPABASE_SERVICE_ROLE_KEY', envVar: process.env.SUPABASE_SERVICE_ROLE_KEY, desc: 'Admin key (hidden)' },
+      { name: 'Supabase URL', key: 'NEXT_PUBLIC_SUPABASE_URL', configured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL), desc: 'Database URL' },
+      { name: 'Supabase Publishable Key', key: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', configured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY), desc: 'Anon/publishable key' },
+      { name: 'Supabase Service Role Key', key: 'SUPABASE_SERVICE_ROLE_KEY', configured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY), desc: 'Admin key' },
     ],
   },
   {
     group: 'AI',
     items: [
-      { name: 'OpenAI API Key', key: 'OPENAI_API_KEY', envVar: process.env.OPENAI_API_KEY, desc: 'Poster generation' },
+      { name: 'OpenAI API Key', key: 'OPENAI_API_KEY', configured: Boolean(process.env.OPENAI_API_KEY), desc: 'Poster generation' },
     ],
   },
   {
     group: 'Email',
     items: [
-      { name: 'Resend API Key', key: 'RESEND_API_KEY', envVar: process.env.RESEND_API_KEY, desc: 'Email provider' },
+      { name: 'Resend API Key', key: 'RESEND_API_KEY', configured: Boolean(process.env.RESEND_API_KEY), desc: 'Email provider' },
     ],
   },
 ]
-
-function maskValue(val: string | undefined): string {
-  if (!val) return ''
-  if (val.length <= 8) return '••••••••'
-  return val.slice(0, 4) + '•••••••••••' + val.slice(-4)
-}
 
 export default function SettingsPage() {
   return (
@@ -46,7 +45,7 @@ export default function SettingsPage() {
             <h2 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{group.group}</h2>
             <div className="rounded-lg border divide-y">
               {group.items.map((item) => {
-                const ok = !!item.envVar
+                const ok = item.configured
                 return (
                   <div key={item.key} className="flex items-center justify-between px-4 py-3.5 gap-4">
                     <div>
@@ -54,12 +53,9 @@ export default function SettingsPage() {
                       <div className="text-xs text-muted-foreground">{item.desc}</div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {ok ? maskValue(item.envVar) : '—'}
-                      </span>
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        {ok ? 'OK' : 'Missing'}
+                        {ok ? 'Configured' : 'Not configured'}
                       </span>
                     </div>
                   </div>

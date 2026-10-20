@@ -370,16 +370,16 @@ export function UnavailableCalendar({ initialUnavailable, booked, pendingOffer }
           className="ev-calendar"
           classNames={{
             months: 'flex flex-col gap-6 sm:flex-row sm:gap-8',
-            month: 'flex flex-col gap-3',
+            month: 'flex w-full max-w-[19.25rem] min-w-0 flex-col gap-3',
             month_caption: 'flex h-9 items-center justify-center text-[14px] font-semibold',
             nav: 'flex items-center gap-1',
             button_previous: 'inline-flex size-8 items-center justify-center rounded-full text-[var(--ev-muted)] hover:bg-[var(--ev-card-hover)]',
             button_next: 'inline-flex size-8 items-center justify-center rounded-full text-[var(--ev-muted)] hover:bg-[var(--ev-card-hover)]',
             month_grid: 'w-full border-collapse',
-            weekdays: 'flex',
-            weekday: 'w-10 text-[11px] font-medium uppercase tracking-wide text-[var(--ev-faint)]',
+            weekdays: 'flex w-full',
+            weekday: 'min-w-0 flex-1 text-[11px] font-medium uppercase tracking-wide text-[var(--ev-faint)]',
             week: 'mt-1 flex w-full',
-            day: 'p-0.5',
+            day: 'flex min-w-0 flex-1 justify-center p-0.5',
           }}
         />
       </div>

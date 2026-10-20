@@ -57,7 +57,7 @@ function clubStatus(upcoming: PublicShow[], today: string): string | null {
 
   const label = formatDayLabel(upcoming[0].date, today)
   const when = label === 'Today' || label === 'Tomorrow' ? label.toLowerCase() : `on ${label}`
-  return `Next show ${when} · ${upcoming.length} upcoming in total`
+  return `Next show ${when}`
 }
 
 export default async function ClubPage({ params }: Props) {
@@ -103,9 +103,11 @@ export default async function ClubPage({ params }: Props) {
 
             <div className="flex min-w-0 flex-col gap-3">
               <div className="flex flex-col gap-1.5">
-                <p className="text-[13px] font-bold uppercase tracking-[0.22em] text-[var(--ev-accent)]">
-                  Comedy club{club.city ? ` · ${club.city}` : ''}
-                </p>
+                {club.city && (
+                  <p className="text-[13px] font-bold uppercase tracking-[0.22em] text-[var(--ev-accent)]">
+                    {club.city}
+                  </p>
+                )}
                 <h1 className="text-balance text-[2.25rem] font-semibold leading-[1.03] tracking-[-0.035em] sm:text-6xl">
                   {club.name}
                 </h1>
@@ -136,10 +138,7 @@ export default async function ClubPage({ params }: Props) {
 
       <div className="mx-auto flex max-w-5xl flex-col gap-14 px-4 pb-24 pt-0 md:px-8">
         <section id="club-shows" className="scroll-mt-24">
-          <SectionHead
-            title="Upcoming shows"
-            aside={upcoming.length > 0 ? `${upcoming.length} ${upcoming.length === 1 ? 'show' : 'shows'}` : undefined}
-          />
+          <SectionHead title="Upcoming shows" />
 
           {upcoming.length === 0 ? (
             <EmptyNote>
