@@ -55,10 +55,11 @@ export function FlaggedBadge() {
   )
 }
 
+// High er grønt og Low gult, overalt nivået vises: profilen, køen og listene.
 const SKILL_COLORS: Record<SkillLevel, string> = {
-  high: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
+  high: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
   medium: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
-  low: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400',
+  low: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
 }
 
 /**

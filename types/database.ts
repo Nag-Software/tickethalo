@@ -842,6 +842,17 @@ export type ArtistGlobalScore = {
   updated_at: string
 }
 
+/** Bookerens rekkefølge per lineup-plass (migrasjon 076). Se `spotOrder`. */
+export type ShowRequirementQueueRow = {
+  show_requirement_id: string
+  artist_id: string
+  /** 1 = spørres først. */
+  position: number
+  /** Tatt ut av bookeren: får aldri tilbud på plassen. */
+  removed: boolean
+  updated_at: string
+}
+
 export type ShowArtistBookingExclusion = {
   id: string
   show_id: string
@@ -929,6 +940,18 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ArtistUnavailableDate>
+        Relationships: []
+      }
+      show_requirement_queue: {
+        Row: ShowRequirementQueueRow
+        Insert: {
+          show_requirement_id: string
+          artist_id: string
+          position: number
+          removed?: boolean
+          updated_at?: string
+        }
+        Update: Partial<ShowRequirementQueueRow>
         Relationships: []
       }
       artist_global_scores: {
