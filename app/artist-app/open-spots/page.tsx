@@ -1,6 +1,12 @@
 import Link from 'next/link'
 import { getCurrentArtist } from '@/lib/artist-portal'
-import { artistCanApply, getOpenSpotsForArtist, type OpenSpot, type OpenSpotShow } from '@/lib/open-spots'
+import {
+  artistCanApply,
+  getOpenSpotsForArtist,
+  submissionStatusLabel,
+  type OpenSpot,
+  type OpenSpotShow,
+} from '@/lib/open-spots'
 import { Chip, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
 import { applyForSpotAction } from './actions'
 
@@ -24,19 +30,20 @@ function formatDeadline(closeAt: string) {
   return `Closes ${formatDate(closeAt.slice(0, 10))}`
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Waiting for the club',
-  shortlisted: 'Shortlisted',
-  accepted: 'Offer sent — check your bookings',
-  declined: 'Not this time',
-  withdrawn: 'You withdrew',
-  filled_by_other: 'Filled by someone else',
-}
-
-export default async function OpenSpotsPage() {
+export default async function OpenSpotsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ show?: string }>
+}) {
+  const { show: focusId } = await searchParams
   const { artist } = await getCurrentArtist()
   const gate = artistCanApply(artist)
-  const shows = gate.ok ? await getOpenSpotsForArtist(artist.id) : []
+  const found = gate.ok ? await getOpenSpotsForArtist(artist.id) : []
+
+  // `?show=` kommer fra «Apply for a spot» på klubbsiden, via innloggingen.
+  // Showet komikeren ville søke på løftes øverst, så hen ikke må lete.
+  const focused = focusId ? found.find((show) => show.showId === focusId) : undefined
+  const shows = focused ? [focused, ...found.filter((show) => show !== focused)] : found
 
   const spotCount = shows.reduce((sum, show) => sum + show.spots.length, 0)
   const invitedCount = shows.filter((show) => show.invited).length
@@ -45,7 +52,7 @@ export default async function OpenSpotsPage() {
     <>
       <PageHeader
         title="Open spots"
-        description="Spots clubs have opened for applications. One click puts your profile in front of the booker — nothing is booked until they send you an offer."
+        description="Spots clubs have opened for applications. One click puts your profile in front of the booker — nothing is booked until they send you an offer. When a line-up is full, you can join the waitlist."
         actions={
           shows.length > 0 ? (
             <>
@@ -56,6 +63,10 @@ export default async function OpenSpotsPage() {
         }
       />
 
+      {focusId && gate.ok && !focused && (
+        <Empty>That show is not open for your applications right now. Here is everything that is.</Empty>
+      )}
+
       {!gate.ok ? (
         <Empty>{gate.reason}</Empty>
       ) : shows.length === 0 ? (
@@ -64,7 +75,7 @@ export default async function OpenSpotsPage() {
           and you will get an email when one invites you.
         </Empty>
       ) : (
-        shows.map((show) => <ShowPanel key={show.showId} show={show} />)
+        shows.map((show) => <ShowPanel key={show.showId} show={show} focused={show === focused} />)
       )}
 
       <p className="text-[13px] leading-relaxed text-[var(--ev-faint)]">
@@ -74,12 +85,13 @@ export default async function OpenSpotsPage() {
   )
 }
 
-function ShowPanel({ show }: { show: OpenSpotShow }) {
+function ShowPanel({ show, focused }: { show: OpenSpotShow; focused: boolean }) {
   const when = [formatDate(show.date), show.startTime?.slice(0, 5)].filter(Boolean).join(', ')
   const where = [show.clubName, show.venue].filter(Boolean).join(' · ')
 
   return (
     <Panel
+      className={focused ? 'ring-2 ring-[var(--ev-accent-fill)]' : undefined}
       title={show.title}
       description={[where, when].filter(Boolean).join(' · ')}
       actions={
@@ -104,11 +116,13 @@ function SpotRow({ spot }: { spot: OpenSpot }) {
   const settled = applied != null && !['pending', 'shortlisted'].includes(applied.status)
 
   const detail = applied
-    ? STATUS_LABEL[applied.status] ?? applied.status
+    ? submissionStatusLabel(applied.status, spot.waitlist)
     : [
-      spot.spotsLeft < spot.quantity
-        ? `${spot.spotsLeft} of ${spot.quantity} spots left`
-        : `${spot.quantity} ${spot.quantity === 1 ? 'spot' : 'spots'}`,
+      spot.waitlist
+        ? 'Full — join the waitlist in case someone drops out'
+        : spot.spotsLeft < spot.quantity
+          ? `${spot.spotsLeft} of ${spot.quantity} spots left`
+          : `${spot.quantity} ${spot.quantity === 1 ? 'spot' : 'spots'}`,
       spot.applicantCount > 0
         ? `${spot.applicantCount} ${spot.applicantCount === 1 ? 'has' : 'have'} applied`
         : null,
@@ -134,8 +148,8 @@ function SpotRow({ spot }: { spot: OpenSpot }) {
         ) : (
           <form action={applyForSpotAction}>
             <input type="hidden" name="requirement_id" value={spot.requirementId} />
-            <button type="submit" className={portalButton.primary}>
-              Apply for spot
+            <button type="submit" className={spot.waitlist ? portalButton.secondary : portalButton.primary}>
+              {spot.waitlist ? 'Join the waitlist' : 'Apply for spot'}
             </button>
           </form>
         )}

@@ -6,6 +6,7 @@ import { lookupCountry, type CountryCode } from '@/lib/geo'
 import { normalizeLanguages } from '@/lib/languages'
 import { socialLinksFromForm } from '@/lib/social-links'
 import type { ArtistGender } from '@/types/database'
+import { signupNext } from '../next'
 
 const signupPath = '/artist-app/signup'
 
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   const origin = `${request.headers.get('x-forwarded-proto') ?? 'http'}://${request.headers.get('host') ?? new URL(request.url).host}`
   const formData = await request.formData()
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
+  const next = signupNext(String(formData.get('next') ?? ''))
 
   try {
     validateSignupForm(formData)
@@ -39,14 +41,16 @@ export async function POST(request: Request) {
 
     if (signInError) {
       console.error('Artist signup succeeded but automatic sign-in failed:', signInError)
-      return NextResponse.redirect(new URL('/artist-app/login?error=signup_login', origin), 303)
+      const login = `/artist-app/login?error=signup_login${next ? `&next=${encodeURIComponent(next)}` : ''}`
+      return NextResponse.redirect(new URL(login, origin), 303)
     }
 
-    return NextResponse.redirect(new URL('/artist-app', origin), 303)
+    return NextResponse.redirect(new URL(next ?? '/artist-app', origin), 303)
   } catch (error) {
     console.error(error)
     const code = toSignupErrorCode(error)
-    return NextResponse.redirect(new URL(`${signupPath}?error=${code}`, origin), 303)
+    const retry = `${signupPath}?error=${code}${next ? `&next=${encodeURIComponent(next)}` : ''}`
+    return NextResponse.redirect(new URL(retry, origin), 303)
   }
 }
 

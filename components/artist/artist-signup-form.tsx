@@ -59,11 +59,14 @@ export function ArtistSignupForm({
   action = "/artist-app/signup/submit",
   errorMessage,
   successMessage,
+  nextPath,
   ...props
 }: React.ComponentProps<"div"> & {
   action?: string
   errorMessage?: string
   successMessage?: string
+  /** Hvor komikeren skal etter registreringen, f.eks. et show hen ville søke på. */
+  nextPath?: string
 }) {
   const [values, setValues] = useState<Record<RequiredFieldId, boolean>>({
     full_name: false,
@@ -171,6 +174,7 @@ export function ArtistSignupForm({
         </aside>
 
         <form action={action} method="post" encType="multipart/form-data" className="space-y-8 p-4 md:p-6">
+          {nextPath && <input type="hidden" name="next" value={nextPath} />}
           {successMessage && (
             <div className="rounded-xl bg-green-100 outline-green-500 outline-1 px-4 py-3 text-[14px] font-medium">
               {successMessage}

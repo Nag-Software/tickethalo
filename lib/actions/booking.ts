@@ -21,6 +21,8 @@ import { lineupDeadlineDaysFor } from '@/lib/booking-settings'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { assertArtistBookableForShow } from '@/lib/club-artists'
 import { rollBackIfSeatWasTaken } from '@/lib/booking-seats'
+import { runAfterResponse } from '@/lib/background'
+import { notifyClubWaitlist } from '@/lib/waitlist'
 import { getClubForShow, isClubPayoutReady } from '@/lib/stripe-connect'
 import { appPath, appUrl } from '@/lib/app-url'
 import { missingForPublish } from '@/lib/publish-readiness'
@@ -645,6 +647,9 @@ export async function cancelConfirmedSpotForOffer(offerId: string) {
   // en gang. Samme grep som når bookeren fjerner en komiker.
   for (const spot of cancelled ?? []) {
     await startAutoBooking(spot.show_id, spot.show_requirement_id, { restart: true })
+    // Plasser åpne for søknader fyller ikke motoren — der er det ventelisten
+    // klubben skal ta av. Se lib/waitlist.ts.
+    runAfterResponse(`waitlist-${spot.show_requirement_id}`, () => notifyClubWaitlist(spot.show_requirement_id))
   }
 
   // Hvem som mistet plassen — kallstedet sier fra til dem.

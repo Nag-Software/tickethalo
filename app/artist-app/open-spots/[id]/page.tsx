@@ -5,6 +5,7 @@ import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 import { updateSubmissionMessageAction, withdrawSubmissionAction } from '../actions'
 import { showVenue } from '@/lib/show-venue'
+import { OPEN_SUBMISSION_STATUSES, spotAvailability } from '@/lib/open-spots'
 
 export const metadata = { title: 'Your application — Tickethalo' }
 export const dynamic = 'force-dynamic'
@@ -33,6 +34,13 @@ const STATUS: Record<string, { label: string; lede: string; tone: 'accent' | 'ne
   withdrawn: {
     label: 'Withdrawn',
     lede: 'You withdrew this application.',
+    tone: 'neutral',
+  },
+  // Ikke en status i basen: en ubesvart søknad på en full plass. Se
+  // `spotAvailability` i lib/open-spots.ts.
+  waitlist: {
+    label: 'On the waitlist',
+    lede: 'The line-up is full right now. If someone drops out, the club sees your application first — and if they pick you, you get a normal booking offer.',
     tone: 'neutral',
   },
   filled_by_other: {
@@ -65,7 +73,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
 
   if (!submission) notFound()
 
-  const [{ data: show }, { data: requirement }, { count: applicants }] = await Promise.all([
+  const [{ data: show }, { data: requirement }, { count: applicants }, { count: filled }] = await Promise.all([
     db.from('shows')
       .select('title, date, start_time, venue_name, venue_address, currency, club_id')
       .eq('id', submission.show_id)
@@ -77,22 +85,33 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
     db.from('show_submissions')
       .select('*', { count: 'exact', head: true })
       .eq('show_requirement_id', submission.show_requirement_id)
-      .in('status', ['pending', 'shortlisted']),
+      .in('status', OPEN_SUBMISSION_STATUSES),
+    db.from('confirmed_spots')
+      .select('*', { count: 'exact', head: true })
+      .eq('show_requirement_id', submission.show_requirement_id)
+      .in('status', ['confirmed', 'completed', 'paid']),
   ])
 
   const { data: club } = show?.club_id
     ? await db.from('clubs').select('name').eq('id', show.club_id).maybeSingle()
     : { data: null }
 
-  const state = STATUS[submission.status] ?? STATUS.pending
-  const open = ['pending', 'shortlisted'].includes(submission.status)
+  const open = OPEN_SUBMISSION_STATUSES.includes(submission.status)
+  const waitlist = open && spotAvailability({ quantity: requirement?.quantity ?? 1, filled: filled ?? 0 }).waitlist
+  const state = (waitlist ? STATUS.waitlist : STATUS[submission.status]) ?? STATUS.pending
   const currency = show?.currency || 'NOK'
   const feeLabel = requirement ? requirementFeeLabel(requirement, currency) : 'Not set'
 
   return (
     <>
       <PageHeader
-        title={requirement ? `You applied for the ${requirement.role_name} spot` : 'Your application'}
+        title={
+          requirement
+            ? waitlist
+              ? `You’re on the waitlist for the ${requirement.role_name} spot`
+              : `You applied for the ${requirement.role_name} spot`
+            : 'Your application'
+        }
         description={state.lede}
         actions={<Chip tone={state.tone}>{state.label}</Chip>}
       />

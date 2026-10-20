@@ -24,15 +24,32 @@ import type { SubmissionGroup, SubmissionItem } from './submissions-data'
  * plassnummer og rolle i hodet — så bookeren kjenner igjen plassene hen
  * åpnet. Hver søknad er én rad: hvem (lenke til profilen), hva hen skrev,
  * og ja eller nei.
+ *
+ * Ubesvarte søknader på en full plass står for seg under «Waitlist». Klubben
+ * kan ikke si ja før noen faller fra, så de skal ikke telle som noe som
+ * venter på svar — men de skal være lette å finne den dagen plassen åpner.
  */
 
-type Filter = 'waiting' | 'handled' | 'all'
+type Filter = 'waiting' | 'waitlist' | 'handled' | 'all'
 
 const OPEN_STATUSES = new Set(['pending', 'shortlisted'])
 const PILL_CLASS = 'inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium'
 
-function isWaiting(item: SubmissionItem) {
+function isOpen(item: SubmissionItem) {
   return OPEN_STATUSES.has(item.status)
+}
+
+function isWaiting(item: SubmissionItem) {
+  return isOpen(item) && !item.waitlist
+}
+
+function matchesFilter(item: SubmissionItem, filter: Filter) {
+  switch (filter) {
+    case 'waiting': return isWaiting(item)
+    case 'waitlist': return item.waitlist
+    case 'handled': return !isOpen(item)
+    default: return true
+  }
 }
 
 /** Hva som skjedde med en behandlet søknad — og med tilbudet den ble. */
@@ -82,12 +99,15 @@ export function SubmissionsTab({
 }) {
   const allItems = groups.flatMap((group) => group.items)
   const waitingCount = allItems.filter(isWaiting).length
-  const handledCount = allItems.length - waitingCount
+  const waitlistCount = allItems.filter((item) => item.waitlist).length
+  const handledCount = allItems.filter((item) => !isOpen(item)).length
   const offersSent = allItems.filter((item) => item.status === 'accepted').length
   const anyOpen = groups.some((group) => group.open)
 
   // Starter på det som venter — med mindre ingenting gjør det.
-  const [filter, setFilter] = React.useState<Filter>(waitingCount > 0 ? 'waiting' : 'all')
+  const [filter, setFilter] = React.useState<Filter>(
+    waitingCount > 0 ? 'waiting' : waitlistCount > 0 ? 'waitlist' : 'all',
+  )
 
   const lineupHref = `/admin-app/shows/${showId}?tab=lineup`
 
@@ -116,16 +136,21 @@ export function SubmissionsTab({
   const visibleGroups = groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) =>
-        filter === 'all' ? true : filter === 'waiting' ? isWaiting(item) : !isWaiting(item),
-      ),
+      items: group.items.filter((item) => matchesFilter(item, filter)),
+      // Ventelisten filtrert bort under «Waiting»: plassen er ikke stille,
+      // den er full — og det skal stå.
+      hiddenWaitlist: filter === 'waiting' ? group.items.filter((item) => item.waitlist).length : 0,
     }))
     // En åpen plass uten søknader blir stående under «Waiting» og «All»: den
     // sier at det er stille, ikke at plassen er borte.
-    .filter((group) => group.items.length > 0 || (group.open && filter !== 'handled'))
+    .filter((group) => group.items.length > 0 || (group.open && (filter === 'waiting' || filter === 'all')))
 
   const filters: { key: Filter; label: string; count: number }[] = [
     { key: 'waiting', label: 'Waiting', count: waitingCount },
+    // Bare når noen står der — ellers er det én knapp til å lese forbi.
+    ...(waitlistCount > 0 || filter === 'waitlist'
+      ? [{ key: 'waitlist' as const, label: 'Waitlist', count: waitlistCount }]
+      : []),
     { key: 'handled', label: 'Handled', count: handledCount },
     { key: 'all', label: 'All', count: allItems.length },
   ]
@@ -140,6 +165,11 @@ export function SubmissionsTab({
             ? `${waitingCount} waiting for an answer`
             : 'All caught up'}
         </span>
+        {waitlistCount > 0 && (
+          <span className="text-[13px] whitespace-nowrap text-muted-foreground">
+            {waitlistCount} on the waitlist
+          </span>
+        )}
         {offersSent > 0 && (
           <span className="text-[13px] whitespace-nowrap text-muted-foreground">
             {offersSent} offer{offersSent === 1 ? '' : 's'} sent from applications
@@ -180,18 +210,26 @@ export function SubmissionsTab({
         <div className={cn(spotCardClass, 'flex flex-col items-center gap-1 px-6 py-12 text-center')}>
           <Check className="mb-1 size-6 text-[var(--ev-accent-fill)]" aria-hidden />
           <p className="text-sm font-semibold">
-            {filter === 'waiting' ? 'Nothing waiting' : 'Nothing handled yet'}
+            {filter === 'waiting' ? 'Nothing waiting' : filter === 'waitlist' ? 'Nobody on the waitlist' : 'Nothing handled yet'}
           </p>
           <p className="text-[13px] text-muted-foreground">
             {filter === 'waiting'
               ? 'Every application has an answer. New ones show up here.'
-              : 'Applications you approve or decline move here.'}
+              : filter === 'waitlist'
+                ? 'Comedians who apply for a full spot wait here in case someone drops out.'
+                : 'Applications you approve or decline move here.'}
           </p>
         </div>
       )}
 
       {visibleGroups.map((group) => (
-        <SpotGroup key={group.requirementId} group={group} lineupHref={lineupHref} />
+        <SpotGroup
+          key={group.requirementId}
+          group={group}
+          lineupHref={lineupHref}
+          hiddenWaitlist={group.hiddenWaitlist}
+          onShowWaitlist={() => setFilter('waitlist')}
+        />
       ))}
     </div>
   )
@@ -199,8 +237,20 @@ export function SubmissionsTab({
 
 // ─── Én plass ────────────────────────────────────────────────────────────────
 
-function SpotGroup({ group, lineupHref }: { group: SubmissionGroup; lineupHref: string }) {
+function SpotGroup({
+  group,
+  lineupHref,
+  hiddenWaitlist,
+  onShowWaitlist,
+}: {
+  group: SubmissionGroup
+  lineupHref: string
+  hiddenWaitlist: number
+  onShowWaitlist: () => void
+}) {
   const isFull = group.filled >= group.quantity
+  const waitlist = group.items.filter((item) => item.waitlist)
+  const others = group.items.filter((item) => !item.waitlist)
 
   return (
     <section className={cn(spotCardClass, 'overflow-hidden')} aria-label={`${group.roleName} applications`}>
@@ -235,7 +285,18 @@ function SpotGroup({ group, lineupHref }: { group: SubmissionGroup; lineupHref: 
         </div>
       </header>
 
-      {group.items.length === 0 ? (
+      {group.items.length === 0 && hiddenWaitlist > 0 ? (
+        <p className="border-t px-4 py-5 text-[13px] text-muted-foreground sm:px-5">
+          The spot is full. {hiddenWaitlist} on the waitlist.{' '}
+          <button
+            type="button"
+            onClick={onShowWaitlist}
+            className="cursor-pointer underline underline-offset-[3px] hover:text-foreground"
+          >
+            See the waitlist
+          </button>
+        </p>
+      ) : group.items.length === 0 ? (
         <p className="border-t px-4 py-5 text-[13px] text-muted-foreground sm:px-5">
           No applications for this spot yet.{' '}
           <Link href={lineupHref} className="underline underline-offset-[3px] hover:text-foreground">
@@ -243,11 +304,30 @@ function SpotGroup({ group, lineupHref }: { group: SubmissionGroup; lineupHref: 
           </Link>
         </p>
       ) : (
-        <ul className="divide-y border-t">
-          {group.items.map((item) => (
-            <SubmissionRow key={item.id} item={item} roleName={group.roleName} />
-          ))}
-        </ul>
+        <>
+          {others.length > 0 && (
+            <ul className="divide-y border-t">
+              {others.map((item) => (
+                <SubmissionRow key={item.id} item={item} roleName={group.roleName} />
+              ))}
+            </ul>
+          )}
+          {waitlist.length > 0 && (
+            <div className="border-t">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-muted/50 px-4 py-2.5 sm:px-5">
+                <span className="text-[13px] font-semibold">Waitlist · {waitlist.length}</span>
+                <span className="text-xs text-muted-foreground">
+                  In the order they applied. If someone drops out, you can approve them here.
+                </span>
+              </div>
+              <ul className="divide-y border-t">
+                {waitlist.map((item) => (
+                  <SubmissionRow key={item.id} item={item} roleName={group.roleName} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </section>
   )
@@ -258,7 +338,8 @@ function SpotGroup({ group, lineupHref }: { group: SubmissionGroup; lineupHref: 
 function SubmissionRow({ item, roleName }: { item: SubmissionItem; roleName: string }) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
-  const waiting = isWaiting(item)
+  // Ventelisten får også knappene: «Decline» virker, «Approve» sier hvorfor ikke.
+  const waiting = isOpen(item)
   const profileHref = `/admin-app/artists/${item.artist.id}`
 
   function run(

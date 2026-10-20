@@ -25,6 +25,7 @@ import {
   type EmailTemplate,
   type OfferTemplateInput,
 } from './templates'
+import { waitlistSpotOpenTemplate } from './templates'
 
 export type EmailResult = { success: boolean; resendId?: string; error?: string }
 
@@ -472,4 +473,11 @@ ${sellerHtml}
     console.error(`[Email] ticket_purchase to ${opts.email} could not be built: ${msg}`)
     return { success: false, error: msg }
   }
+}
+
+/** Ledig sete på en plass med venteliste — til klubben. Se `lib/waitlist.ts`. */
+export async function sendWaitlistSpotOpenEmail(opts: Parameters<typeof waitlistSpotOpenTemplate>[0] & {
+  email: string
+}): Promise<EmailResult> {
+  return sendArtistEmail('waitlist_spot_open', opts.email, waitlistSpotOpenTemplate(opts))
 }

@@ -12,6 +12,9 @@ import { formatShortDate, formatShowTime, getClubShows, type PublicShow } from '
 import { formatDayLabel, getOsloToday } from '@/lib/event-filters'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { showVenue } from '@/lib/show-venue'
+import { getClubOpenCalls } from '@/lib/open-spots'
+import { getOpenCallViewer } from '@/lib/open-call-viewer'
+import { ClubOpenCalls } from '@/components/public/club-open-calls'
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -65,7 +68,11 @@ export default async function ClubPage({ params }: Props) {
   const club = await getPublicClubBySlug(slug)
   if (!club) notFound()
 
-  const { upcoming, past } = await getClubShows(club.id)
+  const [{ upcoming, past }, { kind: viewerKind, viewer }] = await Promise.all([
+    getClubShows(club.id),
+    getOpenCallViewer(),
+  ])
+  const openCalls = await getClubOpenCalls(club.id, viewer)
   const today = getOsloToday()
   const status = clubStatus(upcoming, today)
 
@@ -241,6 +248,12 @@ export default async function ClubPage({ params }: Props) {
             </ul>
           </section>
         )}
+
+        <ClubOpenCalls
+          club={{ name: club.name, slug: club.slug, city: club.city }}
+          calls={openCalls}
+          viewer={viewerKind}
+        />
       </div>
 
       <Footer />

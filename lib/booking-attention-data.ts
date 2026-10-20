@@ -99,7 +99,7 @@ export async function loadBookingAttention(
     db.from('booking_offers')
       .select('id, show_id, artist_id, show_requirement_id, status, source, sent_at')
       .in('show_id', showIds),
-    db.from('show_submissions').select('show_id').in('show_id', showIds).eq('status', 'pending'),
+    db.from('show_submissions').select('show_id, show_requirement_id').in('show_id', showIds).eq('status', 'pending'),
     db.from('artist_performance_reviews').select('confirmed_spot_id').in('show_id', showIds),
     db.from('show_artist_booking_exclusions').select('show_id, artist_id').in('show_id', showIds),
   ])
@@ -164,8 +164,20 @@ export async function loadBookingAttention(
   const artistById = new Map((artistRows ?? []).map((artist) => [artist.id, artist]))
   const reviewedSpotIds = new Set((reviews ?? []).map((row) => row.confirmed_spot_id))
 
+  // En søknad på en full plass står på ventelisten. Den kan ikke få ja før
+  // noen faller fra, så den er ikke noe bookeren skal minnes på — se
+  // `spotAvailability` i lib/open-spots.ts.
+  const filledByRequirement = new Map<string, number>()
+  for (const spot of spots ?? []) {
+    if (!['confirmed', 'completed', 'paid'].includes(spot.status)) continue
+    filledByRequirement.set(spot.show_requirement_id, (filledByRequirement.get(spot.show_requirement_id) ?? 0) + 1)
+  }
+  const quantityByRequirement = new Map((requirements ?? []).map((req) => [req.id, req.quantity]))
+
   const submissionsByShow = new Map<string, number>()
   for (const row of submissions ?? []) {
+    const quantity = quantityByRequirement.get(row.show_requirement_id)
+    if (quantity != null && (filledByRequirement.get(row.show_requirement_id) ?? 0) >= quantity) continue
     submissionsByShow.set(row.show_id, (submissionsByShow.get(row.show_id) ?? 0) + 1)
   }
 

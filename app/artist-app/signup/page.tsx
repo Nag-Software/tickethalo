@@ -1,15 +1,16 @@
 import { PublicHeader } from '@/components/public/public-header'
 import { ArtistSignupForm } from '@/components/artist/artist-signup-form'
 import { Footer } from '@/components/Footer'
+import { signupNext } from './next'
 
 export const metadata = { title: 'Register Artist Profile — Tickethalo' }
 
 export default async function ArtistSignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; error?: string }>
+  searchParams: Promise<{ status?: string; error?: string; next?: string }>
 }) {
-  const { error } = await searchParams
+  const { error, next } = await searchParams
 
   return (
     <main
@@ -32,6 +33,7 @@ export default async function ArtistSignupPage({
         <div className="">
           <ArtistSignupForm
             action="/artist-app/signup/submit"
+            nextPath={signupNext(next ?? '') ?? undefined}
             errorMessage={
               error === 'email_exists'
                 ? 'This email address is already registered. Try logging in.'
