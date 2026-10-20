@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bookingConfirmedTemplate,
   bookingOfferTemplate,
+  comedianLoginTemplate,
   lineupFullTemplate,
   offerWithdrawnByClubTemplate,
   removedFromLineupTemplate,
@@ -130,5 +131,21 @@ describe('lineupFullTemplate', () => {
     expect(template.text.startsWith('Hi\n')).toBe(true)
     expect(template.html).not.toContain('<script>')
     expect(template.html).toContain('&lt;b&gt;Ida&lt;/b&gt;')
+  })
+})
+
+describe('comedianLoginTemplate', () => {
+  it('gives the comedian their new login and the link that sets the password', () => {
+    const template = comedianLoginTemplate({
+      full_name: 'Kari <Komiker>',
+      email: 'kari@mail.test',
+      set_password_url: 'https://tickethalo.com/artist-app/auth/callback?token_hash=abc',
+    })
+
+    expect(template.text).toContain('kari@mail.test')
+    expect(template.text).toContain('token_hash=abc')
+    expect(template.html).toContain('href="https://tickethalo.com/artist-app/auth/callback?token_hash=abc"')
+    expect(template.html).toContain('Kari &lt;Komiker&gt;')
+    expect(template.html).not.toContain('<Komiker>')
   })
 })

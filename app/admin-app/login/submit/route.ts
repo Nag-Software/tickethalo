@@ -1,6 +1,8 @@
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { LAST_PORTAL_COOKIE, parsePortalSide } from '@/lib/portal-side'
 
 export async function POST(request: Request) {
   const origin = `${request.headers.get('x-forwarded-proto') ?? 'http'}://${request.headers.get('host') ?? new URL(request.url).host}`
@@ -16,7 +18,9 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL(`${adminPrefix}/login?error=invalid`, origin), 303)
   }
 
-  const destination = await getPortalDestinationForAuthUser(data.user.id)
+  // En klubbeier som også er komiker lander der hen var sist.
+  const lastPortal = parsePortalSide((await cookies()).get(LAST_PORTAL_COOKIE)?.value)
+  const destination = await getPortalDestinationForAuthUser(data.user.id, lastPortal)
   if (!destination) {
     return NextResponse.redirect(new URL(`${adminPrefix}/login?error=unauthorized`, origin), 303)
   }

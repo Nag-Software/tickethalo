@@ -548,6 +548,36 @@ export function clubWelcomeTemplate(opts: {
 }
 
 /**
+ * Komikerprofilen har fått sin egen innlogging igjen.
+ *
+ * Profilen ble laget fra en klubbinnlogging, og eieren har koblet den fra
+ * under My club. Den nye innloggingen har et passord ingen kjenner, så
+ * e-posten er lenken som setter det. Se `disconnectComedianProfile`.
+ */
+export function comedianLoginTemplate(opts: {
+  full_name: string
+  email: string
+  set_password_url: string
+}): EmailTemplate {
+  const intro = `Your comedian profile on Tickethalo now has its own login: ${opts.email}. Set a password and you are in.`
+  const expiry = 'The link works for a limited time. If it has expired, choose “Forgot password” on the sign-in page and we send a new one.'
+
+  return {
+    subject: 'Your comedian login on Tickethalo',
+    text: [`Hi ${opts.full_name}`, '', intro, '', 'Set your password here:', opts.set_password_url, '', expiry].join('\n'),
+    html: shell({
+      eyebrow: 'Comedian portal',
+      heading: 'Set your password',
+      body:
+        paragraph(`Hi ${escapeHtml(opts.full_name)}`) +
+        paragraph(escapeHtml(intro)) +
+        button(opts.set_password_url, 'Set password') +
+        paragraph(escapeHtml(expiry), true),
+    }),
+  }
+}
+
+/**
  * Lineupen er full — og showet er *ikke* publisert.
  *
  * Showet publiserte seg selv før, og gikk ut uten plakat, tekst og

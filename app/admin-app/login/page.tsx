@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
 import { PublicHeader } from '@/components/public/public-header'
@@ -7,6 +8,7 @@ import { BookerPreview } from '@/components/public/booker-preview'
 import { BetaAccessDialog } from '@/components/public/beta-access-dialog'
 import { createClient } from '@/lib/supabase/server'
 import { getPortalDestinationForAuthUser } from '@/lib/portal-auth'
+import { LAST_PORTAL_COOKIE, parsePortalSide } from '@/lib/portal-side'
 
 export const metadata = { title: 'Comedy club portal — Tickethalo' }
 
@@ -32,7 +34,8 @@ export default async function AdminLoginPage({
   const { data: { user } } = await supabase.auth.getUser()
 
   if (user) {
-    const destination = await getPortalDestinationForAuthUser(user.id)
+    const lastPortal = parsePortalSide((await cookies()).get(LAST_PORTAL_COOKIE)?.value)
+    const destination = await getPortalDestinationForAuthUser(user.id, lastPortal)
     if (destination === adminPrefix || destination === '/superadmin') redirect(adminPrefix)
     if (destination) redirect(destination)
   }

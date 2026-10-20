@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { LogOut } from 'lucide-react'
+import { Building2, LogOut } from 'lucide-react'
 import { BrandLogo } from '@/components/brand/brand-logo'
 import { cn } from '@/lib/utils'
 
@@ -16,12 +16,24 @@ const navItems = [
   { label: 'Profile', href: '/artist-app/profile' },
 ]
 
-export function ArtistTopbar({ name, email }: { name: string; email: string }) {
+export function ArtistTopbar({
+  name,
+  email,
+  clubPortalHref = null,
+}: {
+  name: string
+  email: string
+  /** Satt bare når innloggingen også er klubbadmin. Se `getPortalAccessForAuthUser`. */
+  clubPortalHref?: string | null
+}) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href || pathname === `${href}/` : pathname.startsWith(href)
+
+  // Én innlogging eier begge sidene, så utloggingen gjelder begge.
+  const logOutLabel = clubPortalHref ? 'Log out of club and comedian' : 'Log out'
 
   const initials = name
     .split(' ')
@@ -51,7 +63,7 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
               href={item.href}
               aria-current={isActive(item.href, item.exact) ? 'page' : undefined}
               className={cn(
-                'flex h-7 items-center rounded-full px-3.5 text-[12.5px] font-medium transition-colors',
+                'flex h-7 items-center whitespace-nowrap rounded-full px-3.5 text-[12.5px] font-medium transition-colors',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]',
                 isActive(item.href, item.exact)
                   ? 'bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)]'
@@ -64,16 +76,35 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden max-w-[180px] truncate text-[13px] text-[var(--ev-muted)] lg:inline">
+          {/* Med bryteren ved siden av er det ikke plass til navnet før xl. */}
+          <span
+            className={cn(
+              'hidden max-w-[180px] truncate text-[13px] text-[var(--ev-muted)]',
+              clubPortalHref ? 'xl:inline' : 'lg:inline'
+            )}
+          >
             {name}
           </span>
+
+          {clubPortalHref ? (
+            <Link
+              href={clubPortalHref}
+              aria-label="Switch to club"
+              title="Switch to club"
+              className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--ev-card)] px-2.5 text-[12.5px] font-medium text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] md:inline-flex lg:px-3.5"
+            >
+              <Building2 className="size-4" aria-hidden />
+              {/* Bare ikonet mellom md og lg, der lenkene ellers ikke får plass. */}
+              <span className="hidden lg:inline">Switch to club</span>
+            </Link>
+          ) : null}
 
           <form action="/artist-app/logout" method="post" className="hidden md:block">
             <button
               type="submit"
               className="flex size-9 items-center justify-center rounded-full text-[var(--ev-muted)] transition-colors hover:bg-[var(--ev-card-hover)] hover:text-[var(--ev-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
-              aria-label="Log out"
-              title="Log out"
+              aria-label={logOutLabel}
+              title={logOutLabel}
             >
               <LogOut className="size-4" />
             </button>
@@ -113,14 +144,24 @@ export function ArtistTopbar({ name, email }: { name: string; email: string }) {
           fordi portalen er et arbeidsverktøy og konteksten bør bli stående. */}
       {open && (
         <div className="border-t border-[var(--ev-line)] px-4 pb-4 pt-3 md:hidden">
+          {clubPortalHref ? (
+            <Link
+              href={clubPortalHref}
+              className="mb-3 flex h-10 items-center gap-2 rounded-full bg-[var(--ev-card)] px-4 text-[13px] font-medium text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)]"
+            >
+              <Building2 className="size-4" aria-hidden />
+              Switch to club
+            </Link>
+          ) : null}
           <div className="flex items-center justify-between gap-3">
             <span className="min-w-0 truncate text-[13px] text-[var(--ev-faint)]">{email}</span>
             <form action="/artist-app/logout" method="post">
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
+                title={logOutLabel}
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
               >
-                <LogOut className="size-4" /> Log out
+                <LogOut className="size-4" /> {clubPortalHref ? 'Log out of both' : 'Log out'}
               </button>
             </form>
           </div>

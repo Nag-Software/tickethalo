@@ -25,7 +25,8 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL(`${artistPrefix}/login?error=invalid&next=${encodeURIComponent(nextPath)}`, origin), 303)
   }
 
-  const destination = await getPortalDestinationForAuthUser(data.user.id)
+  // Logger en klubbeier med komikerprofil inn her, er det komikersiden hen vil til.
+  const destination = await getPortalDestinationForAuthUser(data.user.id, 'artist')
   if (!destination) {
     return NextResponse.redirect(new URL(`${artistPrefix}/signup?error=missing`, origin), 303)
   }

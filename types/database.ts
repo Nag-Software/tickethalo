@@ -274,6 +274,12 @@ export type Profile = {
 export type Artist = {
   id: string
   auth_user_id: string | null
+  /**
+   * Komikerens egen innlogging da profilen ble koblet til en klubbinnlogging.
+   * Den er sperret så lenge koblingen står, og får profilen tilbake ved
+   * «Disconnect». Se `lib/comedian-link.ts`.
+   */
+  linked_from_auth_user_id?: string | null
   full_name: string
   stage_name: string | null
   email: string
@@ -887,6 +893,7 @@ export type Database = {
         Insert: {
           id?: string
           auth_user_id?: string | null
+          linked_from_auth_user_id?: string | null
           full_name: string
           stage_name?: string | null
           email: string

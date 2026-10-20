@@ -105,8 +105,13 @@ describe('provisionClubAdmin', () => {
 
   it('promotes an artist or staff profile to admin, but never touches superadmin', async () => {
     state.profile = { id: 'p', role: 'artist' }
-    await provisionClubAdmin({ clubId: 'c', clubName: 'X', email: 'a@b.co' })
+    const result = await provisionClubAdmin({ clubId: 'c', clubName: 'X', email: 'a@b.co' })
     expect(state.updates).toEqual([{ table: 'profiles', row: { role: 'admin' } }])
+    // Samme innlogging beholdes, og komikerraden røres ikke: komikeren som
+    // blir klubbadmin har begge sidene og får bryteren mellom portalene.
+    expect(result).toMatchObject({ created: false, profileId: 'p' })
+    expect(state.inserts).toEqual([{ table: 'club_memberships', row: { club_id: 'c', profile_id: 'p' } }])
+    expect([...state.inserts, ...state.updates].some(({ table }) => table === 'artists')).toBe(false)
 
     state.updates = []
     state.profile = { id: 'p', role: 'superadmin' }
