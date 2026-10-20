@@ -27,7 +27,7 @@ import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import type { AdminTicketType } from '@/lib/admin-ticket-types'
 import { sortTicketTypes } from '@/lib/ticket-types'
 import type { ShowTicketType } from '@/types/database'
-import type { ArtistGender, RequirementCompensationType, RequirementEnergy, RequirementGender, SubmissionsAudience } from '@/types/database'
+import type { ArtistGender, RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
 type ShowTab = 'overview' | 'lineup' | 'submissions' | 'marketing' | 'tickets'
 
@@ -213,6 +213,7 @@ export default async function ShowDetailPage({
         role_name: requirement.role_name,
         energy_level: 'any',
         required_gender: requirement.required_gender ?? 'any',
+        min_skill_level: (requirement.min_skill_level ?? null) as SkillLevel | null,
       }
       const baseMatches = automationCandidates.filter((artist) => matchesHardRequirements(artist, openEnergy))
       const strictCount = baseMatches.filter((artist) => artist.admin_energy_level === requirement.energy_level).length
@@ -221,6 +222,47 @@ export default async function ShowDetailPage({
       return strictCount === 0
         ? [[requirement.id, { candidates: anyEnergyCount }]]
         : []
+    })
+  )
+
+  // Plasser der ingen når opp til nivået. Samme regning som energien over:
+  // plassens krav, uten kveldens, så tallet er et øvre anslag.
+  const skillRelaxationSuggestions = Object.fromEntries(
+    (requirements ?? []).flatMap((requirement) => {
+      const status = reqFillStatus.find((row) => row.id === requirement.id)
+      const minimum = (requirement.min_skill_level ?? null) as SkillLevel | null
+      if (!status || status.isFull || status.pendingOffers > 0 || !minimum || minimum === 'low') return []
+
+      const criteria = {
+        role_name: requirement.role_name,
+        energy_level: requirement.energy_level,
+        required_gender: requirement.required_gender ?? 'any',
+      }
+      const strictCount = automationCandidates
+        .filter((artist) => matchesHardRequirements(artist, { ...criteria, min_skill_level: minimum })).length
+      const openCount = automationCandidates.filter((artist) => matchesHardRequirements(artist, criteria)).length
+
+      return strictCount === 0 && openCount > 0
+        ? [[requirement.id, { candidates: openCount }]]
+        : []
+    })
+  )
+
+  // Hvor mange på klubbens liste som passer hver plass, med og uten
+  // nivåkravet. Vises under kriteriene før bookingen starter, så et for
+  // strengt nivå synes før det blir en tom plass.
+  const requirementMatchCounts = Object.fromEntries(
+    (requirements ?? []).map((requirement) => {
+      const criteria = {
+        role_name: requirement.role_name,
+        energy_level: requirement.energy_level,
+        required_gender: requirement.required_gender ?? 'any',
+      }
+      const withoutSkill = selectableArtists.filter((artist) => matchesHardRequirements(artist, criteria))
+      const total = withoutSkill.filter((artist) =>
+        matchesHardRequirements(artist, { ...criteria, min_skill_level: (requirement.min_skill_level ?? null) as SkillLevel | null }),
+      ).length
+      return [requirement.id, { total, withoutSkill: withoutSkill.length }]
     })
   )
 
@@ -387,6 +429,7 @@ export default async function ShowDetailPage({
                   r.role_name,
                   r.energy_level,
                   r.required_gender ?? 'any',
+                  r.min_skill_level ?? '',
                   r.compensation_type ?? '',
                   r.compensation_amount ?? '',
                   r.compensation_percent ?? '',
@@ -400,6 +443,7 @@ export default async function ShowDetailPage({
                   role_name: r.role_name,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
+                  min_skill_level: (r.min_skill_level ?? null) as SkillLevel | null,
                   submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
@@ -410,6 +454,7 @@ export default async function ShowDetailPage({
                 rosterSize={roster.length}
                 pendingByRequirement={pendingSubmissionsByRequirement}
                 percentLimit={percentLimit}
+                matchCounts={requirementMatchCounts}
               />
             : <LineupTab
                 showId={show.id}
@@ -423,6 +468,7 @@ export default async function ShowDetailPage({
                   lineup_position: r.lineup_position,
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
+                  min_skill_level: (r.min_skill_level ?? null) as SkillLevel | null,
                   submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
@@ -449,6 +495,7 @@ export default async function ShowDetailPage({
                   // Score blir igjen på serveren — motoren trenger den, bookeren skal ikke se den.
                   .map(({ id, full_name, stage_name, email }) => ({ id, full_name, stage_name, email }))}
                 energyRelaxationSuggestions={energyRelaxationSuggestions}
+                skillRelaxationSuggestions={skillRelaxationSuggestions}
                 allSlotsFilled={allSlotsFilled}
                 publishReadiness={publishReadiness(show)}
                 submissionsAudience={(show.submissions_audience ?? 'roster') as SubmissionsAudience}

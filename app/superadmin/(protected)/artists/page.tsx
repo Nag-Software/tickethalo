@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { EmptyState, formatDate } from '@/components/superadmin/ui'
 import { getOsloToday } from '@/lib/event-filters'
 import { cn } from '@/lib/utils'
+import { formatScore } from '@/lib/artist-score'
 import { ArtistStatusControl } from './artist-status-control'
 import type { ArtistStatus } from '@/types/database'
 
@@ -41,12 +42,15 @@ export default async function SuperadminArtistsPage({
   const db = createAdminClient()
   const today = getOsloToday()
 
-  const [{ data: artists }, { data: clubLinks }, { data: upcomingShows }] = await Promise.all([
+  const [{ data: artists }, { data: clubLinks }, { data: upcomingShows }, { data: globalScores }] = await Promise.all([
     db.from('artists')
       .select('id, full_name, stage_name, email, city, status, profile_image_url, created_at')
       .order('full_name'),
     db.from('club_artists').select('artist_id'),
     db.from('shows').select('id').is('deleted_at', null).gte('date', today).neq('status', 'cancelled'),
+    // Snittet på tvers av klubbene — bare her. Bookingen bruker klubbens egen
+    // score, og klubbene ser aldri denne (se migrasjon 075).
+    db.from('artist_global_scores').select('artist_id, score, review_count, club_count'),
   ])
 
   const upcomingShowIds = (upcomingShows ?? []).map((show) => show.id)
@@ -59,6 +63,7 @@ export default async function SuperadminArtistsPage({
     for (const row of rows ?? []) map.set(row.artist_id, (map.get(row.artist_id) ?? 0) + 1)
     return map
   }
+  const globalScoreByArtist = new Map((globalScores ?? []).map((row) => [row.artist_id, row]))
   const clubsByArtist = count(clubLinks)
   const bookingsByArtist = count(upcomingSpots)
 
@@ -128,13 +133,16 @@ export default async function SuperadminArtistsPage({
           </EmptyState>
         ) : (
           <div className="overflow-x-auto rounded-xl border bg-card">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[840px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
                   <th className="px-4 py-2.5 font-medium">Komiker</th>
                   <th className="px-4 py-2.5 font-medium">By</th>
                   <th className="px-4 py-2.5 text-right font-medium">Klubber</th>
                   <th className="px-4 py-2.5 text-right font-medium">Kommende</th>
+                  <th className="px-4 py-2.5 text-right font-medium" title="Snittet av klubbenes score, vektet med antall vurderinger. Brukes ikke i bookingen.">
+                    Global score
+                  </th>
                   <th className="px-4 py-2.5 font-medium">Registrert</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
                   <th className="px-4 py-2.5" />
@@ -160,6 +168,9 @@ export default async function SuperadminArtistsPage({
                       <td className="px-4 py-2.5 text-muted-foreground">{artist.city ?? '—'}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{clubsByArtist.get(artist.id) ?? 0}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{bookingsByArtist.get(artist.id) ?? 0}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <GlobalScoreCell row={globalScoreByArtist.get(artist.id)} />
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground tabular-nums">{formatDate(artist.created_at)}</td>
                       <td className="px-4 py-2">
                         <ArtistStatusControl
@@ -188,6 +199,19 @@ export default async function SuperadminArtistsPage({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function GlobalScoreCell({ row }: { row?: { score: number | null; review_count: number; club_count: number } }) {
+  if (!row || row.score == null) return <span className="text-muted-foreground">–</span>
+
+  return (
+    <div className="leading-tight">
+      <p className="font-medium tabular-nums">{formatScore(row.score)}</p>
+      <p className="text-[11px] text-muted-foreground tabular-nums">
+        {row.review_count} {row.review_count === 1 ? 'vurdering' : 'vurderinger'} · {row.club_count} {row.club_count === 1 ? 'klubb' : 'klubber'}
+      </p>
     </div>
   )
 }

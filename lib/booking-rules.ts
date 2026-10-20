@@ -1,4 +1,6 @@
 import { artistMatchesRole } from '@/lib/artist-roles'
+import { meetsSkillLevel, type SkillLevel } from '@/lib/artist-score'
+import { offerTarget } from '@/lib/booking-schedule'
 import type { BookingSettings } from '@/lib/booking-settings'
 import type { ArtistGender, ArtistType, BookingOfferSource, EnergyLevel } from '@/types/database'
 
@@ -14,11 +16,13 @@ import type { ArtistGender, ArtistType, BookingOfferSource, EnergyLevel } from '
  * listen ikke kan si noe annet enn det motoren gjør.
  */
 
-/** Det motoren vet om en komiker. Rolle og energi er klubbens vurdering. */
+/** Det motoren vet om en komiker. Rolle, energi og score er klubbens vurdering. */
 export type MatchableArtist = {
   admin_energy_level: EnergyLevel | null
   gender: ArtistGender | null
   category: ArtistType[] | null
+  /** `club_artists.score`, 0–10. Gir skill level — se `skillLevelFromScore`. */
+  score: number
 }
 
 /** Kravene på en plass. De lempes aldri av motoren — bare av bookeren. */
@@ -26,10 +30,12 @@ export type HardRequirement = {
   role_name: string
   energy_level: string
   required_gender: string
+  /** Minste skill level. Null eller `low` = alle. */
+  min_skill_level?: SkillLevel | null
 }
 
 /** Kravet som stenger komikeren ute. Null = hen passer plassen. */
-export type RequirementBlocker = 'role' | 'energy' | 'gender'
+export type RequirementBlocker = 'role' | 'energy' | 'gender' | 'skill'
 
 /**
  * Hvilket krav som stopper komikeren, i den rekkefølgen bookeren kan gjøre
@@ -40,6 +46,9 @@ export function requirementBlocker(artist: MatchableArtist, req: HardRequirement
   if (!artistMatchesRole(req.role_name, artist)) return 'role'
   if (req.energy_level !== 'any' && artist.admin_energy_level !== req.energy_level) return 'energy'
   if (req.required_gender && req.required_gender !== 'any' && artist.gender !== req.required_gender) return 'gender'
+  // Sist: nivået er det bookeren oftest kan gi slipp på, og det eneste kravet
+  // som flytter seg av seg selv — én vurdering kan løfte en komiker over.
+  if (!meetsSkillLevel(artist.score, req.min_skill_level)) return 'skill'
   return null
 }
 
@@ -279,4 +288,174 @@ export function orderByScarcity<T extends ScarcityEntry>(entries: T[]): T[] {
       || a.lineupPosition - b.lineupPosition
       || (a.requirementId < b.requirementId ? -1 : a.requirementId > b.requirementId ? 1 : 0)
   })
+}
+
+// ─── Bølgen: hvem som får tilbud nå ──────────────────────────────────────
+
+/** Kandidaten slik planen ser hen: krav, kø og kvelden. */
+export type PlanCandidate = MatchableArtist & RankedCandidate & {
+  /** Komikeren har markert showdatoen som opptatt. */
+  unavailable: boolean
+  /** Komikeren står allerede på en annen scene den kvelden. */
+  conflicted: boolean
+}
+
+/**
+ * Om komikeren kan få tilbud på nettopp denne plassen.
+ *
+ * Kravene om kvelden — opptatt, kollisjon — sitter på kandidaten og gjelder
+ * hele showet. Kravene om plassen sjekkes av `matchesHardRequirements`.
+ */
+export function isEligibleForSpot(
+  candidate: PlanCandidate,
+  req: HardRequirement,
+  involved: ReadonlySet<string>,
+): boolean {
+  if (involved.has(candidate.id)) return false
+  if (candidate.unavailable || candidate.conflicted) return false
+  return matchesHardRequirements(candidate, req)
+}
+
+/** Plassen slik bølgen ser den. */
+export type WaveRequirement = HardRequirement & {
+  id: string
+  quantity: number
+  lineup_position: number
+  submissions_open: boolean | null
+  auto_started_at: string | null
+}
+
+export type WaveEntry<R extends WaveRequirement> = ScarcityEntry & {
+  req: R
+  slotsNeeded: number
+  currentPendingOffers: number
+  maxNewOffers: number
+}
+
+/**
+ * Plassene som skal ha nye tilbud nå, og hvor mange.
+ *
+ * En plass klubben har åpnet for søknader, holder motoren fingrene fra —
+ * ellers rekker den å fylle plassen før noen har rukket å søke. Og en plass
+ * automatikken ikke er startet på (`auto_started_at`), rører den ikke.
+ */
+export function waveEntries<R extends WaveRequirement>({
+  requirements,
+  pool,
+  involved,
+  filled,
+  pendingAuto,
+  pendingManual,
+  now,
+  settings,
+  rush,
+}: {
+  requirements: R[]
+  pool: PlanCandidate[]
+  involved: ReadonlySet<string>
+  filled: ReadonlyMap<string, number>
+  pendingAuto: ReadonlyMap<string, number>
+  pendingManual: ReadonlyMap<string, number>
+  now: Date
+  settings: BookingSettings
+  rush: boolean
+}): WaveEntry<R>[] {
+  return requirements.flatMap((req) => {
+    if (req.submissions_open) return []
+    if (!req.auto_started_at) return []
+
+    const target = offerTarget({ autoStartedAt: req.auto_started_at, now, settings, rush })
+    const { slotsNeeded, currentPendingOffers, maxNewOffers } = offerQuota({
+      quantity: req.quantity,
+      filled: filled.get(req.id) ?? 0,
+      pendingAuto: pendingAuto.get(req.id) ?? 0,
+      pendingManual: pendingManual.get(req.id) ?? 0,
+      target,
+    })
+
+    if (slotsNeeded <= 0 || maxNewOffers <= 0) return []
+
+    return [{
+      req,
+      requirementId: req.id,
+      lineupPosition: req.lineup_position,
+      slotsNeeded,
+      currentPendingOffers,
+      maxNewOffers,
+      candidateCount: pool.filter((candidate) => isEligibleForSpot(candidate, req, involved)).length,
+    }]
+  })
+}
+
+/**
+ * Hvem som får tilbud i denne bølgen, plass for plass.
+ *
+ * Den samme funksjonen gir forslaget bookeren ser før Start booking og
+ * tilbudene motoren faktisk sender. Var de to regnet hver for seg, kunne
+ * forslaget vist én lineup og motoren sendt en annen.
+ *
+ * Plassen med færrest kandidater velger først (`orderByScarcity`), og
+ * tilbudene deles ut i runder — ett sete om gangen per plass — så én plass
+ * ikke tømmer listen før de andre har fått sitt. Innenfor plassen står
+ * kandidatene i poengrekkefølge (`rankCandidates`).
+ *
+ * `approved` er bookerens godkjente forslag: komikerne der går først på sin
+ * plass, så sant de fortsatt kan. Er noen blitt opptatt siden forslaget,
+ * fylles plassen fra køen som vanlig. Uten `approved` er dette nøyaktig
+ * motorens vanlige bølge.
+ */
+export function planOfferWave<C extends PlanCandidate, R extends WaveRequirement>({
+  entries,
+  pool,
+  involved: alreadyInvolved,
+  settings,
+  approved,
+}: {
+  entries: WaveEntry<R>[]
+  pool: C[]
+  involved: ReadonlySet<string>
+  settings: BookingSettings
+  approved?: Readonly<Record<string, readonly string[]>>
+}): Array<{ candidate: C; req: R }> {
+  if (entries.length === 0) return []
+
+  const ordered = orderByScarcity(entries)
+  const involved = new Set(alreadyInvolved)
+  const assignments: Array<{ candidate: C; req: R }> = []
+  const assignedByRequirement = new Map<string, number>()
+
+  const assign = (candidate: C, entry: WaveEntry<R>) => {
+    involved.add(candidate.id)
+    assignments.push({ candidate, req: entry.req })
+    assignedByRequirement.set(entry.requirementId, (assignedByRequirement.get(entry.requirementId) ?? 0) + 1)
+  }
+
+  if (approved) {
+    const byId = new Map(pool.map((candidate) => [candidate.id, candidate]))
+    for (const entry of ordered) {
+      for (const artistId of approved[entry.requirementId] ?? []) {
+        if ((assignedByRequirement.get(entry.requirementId) ?? 0) >= entry.maxNewOffers) break
+        const candidate = byId.get(artistId)
+        if (candidate && isEligibleForSpot(candidate, entry.req, involved)) assign(candidate, entry)
+      }
+    }
+  }
+
+  const maxRounds = Math.max(...ordered.map((entry) => Math.ceil(entry.maxNewOffers / entry.slotsNeeded)))
+
+  for (let round = 0; round < maxRounds; round++) {
+    for (const entry of ordered) {
+      const assigned = assignedByRequirement.get(entry.requirementId) ?? 0
+      const remaining = entry.maxNewOffers - assigned
+      if (remaining <= 0) continue
+
+      const waveSize = Math.min(entry.slotsNeeded, remaining)
+      const eligible = pool.filter((candidate) => isEligibleForSpot(candidate, entry.req, involved))
+      const chosen = rankCandidates(eligible, settings).slice(0, waveSize)
+
+      for (const candidate of chosen) assign(candidate, entry)
+    }
+  }
+
+  return assignments
 }

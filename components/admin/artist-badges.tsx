@@ -1,4 +1,5 @@
-import type { ArtistStatus, EnergyLevel } from '@/types/database'
+import { SKILL_LEVEL_LABELS } from '@/lib/artist-score'
+import type { ArtistStatus, EnergyLevel, SkillLevel } from '@/types/database'
 
 /**
  * Statusbrikkene for en komiker.
@@ -51,5 +52,23 @@ export function ArtistEnergyBadge({ level }: { level: EnergyLevel }) {
 export function FlaggedBadge() {
   return (
     <span className={`${BASE} bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400`}>Flagged</span>
+  )
+}
+
+const SKILL_COLORS: Record<SkillLevel, string> = {
+  high: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
+  medium: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
+  low: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400',
+}
+
+/**
+ * Nivået klubbens vurderinger har gitt komikeren. Scoren selv vises aldri for
+ * bookeren — se lib/artist-score.ts.
+ */
+export function SkillLevelBadge({ level, compact = false }: { level: SkillLevel; compact?: boolean }) {
+  return (
+    <span className={`${BASE} ${SKILL_COLORS[level]}`}>
+      {compact ? SKILL_LEVEL_LABELS[level] : `Skill: ${SKILL_LEVEL_LABELS[level]}`}
+    </span>
   )
 }

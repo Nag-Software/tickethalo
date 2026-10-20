@@ -20,9 +20,12 @@ For hver plass kan klubben si mer om hvem den vil ha:
 - **Rolle:** Headliner, Host, Stand-up eller Open Mic.
 - **Energi:** høy, lav, eller «spiller ingen rolle».
 - **Kjønn:** kvinne, mann, ikke-binær, eller «spiller ingen rolle».
+- **Skill level:** «Low or higher» (alle), «Medium or higher» eller «Only High». Nivået er ikke noe klubben setter på komikeren — det kommer av klubbens egen score, se punkt 3.
 - **Honorar:** en fast sum, eller en prosent av billettsalget.
 
 Dette er bestillingen. Systemet endrer den aldri på egen hånd. Finner det ingen som passer, sier det fra til bookeren i stedet for å sende tilbud til noen som ikke passer.
+
+Før bookingen starter, kan bookeren trykke **Suggest line-up now**. Da viser systemet hvem som ville fått den første bølgen med tilbud, plass for plass — samme utvalg som når bookingen faktisk kjører. Bookeren kan bytte ut hvem som helst med en annen som passer plassen. Trykker bookeren så **Start booking**, går tilbudene ut til akkurat dem, med en gang. Forslaget er valgfritt: Start booking uten forslag lar systemet velge selv, som før.
 
 Når bookeren trykker **Start booking**, tar systemet over.
 
@@ -34,12 +37,12 @@ Før noen får et tilbud, må alt dette stemme. Dette er krav, ikke ønsker:
 2. **Klubben har ikke flagget komikeren.** Et flagg skjuler komikeren fra klubbens booking, og bare fra den.
 3. **Komikeren er godkjent på plattformen.**
 4. **Rollen stemmer.** Klubben bestemmer selv hvilke roller den booker hver komiker i. Den samme komikeren kan være headliner hos én klubb og klubbspot hos en annen.
-5. **Energi og kjønn stemmer,** når plassen krever det.
+5. **Energi, kjønn og skill level stemmer,** når plassen krever det.
 6. **Komikeren er ledig den dagen.** Komikere markerer i en kalender hvilke dager de ikke kan. De dagene får de aldri tilbud.
 7. **Ingen kollisjon.** Har komikeren allerede takket ja til et show som starter mindre enn tre timer unna, er hen ute. Tre timer gjør at to spots på én kveld fortsatt går, men samme scenetid to steder er umulig.
 8. **Komikeren er ikke involvert i showet fra før.** Har hen sagt nei, latt et tilbud gå ut, har et tilbud ute, står i lineupen, eller er tatt av showet av bookeren, sender systemet ikke et nytt tilbud.
 
-Legg merke til hva som *ikke* står på listen: hvor god komikeren er. Kvalitet avgjør ikke hvem som kan få et tilbud. Den avgjør rekkefølgen.
+Kvalitet avgjør først og fremst rekkefølgen, ikke hvem som kan få et tilbud. Det eneste unntaket er skill level på plassen: har bookeren satt «Medium or higher» eller «Only High», får ingen under det nivået tilbud. Uten et slikt krav stenger scoren ingen ute.
 
 ## 3. Rekkefølgen: poeng
 
@@ -63,6 +66,8 @@ poeng = score × 10 − 10 for hvert show komikeren
 Det finnes et fjerde valg: **avlyste eller møtte ikke opp**. Det teller som to svake kvelder. For en klubb er det verre at noen ikke dukker opp enn at kvelden var middels.
 
 Fordi scoren er et snitt, kan ingen bygge seg fast på toppen, og en dårlig kveld kan hentes inn igjen. Den som leverer sterkt gang på gang, ligger øverst.
+
+**Skill level** er scoren slik bookeren ser den: under 4 er **Low**, over 7 er **High**, og alt imellom er **Medium**. Den som ikke er vurdert ennå (5,0), er Medium. Én sterk kveld (6,7) holder ikke til High; to sterke (8,3) gjør det. Bookeren ser nivået på komikerprofilen og i forslaget, men aldri selve scoren.
 
 **Trekket for show i samme klubb** sprer bookingene. Har komikeren allerede en plass hos klubben innen 30 dager fra showdatoen, går det 10 poeng, altså ett scorepoeng, for hver slik plass. Publikum skal ikke se de samme fem ansiktene hver gang. Show i *andre* klubber teller ikke. Ingen skal straffes for å jobbe.
 
@@ -158,6 +163,8 @@ Dagen etter showet gjør systemet opp honorarene, og showet merkes som ferdig. D
 Dette er sløyfen som gjør systemet bedre over tid. Vurderingen endrer scoren, scoren endrer køen, og køen avgjør hvem som får tilbud på neste show. En klubb som vurderer hver kveld, får en liste som gradvis sorterer seg selv.
 
 Scoren er klubbens egen. Klubbene har ikke samme publikum. Geografi og demografi gjør at en komiker som treffer hos én klubb, ikke nødvendigvis treffer hos en annen. Derfor teller en vurdering bare hos klubben som ga den. En svak kveld ett sted flytter ikke komikeren ned i køen et annet sted, og en klubb som aldri har vurdert komikeren, starter på nøytrale 5,0.
+
+Plattformen regner i tillegg en **global score**: snittet av klubbenes score, der hver klubb teller med antallet vurderinger den har gitt. Den vises bare for superadmin, og bookingen bruker den ikke.
 
 ## 11. En kveld fra start til slutt
 

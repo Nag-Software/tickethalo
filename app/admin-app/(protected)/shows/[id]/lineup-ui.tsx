@@ -75,8 +75,8 @@ export function LineupCallout({
   children,
 }: {
   title: string
-  /** Knappen til høyre. */
-  action: React.ReactNode
+  /** Knappen til høyre. Uten den får teksten hele bredden. */
+  action?: React.ReactNode
   /** Forklaringen under tittelen. */
   children: React.ReactNode
 }) {
@@ -89,7 +89,7 @@ export function LineupCallout({
         <h3 className="text-sm font-bold">{title}</h3>
         {children}
       </div>
-      <div className="shrink-0 sm:ml-2">{action}</div>
+      {action != null && <div className="shrink-0 sm:ml-2">{action}</div>}
     </div>
   )
 }

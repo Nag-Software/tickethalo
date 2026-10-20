@@ -88,6 +88,7 @@ const BLOCKER_TEXT: Record<RequirementBlocker, string> = {
   role: 'rollen',
   energy: 'energinivået',
   gender: 'kjønnskravet',
+  skill: 'kravet til skill level',
 }
 
 /** Bookerens eget tilbud som holder setet lenger enn dette, er verdt et varsel. */

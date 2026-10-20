@@ -7,11 +7,12 @@ import { createShow } from '@/lib/actions/shows'
 import { copyTicketTypes } from '@/lib/ticket-types-copy'
 import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { publishShow } from '@/lib/show-publish'
+import { runBookingWave, suggestLineup, type LineupSuggestion } from '@/lib/booking-engine'
 import { runAfterResponse } from '@/lib/background'
 import { assertOfferAccess, assertRequirementAccess, assertShowAccess, assertSpotAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { canReviewShow, savePerformanceReview } from '@/lib/artist-reviews'
 import { rollBackIfSeatWasTaken } from '@/lib/booking-seats'
-import { PERFORMANCE_RATINGS } from '@/lib/artist-score'
+import { isSkillLevel, PERFORMANCE_RATINGS } from '@/lib/artist-score'
 import type { PerformanceRating } from '@/types/database'
 import { assertArtistBookableForShow } from '@/lib/club-artists'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
@@ -48,7 +49,7 @@ import {
 } from '@/lib/show-sales'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import { ticketPriceError } from '@/lib/tickets'
-import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel } from '@/types/database'
 
 export type ManualSpotActionState = {
   status: 'idle' | 'success' | 'error'
@@ -236,6 +237,14 @@ function assertValidCompensation(percent: number | null, amount: number | null) 
   }
 }
 
+/**
+ * Skill level fra skjemaet. `low` lagres som null: «Low or higher» er det
+ * samme som ingen grense, og én måte å si det på holder.
+ */
+function optionalSkillLevel(value: unknown): SkillLevel | null {
+  return isSkillLevel(value) && value !== 'low' ? value : null
+}
+
 async function getRequirementWriteInput(formData: FormData, showId: string) {
   const compensationType = optionalCompensationType(formData.get('compensation_type'))
   const compensationAmount = compensationType === 'fixed'
@@ -253,6 +262,7 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     lineup_position: Math.max(1, Number(formData.get('lineup_position') ?? (await nextLineupPosition(showId)))),
     energy_level: ((formData.get('energy_level') as RequirementEnergy | null) ?? 'any'),
     required_gender: ((formData.get('required_gender') as RequirementGender | null) ?? 'any'),
+    min_skill_level: optionalSkillLevel(formData.get('min_skill_level')),
     // Står som streng i skjemaet — en avslått checkbox sender ingenting, og
     // `'false'` er sant som streng. Sammenlikningen må derfor være eksplisitt.
     submissions_open: String(formData.get('submissions_open') ?? '') === 'true',
@@ -486,6 +496,7 @@ export async function cloneShowAction(formData: FormData) {
     lineup_position: number
     energy_level: RequirementEnergy
     required_gender: RequirementGender
+    min_skill_level: SkillLevel | null
     compensation_type: RequirementCompensationType | null
     compensation_amount: number | null
     compensation_percent: number | null
@@ -503,6 +514,7 @@ export async function cloneShowAction(formData: FormData) {
         lineup_position: Math.max(1, Number(formData.get(`req_${i}_lineup_position`) ?? (i + 1))),
         energy_level: ((formData.get(`req_${i}_energy_level`) as RequirementEnergy | null) ?? 'any'),
         required_gender: ((formData.get(`req_${i}_required_gender`) as RequirementGender | null) ?? 'any'),
+        min_skill_level: optionalSkillLevel(formData.get(`req_${i}_min_skill_level`)),
         compensation_type: compensationType,
         compensation_amount: compensationType === 'fixed' ? optionalMoneyToMinor(formData.get(`req_${i}_compensation_amount`)) : null,
         compensation_percent: compensationType === 'percent' ? optionalDecimal(formData.get(`req_${i}_compensation_percent`)) : null,
@@ -515,7 +527,7 @@ export async function cloneShowAction(formData: FormData) {
   if (newReqs.length === 0) {
     const { data: templateReqs } = await db
       .from('show_requirements')
-      .select('role_name, quantity, lineup_position, energy_level, required_gender, compensation_type, compensation_amount, compensation_percent')
+      .select('role_name, quantity, lineup_position, energy_level, required_gender, min_skill_level, compensation_type, compensation_amount, compensation_percent')
       .eq('show_id', templateId)
       .order('lineup_position')
       .order('created_at')
@@ -527,6 +539,7 @@ export async function cloneShowAction(formData: FormData) {
         lineup_position: r.lineup_position,
         energy_level: r.energy_level as RequirementEnergy,
         required_gender: ((r as { required_gender?: string }).required_gender as RequirementGender | undefined) ?? 'any',
+        min_skill_level: optionalSkillLevel(r.min_skill_level),
         compensation_type: (r.compensation_type as RequirementCompensationType | null) ?? null,
         compensation_amount: r.compensation_amount,
         compensation_percent: r.compensation_percent,
@@ -574,10 +587,45 @@ export async function addRequirementAction(formData: FormData): Promise<Requirem
   })
 }
 
+/**
+ * Forslaget før Start booking: den første bølgen, plass for plass.
+ *
+ * Bare navn og nivå går til nettleseren. Scoren blir på serveren — se
+ * `suggestLineup` i lib/booking-engine.ts.
+ */
+export async function suggestLineupAction(showId: string): Promise<LineupSuggestion> {
+  await assertShowAccess(showId)
+  return suggestLineup(showId)
+}
+
+/**
+ * Bookerens godkjente forslag fra skjemaet: `{ [plass-id]: [komiker-id, …] }`.
+ *
+ * Alt annet enn den formen gir null, og da starter bookingen som før uten
+ * forslag. Om komikerne fortsatt kan få plassen, avgjør motoren når den
+ * sender — se `planOfferWave`.
+ */
+function approvedPicksFromForm(value: FormDataEntryValue | null): Record<string, string[]> | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const picks: Record<string, string[]> = {}
+    for (const [requirementId, artistIds] of Object.entries(parsed)) {
+      if (!Array.isArray(artistIds)) return null
+      picks[requirementId] = artistIds.filter((id): id is string => typeof id === 'string')
+    }
+    return picks
+  } catch {
+    return null
+  }
+}
+
 export async function startBookingAction(formData: FormData) {
   const showId = formData.get('show_id') as string
   await assertShowAccess(showId)
   const db = createAdminClient()
+  const approved = approvedPicksFromForm(formData.get('picks'))
 
   const { data: reqs, error: reqError } = await db
     .from('show_requirements')
@@ -613,8 +661,16 @@ export async function startBookingAction(formData: FormData) {
   // klikk), fylles bare plasser som mangler stempel, så pågående bølger
   // ikke settes tilbake til start.
   await startAutoBooking(showId, undefined, { restart: (started ?? []).length > 0 })
+
+  // Med et godkjent forslag går den første bølgen ut nå, mens bookeren venter,
+  // og akkurat til dem bookeren så. Bølgene etter går som før.
+  const sent = approved ? await runBookingWave(showId, { approved }) : null
   scheduleShowAutomation(showId, 'manual-start')
   revalidatePath(`/admin-app/shows/${showId}`)
+
+  if (!sent) return { ok: true as const, offersSent: null, notSent: 0 }
+  const approvedCount = Object.values(approved ?? {}).reduce((sum, ids) => sum + ids.length, 0)
+  return { ok: true as const, offersSent: sent.offersCreated, notSent: Math.max(0, approvedCount - sent.approvedSent) }
 }
 
 export async function updateShowDetailsAction(formData: FormData) {
@@ -852,6 +908,33 @@ export async function openRequirementEnergyLevelsAction(formData: FormData) {
   if (error) throw new Error(error.message)
 
   scheduleShowAutomation(showId, `open-energy-${reqId}`)
+  revalidatePath(`/admin-app/shows/${showId}`)
+}
+
+/**
+ * Tar bort kravet til skill level på en plass som ikke finner noen.
+ *
+ * Samme grep som energien over: varselet sier hvor mange som kommer inn, og
+ * bookeren åpner plassen med ett trykk i stedet for å vente på at noen blir
+ * vurdert opp. Motoren kjøres med en gang, så tilbudene går ut nå.
+ */
+export async function openRequirementSkillLevelAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  const reqId = formData.get('req_id') as string
+  const db = createAdminClient()
+
+  if (!showId || !reqId) throw new Error('Show or spot is missing.')
+  await assertRequirementAccess(showId, reqId)
+
+  const { error } = await db
+    .from('show_requirements')
+    .update({ min_skill_level: null })
+    .eq('id', reqId)
+    .eq('show_id', showId)
+
+  if (error) throw new Error(error.message)
+
+  scheduleShowAutomation(showId, `open-skill-${reqId}`)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 

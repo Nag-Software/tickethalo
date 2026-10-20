@@ -13,6 +13,9 @@ export type EnergyLevel = 'high' | 'medium' | 'low' | 'uncertain'
 export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
 export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'completed' | 'cancelled'
 export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
+
+/** Låst til de tre nivåene i lib/artist-score.ts. */
+export type SkillLevel = 'low' | 'medium' | 'high'
 export type RequirementCompensationType = 'fixed' | 'percent'
 export type BookingOfferStatus = 'sent' | 'accepted' | 'declined' | 'expired' | 'filled_by_other' | 'cancelled'
 /**
@@ -433,6 +436,11 @@ export type ShowRequirement = {
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   /**
+   * Minste skill level komikeren må ha for plassen, avledet av klubbens
+   * score (`skillLevelFromScore` i lib/artist-score.ts). Null = alle.
+   */
+  min_skill_level: SkillLevel | null
+  /**
    * Plassen tar imot søknader fra komikere. Uavhengig av rollens øvrige
    * krav — men en åpen plass holdes utenfor bookingautomatikken, se
    * `bookShow()` i lib/actions/booking.ts.
@@ -821,6 +829,19 @@ export type ArtistPerformanceReview = {
   updated_at: string
 }
 
+/**
+ * Komikerens score på tvers av klubbene (migrasjon 075). Bare superadmin kan
+ * lese den, og bookingen bruker den ikke — se `globalScore` i lib/artist-score.ts.
+ */
+export type ArtistGlobalScore = {
+  artist_id: string
+  /** Null = ingen klubb har vurdert komikeren. */
+  score: number | null
+  review_count: number
+  club_count: number
+  updated_at: string
+}
+
 export type ShowArtistBookingExclusion = {
   id: string
   show_id: string
@@ -908,6 +929,18 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ArtistUnavailableDate>
+        Relationships: []
+      }
+      artist_global_scores: {
+        Row: ArtistGlobalScore
+        Insert: {
+          artist_id: string
+          score?: number | null
+          review_count?: number
+          club_count?: number
+          updated_at?: string
+        }
+        Update: Partial<ArtistGlobalScore>
         Relationships: []
       }
       artist_performance_reviews: {
@@ -1042,6 +1075,7 @@ export type Database = {
           lineup_position?: number
           energy_level?: RequirementEnergy
           required_gender?: RequirementGender
+          min_skill_level?: SkillLevel | null
           submissions_open?: boolean
           auto_started_at?: string | null
           compensation_type?: RequirementCompensationType | null

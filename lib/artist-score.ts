@@ -1,4 +1,6 @@
-import type { PerformanceRating } from '@/types/database'
+import type { PerformanceRating, SkillLevel } from '@/types/database'
+
+export type { SkillLevel }
 
 /**
  * Scoren komikeren bygger opp, kveld for kveld.
@@ -7,8 +9,11 @@ import type { PerformanceRating } from '@/types/database'
  * ingen satte den. Da sa den ingenting. Nå er den snittet av vurderingene
  * klubbene gir etter showet, og det er den eneste veien den endrer seg på.
  *
- * Scoren kvalifiserer ikke. Den avgjør bare rekkefølgen i køen — se
- * `candidatePoints` i lib/booking-rules.ts.
+ * Scoren avgjør først og fremst rekkefølgen i køen — se `candidatePoints`
+ * i lib/booking-rules.ts. Den kvalifiserer bare på én måte: bookeren kan sette
+ * et minste skill level på en plass (`min_skill_level`), og nivået er avledet
+ * av scoren (`skillLevelFromScore`). Uten et slikt krav stenger scoren ingen
+ * ute. Det er alltid klubbens egen score som teller, aldri den globale.
  */
 
 /** Hva hver vurdering er verdt på skalaen 0–10. */
@@ -94,4 +99,90 @@ export function scoreFromRatings(ratings: PerformanceRating[]): number {
 export function formatScore(score: number | null | undefined): string {
   if (score == null || !Number.isFinite(Number(score))) return '–'
   return Number(score).toFixed(1).replace('.', ',')
+}
+
+// ─── Skill level ─────────────────────────────────────────────────────────
+
+/**
+ * Low, Medium eller High — scoren slik bookeren ser den.
+ *
+ * Bookerne ville ha et nivå å sette krav etter, men et tall med desimaler er
+ * både for presist og for lett å lese som en dom over personen. Nivået
+ * avledes av klubbens egen score og settes aldri for hånd: da ville det
+ * blitt et felt ingen holdt ved like, slik scoren var før vurderingene.
+ */
+
+/**
+ * Grensene, ett sted.
+ *
+ * Under 4 er Low, over 7 er High, og alt imellom — også nøyaktig 4,0 og 7,0 —
+ * er Medium. Den som ikke er vurdert ennå (5,0), er Medium. Én sterk kveld
+ * (6,7) holder ikke til High; to sterke (8,3) gjør det. To svake (1,7) gir Low.
+ */
+export const SKILL_THRESHOLDS = { medium: 4, high: 7 } as const
+
+export const SKILL_LEVELS: SkillLevel[] = ['low', 'medium', 'high']
+
+export const SKILL_LEVEL_LABELS: Record<SkillLevel, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+}
+
+const SKILL_RANK: Record<SkillLevel, number> = { low: 0, medium: 1, high: 2 }
+
+export function skillLevelFromScore(score: number | null | undefined): SkillLevel {
+  const value = score == null || !Number.isFinite(Number(score)) ? NEUTRAL_SCORE : Number(score)
+  if (value < SKILL_THRESHOLDS.medium) return 'low'
+  if (value > SKILL_THRESHOLDS.high) return 'high'
+  return 'medium'
+}
+
+/**
+ * Om scoren holder til plassens minstekrav. Null og `low` slipper alle inn.
+ */
+export function meetsSkillLevel(score: number | null | undefined, minimum: SkillLevel | null | undefined): boolean {
+  if (!minimum || minimum === 'low') return true
+  return SKILL_RANK[skillLevelFromScore(score)] >= SKILL_RANK[minimum]
+}
+
+export function isSkillLevel(value: unknown): value is SkillLevel {
+  return value === 'low' || value === 'medium' || value === 'high'
+}
+
+// ─── Global score ────────────────────────────────────────────────────────
+
+/** Én klubbs score for komikeren, og hvor mange vurderinger den bygger på. */
+export type ClubScoreSample = { score: number; reviewCount: number }
+
+export type GlobalScore = {
+  /** Null = ingen klubb har vurdert komikeren. */
+  score: number | null
+  reviewCount: number
+  clubCount: number
+}
+
+/**
+ * Komikerens score på tvers av klubbene — bare for superadmin.
+ *
+ * Bookingen bruker den ikke. Klubbene har ikke samme publikum (se
+ * lib/artist-reviews.ts), så et snitt over alle sier noe om komikeren på
+ * plattformen, men ingenting om hvem som passer en bestemt klubb.
+ *
+ * Snittet er vektet med hvor mange vurderinger hver klubb har gitt: en klubb
+ * som har sett komikeren tolv ganger, vet mer enn en som har sett hen én
+ * gang. Klubber uten vurderinger er ikke med — deres 5,0 er ikke en mening,
+ * bare et utgangspunkt.
+ */
+export function globalScore(clubs: ClubScoreSample[]): GlobalScore {
+  const rated = clubs.filter((club) => club.reviewCount > 0 && Number.isFinite(club.score))
+  const reviewCount = rated.reduce((sum, club) => sum + club.reviewCount, 0)
+  if (reviewCount === 0) return { score: null, reviewCount: 0, clubCount: 0 }
+
+  const weighted = rated.reduce((sum, club) => sum + club.score * club.reviewCount, 0)
+  return {
+    score: Math.round((weighted / reviewCount) * 10) / 10,
+    reviewCount,
+    clubCount: rated.length,
+  }
 }
