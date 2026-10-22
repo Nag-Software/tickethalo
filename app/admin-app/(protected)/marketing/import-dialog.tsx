@@ -11,6 +11,7 @@ import {
   IMPORT_MAX_ROWS,
   SKIP_REASON_LABELS,
   guessColumnMapping,
+  importAdsConsentStatement,
   importConsentStatement,
   prepareImportRows,
   skippedRowsCsv,
@@ -30,7 +31,7 @@ import { importContactsAction } from './actions'
  */
 
 type Loaded = { fileName: string; table: ParsedCsv & { hasHeaderRow: boolean } }
-type Report = { added: number; updated: number; alreadyOnList: number; skipped: SkippedRow[] }
+type Report = { added: number; updated: number; alreadyOnList: number; adsGranted: number; skipped: SkippedRow[] }
 
 const FIELDS: Array<{ key: keyof ColumnMapping; label: string; required?: boolean }> = [
   { key: 'email', label: 'Email', required: true },
@@ -63,6 +64,7 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [mapping, setMapping] = useState<ColumnMapping | null>(null)
   const [consent, setConsent] = useState(false)
+  const [adsConsent, setAdsConsent] = useState(false)
   const [readError, setReadError] = useState<string | null>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -101,7 +103,7 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
       chunks.push(prepared.valid.slice(index, index + IMPORT_CHUNK_SIZE))
     }
 
-    const total: Report = { added: 0, updated: 0, alreadyOnList: 0, skipped: [...prepared.skipped] }
+    const total: Report = { added: 0, updated: 0, alreadyOnList: 0, adsGranted: 0, skipped: [...prepared.skipped] }
     let importId: string | null = null
     setProgress({ done: 0, total: prepared.valid.length })
 
@@ -110,6 +112,7 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
         importId,
         fileName: loaded.fileName,
         consentConfirmed: consent,
+        adsConsentConfirmed: consent && adsConsent,
         rowsTotal: loaded.table.rows.length,
         skippedInFile: prepared.skipped.length,
         rows,
@@ -129,6 +132,7 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
       total.added += result.added
       total.updated += result.updated
       total.alreadyOnList += result.alreadyOnList
+      total.adsGranted += result.adsGranted
       total.skipped.push(...result.skipped)
       setProgress((current) => current && { ...current, done: current.done + rows.length })
     }
@@ -161,10 +165,16 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
         {importError && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive">{importError}</p>}
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Added" value={report.added} />
-          <Stat label="Updated" value={report.updated} hint="Name or phone filled in" />
+          <Stat label="Updated" value={report.updated} hint={adsConsent ? 'Details or ads consent added' : 'Name or phone filled in'} />
           <Stat label="Already on list" value={report.alreadyOnList} />
           <Stat label="Skipped" value={report.skipped.length} />
         </dl>
+        {adsConsent && (
+          <p className="text-sm text-muted-foreground">
+            {report.adsGranted.toLocaleString('en-GB')} contacts can now be in your Meta export. People who withdrew
+            their ads consent or unsubscribed did not get it back.
+          </p>
+        )}
         {report.skipped.length > 0 && <SkippedList skipped={report.skipped} onDownload={() => downloadSkipped(report.skipped)} />}
         <div className="flex justify-end">
           <Button onClick={onDone}>Done</Button>
@@ -293,7 +303,10 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
           type="checkbox"
           checked={consent}
           disabled={importing}
-          onChange={(event) => setConsent(event.target.checked)}
+          onChange={(event) => {
+            setConsent(event.target.checked)
+            if (!event.target.checked) setAdsConsent(false)
+          }}
           className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
         />
         <span>
@@ -301,6 +314,25 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
           <span className="mt-1 block text-xs text-muted-foreground">
             Only import people who have said yes to emails from you — for example on a sign-up list or in another
             ticketing system. People who have unsubscribed from your list are never added again.
+          </span>
+        </span>
+      </label>
+
+      {/* Annonser er et eget formål og et eget ja. Av som standard, og bare
+          sammen med e-postbekreftelsen — se migrasjon 090. */}
+      <label className={`-mt-2 flex items-start gap-3 rounded-lg border p-3 ${consent ? 'bg-muted/30' : 'opacity-50'}`}>
+        <input
+          type="checkbox"
+          checked={adsConsent}
+          disabled={importing || !consent}
+          onChange={(event) => setAdsConsent(event.target.checked)}
+          className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+        />
+        <span>
+          <span className="font-medium">{importAdsConsentStatement(clubName)}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Optional. Tick only if they said yes to ads specifically — agreeing to emails is not enough. They can
+            then be in your Meta export.
           </span>
         </span>
       </label>
@@ -315,6 +347,7 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
             setLoaded(null)
             setMapping(null)
             setConsent(false)
+            setAdsConsent(false)
           }}
         >
           Choose another file

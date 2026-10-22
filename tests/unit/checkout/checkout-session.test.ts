@@ -193,6 +193,7 @@ describe('createCheckoutSession — amount and commission', () => {
       quantity: '3',
       item_1: `${STANDARD}:3:30000:9000`,
       marketing_opt_in: '0',
+      ads_opt_in: '0',
     })
     expect(state.typeUpdates).toEqual([])
   })
@@ -248,6 +249,14 @@ describe('createCheckoutSession — amount and commission', () => {
     expect(sessionParams().phone_number_collection).toEqual({ enabled: true })
     expect(sessionParams().metadata.marketing_opt_in).toBe('1')
     expect(sessionParams().allow_promotion_codes).toBe(false)
+  })
+
+  it('passes the ads opt-in on only together with the email opt-in', async () => {
+    await createCheckoutSession('show_1', url, { ...one(), marketingOptIn: true, adsOptIn: true })
+    expect(sessionParams().metadata).toMatchObject({ marketing_opt_in: '1', ads_opt_in: '1' })
+
+    await createCheckoutSession('show_1', url, { ...one(), marketingOptIn: false, adsOptIn: true })
+    expect(sessionParams(1).metadata).toMatchObject({ marketing_opt_in: '0', ads_opt_in: '0' })
   })
 
   it('sends the cart to the cancel page', async () => {

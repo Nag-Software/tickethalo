@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isUnsubscribeToken } from './unsubscribe'
+import { adsConsentState, type AdsConsentState } from './contact-export'
 
 /**
  * Oppslag og endring på token, for avmeldingssiden og one-click-ruten.
@@ -13,6 +14,8 @@ export type UnsubscribeTarget = {
   email: string
   clubName: string
   unsubscribedAt: string | null
+  /** `active`: siden får en knapp for å stoppe bare annonsene. `withdrawn`: siden sier at de er stoppet. */
+  ads: AdsConsentState
 }
 
 export async function findUnsubscribeTarget(token: string): Promise<UnsubscribeTarget | null> {
@@ -20,13 +23,18 @@ export async function findUnsubscribeTarget(token: string): Promise<UnsubscribeT
   const db = createAdminClient()
   const { data: contact } = await db
     .from('club_contacts')
-    .select('email, club_id, unsubscribed_at')
+    .select('email, club_id, unsubscribed_at, ads_consent_at, ads_withdrawn_at')
     .eq('unsubscribe_token', token)
     .maybeSingle()
   if (!contact) return null
 
   const { data: club } = await db.from('clubs').select('name').eq('id', contact.club_id).maybeSingle()
-  return { email: contact.email, clubName: club?.name ?? 'the organiser', unsubscribedAt: contact.unsubscribed_at }
+  return {
+    email: contact.email,
+    clubName: club?.name ?? 'the organiser',
+    unsubscribedAt: contact.unsubscribed_at,
+    ads: adsConsentState(contact),
+  }
 }
 
 /** Idempotent: en som allerede er avmeldt, beholder datoen fra første gang. */
@@ -45,4 +53,23 @@ export async function setUnsubscribed(token: string, unsubscribed: boolean): Pro
   if ((data?.length ?? 0) > 0) return true
   // Ingen rad endret: enten allerede i den tilstanden, eller ukjent token.
   return (await findUnsubscribeTarget(token)) !== null
+}
+
+/**
+ * Stopper bare annonsene: kontakten får fortsatt e-post, men blir ikke med i
+ * neste Meta-eksport. Full avmelding trekker annonsene også (trigger i 090).
+ */
+export async function withdrawAdsConsent(token: string): Promise<boolean> {
+  if (!isUnsubscribeToken(token)) return false
+  const { error } = await createAdminClient()
+    .from('club_contacts')
+    .update({ ads_withdrawn_at: new Date().toISOString() })
+    .eq('unsubscribe_token', token)
+    .not('ads_consent_at', 'is', null)
+    .is('ads_withdrawn_at', null)
+  if (error) {
+    console.error(`[Unsubscribe] Could not withdraw ads consent: ${error.message}`)
+    return false
+  }
+  return true
 }
