@@ -22,7 +22,7 @@ import { saveClubProfileAction } from '@/app/admin-app/(protected)/my-club/actio
 import type { Club, ClubLocation } from '@/types/database'
 
 type ClubProfileFormProps = {
-  club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency' | 'lineup_deadline_days'>
+  club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency' | 'lineup_deadline_days' | 'lineup_reminder_default'>
   /** Plattformens standard, som klubben følger når feltet står tomt. */
   defaultLineupDeadlineDays: number
   locations: Array<Pick<ClubLocation, 'id' | 'name' | 'address_line'>>
@@ -183,6 +183,26 @@ export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlin
               gets close, booking sends every offer at once instead of waiting for the best comedians to
               reply. Leave it empty to follow the platform default of {defaultLineupDeadlineDays} days.
             </FieldDescription>
+          </Field>
+
+          <Field className="col-span-12 min-w-0 gap-1.5">
+            {/* Uten markøren kan ikke handlingen skille en avkrysning som er tatt bort fra et skjema uten feltet. */}
+            <input type="hidden" name="lineup_reminder_default_field" value="1" />
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="lineup_reminder_default"
+                defaultChecked={club.lineup_reminder_default}
+                className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+              />
+              <span>
+                <span className="font-medium">Remind the line-up 5 days before each show</span>
+                <span className={`mt-0.5 block ${FIELD_HINT_CLASS}`}>
+                  An email with the date, time, venue, their spot and who to contact. You can turn it off for a
+                  single show under Communication.
+                </span>
+              </span>
+            </label>
           </Field>
         </FieldSection>
 

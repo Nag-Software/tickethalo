@@ -25,6 +25,7 @@ on:
         default: booking
         options:
           - booking
+          - lineup-reminders
           - stripe-fees
           - generate-settlements
       period:
@@ -63,6 +64,21 @@ jobs:
           curl --fail --show-error --silent \
             --header "Authorization: Bearer ${CRON_SECRET}" \
             "${APP_URL}/api/cron/booking"
+
+  lineup-reminders:
+    # Samme morgen som bookingen, men egen jobb: feiler den ene, går den andre.
+    if: github.event.schedule == '0 6 * * *' || inputs.job == 'lineup-reminders'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remind line-ups of shows in five days
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          APP_URL="${APP_URL%/}"
+          curl --fail --show-error --silent \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/lineup-reminders"
 
   generate-settlements:
     if: github.event.schedule == '0 7 1 * *' || inputs.job == 'generate-settlements'

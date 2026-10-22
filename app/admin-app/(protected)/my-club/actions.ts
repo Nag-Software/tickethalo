@@ -192,6 +192,11 @@ export async function saveClubProfileAction(formData: FormData) {
     lineupDeadlineDays = parsed
   }
 
+  // Påminnelsen 5 dager før, på show som ikke har tatt stilling selv.
+  const lineupReminderDefault = formData.has('lineup_reminder_default_field')
+    ? formData.get('lineup_reminder_default') === 'on'
+    : undefined
+
   const logoFile = getLogoFile(formData)
   // Tomt felt betyr at logoen ble fjernet i grensesnittet.
   const keepsExistingLogo = getOptionalText(formData, 'existingLogoUrl') === currentClub.logo_url
@@ -217,6 +222,7 @@ export async function saveClubProfileAction(formData: FormData) {
       description,
       currency,
       lineup_deadline_days: lineupDeadlineDays,
+      ...(lineupReminderDefault === undefined ? {} : { lineup_reminder_default: lineupReminderDefault }),
       logo_url: logoUrl,
       ...(brandColor === undefined ? {} : { brand_color: brandColor }),
     })

@@ -17,7 +17,7 @@ export default async function MyClubPage() {
   const [{ data: club, error: clubError }, { data: locations }, settings, comedianCard] = await Promise.all([
     db
       .from('clubs')
-      .select('id, name, slug, description, logo_url, city, currency, lineup_deadline_days')
+      .select('id, name, slug, description, logo_url, city, currency, lineup_deadline_days, lineup_reminder_default')
       .eq('id', clubId)
       .single(),
     db

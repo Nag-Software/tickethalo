@@ -12,6 +12,7 @@ const navItems = [
   { label: 'Open spots', href: '/artist-app/open-spots' },
   { label: 'Availability', href: '/artist-app/availability' },
   { label: 'Bookings', href: '/artist-app/bookings' },
+  { label: 'Messages', href: '/artist-app/messages' },
   { label: 'Payouts', href: '/artist-app/economy' },
   { label: 'Profile', href: '/artist-app/profile' },
 ]
@@ -20,9 +21,12 @@ export function ArtistTopbar({
   name,
   email,
   clubPortalHref = null,
+  unreadMessages = 0,
 }: {
   name: string
   email: string
+  /** Uleste meldinger fra klubbene. Står på «Messages». */
+  unreadMessages?: number
   /** Satt bare når innloggingen også er klubbadmin. Se `getPortalAccessForAuthUser`. */
   clubPortalHref?: string | null
 }) {
@@ -31,6 +35,15 @@ export function ArtistTopbar({
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href || pathname === `${href}/` : pathname.startsWith(href)
+
+  const badgeFor = (href: string) =>
+    href === '/artist-app/messages' && unreadMessages > 0 ? (
+      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ev-text)] px-1 text-[10px] font-bold text-[var(--ev-bg)]">
+        <span className="sr-only">, </span>
+        {unreadMessages}
+        <span className="sr-only"> unread</span>
+      </span>
+    ) : null
 
   // Én innlogging eier begge sidene, så utloggingen gjelder begge.
   const logOutLabel = clubPortalHref ? 'Log out of club and comedian' : 'Log out'
@@ -71,6 +84,7 @@ export function ArtistTopbar({
               )}
             >
               {item.label}
+              {badgeFor(item.href)}
             </Link>
           ))}
         </nav>
@@ -136,6 +150,7 @@ export function ArtistTopbar({
             )}
           >
             {item.label}
+            {badgeFor(item.href)}
           </Link>
         ))}
       </nav>

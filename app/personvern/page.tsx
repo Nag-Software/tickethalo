@@ -6,14 +6,14 @@ export const metadata = {
   description: 'What we store when you buy a ticket, why, and for how long.',
 }
 
-const UPDATED = '20 October 2026'
+const UPDATED = '22 October 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy"
-      intro="What we store when you buy a ticket, why we store it, and who can see it."
+      intro="What we store when you buy a ticket or perform at a show, why we store it, and who can see it."
       updated={UPDATED}
     >
       <LegalSection title="What we store">
@@ -71,6 +71,27 @@ export default function PrivacyPage() {
           Every email has an unsubscribe link, and unsubscribing takes effect at once. We keep your
           address marked as unsubscribed so it is not added again by mistake. To be removed
           completely, ask the organiser or write to us.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="If you perform at a show">
+        <p>
+          When a club books you, it can send messages to everyone on the line-up of that show. They
+          come by email and are kept in your comedian portal, together with when you opened them,
+          so you can find them again. Replies go by email straight to the club. The legal basis is
+          the booking agreement between you and the club.
+        </p>
+        <p>
+          You can add a WhatsApp number to your profile. It is optional, and it is only saved if you
+          tick the box next to it. Clubs that book you can then see the number and use it to add you
+          to a group chat for the show. When you host a show, the rest of that line-up sees it as the
+          host contact. The legal basis is your consent.
+        </p>
+        <p>
+          A WhatsApp group is run by WhatsApp, not by Tickethalo, and everyone in it can see your
+          number. To withdraw your consent, clear the number or untick the box in your profile — it
+          is deleted from Tickethalo at once. A club that has already saved it, or added you to a
+          group, keeps what it has; ask the club to remove it.
         </p>
       </LegalSection>
 

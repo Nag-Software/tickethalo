@@ -7,6 +7,7 @@ import { osloDateString } from '@/lib/booking-schedule'
 import { lookupCountry } from '@/lib/geo'
 import { normalizeLanguages } from '@/lib/languages'
 import { socialLinksFromForm } from '@/lib/social-links'
+import { normalizeWhatsAppNumber } from '@/lib/whatsapp'
 
 export async function updateArtistProfileAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
@@ -23,6 +24,29 @@ export async function updateArtistProfileAction(formData: FormData) {
   }
 
   const socialLinks = socialLinksFromForm(formData)
+  const country = countryValue(formData.get('country'))
+
+  // WhatsApp-nummeret lagres bare med avkrysningen: klubber som booker
+  // komikeren ser det, og lineupen på show hen er vert for. Tar hen bort
+  // krysset, slettes nummeret — ikke bare skjules.
+  const whatsappText = textValue(formData.get('whatsapp_number'))
+  const whatsappConsent = formData.get('whatsapp_consent') === 'on'
+  let whatsapp: { whatsapp_number: string | null; whatsapp_consent_at: string | null } = {
+    whatsapp_number: null,
+    whatsapp_consent_at: null,
+  }
+  if (whatsappText && whatsappConsent) {
+    const number = normalizeWhatsAppNumber(whatsappText, country ?? artist.country)
+    if (!number) return { error: 'That WhatsApp number does not look right. Write it with the country code, like +47 912 34 567.' }
+    whatsapp = {
+      whatsapp_number: number,
+      // Samtykket gjelder fra første gang det ble gitt, ikke fra hver lagring.
+      whatsapp_consent_at: artist.whatsapp_consent_at ?? new Date().toISOString(),
+    }
+  } else if (whatsappText && !whatsappConsent) {
+    return { error: 'Tick the box to share your WhatsApp number with clubs, or leave the number empty.' }
+  }
+
   const languageValues = normalizeLanguages(formData.getAll('language').map((value) => String(value)))
 
   // `category` settes bevisst ikke her. Rollen avgjør hvilke show komikeren
@@ -37,9 +61,10 @@ export async function updateArtistProfileAction(formData: FormData) {
     profile_image_url: profileImageUrl,
     bio: textValue(formData.get('bio')) ?? null,
     city: textValue(formData.get('city')) ?? null,
-    country: countryValue(formData.get('country')),
+    country,
     languages: languageValues.length > 0 ? languageValues : null,
     social_links: socialLinks,
+    ...whatsapp,
   }).eq('id', artist.id)
 
   revalidatePath('/artist-app/profile')

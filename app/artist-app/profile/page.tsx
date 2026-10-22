@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
 import { updateArtistProfileAction } from '../actions'
@@ -10,6 +11,7 @@ import { ProfileImageInput } from '@/components/artist/profile-image-input'
 import { SocialHandleInput } from '@/components/artist/social-handle-input'
 import { socialHandle } from '@/lib/social-links'
 import { shouldBypassImageOptimization } from '@/lib/utils'
+import { formatWhatsAppNumber } from '@/lib/whatsapp'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 
 const inputClass =
@@ -50,6 +52,28 @@ export default async function ArtistProfilePage() {
                 <Field label="Phone">
                   <input name="phone" type="tel" defaultValue={artist.phone ?? ''} className={inputClass} />
                 </Field>
+                <Field label="WhatsApp" hint="Optional. With the country code, like +47 912 34 567.">
+                  <input
+                    name="whatsapp_number"
+                    type="tel"
+                    autoComplete="tel"
+                    defaultValue={formatWhatsAppNumber(artist.whatsapp_number)}
+                    placeholder="+47 912 34 567"
+                    className={inputClass}
+                  />
+                </Field>
+                <label className="flex items-start gap-3 self-end rounded-xl bg-[var(--ev-bg)] p-3 text-[13px] leading-relaxed ring-1 ring-inset ring-[var(--ev-line)]">
+                  <input
+                    type="checkbox"
+                    name="whatsapp_consent"
+                    defaultChecked={Boolean(artist.whatsapp_consent_at)}
+                    className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+                  />
+                  <span>
+                    Clubs that book me can see this number and add me to a group chat for the show. When I host a
+                    show, its line-up sees it too. <Link href="/personvern" className="underline underline-offset-2">Privacy</Link>
+                  </span>
+                </label>
                 <Field label="Account number" hint="Where your fee is paid after a show.">
                   <input
                     name="bank_account_number"
