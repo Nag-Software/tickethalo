@@ -25,6 +25,13 @@ const deliverTicketEmail = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/checkout/finalize', () => ({ deliverTicketEmail }))
 
+const recordAdsOptIn = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/checkout/ads-opt-in', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/checkout/ads-opt-in')>()),
+  recordAdsOptIn,
+}))
+
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from(table: string) {
@@ -116,6 +123,7 @@ const input = {
   email: 'Ada@Example.com',
   name: 'Ada',
   marketingOptIn: false,
+  adsOptIn: false,
 }
 
 async function checkoutError(promise: Promise<unknown>) {
@@ -132,6 +140,7 @@ beforeEach(() => {
   state.rpcCalls = []
   state.deletedOrders = []
   deliverTicketEmail.mockReset()
+  recordAdsOptIn.mockReset()
   deliverTicketEmail.mockResolvedValue({ emailSent: true })
 })
 
@@ -195,6 +204,16 @@ describe('claimFreeTickets', () => {
   it('passes the opt-in on to the order', async () => {
     await claimFreeTickets('show_1', 'https://tickethalo.com', { ...input, marketingOptIn: true })
     expect(state.rpcCalls[0]).toMatchObject({ p_marketing_opt_in: true })
+    expect(recordAdsOptIn).not.toHaveBeenCalled()
+  })
+
+  it('records the ads opt-in on the order after it is created, only together with emails', async () => {
+    await claimFreeTickets('show_1', 'https://tickethalo.com', { ...input, marketingOptIn: true, adsOptIn: true })
+    expect(recordAdsOptIn).toHaveBeenCalledWith('order_1')
+
+    recordAdsOptIn.mockReset()
+    await claimFreeTickets('show_1', 'https://tickethalo.com', { ...input, marketingOptIn: false, adsOptIn: true })
+    expect(recordAdsOptIn).not.toHaveBeenCalled()
   })
 
   it('refuses a cart with a type that is not free', async () => {
@@ -306,6 +325,7 @@ describe('parseFreeTicketInput', () => {
         email: 'ada@example.com',
         name: 'Ada',
         marketingOptIn: true,
+        adsOptIn: false,
       },
     })
     expect(parseFreeTicketInput(form({ buyer_name: '', buyer_email: 'ada@example.com' }))).toEqual({ ok: false })
@@ -316,7 +336,17 @@ describe('parseFreeTicketInput', () => {
   it('keeps the opt-in off unless it was ticked, and the cart within one order', () => {
     expect(
       parseFreeTicketInput(form({ [`qty_${FREE}`]: '99', buyer_name: 'Ada', buyer_email: 'ada@example.com' })),
-    ).toMatchObject({ value: { items: [{ typeId: FREE, quantity: 10 }], marketingOptIn: false } })
+    ).toMatchObject({ value: { items: [{ typeId: FREE, quantity: 10 }], marketingOptIn: false, adsOptIn: false } })
+  })
+
+  it('reads the ads box only when the email box is ticked too', () => {
+    const base = { buyer_name: 'Ada', buyer_email: 'ada@example.com' }
+    expect(parseFreeTicketInput(form({ ...base, marketing_opt_in: 'on', ads_opt_in: 'on' }))).toMatchObject({
+      value: { marketingOptIn: true, adsOptIn: true },
+    })
+    expect(parseFreeTicketInput(form({ ...base, ads_opt_in: 'on' }))).toMatchObject({
+      value: { marketingOptIn: false, adsOptIn: false },
+    })
     expect(
       parseFreeTicketInput(form({ [`qty_${FREE}`]: '0', buyer_name: 'Ada', buyer_email: 'ada@example.com' })),
     ).toMatchObject({ value: { items: [] } })

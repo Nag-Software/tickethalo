@@ -69,8 +69,14 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
               Unsubscribe from {target.clubName}
             </h1>
             <p className="mt-4 text-[17px] leading-relaxed text-[var(--ev-muted)] sm:text-[15px]">
-              {maskEmail(target.email)} will stop getting emails about new shows from {target.clubName}.
+              {maskEmail(target.email)} will stop getting emails about new shows from {target.clubName}
+              {target.ads === 'active' ? ', and will no longer be used to show you their ads on Facebook and Instagram.' : '.'}
             </p>
+            {target.ads === 'withdrawn' && (
+              <p className="mt-3 text-[15px] leading-relaxed text-[var(--ev-muted)] sm:text-[14px]">
+                Ads are stopped: {target.clubName} will not use this address to show you ads on Facebook and Instagram.
+              </p>
+            )}
             <form action={setSubscriptionAction} className="mt-8">
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="mode" value="unsubscribe" />
@@ -82,6 +88,20 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
                 Unsubscribe
               </button>
             </form>
+            {/* Den som vil beholde e-postene, men ikke annonsene. */}
+            {target.ads === 'active' && (
+              <form action={setSubscriptionAction} className="mt-3">
+                <input type="hidden" name="token" value={token} />
+                <input type="hidden" name="mode" value="stop_ads" />
+                <button
+                  type="submit"
+                  className="h-12 w-full border border-[var(--ev-line)] px-6 text-[16px] font-semibold text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-text)]/5"
+                  style={{ borderRadius: 'var(--ev-r-chip)' }}
+                >
+                  Keep the emails, stop the ads
+                </button>
+              </form>
+            )}
           </>
         )}
         <p className="mt-10 text-[13px] text-[var(--ev-faint)]">

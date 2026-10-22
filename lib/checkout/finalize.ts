@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { recordError } from '@/lib/error-log'
+import { recordAdsOptIn } from '@/lib/checkout/ads-opt-in'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendTicketPurchaseEmail } from '@/lib/email/mailer'
@@ -277,6 +278,11 @@ export async function finalizeCheckoutSession(
       cancellationReason,
       refunded,
     }
+  }
+
+  // Også ved `duplicate`: da får en oppdatering som feilet første gang, et nytt forsøk.
+  if (session.metadata?.marketing_opt_in === '1' && session.metadata?.ads_opt_in === '1') {
+    await recordAdsOptIn(completion.order_id)
   }
 
   const { emailSent, emailError } = await deliverTicketEmail({

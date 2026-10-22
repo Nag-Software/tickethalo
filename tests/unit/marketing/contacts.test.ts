@@ -1,9 +1,14 @@
 // @vitest-environment node
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseCsv } from '@/lib/marketing/csv'
 import {
+  checkoutAdsOptInLabel,
   checkoutOptInLabel,
+  importAdsConsentStatement,
+  importMayGrantAds,
   guessColumnMapping,
   isMailable,
   isValidEmail,
@@ -103,5 +108,31 @@ describe('checkoutOptInLabel', () => {
   it('names the club the consent is for', () => {
     expect(checkoutOptInLabel('Crønch Comedy')).toBe('Yes, send me emails from Crønch Comedy about upcoming shows.')
     expect(checkoutOptInLabel(null)).toBe('Yes, send me emails from the organiser about upcoming shows.')
+  })
+})
+
+describe('ads consent', () => {
+  it('names the club in the checkout box and the import confirmation', () => {
+    expect(checkoutAdsOptInLabel('Crønch Comedy')).toBe('Show me relevant ads from Crønch Comedy on Facebook and Instagram.')
+    expect(checkoutAdsOptInLabel(' ')).toBe('Show me relevant ads from the organiser on Facebook and Instagram.')
+    expect(importAdsConsentStatement('Crønch Comedy')).toBe(
+      'These people have also agreed to see ads from Crønch Comedy on Facebook and Instagram.',
+    )
+  })
+
+  it('stores the same words in the database as the checkout shows', () => {
+    // Triggeren i 090 bygger teksten selv. Står den ikke likt, lagres en annen
+    // ordlyd enn den kjøperen sa ja til.
+    const sql = readFileSync(join(process.cwd(), 'supabase/migrations/090_club_contact_ads_consent.sql'), 'utf8')
+    const [before, after] = checkoutAdsOptInLabel('§CLUB§').split('§CLUB§')
+    expect(sql).toContain(`'${before}' || coalesce(v_club_name, 'the organiser') || '${after}'`)
+  })
+
+  it('lets an import grant ads only to someone who never said yes or no', () => {
+    const none = { ads_consent_at: null, ads_withdrawn_at: null, unsubscribed_at: null }
+    expect(importMayGrantAds(none)).toBe(true)
+    expect(importMayGrantAds({ ...none, ads_consent_at: '2026-10-22T10:00:00Z' })).toBe(false)
+    expect(importMayGrantAds({ ...none, ads_consent_at: '2026-10-22T10:00:00Z', ads_withdrawn_at: '2026-10-23T10:00:00Z' })).toBe(false)
+    expect(importMayGrantAds({ ...none, unsubscribed_at: '2026-10-23T10:00:00Z' })).toBe(false)
   })
 })

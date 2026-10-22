@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createCheckoutSession } from '@/lib/actions/checkout'
 import { claimFreeTickets, parseFreeTicketInput } from '@/lib/checkout/free'
+import { readAdsOptIn } from '@/lib/checkout/ads-opt-in'
 import { appUrl } from '@/lib/app-url'
 import { getUnlockedTicketTypes } from '@/lib/public-events'
 import { type PublicTicketType, normalizePromoCode, parseOrderItems } from '@/lib/ticket-types'
@@ -35,6 +36,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
   const items = parseOrderItems(formData.entries())
   const promoCode = normalizePromoCode(String(formData.get('promo_code') ?? ''))
   const marketingOptIn = formData.get('marketing_opt_in') === 'on' || formData.get('marketing_opt_in') === '1'
+  const adsOptIn = readAdsOptIn(formData, marketingOptIn)
 
   // Opprinnelsen havner i suksesslenken og i QR-koden på billetten. Den
   // skal være det faste domenet (`APP_URL`), ikke det kjøperen tilfeldigvis
@@ -88,7 +90,7 @@ export async function startCheckoutAction(formData: FormData): Promise<CheckoutA
 
   let checkoutUrl: string
   try {
-    const session = await createCheckoutSession(showId, sourceUrl, { items, promoCode, marketingOptIn })
+    const session = await createCheckoutSession(showId, sourceUrl, { items, promoCode, marketingOptIn, adsOptIn })
     checkoutUrl = session.url
   } catch (error) {
     // Next redacts messages from thrown errors in production, so expected

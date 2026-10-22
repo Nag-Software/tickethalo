@@ -2,12 +2,18 @@
 
 import { revalidatePath } from 'next/cache'
 import { isUnsubscribeToken } from '@/lib/marketing/unsubscribe'
-import { setUnsubscribed } from '@/lib/marketing/unsubscribe-db'
+import { setUnsubscribed, withdrawAdsConsent } from '@/lib/marketing/unsubscribe-db'
 
-/** Knappen på avmeldingssiden — og angreknappen etterpå. */
+/**
+ * Knappene på avmeldingssiden: meld av alt, stopp bare annonsene, og
+ * angreknappen etter avmelding. Angrer man, kommer e-postene tilbake, men
+ * ikke annonsene — de krever et nytt ja.
+ */
 export async function setSubscriptionAction(formData: FormData) {
   const token = String(formData.get('token') ?? '')
   if (!isUnsubscribeToken(token)) return
-  await setUnsubscribed(token, formData.get('mode') !== 'resubscribe')
+  const mode = formData.get('mode')
+  if (mode === 'stop_ads') await withdrawAdsConsent(token)
+  else await setUnsubscribed(token, mode !== 'resubscribe')
   revalidatePath(`/unsubscribe/${token}`)
 }

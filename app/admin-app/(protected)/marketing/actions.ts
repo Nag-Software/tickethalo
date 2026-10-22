@@ -8,7 +8,9 @@ import {
   IMPORT_CHUNK_SIZE,
   cleanName,
   cleanPhone,
+  importAdsConsentStatement,
   importConsentStatement,
+  importMayGrantAds,
   isValidEmail,
   normalizeEmail,
   type ImportRow,
@@ -29,6 +31,8 @@ export type ImportChunkResult =
       added: number
       updated: number
       alreadyOnList: number
+      /** Fikk annonsesamtykke i denne biten — nye og eksisterende. */
+      adsGranted: number
       skipped: SkippedRow[]
     }
   | { error: string }
@@ -49,11 +53,17 @@ async function currentProfileId() {
  * - Ny adresse: legges til, med importen som samtykkekilde.
  * - Står på lista: navn og telefon fylles der de mangler; samtykket røres ikke.
  * - Har meldt seg av: hoppes over. En import skal aldri melde noen på igjen.
+ *
+ * Har klubben også bekreftet annonsesamtykke (lagret på importen), får nye
+ * kontakter det, og eksisterende som ikke har det og ikke har trukket det
+ * tilbake (`importMayGrantAds`). Bekreftelsen leses fra importraden, ikke fra
+ * hver bit — det er den klubben krysset av for som gjelder.
  */
 export async function importContactsAction(input: {
   importId: string | null
   fileName: string | null
   consentConfirmed: boolean
+  adsConsentConfirmed?: boolean
   rowsTotal: number
   skippedInFile: number
   rows: ImportRow[]
@@ -70,18 +80,21 @@ export async function importContactsAction(input: {
     if (!club) return { error: 'Club not found.' }
 
     let importId = input.importId
+    let adsStatement: string | null = null
     if (importId) {
       const { data: existing } = await db
         .from('club_contact_imports')
-        .select('id')
+        .select('id, ads_consent_statement')
         .eq('id', importId)
         .eq('club_id', clubId)
         .maybeSingle()
       if (!existing) return { error: 'This import was not found. Start again.' }
+      adsStatement = existing.ads_consent_statement
     } else {
       if (input.consentConfirmed !== true) {
         return { error: 'Confirm that these people have agreed to receive emails from you.' }
       }
+      adsStatement = input.adsConsentConfirmed === true ? importAdsConsentStatement(club.name) : null
       const { data: created, error } = await db
         .from('club_contact_imports')
         .insert({
@@ -89,6 +102,7 @@ export async function importContactsAction(input: {
           imported_by: await currentProfileId(),
           file_name: input.fileName?.slice(0, 200) ?? null,
           consent_statement: importConsentStatement(club.name),
+          ads_consent_statement: adsStatement,
           rows_total: Math.max(0, Math.floor(Number(input.rowsTotal) || 0)),
           skipped: Math.max(0, Math.floor(Number(input.skippedInFile) || 0)),
         })
@@ -108,11 +122,19 @@ export async function importContactsAction(input: {
     }
 
     // Oppslaget i biter: `in()` blir en URL, og tusen adresser er for langt.
-    const existing = new Map<string, { id: string; name: string | null; phone: string | null; unsubscribed_at: string | null }>()
+    type Existing = {
+      id: string
+      name: string | null
+      phone: string | null
+      unsubscribed_at: string | null
+      ads_consent_at: string | null
+      ads_withdrawn_at: string | null
+    }
+    const existing = new Map<string, Existing>()
     for (const emails of chunk([...rows.keys()], 200)) {
       const { data, error } = await db
         .from('club_contacts')
-        .select('id, email, name, phone, unsubscribed_at')
+        .select('id, email, name, phone, unsubscribed_at, ads_consent_at, ads_withdrawn_at')
         .eq('club_id', clubId)
         .in('email', emails)
       if (error) return { error: `Could not read your list: ${error.message}` }
@@ -121,10 +143,19 @@ export async function importContactsAction(input: {
 
     const consentAt = new Date().toISOString()
     const statement = importConsentStatement(club.name)
+    const adsFields = adsStatement
+      ? {
+          ads_consent_at: consentAt,
+          ads_consent_source: 'import' as const,
+          ads_consent_text: adsStatement,
+          ads_consent_import_id: importId,
+        }
+      : null
     const toInsert: ImportRow[] = []
     const skipped: SkippedRow[] = []
     let updated = 0
     let alreadyOnList = 0
+    let adsGranted = 0
 
     for (const row of rows.values()) {
       const contact = existing.get(row.email)
@@ -136,9 +167,11 @@ export async function importContactsAction(input: {
         skipped.push({ line: row.line, value: row.email, reason: 'unsubscribed' })
         continue
       }
+      const grantAds = adsFields !== null && importMayGrantAds(contact)
       const patch = {
         ...(contact.name ? {} : row.name ? { name: row.name } : {}),
         ...(contact.phone ? {} : row.phone ? { phone: row.phone } : {}),
+        ...(grantAds && adsFields ? adsFields : {}),
       }
       if (Object.keys(patch).length === 0) {
         alreadyOnList += 1
@@ -147,6 +180,7 @@ export async function importContactsAction(input: {
       const { error } = await db.from('club_contacts').update(patch).eq('id', contact.id)
       if (error) return { error: `Could not update ${row.email}: ${error.message}` }
       updated += 1
+      if (grantAds) adsGranted += 1
     }
 
     let added = 0
@@ -165,6 +199,7 @@ export async function importContactsAction(input: {
             consent_at: consentAt,
             consent_text: statement,
             consent_import_id: importId,
+            ...(adsFields ?? {}),
           })),
           { onConflict: 'club_id,email', ignoreDuplicates: true },
         )
@@ -172,6 +207,7 @@ export async function importContactsAction(input: {
       if (error) return { error: `Could not add contacts: ${error.message}` }
       added = data?.length ?? 0
       alreadyOnList += toInsert.length - added
+      if (adsFields) adsGranted += added
     }
 
     const { data: totals } = await db
@@ -189,7 +225,7 @@ export async function importContactsAction(input: {
       .eq('id', importId)
 
     revalidatePath('/admin-app/marketing')
-    return { importId, added, updated, alreadyOnList, skipped }
+    return { importId, added, updated, alreadyOnList, adsGranted, skipped }
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'The import failed. Please try again.' }
   }
@@ -239,5 +275,31 @@ export async function unsubscribeContactAction(formData: FormData): Promise<{ er
     return { ok: true }
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Could not unsubscribe the contact.' }
+  }
+}
+
+/**
+ * Trekker annonsesamtykket på klubbens vegne — når noen ber om å slippe
+ * annonsene, men vil ha e-postene. Kontakten blir ikke med i neste Meta-eksport.
+ */
+export async function stopAdsContactAction(formData: FormData): Promise<{ error: string } | { ok: true }> {
+  try {
+    const clubId = await getDefaultClubIdForAdmin()
+    const contactId = String(formData.get('contact_id') ?? '')
+    if (!contactId) return { error: 'Missing contact.' }
+
+    const { error } = await createAdminClient()
+      .from('club_contacts')
+      .update({ ads_withdrawn_at: new Date().toISOString() })
+      .eq('id', contactId)
+      .eq('club_id', clubId)
+      .not('ads_consent_at', 'is', null)
+      .is('ads_withdrawn_at', null)
+    if (error) return { error: `Could not stop ads for the contact: ${error.message}` }
+
+    revalidatePath('/admin-app/marketing')
+    return { ok: true }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Could not stop ads for the contact.' }
   }
 }

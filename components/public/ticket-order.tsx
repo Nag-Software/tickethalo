@@ -17,7 +17,7 @@ import { type PublicTicketSalesState, ticketSalesButtonLabel } from '@/lib/ticke
 import { DEFAULT_TICKET_TYPE_NAME, type PublicTicketType, formatDiscount } from '@/lib/ticket-types'
 import { MAX_TICKETS_PER_ORDER } from '@/lib/tickets'
 import { cn } from '@/lib/utils'
-import { checkoutOptInLabel } from '@/lib/marketing/contacts'
+import { checkoutAdsOptInLabel, checkoutOptInLabel } from '@/lib/marketing/contacts'
 
 
 const FIELD_CLASS =
@@ -304,15 +304,7 @@ export function TicketOrder({
             </>
           )}
 
-          {/* Av som standard: samtykket skal være kjøperens eget valg. */}
-          <label className="flex items-start gap-3 text-[14px] leading-snug text-[var(--ev-muted)] sm:text-[13px]">
-            <input
-              type="checkbox"
-              name="marketing_opt_in"
-              className="mt-0.5 size-5 shrink-0 accent-[var(--ev-accent-fill)] sm:size-4"
-            />
-            <span>{checkoutOptInLabel(clubName)}</span>
-          </label>
+          <MarketingConsent clubName={clubName} />
 
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline justify-between gap-4 border-t border-[var(--ev-line)] pt-4">
@@ -533,5 +525,45 @@ function StepButton({
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * E-post og annonser, to frivillige valg. Begge er av som standard: samtykket
+ * skal være kjøperens eget. Annonseboksen vises bare når e-postboksen er
+ * krysset av — annonsesamtykket er et tillegg til e-postlista — og fjernes
+ * e-postkrysset, fjernes annonsekrysset med det.
+ */
+function MarketingConsent({ clubName }: { clubName?: string | null }) {
+  const [emails, setEmails] = useState(false)
+  const [ads, setAds] = useState(false)
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex items-start gap-3 text-[14px] leading-snug text-[var(--ev-muted)] sm:text-[13px]">
+        <input
+          type="checkbox"
+          name="marketing_opt_in"
+          checked={emails}
+          onChange={(event) => {
+            setEmails(event.target.checked)
+            if (!event.target.checked) setAds(false)
+          }}
+          className="mt-0.5 size-5 shrink-0 accent-[var(--ev-accent-fill)] sm:size-4"
+        />
+        <span>{checkoutOptInLabel(clubName)}</span>
+      </label>
+      {emails && (
+        <label className="ml-8 flex items-start gap-3 text-[14px] leading-snug text-[var(--ev-muted)] sm:ml-7 sm:text-[13px]">
+          <input
+            type="checkbox"
+            name="ads_opt_in"
+            checked={ads}
+            onChange={(event) => setAds(event.target.checked)}
+            className="mt-0.5 size-5 shrink-0 accent-[var(--ev-accent-fill)] sm:size-4"
+          />
+          <span>{checkoutAdsOptInLabel(clubName)}</span>
+        </label>
+      )}
+    </div>
   )
 }

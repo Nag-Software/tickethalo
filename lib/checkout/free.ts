@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { CheckoutError, checkoutErrorForSalesState } from '@/lib/checkout/errors'
 import { deliverTicketEmail } from '@/lib/checkout/finalize'
+import { readAdsOptIn, recordAdsOptIn } from '@/lib/checkout/ads-opt-in'
 import { resolveCheckoutLines } from '@/lib/checkout/lines'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import { type OrderItemInput, type OrderLine, normalizePromoCode, parseOrderItems } from '@/lib/ticket-types'
@@ -42,6 +43,8 @@ export type FreeTicketInput = {
   email: string
   name: string
   marketingOptIn: boolean
+  /** Bare sammen med `marketingOptIn` — se `readAdsOptIn`. */
+  adsOptIn: boolean
 }
 
 /**
@@ -53,6 +56,7 @@ export function parseFreeTicketInput(formData: FormData): { ok: true; value: Fre
   const name = String(formData.get('buyer_name') ?? '').trim().slice(0, 120)
 
   if (!name || !isPlausibleEmail(email)) return { ok: false }
+  const marketingOptIn = formData.get('marketing_opt_in') === 'on' || formData.get('marketing_opt_in') === '1'
   return {
     ok: true,
     value: {
@@ -60,7 +64,8 @@ export function parseFreeTicketInput(formData: FormData): { ok: true; value: Fre
       promoCode: normalizePromoCode(String(formData.get('promo_code') ?? '')),
       email,
       name,
-      marketingOptIn: formData.get('marketing_opt_in') === 'on' || formData.get('marketing_opt_in') === '1',
+      marketingOptIn,
+      adsOptIn: readAdsOptIn(formData, marketingOptIn),
     },
   }
 }
@@ -139,6 +144,8 @@ export async function claimFreeTickets(showId: string, origin: string, input: Fr
     case 'created':
       break
   }
+
+  if (input.marketingOptIn && input.adsOptIn) await recordAdsOptIn(completion.orderId)
 
   const { emailSent } = await deliverTicketEmail({
     orderId: completion.orderId,

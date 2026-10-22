@@ -74,13 +74,35 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
+      <LegalSection title="Ads on Facebook and Instagram">
+        <p>
+          If you tick the box for emails, you can also tick a second box to see relevant ads from the
+          organiser on Facebook and Instagram. It is off unless you tick it, and saying yes to emails
+          does not mean yes to ads. Organisers can also import people who have agreed to ads
+          elsewhere, and must confirm that they have before they can.
+        </p>
+        <p>
+          If you say yes, the organiser can download your email address, phone number and name and
+          upload them to Meta (Facebook and Instagram) as a customer list. Meta hashes the data when it
+          is uploaded and uses it to find your account, so the organiser can show you their ads. Meta
+          processes the data on the organiser&rsquo;s behalf. The organiser decides whether to do this and is responsible for it; Tickethalo only
+          prepares the file. The legal basis is your consent.
+        </p>
+        <p>
+          You can withdraw at any time, with the link at the bottom of the organiser&rsquo;s emails or by
+          asking the organiser. Unsubscribing from the emails withdraws it too. After that you are left
+          out of new downloads, and the organiser must replace the list they have uploaded to Meta.
+        </p>
+      </LegalSection>
+
       <LegalSection title="How long">
         <p>
           Purchase and ticket records are kept for as long as accounting law requires — in Norway,
           five years after the end of the financial year. After that they are deleted or anonymised.
         </p>
         <p>
-          You stay on an organiser&rsquo;s email list until you unsubscribe or ask to be deleted.
+          You stay on an organiser&rsquo;s email list until you unsubscribe or ask to be deleted. A
+          yes to ads lasts until you withdraw it or unsubscribe.
         </p>
       </LegalSection>
 

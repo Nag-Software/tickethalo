@@ -603,6 +603,9 @@ export type Order = {
   /** Kjøperen vil ha e-post om nye show fra klubben (`club_id`). Av som standard. */
   marketing_opt_in: boolean
   marketing_opt_in_at: string | null
+  /** Kjøperen vil se klubbens annonser på Facebook og Instagram. Bare sammen med `marketing_opt_in`. Se 090. */
+  ads_opt_in: boolean
+  ads_opt_in_at: string | null
 
   created_at: string
   updated_at: string
@@ -794,6 +797,9 @@ export type EmailLog = {
 /** Hvor en kontakt sa ja: avkrysning i checkout, CSV-import, eller (reservert) påmeldingsskjema. */
 export type ClubContactSource = 'purchase' | 'import' | 'signup'
 
+/** Hvor annonsesamtykket kom fra: avkrysning i checkout eller CSV-import med klubbens bekreftelse. */
+export type ClubContactAdsSource = 'purchase' | 'import'
+
 /** Klubbens e-postliste. Se migrasjon 077. Kan få e-post når `unsubscribed_at` er null. */
 export type ClubContact = {
   id: string
@@ -811,6 +817,13 @@ export type ClubContact = {
   last_purchase_at: string | null
   unsubscribed_at: string | null
   unsubscribe_token: string
+  /** Sa ja til annonser fra klubben på Facebook og Instagram. Se migrasjon 090 og `isAdsAudience`. */
+  ads_consent_at: string | null
+  ads_consent_source: ClubContactAdsSource | null
+  ads_consent_text: string | null
+  ads_consent_order_id: string | null
+  ads_consent_import_id: string | null
+  ads_withdrawn_at: string | null
   created_at: string
   updated_at: string
 }
@@ -821,10 +834,25 @@ export type ClubContactImport = {
   imported_by: string | null
   file_name: string | null
   consent_statement: string
+  /** Klubbens bekreftelse av annonsesamtykke. Null: ikke bekreftet. */
+  ads_consent_statement: string | null
   rows_total: number
   added: number
   updated: number
   skipped: number
+  created_at: string
+}
+
+export type ClubContactExportKind = 'contacts' | 'meta'
+
+/** Én nedlasting av kontaktlista. Se migrasjon 090. */
+export type ClubContactExport = {
+  id: string
+  club_id: string
+  exported_by: string | null
+  kind: ClubContactExportKind
+  filter: string | null
+  row_count: number
   created_at: string
 }
 
@@ -1036,6 +1064,12 @@ export type Database = {
           last_purchase_at?: string | null
           unsubscribed_at?: string | null
           unsubscribe_token?: string
+          ads_consent_at?: string | null
+          ads_consent_source?: ClubContactAdsSource | null
+          ads_consent_text?: string | null
+          ads_consent_order_id?: string | null
+          ads_consent_import_id?: string | null
+          ads_withdrawn_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1050,6 +1084,7 @@ export type Database = {
           imported_by?: string | null
           file_name?: string | null
           consent_statement: string
+          ads_consent_statement?: string | null
           rows_total?: number
           added?: number
           updated?: number
@@ -1057,6 +1092,20 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<ClubContactImport>
+        Relationships: []
+      }
+      club_contact_exports: {
+        Row: ClubContactExport
+        Insert: {
+          id?: string
+          club_id: string
+          exported_by?: string | null
+          kind: ClubContactExportKind
+          filter?: string | null
+          row_count?: number
+          created_at?: string
+        }
+        Update: Partial<ClubContactExport>
         Relationships: []
       }
       email_campaigns: {
@@ -1396,6 +1445,8 @@ export type Database = {
           buyer_phone?: string | null
           marketing_opt_in?: boolean
           marketing_opt_in_at?: string | null
+          ads_opt_in?: boolean
+          ads_opt_in_at?: string | null
           created_at?: string
           updated_at?: string
         }

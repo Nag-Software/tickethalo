@@ -4,8 +4,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { AdminHeader } from '@/components/admin/admin-header'
 import type { ClubContactSource } from '@/types/database'
+import { adsConsentState, type ContactStatusFilter } from '@/lib/marketing/contact-export'
+import { CONTACT_FILTERS, applyContactFilter, contactSearchTerm, toContactFilter } from '@/lib/marketing/contact-filter'
 import { ImportContactsButton } from './import-dialog'
 import { ContactActions } from './contact-actions'
+import { ExportButtons } from './export-buttons'
 
 /**
  * Klubbens e-postliste.
@@ -16,27 +19,21 @@ import { ContactActions } from './contact-actions'
  * har meldt seg av, og raden er det som hindrer at de kommer inn igjen.
  *
  * Utsendingen skjer fra markedsføringsfanen på hvert show.
+ *
+ * Annonsesamtykket (migrasjon 090) er et eget ja, vist som egen kolonne og
+ * filter. «Export CSV» gir det som vises; «Export for Meta» bare dem med
+ * aktivt annonsesamtykke. Se export/route.ts.
  */
 
-type StatusFilter = 'all' | 'subscribed' | 'unsubscribed'
+type StatusFilter = ContactStatusFilter
 type PageParams = { q?: string; status?: string; page?: string }
 
 const PAGE_SIZE = 50
-
-const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'subscribed', label: 'Subscribed' },
-  { value: 'unsubscribed', label: 'Unsubscribed' },
-]
 
 const SOURCE_LABELS: Record<ClubContactSource, string> = {
   purchase: 'Purchase',
   import: 'Import',
   signup: 'Sign-up',
-}
-
-function toFilter(value: string | undefined): StatusFilter {
-  return value === 'subscribed' || value === 'unsubscribed' ? value : 'all'
 }
 
 function buildHref({ q, status, page }: { q?: string; status?: StatusFilter; page?: number }) {
@@ -56,36 +53,35 @@ const formatDate = (value: string | null) =>
 export default async function MarketingPage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams
   const searchQuery = params.q?.trim().slice(0, 100) ?? ''
-  const filter = toFilter(params.status)
+  const filter = toContactFilter(params.status)
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
 
-  const total = (status: StatusFilter) => {
-    let query = db.from('club_contacts').select('id', { count: 'exact', head: true }).eq('club_id', clubId)
-    if (status === 'subscribed') query = query.is('unsubscribed_at', null)
-    if (status === 'unsubscribed') query = query.not('unsubscribed_at', 'is', null)
-    return query
-  }
+  const total = (status: StatusFilter) =>
+    applyContactFilter(db.from('club_contacts').select('id', { count: 'exact', head: true }).eq('club_id', clubId), status)
 
-  // `.or()` tar en rå filterstreng. Tegnene som betyr noe i den (komma,
-  // parentes, jokertegn) fjernes fra søket, så det bare kan være et søk.
-  const term = searchQuery.replace(/[,()*%"\\]/g, ' ').trim()
-  let listQuery = db
-    .from('club_contacts')
-    .select('id, email, name, phone, source, consent_at, last_show_id, last_purchase_at, unsubscribed_at', { count: 'exact' })
-    .eq('club_id', clubId)
-  if (filter === 'subscribed') listQuery = listQuery.is('unsubscribed_at', null)
-  if (filter === 'unsubscribed') listQuery = listQuery.not('unsubscribed_at', 'is', null)
-  if (term) listQuery = listQuery.or(`email.ilike.*${term}*,name.ilike.*${term}*,phone.ilike.*${term}*`)
+  const term = contactSearchTerm(searchQuery)
+  const listQuery = applyContactFilter(
+    db
+      .from('club_contacts')
+      .select(
+        'id, email, name, phone, source, consent_at, last_show_id, last_purchase_at, unsubscribed_at, ads_consent_at, ads_withdrawn_at',
+        { count: 'exact' },
+      )
+      .eq('club_id', clubId),
+    filter,
+    term,
+  )
 
   const requestedPage = Math.max(1, Number(params.page ?? 1) || 1)
   const start = (requestedPage - 1) * PAGE_SIZE
 
-  const [{ data: club }, all, subscribed, unsubscribed, { data: contacts, count: matching, error }] = await Promise.all([
+  const [{ data: club }, all, subscribed, unsubscribed, ads, { data: contacts, count: matching, error }] = await Promise.all([
     db.from('clubs').select('name').eq('id', clubId).maybeSingle(),
     total('all'),
     total('subscribed'),
     total('unsubscribed'),
+    total('ads'),
     listQuery.order('created_at', { ascending: false }).range(start, start + PAGE_SIZE - 1),
   ])
 
@@ -97,6 +93,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
     all: all.count ?? 0,
     subscribed: subscribed.count ?? 0,
     unsubscribed: unsubscribed.count ?? 0,
+    ads: ads.count ?? 0,
   }
 
   const showIds = [...new Set((contacts ?? []).map((contact) => contact.last_show_id).filter((id): id is string => Boolean(id)))]
@@ -126,7 +123,18 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
               Send them an email from the Marketing tab on a show.
             </p>
           </div>
-          <ImportContactsButton clubName={clubName} />
+          <div className="flex flex-wrap gap-2">
+            <ExportButtons
+              exportHref={`/admin-app/marketing/export?${new URLSearchParams({
+                kind: 'contacts',
+                ...(filter !== 'all' ? { status: filter } : {}),
+                ...(searchQuery ? { q: searchQuery } : {}),
+              }).toString()}`}
+              adsAudience={counts.ads}
+              clubName={clubName}
+            />
+            <ImportContactsButton clubName={clubName} />
+          </div>
         </div>
 
         <form action="/admin-app/marketing" className="relative">
@@ -154,7 +162,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
         </form>
 
         <div className="flex flex-wrap gap-2">
-          {FILTERS.map((option) => {
+          {CONTACT_FILTERS.map((option) => {
             const active = filter === option.value
             return (
               <Link
@@ -185,12 +193,14 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                   <th className="px-5 py-3 text-left font-medium">Consent</th>
                   <th className="px-5 py-3 text-left font-medium">Last show bought</th>
                   <th className="px-5 py-3 text-left font-medium">Status</th>
+                  <th className="px-5 py-3 text-left font-medium">Ads</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody>
                 {visible.map((contact) => {
                   const show = contact.last_show_id ? showMap.get(contact.last_show_id) : null
+                  const adsState = adsConsentState(contact)
                   return (
                     <tr key={contact.id} className="border-b transition-colors last:border-0 hover:bg-muted/30">
                       <td className="px-5 py-3">
@@ -221,11 +231,23 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                           </span>
                         )}
                       </td>
+                      <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">
+                        {adsState === 'active' ? (
+                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+                            Yes · {formatDate(contact.ads_consent_at)}
+                          </span>
+                        ) : adsState === 'withdrawn' ? (
+                          <span className="text-xs">Withdrawn</span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-right">
                         <ContactActions
                           contactId={contact.id}
                           label={contact.name ?? contact.email}
                           subscribed={!contact.unsubscribed_at}
+                          adsConsent={adsState === 'active'}
                         />
                       </td>
                     </tr>
@@ -239,7 +261,13 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
             <div className="flex flex-col items-center gap-2 px-6 py-14 text-center text-sm text-muted-foreground">
               {searchQuery || filter !== 'all' ? (
                 <>
-                  <p>{searchQuery ? `No contacts match “${searchQuery}”.` : 'No contacts here.'}</p>
+                  <p className="max-w-md">
+                    {searchQuery
+                      ? `No contacts match “${searchQuery}”.`
+                      : filter === 'ads'
+                        ? 'No one has said yes to ads yet. People who tick “Show me relevant ads” at checkout show up here.'
+                        : 'No contacts here.'}
+                  </p>
                   <Link href="/admin-app/marketing" className="font-medium text-foreground hover:underline">
                     Show all contacts
                   </Link>

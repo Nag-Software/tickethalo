@@ -54,6 +54,8 @@ export type TicketOrderInput = {
   promoCode?: string | null
   /** Kjøperen vil ha e-post om nye show fra klubben. */
   marketingOptIn?: boolean
+  /** Kjøperen vil se klubbens annonser på Facebook og Instagram. Teller bare med `marketingOptIn`. */
+  adsOptIn?: boolean
 }
 
 /**
@@ -268,6 +270,7 @@ function createSession(
         // ville ordren stått uten klubbens andel, og klubben aldri fått den utbetalt.
         application_fee_amount: String(commission),
         marketing_opt_in: order.marketingOptIn ? '1' : '0',
+        ads_opt_in: order.marketingOptIn && order.adsOptIn ? '1' : '0',
         // Linjene, én nøkkel per type — se `encodeItemMetadata`.
         ...encodeItemMetadata(
           lines.map((line, index) => ({

@@ -57,6 +57,33 @@ export function checkoutOptInLabel(clubName: string | null | undefined) {
   return `Yes, send me emails from ${name || 'the organiser'} about upcoming shows.`
 }
 
+/**
+ * Den andre boksen i checkout, som bare vises når e-postboksen er krysset av.
+ * Lagres på kontakten i migrasjon 090 — endres den, endre triggeren også.
+ */
+export function checkoutAdsOptInLabel(clubName: string | null | undefined) {
+  const name = clubName?.trim()
+  return `Show me relevant ads from ${name || 'the organiser'} on Facebook and Instagram.`
+}
+
+/** Den valgfrie bekreftelsen i importen. Lagres på importen og kontaktene. */
+export function importAdsConsentStatement(clubName: string) {
+  return `These people have also agreed to see ads from ${clubName} on Facebook and Instagram.`
+}
+
+/**
+ * Skal en import gi annonsesamtykke til en som står på lista fra før? Bare om
+ * hen ikke har det, og ikke har sagt nei: en avmeldt eller en som har trukket
+ * annonsesamtykket, får det ikke tilbake fra et regneark.
+ */
+export function importMayGrantAds(contact: {
+  ads_consent_at: string | null
+  ads_withdrawn_at: string | null
+  unsubscribed_at: string | null
+}): boolean {
+  return !contact.unsubscribed_at && !contact.ads_withdrawn_at && !contact.ads_consent_at
+}
+
 // ─────────────────────────────────────────────────────────────
 // Feltene
 // ─────────────────────────────────────────────────────────────

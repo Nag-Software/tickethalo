@@ -1,8 +1,8 @@
 'use client'
 
-import { BellOff, Trash2 } from 'lucide-react'
+import { BellOff, MegaphoneOff, Trash2 } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
-import { deleteContactAction, unsubscribeContactAction } from './actions'
+import { deleteContactAction, stopAdsContactAction, unsubscribeContactAction } from './actions'
 
 /**
  * To handlinger, fordi de svarer på to forskjellige ønsker:
@@ -10,10 +10,41 @@ import { deleteContactAction, unsubscribeContactAction } from './actions'
  * - «Ikke send meg mer» → avmeld. Adressen står igjen, så en senere import
  *   ikke legger den inn på nytt.
  * - «Slett det dere har om meg» → slett. Raden er borte, og med den sperren.
+ *
+ * Og en tredje for den som har sagt ja til annonser: «Vis meg ikke annonser»
+ * → stopp annonsene. E-postene fortsetter.
  */
-export function ContactActions({ contactId, label, subscribed }: { contactId: string; label: string; subscribed: boolean }) {
+export function ContactActions({
+  contactId,
+  label,
+  subscribed,
+  adsConsent,
+}: {
+  contactId: string
+  label: string
+  subscribed: boolean
+  adsConsent: boolean
+}) {
   return (
     <div className="flex items-center justify-end gap-1">
+      {adsConsent && (
+        <ToastActionForm action={stopAdsContactAction} successMessage={`${label} will not be in your Meta export.`}>
+          <input type="hidden" name="contact_id" value={contactId} />
+          <button
+            type="submit"
+            aria-label={`Stop ads for ${label}`}
+            title="Stop ads"
+            onClick={(event) => {
+              if (!window.confirm(`Stop ads for ${label}? They keep getting emails, but will not be in your Meta export. Replace your audience in Meta to remove them there too.`)) {
+                event.preventDefault()
+              }
+            }}
+            className="inline-flex items-center rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <MegaphoneOff className="size-4" />
+          </button>
+        </ToastActionForm>
+      )}
       {subscribed && (
         <ToastActionForm action={unsubscribeContactAction} successMessage={`${label} unsubscribed.`}>
           <input type="hidden" name="contact_id" value={contactId} />
