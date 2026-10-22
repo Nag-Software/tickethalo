@@ -50,6 +50,7 @@ import {
 } from '@/lib/show-sales'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import { ticketPriceError } from '@/lib/tickets'
+import { noteLineupChange } from '@/lib/lineup-messages'
 import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -712,7 +713,7 @@ export async function updateShowDetailsAction(formData: FormData) {
       : Promise.resolve({ data: null }),
     db
       .from('shows')
-      .select('title, date, currency, status, deleted_at, ticket_sales_closed_at')
+      .select('title, date, currency, status, deleted_at, ticket_sales_closed_at, start_time, venue_name, venue_address, lineup_change_notice')
       .eq('id', showId)
       .maybeSingle(),
   ])
@@ -746,6 +747,7 @@ export async function updateShowDetailsAction(formData: FormData) {
   const venue = await resolveShowVenue(db, show.club_id ?? null, venueSelectionFromForm(formData))
 
   const title = String(formData.get('title') ?? '').trim()
+  const startTime = optionalText(formData.get('start_time'))
   const { error } = await db.from('shows').update({
     title,
     // Stripe-produktet bærer tittelen kjøperen ser på betalingssiden. Et nytt
@@ -755,7 +757,7 @@ export async function updateShowDetailsAction(formData: FormData) {
     slug: String(formData.get('slug') ?? '').trim(),
     description: optionalText(formData.get('description')),
     date,
-    start_time: optionalText(formData.get('start_time')),
+    start_time: startTime,
     end_time: optionalText(formData.get('end_time')),
     ...venue,
     capacity: optionalInteger(formData.get('capacity')),
@@ -768,6 +770,15 @@ export async function updateShowDetailsAction(formData: FormData) {
   // is the one failure the booker can actually fix, so it comes back as a value.
   if (error?.code === '23505') return { error: 'That slug is already used by another show.' }
   if (error) throw new Error(error.message)
+
+  // Dato, tid eller sted flyttet etter at noen sa ja: Communication-fanen
+  // får et tall og en ferdig melding. Ingenting sendes av seg selv.
+  await noteLineupChange(db, showId, current, {
+    date,
+    start_time: startTime,
+    venue_name: venue.venue_name ?? null,
+    venue_address: venue.venue_address ?? null,
+  })
 
   // Produktene per billettype bærer også tittelen («Show · Type»).
   if (title !== current.title) {

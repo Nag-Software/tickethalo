@@ -15,6 +15,8 @@ import { publishReadiness } from '@/lib/publish-readiness'
 import { RequirementsTab } from './requirements-tab'
 import { LineupTab } from './lineup-tab'
 import { MarketingTab } from './marketing/marketing-tab'
+import { CommunicationTab } from './communication-tab'
+import { changeCount } from '@/lib/lineup-changes'
 import { SubmissionsTab } from './submissions-tab'
 import { loadSubmissionGroups } from './submissions-data'
 import { matchesHardRequirements } from '@/lib/booking-rules'
@@ -29,7 +31,7 @@ import { sortTicketTypes } from '@/lib/ticket-types'
 import type { ShowTicketType } from '@/types/database'
 import type { ArtistGender, RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
-type ShowTab = 'overview' | 'lineup' | 'submissions' | 'marketing' | 'tickets'
+type ShowTab = 'overview' | 'lineup' | 'communication' | 'submissions' | 'marketing' | 'tickets'
 
 export default async function ShowDetailPage({
   params,
@@ -278,6 +280,8 @@ export default async function ShowDetailPage({
   const TABS: { key: ShowTab; label: string; badge?: number }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'lineup', label: 'Lineup', badge: (offerStats.sent || activeLineup.length) ? Math.max(offerStats.sent, activeLineup.length) : undefined },
+    // Tallet er endringer lineupen ikke har fått beskjed om — se lib/lineup-changes.ts.
+    { key: 'communication', label: 'Communication', badge: changeCount(show.lineup_change_notice) || undefined },
     { key: 'submissions', label: 'Submissions', badge: pendingSubmissionTotal || undefined },
     { key: 'marketing', label: 'Marketing' },
     { key: 'tickets', label: 'Tickets' },
@@ -504,6 +508,9 @@ export default async function ShowDetailPage({
                 pendingByRequirement={pendingSubmissionsByRequirement}
               />
         )}
+
+        {/* ══════════════════ COMMUNICATION ══════════════════ */}
+        {tab === 'communication' && <CommunicationTab showId={show.id} />}
 
         {/* ══════════════════ SUBMISSIONS ══════════════════ */}
         {tab === 'submissions' && <SubmissionsTab showId={show.id} groups={submissionGroups} />}

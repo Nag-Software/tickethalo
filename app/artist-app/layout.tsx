@@ -4,6 +4,8 @@ import { getPortalAccessForAuthUser, getPortalDestinationForAuthUser } from '@/l
 import { getArtistForAuthUser, getAuthUser } from '@/lib/session'
 import { ArtistTopbar } from '@/components/artist/artist-topbar'
 import { RememberPortal } from '@/components/portal/remember-portal'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { countUnreadLineupMessages } from '@/lib/lineup-messages'
 
 export const metadata = { title: 'Comedian Portal — Tickethalo' }
 
@@ -41,6 +43,8 @@ export default async function ArtistLayout({ children }: { children: React.React
 
   if (!artist) redirect('/artist-app/signup?error=missing')
 
+  const unreadMessages = await countUnreadLineupMessages(createAdminClient(), artist.id)
+
   return (
     <div
       className="ev-surface flex min-h-svh flex-col bg-[var(--ev-bg)] text-[var(--ev-text)]"
@@ -50,6 +54,7 @@ export default async function ArtistLayout({ children }: { children: React.React
         name={artist.stage_name ?? artist.full_name}
         email={artist.email}
         clubPortalHref={access.club ? '/admin-app/shows' : null}
+        unreadMessages={unreadMessages}
       />
       {access.club ? <RememberPortal side="artist" /> : null}
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-7 px-4 py-7 md:px-6 md:py-9 lg:px-8">

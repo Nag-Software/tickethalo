@@ -72,7 +72,7 @@ export function showDateLabel(value: string | null | undefined, locale: 'en-GB' 
   }).format(at)
 }
 
-function button(href: string, label: string, tone: 'primary' | 'ghost' = 'primary') {
+export function button(href: string, label: string, tone: 'primary' | 'ghost' = 'primary') {
   const style = tone === 'primary'
     ? `background:${INK};color:${BG};border:1px solid ${INK}`
     : `background:transparent;color:${INK};border:1px solid ${LINE}`
@@ -80,7 +80,7 @@ function button(href: string, label: string, tone: 'primary' | 'ghost' = 'primar
 }
 
 /** Etikett/verdi-rader — samme detaljer som tilbudssiden viser. */
-function details(rows: Array<[string, string | null | undefined]>) {
+export function details(rows: Array<[string, string | null | undefined]>) {
   const visible = rows.filter(([, value]) => Boolean(value))
   if (!visible.length) return ''
   return `
@@ -93,17 +93,17 @@ function details(rows: Array<[string, string | null | undefined]>) {
     </table>`
 }
 
-function paragraph(html: string, muted = false) {
+export function paragraph(html: string, muted = false) {
   return `<p style="margin:14px 0 0;font-size:15px;line-height:1.6;color:${muted ? MUTED : INK}">${html}</p>`
 }
 
-function note(strong: string, rest: string) {
+export function note(strong: string, rest: string) {
   return `<div style="margin:22px 0 0;border-radius:10px;background:${BG};border:1px solid ${LINE};padding:16px">
       <p style="margin:0;font-size:14px;line-height:1.6;color:${INK}"><strong>${escapeHtml(strong)}</strong> ${escapeHtml(rest)}</p>
     </div>`
 }
 
-function shell(opts: {
+export function shell(opts: {
   eyebrow: string
   heading: string
   /** Ferdig HTML — alt utenfra må gjennom escapeHtml først. */

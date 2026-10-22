@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
-import { Building2, LogOut } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Building2, LogOut, Mail } from 'lucide-react'
 import { BrandLogo } from '@/components/brand/brand-logo'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +12,7 @@ const navItems = [
   { label: 'Open spots', href: '/artist-app/open-spots' },
   { label: 'Availability', href: '/artist-app/availability' },
   { label: 'Bookings', href: '/artist-app/bookings' },
+  { label: 'Messages', href: '/artist-app/messages' },
   { label: 'Payouts', href: '/artist-app/economy' },
   { label: 'Profile', href: '/artist-app/profile' },
 ]
@@ -20,17 +21,36 @@ export function ArtistTopbar({
   name,
   email,
   clubPortalHref = null,
+  unreadMessages = 0,
 }: {
   name: string
   email: string
+  /** Uleste meldinger fra klubbene. Står på «Messages». */
+  unreadMessages?: number
   /** Satt bare når innloggingen også er klubbadmin. Se `getPortalAccessForAuthUser`. */
   clubPortalHref?: string | null
 }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const mobileActiveRef = useRef<HTMLAnchorElement>(null)
+
+  // Mobilraden ruller sidelengs, og lenkene lengst til høyre (Messages,
+  // Payouts, Profile) ligger utenfor skjermen. Den valgte skal synes.
+  useEffect(() => {
+    mobileActiveRef.current?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [pathname])
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href || pathname === `${href}/` : pathname.startsWith(href)
+
+  const badgeFor = (href: string) =>
+    href === '/artist-app/messages' && unreadMessages > 0 ? (
+      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ev-text)] px-1 text-[10px] font-bold text-[var(--ev-bg)]">
+        <span className="sr-only">, </span>
+        {unreadMessages}
+        <span className="sr-only"> unread</span>
+      </span>
+    ) : null
 
   // Én innlogging eier begge sidene, så utloggingen gjelder begge.
   const logOutLabel = clubPortalHref ? 'Log out of club and comedian' : 'Log out'
@@ -71,6 +91,7 @@ export function ArtistTopbar({
               )}
             >
               {item.label}
+              {badgeFor(item.href)}
             </Link>
           ))}
         </nav>
@@ -110,6 +131,21 @@ export function ArtistTopbar({
             </button>
           </form>
 
+          {/* På mobil ruller lenkeraden, og «Messages» havner utenfor skjermen.
+              Uleste meldinger skal synes uten at komikeren leter etter dem. */}
+          {unreadMessages > 0 && !pathname.startsWith('/artist-app/messages') ? (
+            <Link
+              href="/artist-app/messages"
+              aria-label={`Messages, ${unreadMessages} unread`}
+              className="relative grid size-9 shrink-0 place-content-center rounded-full bg-[var(--ev-card)] text-[var(--ev-text)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] md:hidden"
+            >
+              <Mail className="size-4" aria-hidden />
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ev-accent-fill)] px-1 text-[10px] font-bold text-[var(--ev-accent-ink)]">
+                {unreadMessages}
+              </span>
+            </Link>
+          ) : null}
+
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
@@ -126,6 +162,7 @@ export function ArtistTopbar({
         {navItems.map((item) => (
           <Link
             key={item.href}
+            ref={isActive(item.href, item.exact) ? mobileActiveRef : undefined}
             href={item.href}
             aria-current={isActive(item.href, item.exact) ? 'page' : undefined}
             className={cn(
@@ -136,6 +173,7 @@ export function ArtistTopbar({
             )}
           >
             {item.label}
+            {badgeFor(item.href)}
           </Link>
         ))}
       </nav>

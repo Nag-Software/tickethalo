@@ -20,6 +20,7 @@ function renderForm() {
         logo_url: 'https://example.com/logo.png',
         currency: 'NOK',
         lineup_deadline_days: null,
+        lineup_reminder_default: true,
       }}
       locations={[
         { id: 'loc-1', name: 'Latter', address_line: 'Aker Brygge 1' },

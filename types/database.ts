@@ -149,6 +149,8 @@ export type Club = {
   payout_schedule_checked_at: string | null
   /** Klubben la bort oppstartsguiden. Null = vises så lenge noe gjenstår. Se migrasjon 072. */
   setup_guide_dismissed_at: string | null
+  /** Påminnelsen til lineupen 5 dager før, på show som ikke har tatt stilling selv. Se migrasjon 081. */
+  lineup_reminder_default: boolean
 
   created_at: string
   updated_at: string
@@ -284,6 +286,13 @@ export type Artist = {
   stage_name: string | null
   email: string
   phone: string | null
+  /**
+   * WhatsApp-nummeret med landskode, bare sifre. Finnes bare med samtykke
+   * (`whatsapp_consent_at`): klubber som booker komikeren ser det, og
+   * lineupen på show hen er vert for. Se lib/whatsapp.ts.
+   */
+  whatsapp_number: string | null
+  whatsapp_consent_at: string | null
   profile_image_url: string | null
   bio: string | null
   category: ArtistType[] | null
@@ -362,6 +371,14 @@ export type Show = {
   published_at: string | null
   /** Når klubben fikk «Line-up is booked – Publish?». Null = ikke varslet for gjeldende lineup. */
   lineup_full_notified_at: string | null
+  /** Påminnelsen 5 dager før. Null = følg `Club.lineup_reminder_default`. Se lib/lineup-reminders.ts. */
+  lineup_reminder_enabled: boolean | null
+  /** Når lineupen skal være på plass, `HH:MM:SS`. Står i påminnelsen. */
+  lineup_arrival_time: string | null
+  /** Endringer lineupen ikke har fått beskjed om. Se lib/lineup-changes.ts. */
+  lineup_change_notice: LineupChangeNotice | null
+  /** Siste invitasjonslenke til gruppechatten (chat.whatsapp.com). */
+  lineup_group_link: string | null
   club_id: string | null
   /** Satt = bookeren har stengt billettsalget. Showet er fortsatt synlig. */
   ticket_sales_closed_at: string | null
@@ -531,6 +548,8 @@ export type ConfirmedSpot = {
   status: ConfirmedSpotStatus
   /** Satt når honorar-eposten gikk ut. Se `lib/artist-fees.ts`. */
   fee_email_sent_at: string | null
+  /** Når påminnelsen 5 dager før gikk til plassen. Settes før sending. */
+  lineup_reminder_sent_at: string | null
   confirmed_at: string | null
   cancelled_at: string | null
   created_at: string
@@ -861,6 +880,37 @@ export type EmailCampaignRecipient = {
   sent_at: string | null
 }
 
+/** Feltene endringsdyttet følger. Se lib/lineup-changes.ts. */
+export type LineupChangeField = 'date' | 'start_time' | 'venue'
+export type LineupChangeNotice = Partial<Record<LineupChangeField, { from: string | null; to: string | null }>>
+
+export type LineupMessageKind = 'message' | 'reminder' | 'group_invite'
+
+/** En melding fra klubben til lineupen. Se migrasjon 081. */
+export type LineupMessage = {
+  id: string
+  show_id: string
+  club_id: string
+  kind: LineupMessageKind
+  subject: string
+  body: string
+  group_link: string | null
+  sent_by: string | null
+  /** Null = sendt automatisk. */
+  sender_name: string | null
+  campaign_id: string | null
+  recipient_count: number
+  created_at: string
+}
+
+export type LineupMessageRecipient = {
+  message_id: string
+  artist_id: string
+  email: string
+  /** Åpnet i komikerportalen. */
+  read_at: string | null
+}
+
 export type MarketingTask = {
   id: string
   show_id: string
@@ -968,6 +1018,8 @@ export type Database = {
           stage_name?: string | null
           email: string
           phone?: string | null
+          whatsapp_number?: string | null
+          whatsapp_consent_at?: string | null
           profile_image_url?: string | null
           bio?: string | null
           category?: ArtistType[] | null
@@ -1095,6 +1147,36 @@ export type Database = {
         Update: Partial<EmailCampaignRecipient>
         Relationships: []
       }
+      lineup_messages: {
+        Row: LineupMessage
+        Insert: {
+          id?: string
+          show_id: string
+          club_id: string
+          kind: LineupMessageKind
+          subject: string
+          body: string
+          group_link?: string | null
+          sent_by?: string | null
+          sender_name?: string | null
+          campaign_id?: string | null
+          recipient_count?: number
+          created_at?: string
+        }
+        Update: Partial<LineupMessage>
+        Relationships: []
+      }
+      lineup_message_recipients: {
+        Row: LineupMessageRecipient
+        Insert: {
+          message_id: string
+          artist_id: string
+          email: string
+          read_at?: string | null
+        }
+        Update: Partial<LineupMessageRecipient>
+        Relationships: []
+      }
       show_requirement_queue: {
         Row: ShowRequirementQueueRow
         Insert: {
@@ -1168,6 +1250,10 @@ export type Database = {
           is_template?: boolean
           published_at?: string | null
           lineup_full_notified_at?: string | null
+          lineup_reminder_enabled?: boolean | null
+          lineup_arrival_time?: string | null
+          lineup_change_notice?: LineupChangeNotice | null
+          lineup_group_link?: string | null
           club_id?: string | null
           ticket_sales_closed_at?: string | null
           ticket_sales_closed_by?: string | null
@@ -1330,6 +1416,7 @@ export type Database = {
           fee_amount?: number | null
           currency?: string
           status?: ConfirmedSpotStatus
+          lineup_reminder_sent_at?: string | null
           confirmed_at?: string | null
           cancelled_at?: string | null
           created_at?: string
@@ -1572,6 +1659,7 @@ export type Database = {
           payout_schedule_interval?: string | null
           payout_schedule_checked_at?: string | null
           setup_guide_dismissed_at?: string | null
+          lineup_reminder_default?: boolean
           created_at?: string
           updated_at?: string
         }
