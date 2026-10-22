@@ -534,7 +534,7 @@ function StepButton({
  * krysset av — annonsesamtykket er et tillegg til e-postlista — og fjernes
  * e-postkrysset, fjernes annonsekrysset med det.
  */
-function MarketingConsent({ clubName }: { clubName?: string | null }) {
+export function MarketingConsent({ clubName }: { clubName?: string | null }) {
   const [emails, setEmails] = useState(false)
   const [ads, setAds] = useState(false)
   return (

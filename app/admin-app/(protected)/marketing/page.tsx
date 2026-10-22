@@ -207,7 +207,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                         <div className="font-medium">{contact.name ?? '—'}</div>
                         <div className="text-xs text-muted-foreground">{contact.email}</div>
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">{contact.phone ?? '—'}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{contact.phone ?? '—'}</td>
                       <td className="px-5 py-3 text-muted-foreground">{SOURCE_LABELS[contact.source]}</td>
                       <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatDate(contact.consent_at)}</td>
                       <td className="px-5 py-3 text-muted-foreground">
