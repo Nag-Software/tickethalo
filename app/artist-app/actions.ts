@@ -43,7 +43,10 @@ export async function updateArtistProfileAction(formData: FormData) {
       // Samtykket gjelder fra første gang det ble gitt, ikke fra hver lagring.
       whatsapp_consent_at: artist.whatsapp_consent_at ?? new Date().toISOString(),
     }
-  } else if (whatsappText && !whatsappConsent) {
+  } else if (whatsappText && !whatsappConsent && !artist.whatsapp_consent_at) {
+    // Et nytt nummer uten kryss er nesten alltid et glemt kryss — si fra i
+    // stedet for å kaste nummeret. Hadde hen samtykket før, er et fjernet
+    // kryss et trukket samtykke, og nummeret slettes (over).
     return { error: 'Tick the box to share your WhatsApp number with clubs, or leave the number empty.' }
   }
 

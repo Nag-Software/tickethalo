@@ -544,8 +544,12 @@ function HistoryRow({ showId, entry }: { showId: string; entry: LineupHistoryEnt
       </div>
       <details className="group mt-1">
         <summary className="cursor-pointer list-none text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
-          <span className="line-clamp-2 whitespace-pre-line group-open:hidden">{entry.body}</span>
-          <span className="hidden text-xs font-medium text-foreground group-open:inline">Hide</span>
+          {/* Lukket: teksten på én linje, så tomme linjer ikke blir et «…» alene. */}
+          <span className="line-clamp-2 group-open:hidden">{entry.body.replace(/\s+/g, ' ')}</span>
+          <span className="mt-1 block text-xs font-medium text-foreground">
+            <span className="group-open:hidden">Details</span>
+            <span className="hidden group-open:inline">Hide</span>
+          </span>
         </summary>
         <p className="mt-2 whitespace-pre-line text-sm">{entry.body}</p>
         <ul className="mt-3 flex flex-col gap-1 text-xs">

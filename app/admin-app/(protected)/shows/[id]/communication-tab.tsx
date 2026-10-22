@@ -28,9 +28,12 @@ export async function CommunicationTab({ showId }: { showId: string }) {
   const confirmedSpots = context.spots.filter((spot) => spot.status === 'confirmed')
   const plan = reminderPlan(show, club.lineup_reminder_default)
 
-  // Forhåndsvisningen er e-posten den første i lineupen får — eller en
-  // tenkt komiker, så klubben ser teksten før noen har sagt ja.
-  const sample = context.recipients[0] ?? { artistId: '', email: '', name: 'Alex', whatsapp: null }
+  // Forhåndsvisningen er e-posten en i lineupen får — helst ikke verten,
+  // som ser «You are hosting» der de andre ser vertens kontakt. Uten lineup
+  // en tenkt komiker, så klubben ser teksten før noen har sagt ja.
+  const sample = context.recipients.find((recipient) => recipient.artistId !== details.host?.artistId)
+    ?? context.recipients[0]
+    ?? { artistId: '', email: '', name: 'Alex', whatsapp: null }
   const preview = reminderRenderer(context, REMINDER_DAYS_BEFORE)(sample)
   const dateLabel = showDateLabel(show.date)
 
