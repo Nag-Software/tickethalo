@@ -18,7 +18,7 @@ import { MarketingTab } from './marketing/marketing-tab'
 import { CommunicationTab } from './communication-tab'
 import { changeCount } from '@/lib/lineup-changes'
 import { SubmissionsTab } from './submissions-tab'
-import { loadSubmissionGroups } from './submissions-data'
+import { isWaitlisted, loadSubmissionGroups } from './submissions-data'
 import { matchesHardRequirements } from '@/lib/booking-rules'
 import { canReviewShow, reviewCounts, reviewsForShow } from '@/lib/artist-reviews'
 import { LineupReviewPanel, type ReviewableSpot } from '@/components/admin/lineup-review-panel'
@@ -156,25 +156,42 @@ export default async function ShowDetailPage({
   const selectableArtists = withClubReview(rosterArtists ?? [], reviews)
   const artistMap = Object.fromEntries((artistRows ?? []).map(a => [a.id, a]))
 
+  // Compute fill status per requirement
+  const activeLineup = (lineup ?? []).filter(s => ['confirmed', 'completed', 'paid'].includes(s.status))
+
   // Ubehandlede søknader per lineup-plass. Bare `pending` telles: en søknad
-  // som er godtatt eller avslått er ikke noe bookeren skal minnes på.
+  // som er godtatt eller avslått er ikke noe bookeren skal minnes på. Det er
+  // heller ikke ventelisten — en full plass kan ikke godtas før noen faller
+  // fra, og fanen viser den for seg (se `isWaitlisted`).
   // Hentes på alle faner — tellingen står på «Submissions»-fanen.
   const { data: pendingSubmissions } = await db
     .from('show_submissions')
-    .select('show_requirement_id')
+    .select('show_requirement_id, artist_id, status')
     .eq('show_id', id)
     .eq('status', 'pending')
 
-  const pendingSubmissionsByRequirement = (pendingSubmissions ?? []).reduce<Record<string, number>>(
-    (counts, row) => {
-      counts[row.show_requirement_id] = (counts[row.show_requirement_id] ?? 0) + 1
-      return counts
-    },
-    {},
-  )
+  const showClosed = show?.status === 'completed' || show?.status === 'cancelled'
+  const bookedArtistIds = new Set(activeLineup.map(spot => spot.artist_id))
+  const filledByRequirement = activeLineup.reduce<Record<string, number>>((counts, spot) => {
+    if (spot.show_requirement_id) counts[spot.show_requirement_id] = (counts[spot.show_requirement_id] ?? 0) + 1
+    return counts
+  }, {})
+  const quantityByRequirement = new Map((requirements ?? []).map(r => [r.id, r.quantity]))
 
-  // Compute fill status per requirement
-  const activeLineup = (lineup ?? []).filter(s => ['confirmed', 'completed', 'paid'].includes(s.status))
+  const pendingSubmissionsByRequirement = (pendingSubmissions ?? [])
+    .filter(row => !isWaitlisted({
+      status: row.status,
+      isFull: (filledByRequirement[row.show_requirement_id] ?? 0) >= (quantityByRequirement.get(row.show_requirement_id) ?? Infinity),
+      showClosed,
+      alreadyBooked: bookedArtistIds.has(row.artist_id),
+    }))
+    .reduce<Record<string, number>>(
+      (counts, row) => {
+        counts[row.show_requirement_id] = (counts[row.show_requirement_id] ?? 0) + 1
+        return counts
+      },
+      {},
+    )
   const reqFillStatus = (requirements ?? []).map(r => {
     const filled = activeLineup.filter(s => s.show_requirement_id === r.id).length
     const pendingOffers = (offers ?? []).filter(o => o.show_requirement_id === r.id && o.status === 'sent').length
