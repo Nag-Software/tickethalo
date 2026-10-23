@@ -2,6 +2,7 @@ import { formatDistanceToNowStrict } from 'date-fns'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { formatArtistRole } from '@/lib/artist-roles'
+import { isWaitlisted } from '@/lib/open-spots'
 import type { BookingOffer, ConfirmedSpot, ShowRequirement, ShowStatus, SubmissionSource, SubmissionStatus } from '@/types/database'
 
 /**
@@ -58,27 +59,6 @@ export type SubmissionGroup = {
 
 const OPEN_STATUSES: SubmissionStatus[] = ['pending', 'shortlisted']
 const ACTIVE_SPOT_STATUSES = ['confirmed', 'completed', 'paid']
-
-/**
- * Om en åpen søknad står på ventelisten: plassen er full, showet går
- * fortsatt, og komikeren er ikke alt i lineupen.
- *
- * Bor her så fanen og tallet på «Submissions» bruker samme regel. Telte
- * tallet ventelisten med, sto det 2 på fanen mens bare 1 ventet på svar.
- */
-export function isWaitlisted({
-  status,
-  isFull,
-  showClosed,
-  alreadyBooked,
-}: {
-  status: SubmissionStatus
-  isFull: boolean
-  showClosed: boolean
-  alreadyBooked: boolean
-}) {
-  return OPEN_STATUSES.includes(status) && isFull && !showClosed && !alreadyBooked
-}
 
 export async function loadSubmissionGroups(
   db: Db,

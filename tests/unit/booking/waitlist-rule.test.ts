@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 
-const { isWaitlisted } = await import('@/app/admin-app/(protected)/shows/[id]/submissions-data')
+const { isWaitlisted } = await import('@/lib/open-spots')
 
 // Tallet på «Submissions»-fanen og fanen selv bruker samme regel. Står en
 // søknad på ventelisten, venter den ikke på svar, og skal ikke telles.

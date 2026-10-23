@@ -97,6 +97,28 @@ export function spotAvailability({ quantity, filled }: { quantity: number; fille
   }
 }
 
+/**
+ * Om en åpen søknad står på ventelisten: plassen er full, showet går
+ * fortsatt, og komikeren er ikke alt i lineupen.
+ *
+ * Søknadsfanen, tallet på «Submissions» og «Trenger oppmerksomhet» bruker
+ * alle denne. Talte tallet ventelisten med, sto det 2 på fanen mens bare 1
+ * ventet på svar.
+ */
+export function isWaitlisted({
+  status,
+  isFull,
+  showClosed,
+  alreadyBooked,
+}: {
+  status: SubmissionStatus
+  isFull: boolean
+  showClosed: boolean
+  alreadyBooked: boolean
+}) {
+  return OPEN_SUBMISSION_STATUSES.includes(status) && isFull && !showClosed && !alreadyBooked
+}
+
 function countBy<T>(rows: T[], key: (row: T) => string): Map<string, number> {
   const counts = new Map<string, number>()
   for (const row of rows) {
