@@ -1,3 +1,4 @@
+import { isValidEmail } from '@/lib/email-address'
 import { normalizeWhatsAppNumber } from '@/lib/whatsapp'
 import type { Club } from '@/types/database'
 
@@ -9,9 +10,6 @@ import type { Club } from '@/types/database'
  *
  * Ingen Node-avhengigheter: både skjemaet og handlingen bruker den.
  */
-
-const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-const MAX_EMAIL_LENGTH = 320
 
 /** E-posten lineupen ser. Tom kontakt-e-post = den billettkjøperne ser, som før. */
 export function clubContactEmail(club: Pick<Club, 'contact_email' | 'support_email'>) {
@@ -31,7 +29,7 @@ export type ParsedClubContact =
  */
 export function parseClubContact(input: ClubContactInput, country?: string | null): ParsedClubContact {
   const email = String(input.email ?? '').trim()
-  if (email && (email.length > MAX_EMAIL_LENGTH || !EMAIL.test(email))) {
+  if (email && !isValidEmail(email)) {
     return { ok: false, error: 'Enter a valid contact email, or leave it empty.' }
   }
 

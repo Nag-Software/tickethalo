@@ -1,10 +1,8 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isValidEmail } from '@/lib/email-address'
 import { ALL_CITIES } from '@/lib/event-filters'
-
-/** Deliberately simple — we reject obvious junk, the email delivery handles the rest. */
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 export type SubscribeResult = { error: string }
 
@@ -17,8 +15,9 @@ export async function subscribeToCityAction(formData: FormData): Promise<Subscri
 
   // Returned, not thrown: Next redacts thrown server action messages in
   // production, which would leave the user with a generic failure toast.
-  if (!EMAIL.test(email)) return { error: 'Enter a valid email address.' }
+  // Lengden først: isValidEmail avviser også for lange adresser, og da skal de få riktig grunn.
   if (email.length > 254) return { error: 'That email address is too long.' }
+  if (!isValidEmail(email)) return { error: 'Enter a valid email address.' }
 
   const db = createAdminClient()
   const { error } = await db

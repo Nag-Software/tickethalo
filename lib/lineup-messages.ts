@@ -108,7 +108,7 @@ export function showDetails(
     address: venue.address,
     clubName: club.name,
     clubEmail: clubContactEmail(club),
-    clubPhone: club.contact_phone?.trim() || null,
+    clubPhone: club.contact_phone ?? null,
     host,
     groupLink: show.lineup_group_link,
   }

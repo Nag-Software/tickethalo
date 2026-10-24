@@ -1,9 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-
-/** Deliberately simple — we reject obvious junk, the reply email handles the rest. */
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+import { isValidEmail } from '@/lib/email-address'
 
 export type BetaRequestResult = { error: string } | { ok: true }
 
@@ -21,8 +19,9 @@ export async function requestClubBetaAccessAction(formData: FormData): Promise<B
   // production, which would leave the user with a generic failure message.
   if (!clubName) return { error: 'Enter the name of your club.' }
   if (clubName.length > 120) return { error: 'That club name is too long.' }
-  if (!EMAIL.test(email)) return { error: 'Enter a valid email address.' }
+  // Lengden først: isValidEmail avviser også for lange adresser, og da skal de få riktig grunn.
   if (email.length > 254) return { error: 'That email address is too long.' }
+  if (!isValidEmail(email)) return { error: 'Enter a valid email address.' }
 
   const db = createAdminClient()
   // Same club asking twice is one request, not two — the latest name and

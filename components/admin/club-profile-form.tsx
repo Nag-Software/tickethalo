@@ -46,6 +46,7 @@ type ClubProfileFormProps = {
 export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlineDays }: ClubProfileFormProps) {
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url)
+  const callingCode = callingCodeFor(club.country)
 
   /**
    * The file input is set programmatically, so that "Remove" actually clears
@@ -248,8 +249,8 @@ export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlin
               />
             </div>
             <FieldDescription className={FIELD_HINT_CLASS}>
-              {callingCodeFor(club.country)
-                ? `With country code. Without one, we add +${callingCodeFor(club.country)}.`
+              {callingCode
+                ? `With country code. Without one, we add +${callingCode}.`
                 : 'With country code, starting with +.'}
             </FieldDescription>
           </Field>
