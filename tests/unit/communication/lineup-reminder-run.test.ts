@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { memoryDb } from './memory-db'
 
 const state: { db: ReturnType<typeof memoryDb> | null } = { db: null }
-const sentEmails: Array<{ to: string; subject: string; text: string }> = []
+const sentEmails: Array<{ to: string; subject: string; text: string; replyTo?: string }> = []
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => state.db }))
 vi.mock('@/lib/email/bulk', () => {
@@ -15,11 +15,11 @@ vi.mock('@/lib/email/bulk', () => {
       queues.set(id, input.recipients.map((recipient) => ({ email: recipient.email.toLowerCase(), name: recipient.name ?? null })))
       return { ok: true, campaignId: id, recipientCount: input.recipients.length }
     }),
-    drainCampaign: vi.fn(async (id: string, options: { render: (recipient: { email: string; name: string | null; contact_id: null; unsubscribe_url: null }) => { to: string; subject: string; text: string } }) => {
+    drainCampaign: vi.fn(async (id: string, options: { render: (recipient: { email: string; name: string | null; contact_id: null; unsubscribe_url: null }) => { to: string; subject: string; text: string; replyTo?: string } }) => {
       const queue = queues.get(id) ?? []
       for (const recipient of queue) {
         const payload = options.render({ ...recipient, contact_id: null, unsubscribe_url: null })
-        sentEmails.push({ to: payload.to, subject: payload.subject, text: payload.text })
+        sentEmails.push({ to: payload.to, subject: payload.subject, text: payload.text, replyTo: payload.replyTo })
       }
       queues.set(id, [])
       return { status: 'sent', recipientCount: queue.length, sent: queue.length, failed: 0, remaining: 0 }
@@ -49,7 +49,14 @@ function seed(overrides: { show?: Record<string, unknown>; clubDefault?: boolean
       lineup_group_link: null,
       ...overrides.show,
     }],
-    clubs: [{ id: 'club-1', name: 'Crønch Comedy', support_email: 'hei@cronch.test', lineup_reminder_default: overrides.clubDefault ?? true }],
+    clubs: [{
+      id: 'club-1',
+      name: 'Crønch Comedy',
+      support_email: 'hei@cronch.test',
+      contact_email: null as string | null,
+      contact_phone: null as string | null,
+      lineup_reminder_default: overrides.clubDefault ?? true,
+    }],
     show_requirements: [
       { id: 'req-host', show_id: 'show-1', role_name: 'Host', lineup_position: 0, compensation_type: 'fixed', compensation_amount: 150000, compensation_percent: null },
       { id: 'req-spot', show_id: 'show-1', role_name: 'Stand-up', lineup_position: 1, compensation_type: 'fixed', compensation_amount: 100000, compensation_percent: null },
@@ -88,7 +95,8 @@ describe('sendDueLineupReminders', () => {
     const ben = sentEmails.find((email) => email.to === 'ben@test.test')!
     expect(ben.subject).toMatch(/^Reminder: Friday Laughs on Friday,? 20 November 2026$/)
     expect(ben.text).toContain('Arrive by: 19:15')
-    expect(ben.text).toContain('Host: Anna Berg · +4791234567')
+    expect(ben.text).toContain('Club contact: Crønch Comedy, hei@cronch.test')
+    expect(ben.text).toContain('Host: Anna Berg, anna@test.test, +4791234567')
     expect(ben.text).toMatch(/Fee: NOK\s1,000/)
     expect(ben.text).toContain('Your spot: Stand-up')
     expect(sentEmails.find((email) => email.to === 'anna@test.test')!.text).toContain('Host: You are hosting')
@@ -96,6 +104,24 @@ describe('sendDueLineupReminders', () => {
     expect(tables.lineup_messages).toHaveLength(1)
     expect(tables.lineup_messages[0]).toMatchObject({ kind: 'reminder', sender_name: null, recipient_count: 2 })
     expect(tables.lineup_message_recipients.map((row) => row.artist_id).sort()).toEqual(['anna', 'ben'])
+  })
+
+  it('uses the club’s own contact for the line-up, and replies go there', async () => {
+    tables.clubs[0].contact_email = 'booking@cronch.test'
+    tables.clubs[0].contact_phone = '4722334455'
+    await sendDueLineupReminders(run('2026-11-15'))
+
+    const ben = sentEmails.find((email) => email.to === 'ben@test.test')!
+    expect(ben.text).toContain('Club contact: Crønch Comedy, booking@cronch.test, +4722334455')
+    expect(ben.replyTo).toBe('booking@cronch.test')
+  })
+
+  it('leaves the host’s number out without consent', async () => {
+    tables.artists[0].whatsapp_consent_at = null
+    await sendDueLineupReminders(run('2026-11-15'))
+
+    const ben = sentEmails.find((email) => email.to === 'ben@test.test')!
+    expect(ben.text).toMatch(/Host: Anna Berg, anna@test\.test\n/)
   })
 
   it('sends only once per spot', async () => {

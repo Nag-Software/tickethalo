@@ -151,6 +151,10 @@ export type Club = {
   setup_guide_dismissed_at: string | null
   /** Påminnelsen til lineupen 5 dager før, på show som ikke har tatt stilling selv. Se migrasjon 081. */
   lineup_reminder_default: boolean
+  /** Klubbens kontakt for lineupen. Null = `support_email`. Se migrasjon 092. */
+  contact_email: string | null
+  /** Landskode og nummer, bare sifre (4791234567). Se lib/whatsapp.ts. */
+  contact_phone: string | null
 
   created_at: string
   updated_at: string
@@ -1711,6 +1715,8 @@ export type Database = {
           payout_schedule_checked_at?: string | null
           setup_guide_dismissed_at?: string | null
           lineup_reminder_default?: boolean
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string
           updated_at?: string
         }

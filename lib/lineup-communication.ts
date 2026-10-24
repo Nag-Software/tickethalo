@@ -40,6 +40,27 @@ export type LineupRecipient = {
   whatsapp: string | null
 }
 
+/** Raden fra `artists`, slik lineupen får den. */
+export type LineupArtistRow = Omit<LineupArtist, 'whatsapp_number'> & {
+  whatsapp_number: string | null
+  whatsapp_consent_at: string | null
+}
+
+/**
+ * Nummeret følger bare med når komikeren har samtykket. Uten samtykke finnes
+ * det ikke (sjekken i 081), men vi stoler ikke på det alene. `artists.phone`
+ * leses aldri her: ingen samtykke dekker å dele det med lineupen.
+ */
+export function lineupArtist(row: LineupArtistRow): LineupArtist {
+  return {
+    id: row.id,
+    full_name: row.full_name,
+    stage_name: row.stage_name,
+    email: row.email,
+    whatsapp_number: row.whatsapp_consent_at ? row.whatsapp_number : null,
+  }
+}
+
 export function artistName(artist: Pick<LineupArtist, 'full_name' | 'stage_name'>) {
   return artist.stage_name?.trim() || artist.full_name
 }
@@ -65,7 +86,7 @@ export function lineupRecipients(
   return recipients
 }
 
-export type LineupHost = { artistId: string; name: string; whatsapp: string | null }
+export type LineupHost = { artistId: string; name: string; email: string | null; whatsapp: string | null }
 
 /** Komikeren på Host-plassen. Har showet flere, er det den første i lineupen. */
 export function lineupHost(
@@ -78,7 +99,9 @@ export function lineupHost(
   )
   const spot = spots.find((row) => hostRequirements.has(row.show_requirement_id) && LINEUP_MESSAGE_STATUSES.includes(row.status))
   const artist = spot ? artists.find((row) => row.id === spot.artist_id) : null
-  return artist ? { artistId: artist.id, name: artistName(artist), whatsapp: artist.whatsapp_number } : null
+  return artist
+    ? { artistId: artist.id, name: artistName(artist), email: artist.email?.trim() || null, whatsapp: artist.whatsapp_number }
+    : null
 }
 
 /** Alt påminnelsen og den festede teksten forteller om kvelden. */
@@ -91,13 +114,24 @@ export type LineupShowDetails = {
   venue: string | null
   address: string | null
   clubName: string
+  /** `contact_email`, ellers `support_email`. Se lib/club-contact.ts. */
   clubEmail: string | null
+  /** Bare sifre, med landskode. */
+  clubPhone: string | null
   host: LineupHost | null
   groupLink: string | null
 }
 
-function contactLine(name: string, ...rest: Array<string | null | undefined>) {
-  return [name, ...rest.filter(Boolean)].join(' · ')
+/**
+ * «Crønch Comedy, hei@cronch.no, +4791234567» — navn, e-post, telefon, som
+ * Tom ba om (ClickUp 869fm99ff). Det som mangler, hoppes over uten å etterlate
+ * et komma. Telefonen er rene sifre inn og får `+` her.
+ */
+export function contactLine(name: string, email?: string | null, phone?: string | null) {
+  return [name, email, formatWhatsAppNumber(phone)]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(', ')
 }
 
 /**
@@ -112,13 +146,13 @@ export function lineupDetailRows(details: LineupShowDetails, forArtistId?: strin
     ['Address', details.address],
     ['Show starts', details.startTime],
     ['Arrive by', details.arrivalTime],
-    ['Club contact', contactLine(details.clubName, details.clubEmail)],
+    ['Club contact', contactLine(details.clubName, details.clubEmail, details.clubPhone)],
     [
       'Host',
       details.host
         ? details.host.artistId === forArtistId
           ? 'You are hosting'
-          : contactLine(details.host.name, formatWhatsAppNumber(details.host.whatsapp))
+          : contactLine(details.host.name, details.host.email, details.host.whatsapp)
         : null,
     ],
   ]

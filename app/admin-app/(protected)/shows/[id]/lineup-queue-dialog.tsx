@@ -18,7 +18,7 @@ import type {
   QueueComedian,
   QueueOfferState,
 } from '@/lib/booking-engine'
-import type { SkillLevel } from '@/types/database'
+import { SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
 import { getLineupQueueAction, saveLineupQueueAction, startBookingAction } from '../actions'
 import { LineupCallout } from './lineup-ui'
 
@@ -47,12 +47,6 @@ const STATE_CLASS: Record<QueueOfferState, string> = {
   booked: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   declined: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
   expired: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
-}
-
-const SKILL_CRITERION: Record<SkillLevel, string> = {
-  low: 'Any skill level',
-  medium: 'Medium or higher',
-  high: 'Only High',
 }
 
 const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
@@ -441,7 +435,8 @@ function SpotQueue({
   const [dropIndex, setDropIndex] = React.useState<number | null>(null)
   const [adding, setAdding] = React.useState(false)
 
-  const criterion = SKILL_CRITERION[spot.minSkillLevel ?? 'low']
+  // Low slipper alle inn, så her står det rett ut.
+  const criterion = spot.minSkillLevel && spot.minSkillLevel !== 'low' ? SKILL_REQUIREMENT_LABELS[spot.minSkillLevel] : 'Any skill level'
   const editable = !spot.note
 
   // Skillelinjene telles bare over dem som faktisk spørres her: en som får

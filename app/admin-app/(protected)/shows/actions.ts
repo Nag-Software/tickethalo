@@ -240,7 +240,7 @@ function assertValidCompensation(percent: number | null, amount: number | null) 
 }
 
 /**
- * Skill level fra skjemaet. `low` lagres som null: «Low or higher» er det
+ * Skill level fra skjemaet. `low` lagres som null: «Low (or better)» er det
  * samme som ingen grense, og én måte å si det på holder.
  */
 function optionalSkillLevel(value: unknown): SkillLevel | null {

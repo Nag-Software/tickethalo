@@ -78,12 +78,12 @@ describe('hard requirements', () => {
     expect(requirementBlocker(lowEnergyStandUp, standUpSpot)).toBeNull()
   })
 
-  it('lets an unreviewed comedian (5,0 = Medium) through Medium or higher, but not Only High', () => {
+  it('lets an unreviewed comedian (5,0 = Medium) through Medium (or better), but not High', () => {
     expect(matchesHardRequirements(lowEnergyStandUp, { ...standUpSpot, min_skill_level: 'medium' })).toBe(true)
     expect(matchesHardRequirements(lowEnergyStandUp, { ...standUpSpot, min_skill_level: 'high' })).toBe(false)
   })
 
-  it('lets everyone through when no skill level is set, or Low or higher', () => {
+  it('lets everyone through when no skill level is set, or Low (or better)', () => {
     const weak: MatchableArtist = { ...lowEnergyStandUp, score: 0 }
     expect(matchesHardRequirements(weak, standUpSpot)).toBe(true)
     expect(matchesHardRequirements(weak, { ...standUpSpot, min_skill_level: null })).toBe(true)

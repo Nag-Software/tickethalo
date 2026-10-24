@@ -8,7 +8,10 @@
  *
  * Ingen Node-avhengigheter.
  */
+import { isValidEmail } from '@/lib/email-address'
 import type { ParsedCsv } from './csv'
+
+export { isValidEmail }
 
 /** Kolonnene en import kan bruke. Null = ikke i fila. */
 export type ColumnMapping = {
@@ -98,13 +101,6 @@ export function normalizeEmail(value: string | null | undefined): string {
     .toLowerCase()
 }
 
-/**
- * Bevisst enkel: én @, noe på begge sider, en punktum i domenet og ingen
- * mellomrom. Strengere regler avviser ekte adresser; Resend avviser resten.
- */
-export function isValidEmail(email: string): boolean {
-  return email.length <= 254 && /^[^\s@"<>,;]+@[^\s@"<>,;]+\.[^\s@"<>,;.]{2,}$/.test(email)
-}
 
 function cleanText(value: string | null | undefined, max: number): string | null {
   const cleaned = (value ?? '').replace(/\s+/g, ' ').trim()
