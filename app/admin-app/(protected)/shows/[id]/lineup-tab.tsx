@@ -34,6 +34,7 @@ import {
   openRequirementEnergyLevelsAction,
   openRequirementSkillLevelAction,
 } from '../actions'
+import { SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
 type Artist = {
@@ -109,12 +110,6 @@ const ENERGY_LABELS: Record<RequirementEnergy, string> = {
   high: 'High',
   low: 'Low',
   uncertain: 'Unknown',
-}
-
-const SKILL_REQUIREMENT_LABELS: Record<SkillLevel, string> = {
-  low: 'Low or higher',
-  medium: 'Medium or higher',
-  high: 'Only High',
 }
 
 const GENDER_LABELS: Record<RequirementGender, string> = {

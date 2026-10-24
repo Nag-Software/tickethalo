@@ -129,6 +129,17 @@ export const SKILL_LEVEL_LABELS: Record<SkillLevel, string> = {
   high: 'High',
 }
 
+/**
+ * Minstekravet på en plass, slik bookeren velger og leser det. «Low or
+ * higher» og «Only High» ble lest om hverandre — «higher» og «High» ligner
+ * for mye (ClickUp 869fm9avq). «(or better)» sier det samme uten å gjenta ordet.
+ */
+export const SKILL_REQUIREMENT_LABELS: Record<SkillLevel, string> = {
+  low: 'Low (or better)',
+  medium: 'Medium (or better)',
+  high: 'High',
+}
+
 const SKILL_RANK: Record<SkillLevel, number> = { low: 0, medium: 1, high: 2 }
 
 export function skillLevelFromScore(score: number | null | undefined): SkillLevel {

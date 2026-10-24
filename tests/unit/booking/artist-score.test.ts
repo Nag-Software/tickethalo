@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatScore, globalScore, meetsSkillLevel, NEUTRAL_SCORE, scoreFromRatings, skillLevelFromScore } from '@/lib/artist-score'
+import { formatScore, globalScore, meetsSkillLevel, NEUTRAL_SCORE, scoreFromRatings, SKILL_LEVELS, SKILL_REQUIREMENT_LABELS, skillLevelFromScore } from '@/lib/artist-score'
 import type { PerformanceRating } from '@/types/database'
 
 const repeat = (rating: PerformanceRating, times: number): PerformanceRating[] =>
@@ -100,6 +100,16 @@ describe('skill level fra scoren', () => {
     expect(meetsSkillLevel(8, 'medium')).toBe(true)
     expect(meetsSkillLevel(7, 'high')).toBe(false)
     expect(meetsSkillLevel(7.1, 'high')).toBe(true)
+  })
+
+  // ClickUp 869fm9avq: «higher» og «High» ble lest om hverandre.
+  it('navngir minstekravet uten å gjenta «high»', () => {
+    expect(SKILL_LEVELS.map((level) => SKILL_REQUIREMENT_LABELS[level])).toEqual([
+      'Low (or better)',
+      'Medium (or better)',
+      'High',
+    ])
+    expect(Object.values(SKILL_REQUIREMENT_LABELS).filter((label) => /high/i.test(label))).toEqual(['High'])
   })
 })
 

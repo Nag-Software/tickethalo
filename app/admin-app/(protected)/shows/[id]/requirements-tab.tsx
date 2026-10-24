@@ -28,6 +28,7 @@ import {
   updateRequirementAction,
   deleteRequirementAction,
 } from '../actions'
+import { SKILL_LEVELS, SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { StartBookingCard } from './lineup-queue-dialog'
@@ -140,11 +141,7 @@ const GENDER_OPTIONS: { value: RequirementGender; label: string; icon: string }[
   { value: 'non_binary', label: 'Non-binary', icon: '⚧' },
 ]
 
-const SKILL_OPTIONS: { value: SkillLevel; label: string }[] = [
-  { value: 'low', label: 'Low or higher' },
-  { value: 'medium', label: 'Medium or higher' },
-  { value: 'high', label: 'Only High' },
-]
+const SKILL_OPTIONS = SKILL_LEVELS.map((value) => ({ value, label: SKILL_REQUIREMENT_LABELS[value] }))
 
 const ENERGY_LABELS: Record<RequirementEnergy, string> = {
   any: 'All energy levels',
