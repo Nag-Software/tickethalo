@@ -31,6 +31,11 @@ const CALLING_CODES: Record<string, string> = {
   CA: '1',
 }
 
+/** Landskoden et nummer uten `+` får, eller null når landet ikke står over. */
+export function callingCodeFor(country?: string | null) {
+  return CALLING_CODES[(country ?? 'NO').toUpperCase()] ?? null
+}
+
 /** E.164: høyst 15 sifre med landskoden. Under 8 er ikke et mobilnummer noe sted. */
 const MIN_DIGITS = 8
 const MAX_DIGITS = 15
@@ -54,7 +59,7 @@ export function normalizeWhatsAppNumber(input: string | null | undefined, countr
   } else if (digitsOnly.startsWith('00')) {
     digits = digitsOnly.slice(2)
   } else {
-    const code = CALLING_CODES[(country ?? 'NO').toUpperCase()]
+    const code = callingCodeFor(country)
     if (!code) return null
     // Skrevet med landskoden, men uten `+`: 4791234567.
     if (digitsOnly.startsWith(code) && digitsOnly.length >= code.length + MIN_DIGITS) {

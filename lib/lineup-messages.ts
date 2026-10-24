@@ -8,7 +8,9 @@ import { showVenue } from '@/lib/show-venue'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
 import { mergeChangeNotice, type ChangeWatchedShow } from '@/lib/lineup-changes'
 import { REMINDER_DAYS_BEFORE, reminderDueToday } from '@/lib/lineup-reminders'
+import { clubContactEmail } from '@/lib/club-contact'
 import {
+  lineupArtist,
   lineupHost,
   lineupRecipients,
   type LineupArtist,
@@ -68,7 +70,14 @@ export type LineupContext = {
     lineup_change_notice: LineupChangeNotice | null
     lineup_group_link: string | null
   }
-  club: { id: string; name: string; support_email: string | null; lineup_reminder_default: boolean }
+  club: {
+    id: string
+    name: string
+    support_email: string | null
+    contact_email: string | null
+    contact_phone: string | null
+    lineup_reminder_default: boolean
+  }
   requirements: Array<{
     id: string
     role_name: string
@@ -98,7 +107,8 @@ export function showDetails(
     venue: venue.venue,
     address: venue.address,
     clubName: club.name,
-    clubEmail: club.support_email,
+    clubEmail: clubContactEmail(club),
+    clubPhone: club.contact_phone?.trim() || null,
     host,
     groupLink: show.lineup_group_link,
   }
@@ -113,7 +123,7 @@ export async function loadLineupContext(db: Db, showId: string): Promise<LineupC
   if (!show?.club_id) return null
 
   const [{ data: club }, { data: requirements }, { data: spots }] = await Promise.all([
-    db.from('clubs').select('id, name, support_email, lineup_reminder_default').eq('id', show.club_id).maybeSingle(),
+    db.from('clubs').select('id, name, support_email, contact_email, contact_phone, lineup_reminder_default').eq('id', show.club_id).maybeSingle(),
     db
       .from('show_requirements')
       .select('id, role_name, lineup_position, compensation_type, compensation_amount, compensation_percent')
@@ -138,14 +148,7 @@ export async function loadLineupContext(db: Db, showId: string): Promise<LineupC
   const { data: artistRows } = artistIds.length
     ? await db.from('artists').select('id, full_name, stage_name, email, whatsapp_number, whatsapp_consent_at').in('id', artistIds)
     : { data: [] }
-  // Nummeret uten samtykke finnes ikke (sjekken i 081), men vi stoler ikke på det alene.
-  const artists: LineupArtist[] = (artistRows ?? []).map((artist) => ({
-    id: artist.id,
-    full_name: artist.full_name,
-    stage_name: artist.stage_name,
-    email: artist.email,
-    whatsapp_number: artist.whatsapp_consent_at ? artist.whatsapp_number : null,
-  }))
+  const artists: LineupArtist[] = (artistRows ?? []).map(lineupArtist)
 
   const typedShow = { ...show, club_id: show.club_id } as LineupContext['show']
   const typedRequirements = (requirements ?? []) as LineupContext['requirements']
@@ -240,7 +243,7 @@ export async function sendLineupMessage(input: SendLineupMessageInput): Promise<
 }
 
 function replyToFor(context: LineupContext, senderEmail: string | null) {
-  return senderEmail ?? context.club.support_email ?? REPLY_TO_EMAIL
+  return senderEmail ?? clubContactEmail(context.club) ?? REPLY_TO_EMAIL
 }
 
 /** Én runde av køen. Kan kalles igjen til `remaining` er 0. */

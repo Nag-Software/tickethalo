@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { extractLogoBrandColor } from '@/lib/club-logo-color'
 import { normalizeCurrency } from '@/lib/currencies'
+import { parseClubContact } from '@/lib/club-contact'
 import { trySyncConnectedAccountBranding } from '@/lib/stripe-connect'
 
 const CLUB_MEDIA_BUCKET = 'club-media'
@@ -165,12 +166,21 @@ export async function saveClubProfileAction(formData: FormData) {
 
   const { data: currentClub, error: currentClubError } = await admin
     .from('clubs')
-    .select('id, logo_url, legal_name, stripe_account_id')
+    .select('id, logo_url, legal_name, stripe_account_id, country')
     .eq('id', clubId)
     .single()
 
   if (currentClubError || !currentClub) {
     throw new Error('Fant ikke valgt klubb.')
+  }
+
+  // Kontakten sjekkes før noe lagres eller lastes opp. Feilen returneres i
+  // stedet for å kastes: Next skjuler teksten i en kastet feil i produksjon.
+  const contact = formData.has('contact_email')
+    ? parseClubContact({ email: formData.get('contact_email') as string | null, phone: formData.get('contact_phone') as string | null }, currentClub.country)
+    : null
+  if (contact && !contact.ok) {
+    return { error: contact.error }
   }
 
   const name = getRequiredText(formData, 'name', 'Club name')
@@ -223,6 +233,7 @@ export async function saveClubProfileAction(formData: FormData) {
       currency,
       lineup_deadline_days: lineupDeadlineDays,
       ...(lineupReminderDefault === undefined ? {} : { lineup_reminder_default: lineupReminderDefault }),
+      ...(contact?.ok ? { contact_email: contact.contact_email, contact_phone: contact.contact_phone } : {}),
       logo_url: logoUrl,
       ...(brandColor === undefined ? {} : { brand_color: brandColor }),
     })

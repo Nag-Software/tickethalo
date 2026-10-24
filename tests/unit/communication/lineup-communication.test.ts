@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { lineupDetailRows, lineupHost, lineupRecipients, pinnedInfo, type LineupArtist } from '@/lib/lineup-communication'
+import { contactLine, lineupArtist, lineupDetailRows, lineupHost, lineupRecipients, pinnedInfo, type LineupArtist } from '@/lib/lineup-communication'
 import { lineupGroupInviteTemplate, lineupMessageTemplate, messageParagraphs } from '@/lib/email/lineup-templates'
 
 const artists: LineupArtist[] = [
@@ -53,7 +53,7 @@ describe('lineupHost and the pinned info', () => {
   ]
 
   it('finds whoever holds the host spot, by any name for it', () => {
-    expect(lineupHost(requirements, spots, artists)).toEqual({ artistId: 'anna', name: 'Anna Berg', whatsapp: '4791234567' })
+    expect(lineupHost(requirements, spots, artists)).toEqual({ artistId: 'anna', name: 'Anna Berg', email: 'anna@test.test', whatsapp: '4791234567' })
     expect(lineupHost(requirements, [spots[0]], artists)).toBeNull()
   })
 
@@ -66,7 +66,8 @@ describe('lineupHost and the pinned info', () => {
     address: 'Storgata 1, Oslo',
     clubName: 'Crønch Comedy',
     clubEmail: 'hei@cronch.test',
-    host: { artistId: 'anna', name: 'Anna Berg', whatsapp: '4791234567' },
+    clubPhone: '4722334455',
+    host: { artistId: 'anna', name: 'Anna Berg', email: 'anna@test.test', whatsapp: '4791234567' },
     groupLink: null,
   }
 
@@ -74,13 +75,45 @@ describe('lineupHost and the pinned info', () => {
     expect(pinnedInfo(details).split('\n').map((line) => line.split(':')[0])).toEqual([
       'Friday Laughs', 'Date', 'Venue', 'Address', 'Show starts', 'Club contact', 'Host',
     ])
-    expect(pinnedInfo(details)).toContain('Club contact: Crønch Comedy · hei@cronch.test')
-    expect(pinnedInfo(details)).toContain('Host: Anna Berg · +4791234567')
+    expect(pinnedInfo(details)).toContain('Club contact: Crønch Comedy, hei@cronch.test, +4722334455')
+    expect(pinnedInfo(details)).toContain('Host: Anna Berg, anna@test.test, +4791234567')
+  })
+
+  it('leaves out what the club or the host has not given, without a stray comma', () => {
+    const sparse = { ...details, clubEmail: null, clubPhone: null, host: { ...details.host, email: null, whatsapp: null } }
+    expect(pinnedInfo(sparse)).toContain('Club contact: Crønch Comedy\n')
+    expect(pinnedInfo(sparse).split('\n').at(-1)).toBe('Host: Anna Berg')
+    expect(pinnedInfo({ ...details, clubEmail: null })).toContain('Club contact: Crønch Comedy, +4722334455')
   })
 
   it('tells the host they are hosting instead of their own number', () => {
     expect(lineupDetailRows(details, 'anna')).toContainEqual(['Host', 'You are hosting'])
     expect(lineupDetailRows({ ...details, host: null })).not.toContainEqual(expect.arrayContaining(['Host']))
+  })
+})
+
+describe('contactLine', () => {
+  it('is name, email, phone, skipping what is missing or blank', () => {
+    expect(contactLine('Crønch Comedy', 'hei@cronch.test', '4722334455')).toBe('Crønch Comedy, hei@cronch.test, +4722334455')
+    expect(contactLine('Crønch Comedy', null, '4722334455')).toBe('Crønch Comedy, +4722334455')
+    expect(contactLine('Crønch Comedy', ' ', null)).toBe('Crønch Comedy')
+    expect(contactLine('Crønch Comedy')).toBe('Crønch Comedy')
+  })
+})
+
+describe('lineupArtist', () => {
+  const row = { id: 'anna', full_name: 'Anna Berg', stage_name: null, email: 'anna@test.test', whatsapp_number: '4791234567' }
+
+  it('shares the WhatsApp number only with consent', () => {
+    expect(lineupArtist({ ...row, whatsapp_consent_at: '2026-10-01T00:00:00Z' }).whatsapp_number).toBe('4791234567')
+    expect(lineupArtist({ ...row, whatsapp_consent_at: null }).whatsapp_number).toBeNull()
+  })
+
+  it('so the host line has no phone without consent', () => {
+    const artist = lineupArtist({ ...row, whatsapp_consent_at: null })
+    const host = lineupHost([{ id: 'req-host', role_name: 'Host' }], [{ artist_id: 'anna', show_requirement_id: 'req-host', status: 'confirmed' }], [artist])
+    expect(host).toEqual({ artistId: 'anna', name: 'Anna Berg', email: 'anna@test.test', whatsapp: null })
+    expect(contactLine(host!.name, host!.email, host!.whatsapp)).toBe('Anna Berg, anna@test.test')
   })
 })
 

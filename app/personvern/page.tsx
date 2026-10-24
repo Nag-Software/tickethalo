@@ -6,7 +6,7 @@ export const metadata = {
   description: 'What we store when you buy a ticket, why, and for how long.',
 }
 
-const UPDATED = '22 October 2026'
+const UPDATED = '24 October 2026'
 const SUPPORT_EMAIL = 'hei@tickethalo.com'
 
 export default function PrivacyPage() {
@@ -99,14 +99,15 @@ export default function PrivacyPage() {
         <p>
           When a club books you, it can send messages to everyone on the line-up of that show. They
           come by email and are kept in your comedian portal, together with when you opened them,
-          so you can find them again. Replies go by email straight to the club. The legal basis is
+          so you can find them again. Replies go by email straight to the club. When you host a show,
+          the rest of that line-up sees your email address as the host contact. The legal basis is
           the booking agreement between you and the club.
         </p>
         <p>
           You can add a WhatsApp number to your profile. It is optional, and it is only saved if you
           tick the box next to it. Clubs that book you can then see the number and use it to add you
-          to a group chat for the show. When you host a show, the rest of that line-up sees it as the
-          host contact. The legal basis is your consent.
+          to a group chat for the show. When you host a show, the rest of that line-up sees your
+          WhatsApp number too, next to your email address. The legal basis is your consent.
         </p>
         <p>
           A WhatsApp group is run by WhatsApp, not by Tickethalo, and everyone in it can see your

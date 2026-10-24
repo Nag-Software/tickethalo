@@ -18,11 +18,16 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { callingCodeFor, formatWhatsAppNumber } from '@/lib/whatsapp'
 import { saveClubProfileAction } from '@/app/admin-app/(protected)/my-club/actions'
 import type { Club, ClubLocation } from '@/types/database'
 
 type ClubProfileFormProps = {
-  club: Pick<Club, 'name' | 'description' | 'logo_url' | 'city' | 'currency' | 'lineup_deadline_days' | 'lineup_reminder_default'>
+  club: Pick<
+    Club,
+    | 'name' | 'description' | 'logo_url' | 'city' | 'currency' | 'lineup_deadline_days' | 'lineup_reminder_default'
+    | 'contact_email' | 'contact_phone' | 'support_email' | 'country'
+  >
   /** Plattformens standard, som klubben følger når feltet står tomt. */
   defaultLineupDeadlineDays: number
   locations: Array<Pick<ClubLocation, 'id' | 'name' | 'address_line'>>
@@ -204,6 +209,54 @@ export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlin
               </span>
             </label>
           </Field>
+        </FieldSection>
+
+        {/* Det lineupen ser som «Club contact» i påminnelsen og gruppechatten.
+            Ikke billettkjøperne: de ser adressen under Finances. */}
+        <FieldSection id="club-profile-contact" title="Contact for comedians">
+          <Field className="col-span-12 min-w-0 gap-1.5 @xl:col-span-6">
+            <FieldLabel htmlFor="club-contact-email">Email</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="club-contact-email"
+                name="contact_email"
+                type="email"
+                autoComplete="email"
+                defaultValue={club.contact_email ?? ''}
+                placeholder={club.support_email ?? 'booking@comedyclub.com'}
+                className={FIELD_INPUT_CLASS}
+              />
+            </div>
+            <FieldDescription className={FIELD_HINT_CLASS}>
+              {club.support_email
+                ? `Leave it empty to use ${club.support_email}, the address ticket buyers see.`
+                : 'Can differ from the email you log in with.'}
+            </FieldDescription>
+          </Field>
+
+          <Field className="col-span-12 min-w-0 gap-1.5 @xl:col-span-6">
+            <FieldLabel htmlFor="club-contact-phone">Phone</FieldLabel>
+            <div className={FIELD_GROUP_CLASS}>
+              <Input
+                id="club-contact-phone"
+                name="contact_phone"
+                type="tel"
+                autoComplete="tel"
+                defaultValue={formatWhatsAppNumber(club.contact_phone)}
+                placeholder="+47 912 34 567"
+                className={FIELD_INPUT_CLASS}
+              />
+            </div>
+            <FieldDescription className={FIELD_HINT_CLASS}>
+              {callingCodeFor(club.country)
+                ? `With country code. Without one, we add +${callingCodeFor(club.country)}.`
+                : 'With country code, starting with +.'}
+            </FieldDescription>
+          </Field>
+
+          <p className={`col-span-12 ${FIELD_HINT_CLASS}`}>
+            The line-up sees this as the club contact in the reminder and in the WhatsApp group text.
+          </p>
         </FieldSection>
 
         <FieldSection id="club-profile-about" title="About">

@@ -21,6 +21,10 @@ function renderForm() {
         currency: 'NOK',
         lineup_deadline_days: null,
         lineup_reminder_default: true,
+        contact_email: null,
+        contact_phone: '4791234567',
+        support_email: 'billett@latter.no',
+        country: 'NO',
       }}
       locations={[
         { id: 'loc-1', name: 'Latter', address_line: 'Aker Brygge 1' },
@@ -67,6 +71,12 @@ describe('club profile form', () => {
     const tickets = screen.getByRole('group', { name: 'Tickets' })
     expect(within(tickets).getByRole('button', { name: 'Currency NOK — Norwegian krone' })).toBeInTheDocument()
 
+    const contact = screen.getByRole('group', { name: 'Contact for comedians' })
+    // Tom e-post = adressen billettkjøperne ser; det står i hintet.
+    expect(within(contact).getByLabelText('Email')).toHaveValue('')
+    expect(within(contact).getByText(/Leave it empty to use billett@latter\.no/)).toBeInTheDocument()
+    expect(within(contact).getByLabelText('Phone')).toHaveValue('+4791234567')
+
     expect(within(screen.getByRole('group', { name: 'About' })).getByLabelText('About the club')).toHaveValue(
       'Stand-up every Thursday.',
     )
@@ -87,6 +97,8 @@ describe('club profile form', () => {
     // Tomt felt betyr «følg plattformens standard», ikke null dager. Se
     // `saveClubProfileAction`.
     expect(values.get('lineup_deadline_days')).toBe('')
+    expect(values.get('contact_email')).toBe('')
+    expect(values.get('contact_phone')).toBe('+4791234567')
   })
 
   it('does not submit the club page link', () => {
