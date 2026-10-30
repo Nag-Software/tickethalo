@@ -7,6 +7,7 @@ import { createShow } from '@/lib/actions/shows'
 import { copyTicketTypes } from '@/lib/ticket-types-copy'
 import { acceptBookingOfferById, automateFullbookedShow, cancelConfirmedSpotForOffer, runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { publishShow } from '@/lib/show-publish'
+import { parseDuration } from '@/lib/spot-duration'
 import { getLineupQueue, runBookingWave, saveLineupQueues, type LineupQueue, type LineupQueueInput } from '@/lib/booking-engine'
 import { runAfterResponse } from '@/lib/background'
 import { notifyClubWaitlist } from '@/lib/waitlist'
@@ -257,6 +258,7 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     : null
 
   assertValidCompensation(compensationPercent, compensationAmount)
+  const duration = requirementDurationFromForm(formData.get('duration_minutes'))
 
   return {
     role_name: canonicalRoleLabel(String(formData.get('role_name') ?? '').trim()) ?? '',
@@ -271,6 +273,17 @@ async function getRequirementWriteInput(formData: FormData, showId: string) {
     compensation_type: compensationType,
     compensation_amount: compensationAmount,
     compensation_percent: compensationPercent,
+    // Bare når skjemaet har feltet. Knappene som legger til eller dupliserer
+    // en plass uten varighet, skal ikke nulle en som alt er satt.
+    ...(formData.has('duration_minutes') ? { duration_minutes: duration } : {}),
+  }
+}
+
+function requirementDurationFromForm(value: FormDataEntryValue | null) {
+  try {
+    return parseDuration(value)
+  } catch (error) {
+    throw new RequirementInputError((error as Error).message)
   }
 }
 
@@ -499,6 +512,7 @@ export async function cloneShowAction(formData: FormData) {
     energy_level: RequirementEnergy
     required_gender: RequirementGender
     min_skill_level: SkillLevel | null
+    duration_minutes: number | null
     compensation_type: RequirementCompensationType | null
     compensation_amount: number | null
     compensation_percent: number | null
@@ -517,6 +531,7 @@ export async function cloneShowAction(formData: FormData) {
         energy_level: ((formData.get(`req_${i}_energy_level`) as RequirementEnergy | null) ?? 'any'),
         required_gender: ((formData.get(`req_${i}_required_gender`) as RequirementGender | null) ?? 'any'),
         min_skill_level: optionalSkillLevel(formData.get(`req_${i}_min_skill_level`)),
+        duration_minutes: requirementDurationFromForm(formData.get(`req_${i}_duration_minutes`)),
         compensation_type: compensationType,
         compensation_amount: compensationType === 'fixed' ? optionalMoneyToMinor(formData.get(`req_${i}_compensation_amount`)) : null,
         compensation_percent: compensationType === 'percent' ? optionalDecimal(formData.get(`req_${i}_compensation_percent`)) : null,
@@ -529,7 +544,7 @@ export async function cloneShowAction(formData: FormData) {
   if (newReqs.length === 0) {
     const { data: templateReqs } = await db
       .from('show_requirements')
-      .select('role_name, quantity, lineup_position, energy_level, required_gender, min_skill_level, compensation_type, compensation_amount, compensation_percent')
+      .select('role_name, quantity, lineup_position, energy_level, required_gender, min_skill_level, duration_minutes, compensation_type, compensation_amount, compensation_percent')
       .eq('show_id', templateId)
       .order('lineup_position')
       .order('created_at')
@@ -542,6 +557,7 @@ export async function cloneShowAction(formData: FormData) {
         energy_level: r.energy_level as RequirementEnergy,
         required_gender: ((r as { required_gender?: string }).required_gender as RequirementGender | undefined) ?? 'any',
         min_skill_level: optionalSkillLevel(r.min_skill_level),
+        duration_minutes: r.duration_minutes ?? null,
         compensation_type: (r.compensation_type as RequirementCompensationType | null) ?? null,
         compensation_amount: r.compensation_amount,
         compensation_percent: r.compensation_percent,
@@ -837,6 +853,29 @@ export async function updateRequirementAction(formData: FormData): Promise<Requi
 }
 
 /**
+ * Varigheten på én plass, satt fra lineupen etter at bookingen har startet.
+ *
+ * Bare minuttene skrives. Ingen bølge: hvor lenge komikeren skal stå på
+ * scenen, endrer ikke hvem som passer plassen. Tilbud som alt er ute, viser
+ * den nye varigheten neste gang komikeren åpner dem.
+ */
+export async function updateSpotDurationAction(formData: FormData): Promise<RequirementActionResult> {
+  const showId = formData.get('show_id') as string
+  const reqId = formData.get('req_id') as string
+  await assertRequirementAccess(showId, reqId)
+
+  return runRequirementAction(async () => {
+    const { error } = await createAdminClient()
+      .from('show_requirements')
+      .update({ duration_minutes: requirementDurationFromForm(formData.get('duration_minutes')) })
+      .eq('id', reqId)
+      .eq('show_id', showId)
+    if (error) throw new Error(error.message)
+    revalidatePath(`/admin-app/shows/${showId}`)
+  })
+}
+
+/**
  * The role for a single lineup spot, set straight from the booking card.
  *
  * Only the role is written — score, energy, gender and fee keep whatever the
@@ -1041,8 +1080,8 @@ export async function deleteRequirementAction(formData: FormData) {
  *
  * Står det noen på plassen, avlyses bookingen først: den bekreftede spoten
  * settes til `cancelled`, et tilbud som er ute trekkes. Til forskjell fra
- * `removeSpotAndReopenAction` sendes det ikke nye tilbud etterpå — plassen
- * skal bort, ikke fylles på nytt.
+ * `removeSpotAndReopenAction` står ikke plassen igjen og venter på å bli
+ * fylt — den skal bort.
  */
 export async function deleteSpotAction(formData: FormData) {
   const showId = formData.get('show_id') as string
@@ -1149,6 +1188,11 @@ export async function updateOfferStatusAction(formData: FormData) {
   }
 
   const { removedArtistIds } = await cancelConfirmedSpotForOffer(offerId)
+  // Bookeren tok komikeren ut av en bekreftet plass. Samme regel som «Remove»:
+  // motoren tilbyr hen ikke showet igjen. Hen kan fortsatt velges for hånd.
+  for (const artistId of removedArtistIds) {
+    await excludeArtistFromAutomaticBooking(db, showId, artistId, 'admin_removed_spot')
+  }
 
   const { error } = await db.from('booking_offers').update({
     status,
@@ -1260,21 +1304,50 @@ export async function removeSpotAndReopenAction(formData: FormData) {
     notifyLineupChange(showId, { removed: [spot.artist_id], withdrawn: [] })
   }
 
-  // Bølgen starter forfra på plassen: også andre gangen skal de beste få
-  // sjansen først. Motoren ser at plassen har hatt en komiker som falt fra,
-  // og bruker «Ledig spot»-e-posten i stedet for det vanlige tilbudet.
-  await startAutoBooking(showId, spot.show_requirement_id, { restart: true })
-
-  runAfterResponse(`reopen-spot-${spotId}`, async () => {
-    await runAutomaticBookingForShow(showId)
-    revalidatePath(`/admin-app/shows/${showId}`)
-    revalidatePath('/admin-app/bookings')
-  })
+  // Ingen ny runde av seg selv. Bookeren velger etterpå: plukke selv, eller
+  // «Auto-book new» (`resumeAutoBookingAction`). Til da står plassen — også
+  // når den daglige kjøringen går over showet. Se migrasjon 094.
+  const { error: pauseError } = await db
+    .from('show_requirements')
+    .update({ rebook_paused_at: new Date().toISOString() })
+    .eq('id', spot.show_requirement_id)
+    .eq('show_id', showId)
+  if (pauseError) throw new Error(pauseError.message)
 
   // Er plassen åpen for søknader, fyller ikke motoren den — da er det
   // ventelisten klubben skal ta av, og den skal klubben få høre om.
   runAfterResponse(`waitlist-${spot.show_requirement_id}`, () => notifyClubWaitlist(spot.show_requirement_id))
 
+  revalidatePath(`/admin-app/shows/${showId}`)
+  revalidatePath('/admin-app/bookings')
+  return { requirementId: spot.show_requirement_id as string }
+}
+
+/**
+ * «Auto-book new» etter en fjerning: motoren tar plassen igjen.
+ *
+ * Bølgen starter forfra — også andre gangen skal de beste få sjansen først.
+ * Motoren ser at plassen har hatt en komiker som falt fra, og bruker «Ledig
+ * spot»-e-posten i stedet for det vanlige tilbudet. Komikeren som ble tatt
+ * ut, står fortsatt i `show_artist_booking_exclusions` og spørres ikke.
+ */
+export async function resumeAutoBookingAction(formData: FormData) {
+  const showId = formData.get('show_id') as string
+  const reqId = formData.get('req_id') as string
+  await assertRequirementAccess(showId, reqId)
+
+  // `startAutoBooking` med omstart nuller pausen. Den står over plasser åpne
+  // for søknader og show som ikke er i gang — da må pausen nulles her, ellers
+  // står plassen fast når søknadene lukkes.
+  const { error } = await createAdminClient()
+    .from('show_requirements')
+    .update({ rebook_paused_at: null })
+    .eq('id', reqId)
+    .eq('show_id', showId)
+  if (error) throw new Error(error.message)
+
+  await startAutoBooking(showId, reqId, { restart: true })
+  scheduleShowAutomation(showId, `resume-${reqId}`)
   revalidatePath(`/admin-app/shows/${showId}`)
 }
 
@@ -1407,6 +1480,11 @@ export async function swapArtistAction(formData: FormData) {
   if (error) throw new Error(error.message)
 
   await clearArtistBookingExclusion(db, showId, newArtistId)
+  // Den som ble byttet ut, er tatt av showet på samme måte som med «Remove»:
+  // motoren skal ikke tilby hen en annen plass på det samme showet.
+  if (oldSpot.artist_id !== newArtistId) {
+    await excludeArtistFromAutomaticBooking(db, showId, oldSpot.artist_id, 'admin_swapped_out')
+  }
 
   // Et bytte er to beskjeder: én ut, én inn. Ingen av dem har svart på noe.
   if (oldSpot.status === 'confirmed') notifyLineupChange(showId, { removed: [oldSpot.artist_id], withdrawn: [] })

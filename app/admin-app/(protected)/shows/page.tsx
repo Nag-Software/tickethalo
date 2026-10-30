@@ -68,7 +68,7 @@ export default async function ShowsPage({
   const showIds = (allShows ?? []).map((show) => show.id)
   const [{ data: requirementRows }, { data: spotRows }, { data: offerRows }, { data: ticketRows }] = await Promise.all([
     showIds.length > 0
-      ? db.from('show_requirements').select('id, show_id, role_name, quantity, lineup_position, compensation_type, compensation_amount, compensation_percent').in('show_id', showIds).order('lineup_position').order('created_at')
+      ? db.from('show_requirements').select('id, show_id, role_name, quantity, lineup_position, rebook_paused_at, compensation_type, compensation_amount, compensation_percent').in('show_id', showIds).order('lineup_position').order('created_at')
       : Promise.resolve({ data: [] as RequirementRow[] }),
     showIds.length > 0
       ? db.from('confirmed_spots').select('show_id, artist_id, show_requirement_id, status').in('show_id', showIds).in('status', ['confirmed', 'completed', 'paid'])

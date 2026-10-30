@@ -182,6 +182,8 @@ export async function sendBookingConfirmedEmail(opts: {
   show_date: string
   show_time?: string | null
   venue?: string | null
+  role_name?: string | null
+  duration_label?: string | null
   fee_label?: string | null
   portal_url?: string | null
   /** true når klubben satte komikeren rett inn, uten at hen svarte på et tilbud. */

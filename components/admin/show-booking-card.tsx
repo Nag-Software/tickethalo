@@ -5,6 +5,7 @@ import {
   Calendar,
   Check,
   CircleDashed,
+  CirclePause,
   Clock,
   Crown,
   Mic,
@@ -306,13 +307,23 @@ function BookingSpotRow({ spot }: { spot: BookingSpot }) {
       </div>
 
       <div className="flex shrink-0 items-center justify-end py-3 pr-3 @[30rem]:w-[8.25rem]">
-        <SpotStatusBadge state={spot.state} />
+        <SpotStatusBadge state={spot.state} paused={spot.paused} />
       </div>
     </li>
   )
 }
 
-export function SpotStatusBadge({ state }: { state: BookingSpot['state'] }) {
+export function SpotStatusBadge({ state, paused = false }: { state: BookingSpot['state']; paused?: boolean }) {
+  // Ledig, men motoren venter på bookeren — se `BookingSpot.paused`.
+  if (state === 'open' && paused) {
+    return (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-amber-200 bg-background px-2.5 py-1 font-medium text-amber-700 dark:border-amber-900 dark:text-amber-400">
+        <CirclePause className="size-3.5" />
+        Paused
+      </span>
+    )
+  }
+
   if (state === 'booked') {
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-400">

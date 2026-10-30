@@ -52,6 +52,11 @@ export type AttentionRequirement = {
   /** Motoren jobber på plassen. Er den av, rører den den ikke. */
   autoStarted: boolean
   /**
+   * En komiker er tatt ut, og plassen venter på at bookeren velger: plukke
+   * selv eller «Auto-book new». Til da sender motoren ingenting. Se migrasjon 094.
+   */
+  rebookPaused?: boolean
+  /**
    * Alle på klubbens liste som oppfyller kravene til plassen og kan den
    * kvelden — uansett om de har fått tilbud på showet allerede.
    */
@@ -186,12 +191,16 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       // det bookeren som må ringe, og varselet skal ikke si at systemet
       // ordner det.
       const isShowDay = show.date === today
+      // En pauset plass fyller ikke systemet — det venter på bookeren.
+      const waitingOnBooker = openSpots.every((req) => req.rebookPaused)
       add(
         'critical',
         'published-open',
         isShowDay
           ? 'Showet er i kveld, og en plass står tom. Systemet sender ikke tilbud på showdagen.'
-          : 'Showet er publisert, men en plass har blitt ledig. Systemet fyller den igjen.',
+          : waitingOnBooker
+            ? 'Showet er publisert, men en komiker er tatt ut. Plassen står til dere velger hvem som fyller den.'
+            : 'Showet er publisert, men en plass har blitt ledig. Systemet fyller den igjen.',
         isShowDay ? 'Ring noen, eller slett plassen' : 'Følg med, og oppdater plakaten',
       )
     }
@@ -209,6 +218,21 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
           ? 'Bookingen er ikke startet, så systemet sender ingen tilbud på dette showet.'
           : `${idleSpots.length} ${idleSpots.length === 1 ? 'plass er' : 'plasser er'} ikke med i bookingen, og får ingen tilbud.`,
         'Start booking',
+      )
+    }
+
+    // ── En komiker er tatt ut, og bookeren har ikke valgt ────────────────
+    //
+    // «Remove» starter ikke lenger en ny runde av seg selv. Lukker bookeren
+    // spørsmålet uten å velge, står plassen tom til noen ser den her.
+    const pausedSpots = openSpots.filter((req) => req.rebookPaused && !req.submissionsOpen && req.pendingManual === 0)
+    if (show.status !== 'published' && pausedSpots.length > 0) {
+      add(
+        'warning',
+        'rebook-paused',
+        `En komiker er tatt ut, og ${pausedSpots.length === 1 ? 'plassen venter' : `${pausedSpots.length} plasser venter`} på at dere velger. Systemet sender ingen tilbud før det.`,
+        'Velg selv eller auto-book',
+        pausedSpots.length === 1 ? spotLabel(pausedSpots[0]) : null,
       )
     }
 

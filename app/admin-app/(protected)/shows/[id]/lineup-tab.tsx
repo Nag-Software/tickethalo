@@ -24,6 +24,8 @@ import {
   addRequirementAction,
   deleteRequirementAction,
   removeSpotAndReopenAction,
+  resumeAutoBookingAction,
+  updateSpotDurationAction,
   moveSpotAction,
   movePendingOfferAction,
   swapArtistAction,
@@ -35,6 +37,8 @@ import {
   openRequirementSkillLevelAction,
 } from '../actions'
 import { SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
+import { formatDuration, MAX_SPOT_DURATION, MIN_SPOT_DURATION } from '@/lib/spot-duration'
+import { RebookChoiceDialog } from '@/components/admin/rebook-choice-dialog'
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel, SubmissionsAudience } from '@/types/database'
 
 type Artist = {
@@ -60,6 +64,10 @@ type Requirement = {
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   min_skill_level: SkillLevel | null
+  /** Minutter på scenen. Null = ikke satt. */
+  duration_minutes: number | null
+  /** Satt etter «Remove»: plassen venter på at bookeren velger. Se migrasjon 094. */
+  rebook_paused_at: string | null
   submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
@@ -165,6 +173,7 @@ function requirementSummary(requirement: Requirement, currency: string) {
     ...(requirement.min_skill_level && requirement.min_skill_level !== 'low'
       ? [`Skill ${SKILL_REQUIREMENT_LABELS[requirement.min_skill_level]}`]
       : []),
+    ...(formatDuration(requirement.duration_minutes) ? [`Duration ${formatDuration(requirement.duration_minutes)}`] : []),
     fee,
   ]
 }
@@ -187,6 +196,7 @@ export function LineupTab({
   submissionsCloseAt,
   rosterSize,
   pendingByRequirement,
+  removedArtistIds,
 }: {
   showId: string
   showTitle: string
@@ -207,6 +217,11 @@ export function LineupTab({
   submissionsCloseAt: string | null
   rosterSize: number
   pendingByRequirement: Record<string, number>
+  /**
+   * Komikere bookeren har tatt av showet. Motoren spør dem ikke igjen, men
+   * bookeren kan fortsatt velge dem for hånd — da står det hvorfor.
+   */
+  removedArtistIds: string[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -224,6 +239,13 @@ export function LineupTab({
   const [moveOfferId, setMoveOfferId] = useState('')
 
   const [queueOpen, setQueueOpen] = useState(false)
+
+  // Plassen som nettopp mistet en komiker. Bookeren velger hvordan den fylles.
+  const [rebookReqId, setRebookReqId] = useState<string | null>(null)
+
+  // "Set duration" panel per requirement
+  const [openDurationReqId, setOpenDurationReqId] = useState<string | null>(null)
+  const [durationDraft, setDurationDraft] = useState('')
 
   // "Swap comedian" panel per spot
   const [swapSpotId, setSwapSpotId] = useState<string | null>(null)
@@ -308,8 +330,8 @@ export function LineupTab({
   /**
    * Sletter hele spoten — kravet og radene under det.
    *
-   * Til forskjell fra «Remove», som frigjør plassen og starter en ny
-   * tilbudsrunde, skal plassen her bort. Står det noen på den, bekreftes det
+   * Til forskjell fra «Remove», som frigjør plassen og lar bookeren velge
+   * hvordan den fylles, skal plassen her bort. Står det noen på den, bekreftes det
    * først: bookingene deres avlyses med kravet.
    */
   function handleDeleteRequirement(reqId: string, roleName: string, occupied: number) {
@@ -346,6 +368,7 @@ export function LineupTab({
       fd.set('energy_level', req.energy_level)
       fd.set('required_gender', req.required_gender)
       fd.set('min_skill_level', req.min_skill_level ?? 'low')
+      fd.set('duration_minutes', req.duration_minutes == null ? '' : String(req.duration_minutes))
       fd.set('compensation_type', req.compensation_type ?? '')
       // Beløpet ligger i minor units her, og handlingen ganger opp igjen.
       fd.set('compensation_amount', req.compensation_amount == null ? '' : String(req.compensation_amount / 100))
@@ -381,10 +404,60 @@ export function LineupTab({
       fd.set('show_id', showId)
       if (reason === 'cancelled') fd.set('artist_cancelled', 'true')
       try {
-        await removeSpotAndReopenAction(fd)
-        toast.success(reason === 'cancelled'
-          ? 'Marked as a cancellation. A new offer round starts automatically.'
-          : 'Artist removed. A new offer round starts automatically.')
+        const { requirementId } = await removeSpotAndReopenAction(fd)
+        toast.success(reason === 'cancelled' ? 'Marked as a cancellation.' : 'Artist removed.')
+        // Ingen ny runde av seg selv: bookeren velger. Lukkes dialogen uten
+        // valg, står plassen med de samme to knappene til hen bestemmer seg.
+        setRebookReqId(requirementId)
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  /** «Choose yourself»: plassen står på pause, og bookeren plukker fra lista. */
+  function handleChooseYourself(reqId: string) {
+    setRebookReqId(null)
+    setOpenOfferReqId(reqId)
+    setOpenAddReqId(null)
+    setOpenMoveReqId(null)
+    setOpenInfoReqId(null)
+    setOpenDurationReqId(null)
+    setOfferArtistId('')
+  }
+
+  /** «Auto-book new»: motoren tar plassen igjen, med bølgen fra start. */
+  function handleAutoBookNew(reqId: string) {
+    setRebookReqId(null)
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      fd.set('req_id', reqId)
+      try {
+        await resumeAutoBookingAction(fd)
+        toast.success('Auto-booking resumed. New offers go out shortly.')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong')
+      }
+    })
+  }
+
+  function handleSaveDuration(reqId: string) {
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('show_id', showId)
+      fd.set('req_id', reqId)
+      fd.set('duration_minutes', durationDraft)
+      try {
+        const result = await updateSpotDurationAction(fd)
+        if (!result.ok) {
+          toast.error(result.error)
+          return
+        }
+        setOpenDurationReqId(null)
+        toast.success('Duration saved.')
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Something went wrong')
@@ -610,6 +683,7 @@ export function LineupTab({
     return sum + Math.min(reqFilled, req.quantity)
   }, 0)
   const offerableArtists = selectableArtists.filter(a => !pendingOfferArtistIds.has(a.id))
+  const removedArtists = new Set(removedArtistIds)
 
   const pendingSubmissionTotal = Object.values(pendingByRequirement).reduce((sum, count) => sum + count, 0)
 
@@ -682,6 +756,11 @@ export function LineupTab({
               <SpotNumber position={index + 1} />
               <RoleIcon roleName={req.role_name} className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
               <span className="truncate text-base font-bold">{req.role_name}</span>
+              {formatDuration(req.duration_minutes) && (
+                <span className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
+                  {formatDuration(req.duration_minutes)}
+                </span>
+              )}
 
               <SubmissionsToggle
                 showId={showId}
@@ -746,12 +825,27 @@ export function LineupTab({
                         )}
                       </>
                     )}
+                    {!isPastShow && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setOpenDurationReqId(req.id)
+                          setOpenAddReqId(null)
+                          setOpenOfferReqId(null)
+                          setOpenMoveReqId(null)
+                          setOpenInfoReqId(null)
+                          setDurationDraft(req.duration_minutes == null ? '' : String(req.duration_minutes))
+                        }}
+                      >
+                        Set duration…
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       onClick={() => {
                         setOpenInfoReqId(isInfoOpen ? null : req.id)
                         setOpenAddReqId(null)
                         setOpenOfferReqId(null)
                         setOpenMoveReqId(null)
+                        setOpenDurationReqId(null)
                       }}
                     >
                       {isInfoOpen ? 'Hide requirements' : 'Show requirements'}
@@ -795,6 +889,69 @@ export function LineupTab({
                       {item}
                     </span>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Varigheten, mens bookingen er i gang. Editoren i utkastet har
+                den som eget felt. */}
+            {openDurationReqId === req.id && (
+              <div className="flex flex-wrap items-center gap-2 border-t bg-muted/10 px-4 py-3 sm:px-5">
+                <label htmlFor={`duration-${req.id}`} className="text-sm font-medium">Duration</label>
+                <div className="relative w-32">
+                  <input
+                    id={`duration-${req.id}`}
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_SPOT_DURATION}
+                    max={MAX_SPOT_DURATION}
+                    step={1}
+                    value={durationDraft}
+                    onChange={e => setDurationDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveDuration(req.id) }}
+                    disabled={isPending}
+                    placeholder="—"
+                    className="w-full rounded-md border border-input bg-background py-1.5 pl-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-muted-foreground">min</span>
+                </div>
+                <button
+                  onClick={() => handleSaveDuration(req.id)}
+                  disabled={isPending}
+                  className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50 transition-opacity"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => setOpenDurationReqId(null)}
+                  className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Etter «Remove» står plassen til bookeren har valgt. Knappene
+                blir stående her, så valget kan tas når som helst. */}
+            {req.rebook_paused_at && !isLocked && !isPastShow && (
+              <div className="border-t bg-amber-50/40 px-4 py-3 dark:bg-amber-950/10 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                      Paused — no new offers go out on this spot.
+                    </p>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
+                      Pick a comedian yourself, or let auto-booking find someone new.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button type="button" variant="outline" size="sm" className="rounded-xl" disabled={isPending} onClick={() => handleChooseYourself(req.id)}>
+                      Choose yourself
+                    </Button>
+                    <Button type="button" size="sm" className="rounded-xl" disabled={isPending} onClick={() => handleAutoBookNew(req.id)}>
+                      Auto-book new
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1018,8 +1175,8 @@ export function LineupTab({
               </div>
             )}
 
-            {/* Empty state */}
-            {reqSpots.length === 0 && reqPending.length === 0 && (
+            {/* Empty state — en pauset plass har sin egen beskjed over. */}
+            {reqSpots.length === 0 && reqPending.length === 0 && !req.rebook_paused_at && (
               shouldShowEnergyPrompt ? (
                 <div className="border-t bg-amber-50/40 px-4 py-4 dark:bg-amber-950/10 sm:px-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1126,7 +1283,7 @@ export function LineupTab({
                     <option value="">Select comedian…</option>
                     {offerableArtists.map(a => (
                       <option key={a.id} value={a.id}>
-                        {a.stage_name ?? a.full_name}
+                        {a.stage_name ?? a.full_name}{removedArtists.has(a.id) ? ' (removed from this show)' : ''}
                       </option>
                     ))}
                   </select>
@@ -1162,7 +1319,7 @@ export function LineupTab({
                   <option value="">Select comedian…</option>
                   {selectableArtists.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.stage_name ?? a.full_name}
+                      {a.stage_name ?? a.full_name}{removedArtists.has(a.id) ? ' (removed from this show)' : ''}
                     </option>
                   ))}
                 </select>
@@ -1184,6 +1341,15 @@ export function LineupTab({
           </div>
         )
       })}
+
+      <RebookChoiceDialog
+        roleName={requirements.find(r => r.id === rebookReqId)?.role_name ?? null}
+        open={rebookReqId !== null}
+        pending={isPending}
+        onOpenChange={(open) => { if (!open) setRebookReqId(null) }}
+        onChooseYourself={() => rebookReqId && handleChooseYourself(rebookReqId)}
+        onAutoBookNew={() => rebookReqId && handleAutoBookNew(rebookReqId)}
+      />
 
       {/* Unassigned offers */}
       {unassignedOffers.length > 0 && (

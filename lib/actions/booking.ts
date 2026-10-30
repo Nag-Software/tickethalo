@@ -75,9 +75,13 @@ export async function startAutoBooking(showId: string, requirementId?: string, o
   const { data: show } = await admin.from('shows').select('status').eq('id', showId).maybeSingle()
   if (!show || !ENGINE_STATUSES.includes(show.status as (typeof ENGINE_STATUSES)[number])) return
 
+  // En omstart er et valg om å booke plassen på nytt. Ventet den på
+  // bookeren etter en fjerning, er det valget tatt nå.
   let query = admin
     .from('show_requirements')
-    .update({ auto_started_at: new Date().toISOString() })
+    .update(options.restart
+      ? { auto_started_at: new Date().toISOString(), rebook_paused_at: null }
+      : { auto_started_at: new Date().toISOString() })
     .eq('show_id', showId)
     .neq('submissions_open', true)
 
@@ -173,7 +177,7 @@ export async function sendBookingReminders() {
       .select('id, title, date, start_time, venue_name, venue_address, currency')
       .in('id', [...new Set(due.map((o) => o.show_id))]),
     admin.from('show_requirements')
-      .select('id, role_name, compensation_type, compensation_amount, compensation_percent')
+      .select('id, role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
       .in('id', [...new Set(due.flatMap((o) => o.show_requirement_id ?? []))]),
   ])
 
@@ -198,6 +202,7 @@ export async function sendBookingReminders() {
       show_time: details.show_time,
       venue: details.venue,
       role_name: details.role_name,
+      duration_label: details.duration_label,
       fee_label: details.fee_label,
       expires_at: offer.expires_at,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,
@@ -470,7 +475,7 @@ export async function acceptBookingOffer(token: string) {
         .single(),
       admin
         .from('show_requirements')
-        .select('role_name, compensation_type, compensation_amount, compensation_percent')
+        .select('role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
         .eq('id', accepted.show_requirement_id)
         .single(),
     ])
@@ -484,6 +489,8 @@ export async function acceptBookingOffer(token: string) {
         show_date: show?.date ?? '',
         show_time: details?.show_time,
         venue: details?.venue,
+        role_name: details?.role_name,
+        duration_label: details?.duration_label,
         fee_label: details?.fee_label,
         portal_url: `${appUrl()}/artist-app/bookings`,
       })
@@ -633,6 +640,24 @@ export async function acceptBookingOfferById(offerId: string) {
   return { result: 'accepted' as const, confirmedSpotId: spot.id, repaired: true }
 }
 
+/**
+ * Plassen venter på bookeren etter at en komiker er tatt ut.
+ *
+ * Før startet motoren en ny runde med tilbud av seg selv. Det var feil når
+ * bookeren heller ville ringe noen (ClickUp 869fn3vwn). `rebook_paused_at`
+ * holder motoren unna til hen velger — se `resumeAutoBookingAction`.
+ *
+ * Ikke eksportert: filen er `use server`, og en eksport her er en åpen
+ * server action uten tilgangssjekk.
+ */
+async function pauseSpotForRebooking(requirementId: string) {
+  const { error } = await createAdminClient()
+    .from('show_requirements')
+    .update({ rebook_paused_at: new Date().toISOString() })
+    .eq('id', requirementId)
+  if (error) throw new Error(error.message)
+}
+
 export async function cancelConfirmedSpotForOffer(offerId: string) {
   const admin = createAdminClient()
   const { data: cancelled } = await admin
@@ -642,11 +667,11 @@ export async function cancelConfirmedSpotForOffer(offerId: string) {
     .in('status', ['confirmed', 'completed', 'paid'])
     .select('show_id, show_requirement_id, artist_id')
 
-  // Setet er ledig igjen, og da skal bølgen begynne forfra — ellers arver
-  // den dagen den gamle bølgen var kommet til, og kan sende hele taket med
-  // en gang. Samme grep som når bookeren fjerner en komiker.
+  // Setet er ledig igjen, men det er bookeren som tok komikeren ut. Plassen
+  // venter til hen har valgt: plukke selv eller «Auto-book new». Samme grep
+  // som «Remove» i lineupen — se `pauseSpotForRebooking`.
   for (const spot of cancelled ?? []) {
-    await startAutoBooking(spot.show_id, spot.show_requirement_id, { restart: true })
+    await pauseSpotForRebooking(spot.show_requirement_id)
     // Plasser åpne for søknader fyller ikke motoren — der er det ventelisten
     // klubben skal ta av. Se lib/waitlist.ts.
     runAfterResponse(`waitlist-${spot.show_requirement_id}`, () => notifyClubWaitlist(spot.show_requirement_id))
@@ -723,7 +748,7 @@ export async function sendManualBookingOffer(
     admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id').eq('id', showId).single(),
     admin
       .from('show_requirements')
-      .select('id, role_name, quantity, compensation_type, compensation_amount, compensation_percent')
+      .select('id, role_name, quantity, duration_minutes, compensation_type, compensation_amount, compensation_percent')
       .eq('id', requirementId)
       .eq('show_id', showId)
       .single(),
@@ -829,6 +854,7 @@ export async function sendManualBookingOffer(
     show_time: details.show_time,
     venue: details.venue,
     role_name: details.role_name,
+    duration_label: details.duration_label,
     fee_label: details.fee_label,
     expires_at: expiresAt,
     token: offer.token,

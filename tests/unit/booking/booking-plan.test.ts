@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   allocateWave,
+  isEligibleForSpot,
   planOfferWave,
   spotOrder,
   waveEntries,
@@ -270,5 +271,51 @@ describe('allocating a wave from ids alone', () => {
       new Set(['a']),
     )
     expect(allocation.map((row) => row.artistId)).toEqual(['b', 'c'])
+  })
+})
+
+describe('a spot the booker just took a comedian off', () => {
+  const pool = [comedian('removed', { score: 9 }), comedian('b', { score: 8 }), comedian('c', { score: 7 })]
+  const base = {
+    pool,
+    involved: new Set<string>(),
+    filled: new Map<string, number>(),
+    pendingAuto: new Map<string, number>(),
+    pendingManual: new Map<string, number>(),
+    now,
+    settings,
+    rush: false,
+  }
+
+  it('sends nothing while it waits for the booker to choose', () => {
+    const paused = spot('s1', { rebook_paused_at: now.toISOString() })
+    expect(waveEntries({ ...base, requirements: [paused] })).toEqual([])
+  })
+
+  it('stays paused on the daily run too, days later', () => {
+    const paused = spot('s1', { rebook_paused_at: now.toISOString() })
+    const later = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
+    expect(waveEntries({ ...base, now: later, requirements: [paused] })).toEqual([])
+  })
+
+  it('gets offers again on «Auto-book new», starting from day one', () => {
+    const resumed = spot('s1', { rebook_paused_at: null, auto_started_at: now.toISOString() })
+    const [row] = waveEntries({ ...base, requirements: [resumed] })
+    expect(row).toMatchObject({ requirementId: 's1', maxNewOffers: 2 })
+  })
+
+  it('never offers the show to the comedian who was removed', () => {
+    const req = spot('s1')
+    // `show_artist_booking_exclusions` havner i `involved` — se `loadShowPlan`.
+    const involved = new Set(['removed'])
+    const result = planOfferWave({ entries: [entry(req, pool)], pool, involved, settings })
+    expect(picks(result)).toEqual(['s1:b', 's1:c'])
+  })
+
+  it('keeps the removed comedian out of the queue the booker reviews', () => {
+    const req = spot('s1')
+    const involved = new Set(['removed'])
+    const eligible = pool.filter((candidate) => isEligibleForSpot(candidate, req, involved))
+    expect(spotOrder(eligible, undefined, settings).map((candidate) => candidate.id)).toEqual(['b', 'c'])
   })
 })

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, ChevronDown, Plus, Search, Send, Trash2, UserRound, XCircle } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Plus, RefreshCw, Search, Send, Trash2, UserRound, XCircle } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,11 +16,13 @@ import { RoleIcon, SpotStatusBadge } from '@/components/admin/show-booking-card'
 import { ARTIST_ROLE_OPTIONS, artistMatchesRole, canonicalRoleLabel, canonicalRoleValue } from '@/lib/artist-roles'
 import type { BookingSpot } from '@/lib/booking-spots'
 import { cn } from '@/lib/utils'
+import { RebookChoiceDialog } from '@/components/admin/rebook-choice-dialog'
 import {
   addRequirementAction,
   cancelOfferAction,
   deleteSpotAction,
   removeSpotAndReopenAction,
+  resumeAutoBookingAction,
   sendOfferToArtistAction,
   swapArtistAction,
   updateSpotFeeAction,
@@ -79,6 +81,8 @@ export function InteractiveLineup({
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  // Plassen som nettopp mistet en komiker. Bookeren velger hvordan den fylles.
+  const [rebookReqId, setRebookReqId] = useState<string | null>(null)
 
   // Handlinger som validerer bookerens tall (honorar, prosentpott) svarer med
   // `{ ok: false, error }` i stedet for å kaste: Next skjuler meldingen på
@@ -171,12 +175,19 @@ export function InteractiveLineup({
                 `${artistLabel(artist)} took over spot ${spot.position}.`,
               )
             }}
+            onAutoBookNew={() =>
+              run(
+                () => resumeAutoBookingAction(fd({ req_id: spot.requirementId })),
+                'Auto-booking resumed. New offers go out shortly.',
+              )
+            }
             onRemoveArtist={() => {
               if (spot.spotId) {
-                run(
-                  () => removeSpotAndReopenAction(fd({ spot_id: spot.spotId as string })),
-                  'Artist removed. A new offer round starts automatically.',
-                )
+                // Ingen ny runde av seg selv: bookeren velger etterpå.
+                run(async () => {
+                  const { requirementId } = await removeSpotAndReopenAction(fd({ spot_id: spot.spotId as string }))
+                  setRebookReqId(requirementId)
+                }, 'Artist removed.')
                 return
               }
 
@@ -187,6 +198,24 @@ export function InteractiveLineup({
           />
         ))}
       </ul>
+
+      <RebookChoiceDialog
+        roleName={spots.find((spot) => spot.requirementId === rebookReqId)?.roleName ?? null}
+        open={rebookReqId !== null}
+        pending={isPending}
+        onOpenChange={(open) => { if (!open) setRebookReqId(null) }}
+        // Plassen står ledig med «Choose comedian» i menyen sin. Pausen blir
+        // stående til bookeren sender et tilbud eller velger «Auto-book new».
+        onChooseYourself={() => {
+          setRebookReqId(null)
+          toast('Pick a comedian from the open spot’s menu.')
+        }}
+        onAutoBookNew={() => {
+          const reqId = rebookReqId
+          setRebookReqId(null)
+          if (reqId) run(() => resumeAutoBookingAction(fd({ req_id: reqId })), 'Auto-booking resumed. New offers go out shortly.')
+        }}
+      />
 
       {!readOnly && (
         <div className="border-t px-3 py-2">
@@ -234,6 +263,7 @@ function SpotRow({
   onDeleteSpot,
   onPickArtist,
   onRemoveArtist,
+  onAutoBookNew,
 }: {
   spot: BookingSpot
   currency: string
@@ -245,6 +275,7 @@ function SpotRow({
   onDeleteSpot: () => void
   onPickArtist: (mode: ArtistPickerMode, artist: LineupArtist) => void
   onRemoveArtist: () => void
+  onAutoBookNew: () => void
 }) {
   const roleLabel = canonicalRoleLabel(spot.roleName) ?? spot.roleName
   const currentRole = canonicalRoleValue(spot.roleName)
@@ -303,13 +334,14 @@ function SpotRow({
           disabled={readOnly || busy}
           onPickArtist={onPickArtist}
           onRemoveArtist={onRemoveArtist}
+          onAutoBookNew={onAutoBookNew}
           onDeleteSpot={onDeleteSpot}
         />
         <FeeCell spot={spot} currency={currency} disabled={readOnly || busy} onFee={onFee} />
       </div>
 
       <div className="flex shrink-0 items-center justify-end py-3 pr-3 @[30rem]:w-[8.25rem]">
-        <SpotStatusBadge state={spot.state} />
+        <SpotStatusBadge state={spot.state} paused={spot.paused} />
       </div>
     </li>
   )
@@ -321,6 +353,7 @@ function ArtistCell({
   disabled,
   onPickArtist,
   onRemoveArtist,
+  onAutoBookNew,
   onDeleteSpot,
 }: {
   spot: BookingSpot
@@ -328,6 +361,7 @@ function ArtistCell({
   disabled: boolean
   onPickArtist: (mode: ArtistPickerMode, artist: LineupArtist) => void
   onRemoveArtist: () => void
+  onAutoBookNew: () => void
   onDeleteSpot: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -397,6 +431,18 @@ function ArtistCell({
                   Choose comedian
                   <MenuHint>Send request now</MenuHint>
                 </MenuButton>
+                {spot.paused && (
+                  <MenuButton
+                    icon={RefreshCw}
+                    onClick={() => {
+                      onAutoBookNew()
+                      close()
+                    }}
+                  >
+                    Auto-book new
+                    <MenuHint>Let auto-booking find someone</MenuHint>
+                  </MenuButton>
+                )}
               </>
             )}
 
@@ -415,7 +461,7 @@ function ArtistCell({
                   }}
                 >
                   Remove
-                  <MenuHint>Frees the spot and starts a new offer round</MenuHint>
+                  <MenuHint>Frees the spot — you choose how to fill it</MenuHint>
                 </MenuButton>
               </>
             )}

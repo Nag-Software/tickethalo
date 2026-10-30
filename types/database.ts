@@ -488,6 +488,13 @@ export type ShowRequirement = {
    * rører den ikke. Se lib/booking-schedule.ts.
    */
   auto_started_at: string | null
+  /**
+   * Bookeren tok en komiker ut, og plassen venter på at hen velger: plukke
+   * selv eller «Auto-book new». Satt = motoren rører den ikke.
+   */
+  rebook_paused_at: string | null
+  /** Minutter på scenen. Null = ikke satt. Se `formatDuration` i lib/spot-duration.ts. */
+  duration_minutes: number | null
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -1413,6 +1420,8 @@ export type Database = {
           min_skill_level?: SkillLevel | null
           submissions_open?: boolean
           auto_started_at?: string | null
+          rebook_paused_at?: string | null
+          duration_minutes?: number | null
           compensation_type?: RequirementCompensationType | null
           compensation_amount?: number | null
           compensation_percent?: number | null

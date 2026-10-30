@@ -92,7 +92,7 @@ export async function loadBookingAttention(
       .select('id, lineup_deadline_days, stripe_account_id, charges_enabled, payouts_enabled, payout_schedule_interval, legal_name, org_number, support_email')
       .in('id', clubIds),
     db.from('show_requirements')
-      .select('id, show_id, role_name, quantity, lineup_position, energy_level, required_gender, min_skill_level, submissions_open, auto_started_at')
+      .select('id, show_id, role_name, quantity, lineup_position, energy_level, required_gender, min_skill_level, submissions_open, auto_started_at, rebook_paused_at')
       .in('show_id', showIds),
     db.from('confirmed_spots')
       .select('id, show_id, artist_id, show_requirement_id, status')
@@ -270,6 +270,7 @@ export async function loadBookingAttention(
         declined: showOffers.filter((offer) => offer.show_requirement_id === req.id && offer.status === 'declined').length,
         submissionsOpen: Boolean(req.submissions_open),
         autoStarted: Boolean(req.auto_started_at),
+        rebookPaused: Boolean(req.rebook_paused_at),
         matching: matching.length,
         available: available.length,
         // Bare når varselet faktisk skal si «så mange kommer inn om kravet
