@@ -5,6 +5,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { AdminHeader } from '@/components/admin/admin-header'
 import { RemoveFromClubButton } from '@/components/admin/remove-from-club-button'
+import { InviteLinkCard } from '@/components/admin/invite-link-card'
+import { countInviteJoins, getOrCreateClubInviteToken, inviteJoinPath } from '@/lib/club-invite'
+import { appPath } from '@/lib/app-url'
 import { artistReadinessBlockers, READINESS_BLOCKER_LABELS } from '@/lib/artist-readiness'
 import { clubArtistRoster } from '@/lib/club-artist-profile'
 import { formatArtistRoleList } from '@/lib/artist-roles'
@@ -53,7 +56,15 @@ export default async function ArtistsPage({
   // koblingen, ikke på komikeren — kommer i én runde, søket medregnet. Se
   // `clubArtistRoster`.
   const db = createAdminClient()
-  const roster = await clubArtistRoster(db, clubId, { search: searchQuery })
+  // Lenken er et tillegg til lista. Feiler den — f.eks. før migrasjon 095 er
+  // kjørt — skal lista vises likevel, bare uten kortet.
+  const [roster, invite] = await Promise.all([
+    clubArtistRoster(db, clubId, { search: searchQuery }),
+    Promise.all([getOrCreateClubInviteToken(db, clubId), countInviteJoins(db, clubId)]).catch((error) => {
+      console.error('[Invite] Could not load invite link:', error)
+      return null
+    }),
+  ])
 
   // Blokkeringene leses av flere kolonner, så «ikke klar» avgjøres her og ikke
   // i spørringen. Tellingen bruker samme sett som tabellen viser.
@@ -99,6 +110,8 @@ export default async function ArtistsPage({
             {counts.suspended > 0 && ` · ${counts.suspended} suspended`}
           </p>
         </div>
+
+        {invite && <InviteLinkCard url={appPath(inviteJoinPath(invite[0]))} joined={invite[1]} />}
 
         <form action="/admin-app/artists" className="relative">
           {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}

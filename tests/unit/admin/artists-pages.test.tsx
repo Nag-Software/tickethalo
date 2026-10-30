@@ -30,6 +30,12 @@ vi.mock('@/lib/club-artist-profile', async (importOriginal) => ({
   clubArtistRoster: vi.fn(),
 }))
 
+vi.mock('@/lib/club-invite', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/club-invite')>()),
+  getOrCreateClubInviteToken: vi.fn(async () => 'AbCdEfGhIjKlMnOpQrStUvWxYz012345'),
+  countInviteJoins: vi.fn(async () => 3),
+}))
+
 const ID_ADA = '0e174ad9-7ee7-4b4b-979f-30e0a54180e9'
 const ID_TOM = '6a468c78-3b98-45d0-9bf7-fdc933411bb6'
 
@@ -61,6 +67,15 @@ describe('club comedian list', () => {
     expect(rows[1].textContent).toContain('Thomas Søyland')
     expect(reviewCounts).not.toHaveBeenCalled()
     expect(container.textContent).not.toMatch(/reviews/)
+  })
+
+  it('shows the club invite link and how many joined through it', async () => {
+    const { container } = render(await ArtistsPage({ searchParams: Promise.resolve({}) }))
+    const field = container.querySelector('input[readonly]') as HTMLInputElement
+
+    expect(field.value).toMatch(/\/artist-app\/join\/AbCdEfGhIjKlMnOpQrStUvWxYz012345$/)
+    expect(container.textContent).toContain('3 comedians have joined via your link.')
+    expect(container.textContent).toContain('Reset link')
   })
 
   it('passes the search to the roster query', async () => {

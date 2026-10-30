@@ -21,7 +21,17 @@ import { cn } from '@/lib/utils'
  * requires a secure context, and over plain http (local network, test hosting)
  * there is none. The field has no name, so it is never submitted with the form.
  */
-export function CopyLink({ url, className }: { url: string; className?: string }) {
+export function CopyLink({
+  url,
+  className,
+  label = 'Club page',
+  hint = 'Ready to paste into a bio or a post.',
+}: {
+  url: string
+  className?: string
+  label?: string
+  hint?: React.ReactNode
+}) {
   const id = useId()
   const [copied, setCopied] = useState(false)
 
@@ -38,7 +48,7 @@ export function CopyLink({ url, className }: { url: string; className?: string }
 
   return (
     <Field className={cn('col-span-12 min-w-0 gap-1.5', className)}>
-      <FieldLabel htmlFor={id}>Club page</FieldLabel>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <div className={FIELD_GROUP_CLASS}>
         <Input
           id={id}
@@ -51,8 +61,8 @@ export function CopyLink({ url, className }: { url: string; className?: string }
           href={url}
           target="_blank"
           rel="noreferrer"
-          aria-label="Open club page"
-          title="Open club page"
+          aria-label={`Open ${label.toLowerCase()}`}
+          title={`Open ${label.toLowerCase()}`}
           className={FIELD_ADDON_BUTTON_CLASS}
         >
           <ArrowUpRight className="size-4" aria-hidden />
@@ -67,7 +77,7 @@ export function CopyLink({ url, className }: { url: string; className?: string }
           {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
         </button>
       </div>
-      <FieldDescription className={FIELD_HINT_CLASS}>Ready to paste into a bio or a post.</FieldDescription>
+      <FieldDescription className={FIELD_HINT_CLASS}>{hint}</FieldDescription>
     </Field>
   )
 }

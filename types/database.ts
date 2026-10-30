@@ -258,6 +258,15 @@ export type ClubArtist = {
   flagged_at: string | null
   /** Snittet av klubbens egne vurderinger, 0–10. Se lib/artist-reviews.ts. */
   score: number
+  /** Komikeren la seg selv til via klubbens invitasjonslenke. Se migrasjon 095. */
+  joined_via_invite: boolean
+}
+
+/** Klubbens invitasjonslenke for komikere. Se migrasjon 095 og lib/club-invite.ts. */
+export type ClubArtistInvite = {
+  club_id: string
+  token: string
+  created_at: string
 }
 
 export type ClubMembership = {
@@ -1088,8 +1097,19 @@ export type Database = {
           flag_reason?: string | null
           flagged_at?: string | null
           score?: number
+          joined_via_invite?: boolean
         }
         Update: Partial<ClubArtist>
+        Relationships: []
+      }
+      club_artist_invites: {
+        Row: ClubArtistInvite
+        Insert: {
+          club_id: string
+          token: string
+          created_at?: string
+        }
+        Update: Partial<ClubArtistInvite>
         Relationships: []
       }
       artist_unavailable_dates: {
