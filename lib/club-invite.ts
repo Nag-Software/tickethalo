@@ -43,19 +43,31 @@ export function inviteAcceptPath(token: string) {
  *
  * To faner som åpner Comedians-siden samtidig skal ende med samme lenke, så
  * innsettingen hopper over en rad som fantes, og vi leser det som ble stående.
+ *
+ * Den nye raden leses fra svaret på innsettingen, ikke med `readToken` en gang
+ * til: Next husker like GET-kall gjennom én render, så det andre oppslaget
+ * ville fått det første, tomme svaret tilbake. Taper vi kappløpet, leses
+ * raden med et annet utvalg kolonner — en annen URL, og dermed et nytt kall.
  */
 export async function getOrCreateClubInviteToken(db: Db, clubId: string): Promise<string> {
   const existing = await readToken(db, clubId)
   if (existing) return existing
 
-  const { error } = await db
+  const { data, error } = await db
     .from('club_artist_invites')
     .upsert({ club_id: clubId, token: generateInviteToken() }, { onConflict: 'club_id', ignoreDuplicates: true })
+    .select('token')
   if (error) throw new Error(error.message)
+  if (data?.[0]) return data[0].token
 
-  const created = await readToken(db, clubId)
-  if (!created) throw new Error('Invite token was not stored')
-  return created
+  const { data: winner, error: winnerError } = await db
+    .from('club_artist_invites')
+    .select('token, created_at')
+    .eq('club_id', clubId)
+    .maybeSingle()
+  if (winnerError) throw new Error(winnerError.message)
+  if (!winner) throw new Error('Invite token was not stored')
+  return winner.token
 }
 
 /** Nytt token. Den gamle lenken virker ikke lenger fra dette øyeblikket. */
