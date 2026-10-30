@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendBookingOfferEmail, sendSpotAvailableEmail } from '@/lib/email/mailer'
 import { requirementFeeLabel } from '@/lib/booking-spots'
+import { formatDuration } from '@/lib/spot-duration'
 import {
   hasScheduleConflict,
   isEligibleForSpot,
@@ -63,6 +64,7 @@ type OfferShow = {
 
 type OfferRequirement = {
   role_name: string
+  duration_minutes?: number | null
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -75,6 +77,7 @@ export function offerDetails(show: OfferShow, requirement: OfferRequirement) {
     feeAmount: requirement.compensation_type === 'fixed' ? requirement.compensation_amount : null,
     fee_label: requirementFeeLabel(requirement, currency),
     role_name: requirement.role_name,
+    duration_label: formatDuration(requirement.duration_minutes),
     show_time: show.start_time?.slice(0, 5) ?? null,
     venue: showVenue(show).line,
   }
@@ -293,6 +296,8 @@ export type EngineRequirement = {
   min_skill_level: SkillLevel | null
   submissions_open: boolean | null
   auto_started_at: string | null
+  rebook_paused_at: string | null
+  duration_minutes: number | null
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
   compensation_percent: number | null
@@ -627,6 +632,7 @@ export async function runBookingWave(showId: string) {
       show_time: details.show_time,
       venue: details.venue,
       role_name: details.role_name,
+      duration_label: details.duration_label,
       fee_label: details.fee_label,
       expires_at: expiresAt,
       token: offer.token,
@@ -670,10 +676,15 @@ export type LineupQueueSpot = {
   position: number
   roleName: string
   minSkillLevel: SkillLevel | null
+  /** Minutter på scenen. Null = ikke satt. */
+  durationMinutes: number | null
   /** Hvor mange på listen som passer plassen og kan den kvelden. */
   matchCount: number
-  /** Hvorfor motoren ikke sender noe på plassen nå. Null = den gjør det. */
-  note: 'submissions_open' | 'filled' | null
+  /**
+   * Hvorfor motoren ikke sender noe på plassen nå. Null = den gjør det.
+   * `paused`: en komiker er tatt ut, og bookeren har ikke valgt ennå.
+   */
+  note: 'submissions_open' | 'paused' | 'filled' | null
   slotsNeeded: number
   /** Tilbud som går ut nå (bølge 1, eller neste påfyll om showet er i gang). */
   nowCount: number
@@ -787,8 +798,9 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
       position: index + 1,
       roleName: req.role_name,
       minSkillLevel: req.min_skill_level && req.min_skill_level !== 'low' ? req.min_skill_level : null,
+      durationMinutes: req.duration_minutes ?? null,
       matchCount: plan.pool.filter((candidate) => isEligibleForSpot(candidate, req, new Set())).length,
-      note: req.submissions_open ? 'submissions_open' : entry ? null : 'filled',
+      note: req.submissions_open ? 'submissions_open' : req.rebook_paused_at ? 'paused' : entry ? null : 'filled',
       slotsNeeded: entry?.slotsNeeded ?? 0,
       nowCount,
       tomorrowCount,

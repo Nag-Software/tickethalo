@@ -4,6 +4,7 @@ import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
+import { formatDuration } from '@/lib/spot-duration'
 import { createClient } from '@/lib/supabase/server'
 import { Chip, DataRow, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
 import { venueSuffix } from '@/lib/show-venue'
@@ -35,7 +36,7 @@ export default async function ArtistDashboardPage() {
   const { data: requirements } = requirementIds.length > 0
     ? await db
         .from('show_requirements')
-        .select('id, compensation_type, compensation_amount, compensation_percent')
+        .select('id, role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
         .in('id', requirementIds)
     : { data: [] }
   const requirementMap = new Map((requirements ?? []).map((req) => [req.id, req]))
@@ -43,6 +44,12 @@ export default async function ArtistDashboardPage() {
     if (offer.fee_amount != null) return formatMoney(offer.fee_amount, offer.currency)
     const req = offer.show_requirement_id ? requirementMap.get(offer.show_requirement_id) : null
     return req ? requirementFeeLabel(req, offer.currency || 'NOK') : 'Not set'
+  }
+  /** «Headliner · 15 min» — samme linje som på bookingsiden. */
+  const spotLabel = (requirementId: string | null) => {
+    const req = requirementId ? requirementMap.get(requirementId) : null
+    if (!req) return null
+    return [req.role_name, formatDuration(req.duration_minutes)].filter(Boolean).join(' · ') || null
   }
 
   const nextSpot = spots
@@ -150,6 +157,9 @@ export default async function ArtistDashboardPage() {
                       {show?.date ? formatDate(show.date) : 'Date coming'}
                       {venueSuffix(show)}
                     </p>
+                    {spotLabel(offer.show_requirement_id) && (
+                      <p className="mt-0.5 truncate text-[13px] text-[var(--ev-muted)]">{spotLabel(offer.show_requirement_id)}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-[14px] font-medium tabular-nums">

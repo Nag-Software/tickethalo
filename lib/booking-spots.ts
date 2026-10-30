@@ -31,6 +31,11 @@ export type BookingSpot = {
   feeLabel: string
   fee: BookingSpotFee
   state: 'booked' | 'pending' | 'open'
+  /**
+   * En ledig plass motoren ikke fyller, fordi bookeren nettopp tok en komiker
+   * ut og ikke har valgt ennå. Se migrasjon 094.
+   */
+  paused: boolean
 }
 
 /** The fee fields of a requirement — the only part a fee label reads. */
@@ -44,6 +49,8 @@ type RequirementInput = RequirementFeeInput & {
   id: string
   role_name: string
   quantity: number
+  /** Bare kortet som kan endres, trenger den. Uten = ikke pauset. */
+  rebook_paused_at?: string | null
 }
 
 type SpotInput = {
@@ -136,6 +143,7 @@ export function buildBookingSpots({
         feeLabel,
         fee,
         state: bookedSpot ? 'booked' : pendingOffer ? 'pending' : 'open',
+        paused: !bookedSpot && !pendingOffer && Boolean(requirement.rebook_paused_at),
       } satisfies BookingSpot
     })
   })

@@ -4,7 +4,7 @@
  *
  * Hver tabell svarer gjennom en funksjon som ser filtrene spørringen fikk
  * (`eq`, `in`, `is`, …), om den ba om en telling (`head`), og om den skrev
- * (`insert`/`update`). Da kan «plassen er full» og «komikeren har ingen
+ * (`insert`/`update`/`upsert`/`delete`). Da kan «plassen er full» og «komikeren har ingen
  * plass» svares fra samme tabell i samme test.
  */
 
@@ -12,7 +12,7 @@ export type FakeQuery = {
   table: string
   filters: Record<string, unknown>
   head: boolean
-  write: 'insert' | 'update' | null
+  write: 'insert' | 'update' | 'upsert' | 'delete' | null
   values: unknown
 }
 
@@ -47,6 +47,15 @@ export function fakeQueryDb(tables: FakeTables) {
         update: (values: unknown) => {
           state.write = 'update'
           state.values = values
+          return query
+        },
+        upsert: (values: unknown) => {
+          state.write = 'upsert'
+          state.values = values
+          return query
+        },
+        delete: () => {
+          state.write = 'delete'
           return query
         },
         eq: filter('eq'),

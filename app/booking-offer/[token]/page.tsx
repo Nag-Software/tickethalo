@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { publicAcceptOfferAction, publicDeclineOfferAction } from './actions'
 import { showVenue } from '@/lib/show-venue'
+import { formatDuration } from '@/lib/spot-duration'
 
 export const metadata = { title: 'Booking offer — Tickethalo' }
 
@@ -50,7 +51,7 @@ export default async function PublicBookingOfferPage({
     // hvor mange spots showet har og hvilket nummer i rekka de får.
     db
       .from('show_requirements')
-      .select('id, role_name, quantity, compensation_type, compensation_amount, compensation_percent')
+      .select('id, role_name, quantity, duration_minutes, compensation_type, compensation_amount, compensation_percent')
       .eq('show_id', offer.show_id)
       .order('lineup_position')
       .order('created_at'),
@@ -115,6 +116,7 @@ export default async function PublicBookingOfferPage({
           <Detail label="Venue">{venue.venue ?? 'Coming'}</Detail>
           {venue.address && <Detail label="Address">{venue.address}</Detail>}
           <Detail label="Your role">{req?.role_name ?? 'Coming'}</Detail>
+          {formatDuration(req?.duration_minutes) && <Detail label="Duration">{formatDuration(req?.duration_minutes)}</Detail>}
           <Detail label="Lineup">
             {lineupNumber && totalSpots
               ? `No. ${lineupNumber} of ${totalSpots} spots`

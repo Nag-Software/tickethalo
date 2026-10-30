@@ -292,3 +292,26 @@ describe('rekkefølgen', () => {
     expect(run([show({ date: '2026-06-01' })])).toEqual([])
   })
 })
+
+// «Remove» starter ikke lenger en ny runde av seg selv. Lukker bookeren
+// spørsmålet uten å velge, skal plassen ikke bli stående glemt.
+describe('en komiker er tatt ut, og bookeren har ikke valgt', () => {
+  const paused = spot({ rebookPaused: true, pendingAuto: 0 })
+
+  it('varsler at plassen venter på et valg', () => {
+    const alert = run([show({ requirements: [paused] })]).find((row) => row.id.endsWith('rebook-paused'))
+    expect(alert?.message).toContain('venter på at dere velger')
+    expect(alert?.spot).toBe('Headliner')
+  })
+
+  it('varsler ikke når bookeren alt har sendt et tilbud selv', () => {
+    expect(keys([show({ requirements: [spot({ rebookPaused: true, pendingAuto: 0, pendingManual: 1 })] })]))
+      .not.toContain('rebook-paused')
+  })
+
+  it('lover ikke at systemet fyller en publisert plass som står på pause', () => {
+    const alert = run([show({ status: 'published', requirements: [paused] })]).find((row) => row.id.endsWith('published-open'))
+    expect(alert?.message).toContain('til dere velger')
+    expect(alert?.message).not.toContain('Systemet fyller den igjen')
+  })
+})

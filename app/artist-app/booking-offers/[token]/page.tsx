@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CalendarDays, Clock, MapPin } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Clock, MapPin, Mic, Timer } from 'lucide-react'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, Panel, portalButton } from '@/components/artist/portal-ui'
 import { OfferButtons } from '@/components/artist/offer-buttons'
 import { showVenue } from '@/lib/show-venue'
+import { formatDuration } from '@/lib/spot-duration'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
   sent: 'Awaiting response',
@@ -30,7 +31,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
       .single(),
     db
       .from('show_requirements')
-      .select('compensation_type, compensation_amount, compensation_percent')
+      .select('role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
       .eq('id', offer.show_requirement_id)
       .single(),
   ])
@@ -76,6 +77,11 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
             {show?.start_time ? show.start_time.slice(0, 5) : 'Time not set'}
           </Detail>
           <Detail icon={<MapPin className="size-4" />}>{venue || 'Venue not set'}</Detail>
+          {/* Plasstypen og minuttene — det komikeren sier ja til (ClickUp 869fn3w0z). */}
+          {req?.role_name && <Detail icon={<Mic className="size-4" />}>{req.role_name}</Detail>}
+          {formatDuration(req?.duration_minutes) && (
+            <Detail icon={<Timer className="size-4" />}>{formatDuration(req?.duration_minutes)}</Detail>
+          )}
         </div>
 
         {isOpen ? (

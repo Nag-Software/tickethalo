@@ -323,6 +323,8 @@ export type WaveRequirement = HardRequirement & {
   lineup_position: number
   submissions_open: boolean | null
   auto_started_at: string | null
+  /** Bookeren tok en komiker ut og har ikke valgt ennå. Se migrasjon 094. */
+  rebook_paused_at?: string | null
 }
 
 export type WaveEntry<R extends WaveRequirement> = ScarcityEntry & {
@@ -337,7 +339,8 @@ export type WaveEntry<R extends WaveRequirement> = ScarcityEntry & {
  *
  * En plass klubben har åpnet for søknader, holder motoren fingrene fra —
  * ellers rekker den å fylle plassen før noen har rukket å søke. Og en plass
- * automatikken ikke er startet på (`auto_started_at`), rører den ikke.
+ * automatikken ikke er startet på (`auto_started_at`), eller som venter på
+ * bookerens valg etter en fjerning (`rebook_paused_at`), rører den ikke.
  */
 export function waveEntries<R extends WaveRequirement>({
   requirements,
@@ -366,6 +369,9 @@ export function waveEntries<R extends WaveRequirement>({
   return requirements.flatMap((req) => {
     if (req.submissions_open) return []
     if (!req.auto_started_at) return []
+    // Bookeren har tatt en komiker ut og skal selv velge om plassen fylles
+    // for hånd eller av motoren. Til da står den — også i den daglige kjøringen.
+    if (req.rebook_paused_at) return []
 
     const target = offerTarget({ autoStartedAt: req.auto_started_at, now, settings, rush })
     const { slotsNeeded, currentPendingOffers, maxNewOffers } = offerQuota({

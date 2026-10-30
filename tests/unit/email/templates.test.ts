@@ -4,11 +4,14 @@ import {
   bookingOfferTemplate,
   comedianLoginTemplate,
   lineupFullTemplate,
+  offerReminderTemplate,
   offerWithdrawnByClubTemplate,
   removedFromLineupTemplate,
   showCancelledTemplate,
   showDateLabel,
+  spotAvailableTemplate,
 } from '@/lib/email/templates'
+import { lineupReminderTemplate } from '@/lib/email/lineup-templates'
 
 describe('showDateLabel', () => {
   it('turns the stored ISO date into a date people read', () => {
@@ -147,5 +150,86 @@ describe('comedianLoginTemplate', () => {
     expect(template.html).toContain('href="https://tickethalo.com/artist-app/auth/callback?token_hash=abc"')
     expect(template.html).toContain('Kari &lt;Komiker&gt;')
     expect(template.html).not.toContain('<Komiker>')
+  })
+})
+
+describe('what the comedian is offered', () => {
+  const offer = {
+    full_name: 'Kari',
+    show_title: 'Friday Laughs',
+    show_date: '2026-11-20',
+    response_url: 'https://tickethalo.test/booking-offer/abc',
+    show_time: '20:00',
+    venue: 'Crønch',
+    role_name: 'Headliner',
+    fee_label: 'NOK 1,500',
+  }
+
+  it('names the spot type and the minutes in the offer email', () => {
+    const email = bookingOfferTemplate({ ...offer, duration_label: '20 min' })
+    expect(email.text).toContain('Role: Headliner')
+    expect(email.text).toContain('Duration: 20 min')
+    expect(email.html).toContain('Headliner')
+    expect(email.html).toContain('Duration')
+    expect(email.html).toContain('20 min')
+  })
+
+  it('leaves the duration out cleanly when the spot has none', () => {
+    const email = bookingOfferTemplate({ ...offer, duration_label: null })
+    expect(email.text).toContain('Role: Headliner')
+    expect(email.text).not.toContain('Duration')
+    expect(email.html).not.toContain('Duration')
+    expect(email.text).not.toMatch(/\n\n\n/)
+  })
+
+  it('says the same in the spot-open email and the reminder', () => {
+    for (const template of [spotAvailableTemplate, offerReminderTemplate]) {
+      const email = template({ ...offer, duration_label: '10 min' })
+      expect(email.text).toContain('Role: Headliner')
+      expect(email.text).toContain('Duration: 10 min')
+      expect(email.html).toContain('10 min')
+      expect(template({ ...offer }).text).not.toContain('Duration')
+    }
+  })
+
+  it('repeats the spot type and minutes when the booking is confirmed', () => {
+    const base = { full_name: 'Kari', show_title: 'Friday Laughs', show_date: '2026-11-20', fee_label: 'NOK 1,500' }
+    const email = bookingConfirmedTemplate({ ...base, role_name: 'Host', duration_label: '15 min' })
+    expect(email.text).toContain('Role: Host')
+    expect(email.text).toContain('Duration: 15 min')
+    expect(email.html).toContain('15 min')
+
+    const bare = bookingConfirmedTemplate(base)
+    expect(bare.text).not.toContain('Role:')
+    expect(bare.text).not.toContain('Duration')
+  })
+
+  it('puts the minutes in the line-up reminder five days before', () => {
+    const details = {
+      title: 'Friday Laughs',
+      date: '2026-11-20',
+      startTime: '20:00',
+      arrivalTime: null,
+      venue: 'Crønch',
+      address: null,
+      clubName: 'Crønch Comedy',
+      clubEmail: null,
+      clubPhone: null,
+      host: null,
+      groupLink: null,
+    }
+    const reminder = (durationLabel: string | null) => lineupReminderTemplate({
+      recipientName: 'Kari',
+      artistId: 'a1',
+      showId: 's1',
+      details,
+      daysLeft: 5,
+      roleName: 'Headliner',
+      durationLabel,
+      feeLabel: 'NOK 1,500',
+    })
+    expect(reminder('20 min').text).toContain('Your spot: Headliner')
+    expect(reminder('20 min').text).toContain('Duration: 20 min')
+    expect(reminder(null).text).not.toContain('Duration')
   })
 })

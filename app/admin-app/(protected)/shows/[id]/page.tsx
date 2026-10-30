@@ -452,6 +452,7 @@ export default async function ShowDetailPage({
                   r.energy_level,
                   r.required_gender ?? 'any',
                   r.min_skill_level ?? '',
+                  r.duration_minutes ?? '',
                   r.compensation_type ?? '',
                   r.compensation_amount ?? '',
                   r.compensation_percent ?? '',
@@ -466,6 +467,7 @@ export default async function ShowDetailPage({
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
                   min_skill_level: (r.min_skill_level ?? null) as SkillLevel | null,
+                  duration_minutes: r.duration_minutes ?? null,
                   submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
@@ -491,6 +493,8 @@ export default async function ShowDetailPage({
                   energy_level: r.energy_level as RequirementEnergy,
                   required_gender: (r.required_gender ?? 'any') as RequirementGender,
                   min_skill_level: (r.min_skill_level ?? null) as SkillLevel | null,
+                  duration_minutes: r.duration_minutes ?? null,
+                  rebook_paused_at: r.rebook_paused_at ?? null,
                   submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
@@ -524,6 +528,7 @@ export default async function ShowDetailPage({
                 submissionsCloseAt={show.submissions_close_at ?? null}
                 rosterSize={roster.length}
                 pendingByRequirement={pendingSubmissionsByRequirement}
+                removedArtistIds={[...excludedArtistIds]}
               />
         )}
 

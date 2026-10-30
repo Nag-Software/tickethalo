@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { appPath } from '@/lib/app-url'
 import { requirementFeeLabel } from '@/lib/booking-spots'
+import { formatDuration } from '@/lib/spot-duration'
 import { getOsloToday } from '@/lib/event-filters'
 import {
   sendBookingConfirmedEmail,
@@ -231,7 +232,7 @@ export async function notifyAddedToLineup(showId: string, artistId: string, requ
     requirementId
       ? db
         .from('show_requirements')
-        .select('role_name, compensation_type, compensation_amount, compensation_percent')
+        .select('role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
         .eq('id', requirementId)
         .maybeSingle()
       : Promise.resolve({ data: null }),
@@ -248,6 +249,8 @@ export async function notifyAddedToLineup(showId: string, artistId: string, requ
     show_date: show.date,
     show_time: show.start_time?.slice(0, 5) ?? null,
     venue: showVenue(show).line,
+    role_name: requirement?.role_name ?? null,
+    duration_label: formatDuration(requirement?.duration_minutes),
     fee_label: requirement ? requirementFeeLabel(requirement, show.currency || 'NOK') : null,
     portal_url: appPath('/artist-app/bookings'),
     added_by_club: true,

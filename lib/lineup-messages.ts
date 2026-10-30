@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { REPLY_TO_EMAIL, fromWithName } from '@/lib/resend'
 import { createCampaign, drainCampaign, type DrainResult } from '@/lib/email/bulk'
 import { requirementFeeLabel } from '@/lib/booking-spots'
+import { formatDuration } from '@/lib/spot-duration'
 import { daysBetween, osloDateString } from '@/lib/booking-schedule'
 import { showVenue } from '@/lib/show-venue'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
@@ -82,6 +83,7 @@ export type LineupContext = {
     id: string
     role_name: string
     lineup_position: number
+    duration_minutes: number | null
     compensation_type: 'fixed' | 'percent' | null
     compensation_amount: number | null
     compensation_percent: number | null
@@ -126,7 +128,7 @@ export async function loadLineupContext(db: Db, showId: string): Promise<LineupC
     db.from('clubs').select('id, name, support_email, contact_email, contact_phone, lineup_reminder_default').eq('id', show.club_id).maybeSingle(),
     db
       .from('show_requirements')
-      .select('id, role_name, lineup_position, compensation_type, compensation_amount, compensation_percent')
+      .select('id, role_name, lineup_position, duration_minutes, compensation_type, compensation_amount, compensation_percent')
       .eq('show_id', showId)
       .order('lineup_position')
       .order('created_at'),
@@ -498,7 +500,7 @@ export async function noteLineupChange(
 
 export type ReminderRunResult = { shows: number; reminded: number; failed: number; skipped: number }
 
-/** Malen til én komiker: rolle og honorar for akkurat hens plass. */
+/** Malen til én komiker: rolle, varighet og honorar for akkurat hens plass. */
 export function reminderRenderer(context: LineupContext, daysLeft: number) {
   const spotByArtist = new Map(context.spots.map((spot) => [spot.artist_id, spot]))
   const requirementById = new Map(context.requirements.map((requirement) => [requirement.id, requirement]))
@@ -512,6 +514,7 @@ export function reminderRenderer(context: LineupContext, daysLeft: number) {
       details: context.details,
       daysLeft,
       roleName: requirement ? canonicalRoleLabel(requirement.role_name) : null,
+      durationLabel: formatDuration(requirement?.duration_minutes),
       feeLabel: requirement ? requirementFeeLabel(requirement, context.show.currency || 'NOK') : null,
     })
   }

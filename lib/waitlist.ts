@@ -47,7 +47,7 @@ export async function notifyClubWaitlist(
   if (showClosedReason({ ...show, submissions_close_at: null })) return { skipped: 'show_closed' }
   if (!show.club_id) return { skipped: 'no_club' }
 
-  const [{ count: filled }, { data: waiting }] = await Promise.all([
+  const [{ count: filled }, { data: waitingRows }, { data: exclusions }] = await Promise.all([
     db.from('confirmed_spots')
       .select('*', { count: 'exact', head: true })
       .eq('show_requirement_id', requirement.id)
@@ -57,12 +57,17 @@ export async function notifyClubWaitlist(
       .eq('show_requirement_id', requirement.id)
       .in('status', OPEN_SUBMISSION_STATUSES)
       .order('created_at'),
+    db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', requirement.show_id),
   ])
 
   if (spotAvailability({ quantity: requirement.quantity, filled: filled ?? 0 }).waitlist) {
     return { skipped: 'still_full' }
   }
-  if (!waiting?.length) return { skipped: 'empty' }
+  // Den bookeren nettopp tok ut av showet, står kanskje fortsatt med en
+  // søknad. Hen er ingen å foreslå for setet hen ble tatt av.
+  const excluded = new Set((exclusions ?? []).map((row) => row.artist_id))
+  const waiting = (waitingRows ?? []).filter((row) => !excluded.has(row.artist_id))
+  if (!waiting.length) return { skipped: 'empty' }
 
   const artistIds = waiting.map((row) => row.artist_id)
   const [{ data: artists }, { data: memberships }] = await Promise.all([

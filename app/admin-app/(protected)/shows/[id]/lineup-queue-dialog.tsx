@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, GripVertical, Plus, RefreshCw, Sparkles, Triang
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { formatDuration } from '@/lib/spot-duration'
 import { Avatar as UiAvatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -322,7 +323,9 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
                       <span className="block truncate text-[11px] text-muted-foreground">
                         {spot.note === 'submissions_open'
                           ? 'Open for submissions'
-                          : spot.note === 'filled'
+                          : spot.note === 'paused'
+                            ? 'Paused'
+                            : spot.note === 'filled'
                             ? 'Filled'
                             : first ? `${firstName(first)} first` : 'No one in the queue'}
                       </span>
@@ -437,7 +440,9 @@ function SpotQueue({
 
   // Low slipper alle inn, så her står det rett ut.
   const criterion = spot.minSkillLevel && spot.minSkillLevel !== 'low' ? SKILL_REQUIREMENT_LABELS[spot.minSkillLevel] : 'Any skill level'
-  const editable = !spot.note
+  // En pauset plass kan ordnes før bookeren velger «Auto-book new» — det er
+  // nettopp da køen betyr noe.
+  const editable = !spot.note || spot.note === 'paused'
 
   // Skillelinjene telles bare over dem som faktisk spørres her: en som får
   // tilbudet på en annen plass, hoppes over av motoren.
@@ -473,13 +478,17 @@ function SpotQueue({
           <span className="truncate">#{spot.position} {spot.roleName}</span>
         </h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {criterion} · {spot.matchCount} match
+          {[criterion, formatDuration(spot.durationMinutes), `${spot.matchCount} match`].filter(Boolean).join(' · ')}
         </p>
       </div>
 
       {spot.note === 'submissions_open' ? (
         <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
           This spot is open for submissions. Comedians apply, and no offers go out automatically.
+        </p>
+      ) : spot.note === 'paused' ? (
+        <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
+          A comedian was removed from this spot. No offers go out until you choose yourself or pick Auto-book new in the line-up.
         </p>
       ) : spot.note === 'filled' ? (
         <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">

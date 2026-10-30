@@ -30,6 +30,7 @@ import {
 } from '../actions'
 import { SKILL_LEVELS, SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
+import { MAX_SPOT_DURATION, MIN_SPOT_DURATION } from '@/lib/spot-duration'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { StartBookingCard } from './lineup-queue-dialog'
 import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
@@ -44,6 +45,7 @@ type Requirement = {
   energy_level: RequirementEnergy
   required_gender: RequirementGender
   min_skill_level: SkillLevel | null
+  duration_minutes: number | null
   submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
@@ -57,6 +59,8 @@ type ReqState = {
   required_gender: RequirementGender
   /** `low` = alle. Lagres som null. */
   min_skill_level: SkillLevel
+  /** Minutter som tekst, slik feltet har dem. Tomt = ikke satt. */
+  duration_minutes: string
   submissions_open: boolean
   compensation_type: RequirementCompensationType | ''
   compensation_amount: string
@@ -110,6 +114,7 @@ const WIZARD_INITIAL: WizardState = {
   energy_level: 'any',
   required_gender: 'any',
   min_skill_level: 'low',
+  duration_minutes: '',
   submissions_open: false,
   compensation_type: '',
   compensation_amount: '',
@@ -207,6 +212,7 @@ function stateFromRequirement(requirement: Requirement): ReqState {
     energy_level: requirement.energy_level,
     required_gender: requirement.required_gender,
     min_skill_level: requirement.min_skill_level ?? 'low',
+    duration_minutes: requirement.duration_minutes != null ? String(requirement.duration_minutes) : '',
     submissions_open: requirement.submissions_open,
     compensation_type: requirement.compensation_type ?? '',
     compensation_amount: requirement.compensation_amount != null ? formatEditableNumber(requirement.compensation_amount / 100) : '',
@@ -224,6 +230,7 @@ function buildFormData(showId: string, reqId: string, state: ReqState): FormData
   fd.set('energy_level', state.energy_level)
   fd.set('required_gender', state.required_gender)
   fd.set('min_skill_level', state.min_skill_level)
+  fd.set('duration_minutes', state.duration_minutes)
   fd.set('submissions_open', String(state.submissions_open))
   fd.set('compensation_type', state.compensation_type)
   fd.set('compensation_amount', state.compensation_amount)
@@ -237,6 +244,7 @@ function isSameReqState(left: ReqState, right: ReqState) {
     && left.energy_level === right.energy_level
     && left.required_gender === right.required_gender
     && left.min_skill_level === right.min_skill_level
+    && left.duration_minutes === right.duration_minutes
     && left.submissions_open === right.submissions_open
     && left.compensation_type === right.compensation_type
     && left.compensation_amount === right.compensation_amount
@@ -652,6 +660,7 @@ export function RequirementsTab({
     fd.set('energy_level', state.energy_level)
     fd.set('required_gender', state.required_gender)
     fd.set('min_skill_level', state.min_skill_level)
+    fd.set('duration_minutes', state.duration_minutes)
     fd.set('submissions_open', String(state.submissions_open))
     fd.set('compensation_type', state.compensation_type)
     fd.set('compensation_amount', state.compensation_amount)
@@ -730,6 +739,7 @@ export function RequirementsTab({
     fd.set('energy_level', wizard.energy_level)
     fd.set('required_gender', wizard.required_gender)
     fd.set('min_skill_level', wizard.min_skill_level)
+    fd.set('duration_minutes', wizard.duration_minutes)
     fd.set('submissions_open', String(wizard.submissions_open))
     fd.set('compensation_type', wizard.compensation_type)
     fd.set('compensation_amount', wizard.compensation_amount)
@@ -903,9 +913,9 @@ export function RequirementsTab({
                 </div>
 
                 {/* ── Criteria ── */}
-                {/* Fem felt: kriteriene på én rad og honoraret på neste til
-                    skjermen er bred nok til alle fem. */}
-                <div className="ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-3 xl:grid-cols-5">
+                {/* Seks felt: kriteriene og varigheten på én rad og honoraret
+                    på neste til skjermen er bred nok til alle seks. */}
+                <div className="ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-3 xl:grid-cols-6">
                   <FieldCell label="Energy">
                     <Select
                       value={state.energy_level}
@@ -961,6 +971,27 @@ export function RequirementsTab({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+                  </FieldCell>
+
+                  <FieldCell label="Duration">
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={MIN_SPOT_DURATION}
+                        max={MAX_SPOT_DURATION}
+                        step={1}
+                        value={state.duration_minutes}
+                        onChange={(event) => updateField(req.id, 'duration_minutes', event.target.value)}
+                        onBlur={() => flushAutosave(req.id)}
+                        placeholder="—"
+                        aria-label={`Duration of the ${state.role_name} spot in minutes`}
+                        className={cn(FIELD_CONTROL_CLASS, 'pr-10')}
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-muted-foreground">
+                        min
+                      </span>
+                    </div>
                   </FieldCell>
 
                   <FieldCell label="Fee">

@@ -100,6 +100,8 @@ type NoticeWorld = {
   filled?: number
   waiting?: string[]
   status?: string
+  /** Komikere bookeren har tatt av showet (`show_artist_booking_exclusions`). */
+  excluded?: string[]
 }
 
 function noticeDb(world: NoticeWorld = {}) {
@@ -120,6 +122,7 @@ function noticeDb(world: NoticeWorld = {}) {
     }),
     confirmed_spots: () => ({ count: world.filled ?? 1 }),
     show_submissions: () => ({ data: (world.waiting ?? ['a-1', 'a-2']).map((artist_id) => ({ artist_id })) }),
+    show_artist_booking_exclusions: () => ({ data: (world.excluded ?? []).map((artist_id) => ({ artist_id })) }),
     artists: () => ({
       data: [
         { id: 'a-1', full_name: 'Ada Lovelace', stage_name: null },
@@ -148,6 +151,19 @@ describe('telling the club about the waitlist', () => {
       waitlist: ['Ada Lovelace', 'Bo'],
       submissions_url: 'https://tickethalo.test/admin-app/shows/show-1?tab=submissions',
     }))
+  })
+
+  // Hen som nettopp ble tatt av plassen, kan fortsatt stå med en søknad.
+  it('leaves out the comedian the booker just removed from the show', async () => {
+    const { db } = noticeDb({ excluded: ['a-1'] })
+    await expect(notifyClubWaitlist('req-1', db)).resolves.toEqual({ sent: 1 })
+    expect(sendWaitlistSpotOpenEmail).toHaveBeenCalledWith(expect.objectContaining({ waitlist: ['Bo'] }))
+  })
+
+  it('stays quiet when the only one waiting is the comedian who was removed', async () => {
+    const { db } = noticeDb({ waiting: ['a-1'], excluded: ['a-1'] })
+    await expect(notifyClubWaitlist('req-1', db)).resolves.toEqual({ skipped: 'empty' })
+    expect(sendWaitlistSpotOpenEmail).not.toHaveBeenCalled()
   })
 
   it('stays quiet while the spot is still full', async () => {

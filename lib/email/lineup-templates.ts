@@ -94,11 +94,14 @@ export function lineupReminderTemplate(opts: {
   details: LineupShowDetails
   daysLeft: number
   roleName: string | null
+  /** «15 min», eller null — da står ikke linja. */
+  durationLabel?: string | null
   feeLabel: string | null
 }): EmailTemplate {
   const rows: Array<[string, string | null]> = [
     ...lineupDetailRows(opts.details, opts.artistId),
     ['Your spot', opts.roleName],
+    ['Duration', opts.durationLabel ?? null],
     ['Fee', opts.feeLabel],
   ]
   const url = lineupThreadUrl(opts.showId)
