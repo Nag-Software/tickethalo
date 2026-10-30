@@ -23,6 +23,10 @@ export default async function ArtistLoginPage({
     if (destination) redirect(destination)
   }
 
+  // Kom komikeren hit fra en side som ba om å bli sendt tilbake (f.eks. en
+  // klubbs invitasjonslenke), skal registreringen gjøre det samme.
+  const signupHref = next ? `/artist-app/signup?next=${encodeURIComponent(next)}` : '/artist-app/signup'
+
   return (
     <main
       className="ev-surface flex min-h-svh flex-col bg-[var(--ev-bg)] text-[var(--ev-text)]"
@@ -46,7 +50,7 @@ export default async function ArtistLoginPage({
           </ul>
 
           <Link
-            href="/artist-app/signup"
+            href={signupHref}
             className="mt-6 inline-flex items-center gap-1.5 text-[14px] font-medium text-[var(--ev-accent)] underline underline-offset-4"
           >
             Register new profile <ArrowRight className="size-4" />
@@ -68,7 +72,7 @@ export default async function ArtistLoginPage({
             }
             successMessage={reset === 'success' ? 'Your password has been updated. You can sign in now.' : undefined}
             forgotPasswordHref="/artist-app/forgot-password"
-            signupHref="/artist-app/signup"
+            signupHref={signupHref}
             nextPath={next}
             theme="portal"
           />

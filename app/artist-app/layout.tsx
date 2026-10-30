@@ -16,6 +16,7 @@ export default async function ArtistLayout({ children }: { children: React.React
     pathname.startsWith('/artist-app/signup') ||
     pathname.startsWith('/artist-app/forgot-password') ||
     pathname.startsWith('/artist-app/reset-password') ||
+    pathname.startsWith('/artist-app/join/') ||
     pathname.startsWith('/artist-app/auth/callback')
 
   if (isPublicRoute) return children
