@@ -15,10 +15,10 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ from: () => ({ insert: (...args: unknown[]) => insert(...args) }) }),
 }))
 
-import { sendShowCancelledEmail } from '@/lib/email/mailer'
+import { isUndeliverableTestAddress, sendShowCancelledEmail } from '@/lib/email/mailer'
 
 const notice = {
-  email: 'ida@example.test',
+  email: 'ida@komiker.no',
   full_name: 'Ida',
   show_title: 'Backstage',
   show_date: '2026-10-17',
@@ -53,12 +53,12 @@ describe('email delivery', () => {
     expect(send).toHaveBeenCalledOnce()
     expect(send.mock.calls[0][0]).toMatchObject({
       from: 'noreply@tickethalo.test',
-      to: 'ida@example.test',
+      to: 'ida@komiker.no',
       replyTo: 'hei@tickethalo.test',
       subject: 'Show cancelled: Backstage',
     })
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      recipient_email: 'ida@example.test',
+      recipient_email: 'ida@komiker.no',
       template_name: 'show_cancelled',
       resend_email_id: 're_123',
       status: 'sent',
@@ -95,7 +95,7 @@ describe('email delivery', () => {
 
     expect(result).toEqual({ success: false, error: 'fetch failed' })
     expect(send).toHaveBeenCalledTimes(3)
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('[Email] show_cancelled to ida@example.test failed: fetch failed'))
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('[Email] show_cancelled to ida@komiker.no failed: fetch failed'))
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', error_message: 'fetch failed', sent_at: null }))
   })
 
@@ -103,5 +103,40 @@ describe('email delivery', () => {
     insert.mockRejectedValue(new Error('database unavailable'))
 
     await expect(settle(sendShowCancelledEmail(notice))).resolves.toEqual({ success: true, resendId: 're_123' })
+  })
+})
+
+describe('reserved test domains', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    send.mockResolvedValue({ data: { id: 're_123' }, error: null })
+    insert.mockResolvedValue({ error: null })
+  })
+
+  it.each([
+    'invitasjon-new@example.com',
+    'a@sub.example.org',
+    'Ida <ida@example.net>',
+    'ida@club.test',
+    'ida@foo.invalid',
+    'IDA@EXAMPLE.COM',
+  ])('treats %s as undeliverable', (address) => {
+    expect(isUndeliverableTestAddress(address)).toBe(true)
+  })
+
+  it.each(['ida@komiker.no', 'ida@example.com.no', 'ida@notexample.com', 'ida@testing.no', 'no-at-sign'])(
+    'treats %s as deliverable',
+    (address) => {
+      expect(isUndeliverableTestAddress(address)).toBe(false)
+    },
+  )
+
+  it('skips the send and writes no failure for a test address', async () => {
+    const result = await sendShowCancelledEmail({ ...notice, email: 'invitasjon-new@example.com' })
+
+    expect(result).toEqual({ success: true })
+    expect(send).not.toHaveBeenCalled()
+    expect(insert).not.toHaveBeenCalled()
   })
 })

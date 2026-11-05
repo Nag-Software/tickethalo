@@ -190,20 +190,22 @@ export async function linkExistingComedianAccount(
       : fail('conflict')
   }
 
-  const { error: banError } = await admin.auth.admin.updateUserById(oldUserId, { ban_duration: BANNED_UNTIL_DISCONNECTED })
-  if (banError) {
-    // Uten sperren ville den gamle innloggingen stått igjen uten profil, og
-    // «missing profile» er ikke et svar noen forstår. Flytt tilbake.
-    console.error(`[ComedianLink] Could not disable the old comedian login ${oldUserId}: ${banError.message}`)
-    await moveArtistLogin({ artistId: artist.id, from: current.authUserId, to: oldUserId, linkedFrom: null })
-    return fail('failed')
-  }
-
   // Sesjonen vi nettopp åpnet for å sjekke passordet, og alle andre den
-  // gamle innloggingen har. Sperren stopper nye; dette tar de som finnes.
+  // gamle innloggingen har. Må skje før sperren: Supabase avviser utlogging
+  // for en sperret bruker («User is banned»). Sperren under stopper nye.
   if (verified.accessToken) {
     const { error: signOutError } = await admin.auth.admin.signOut(verified.accessToken, 'global')
     if (signOutError) console.error(`[ComedianLink] Could not sign out the old comedian login ${oldUserId}: ${signOutError.message}`)
+  }
+
+  const { error: banError } = await admin.auth.admin.updateUserById(oldUserId, { ban_duration: BANNED_UNTIL_DISCONNECTED })
+  if (banError) {
+    // Uten sperren ville den gamle innloggingen stått igjen uten profil, og
+    // «missing profile» er ikke et svar noen forstår. Flytt tilbake — da må
+    // komikeren bare logge inn på nytt, siden øktene er logget ut over.
+    console.error(`[ComedianLink] Could not disable the old comedian login ${oldUserId}: ${banError.message}`)
+    await moveArtistLogin({ artistId: artist.id, from: current.authUserId, to: oldUserId, linkedFrom: null })
+    return fail('failed')
   }
 
   return { ok: true, artistId: artist.id }

@@ -46,6 +46,25 @@ export const RETRY_DELAYS_MS = [700, 1800]
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
+ * Domener som er reservert for testing og aldri kan ta imot e-post
+ * (RFC 2606 og 6761). Testdataene bruker dem bevisst, f.eks.
+ * scripts/invite-link-test-data.mjs, og Resend avviser dem med
+ * `validation_error`. Uten dette ble hver test en «feilet e-post» på
+ * superadmins oversikt.
+ */
+const RESERVED_DOMAINS = ['example.com', 'example.net', 'example.org']
+const RESERVED_TLDS = ['test', 'example', 'invalid', 'localhost']
+
+export function isUndeliverableTestAddress(address: string): boolean {
+  // «Navn <adresse>» eller bare adressen.
+  const email = (address.match(/<([^>]+)>/)?.[1] ?? address).trim().toLowerCase()
+  const domain = email.split('@')[1]
+  if (!domain) return false
+  if (RESERVED_DOMAINS.some((reserved) => domain === reserved || domain.endsWith(`.${reserved}`))) return true
+  return RESERVED_TLDS.includes(domain.split('.').pop() ?? '')
+}
+
+/**
  * Sender én e-post, med nye forsøk og spor.
  *
  * - Samme `idempotencyKey` på alle forsøk: svarte Resend ikke, men sendte
@@ -58,7 +77,16 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  * Kaster aldri. En e-post som feiler skal ikke velte handlingen som sendte den.
  */
 async function deliver(templateName: string, payload: CreateEmailOptions): Promise<EmailResult> {
-  const recipient = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to
+  // Testadresser hoppes over: ingen utsending, ingen rad i email_logs.
+  const recipients = (Array.isArray(payload.to) ? payload.to : [payload.to])
+  const deliverable = recipients.filter((address) => !isUndeliverableTestAddress(address))
+  if (deliverable.length === 0) {
+    console.info(`[Email] ${templateName} to ${recipients.join(', ')} skipped: reserved test domain`)
+    return { success: true }
+  }
+  if (deliverable.length < recipients.length) payload = { ...payload, to: deliverable }
+
+  const recipient = deliverable.join(', ')
   const idempotencyKey = randomUUID()
   let failure = 'unknown error'
 
