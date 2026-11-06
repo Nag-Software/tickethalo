@@ -1,15 +1,16 @@
 import SwiftUI
 
-/// Den mørke varianten av nettsidens flate (`.ev-surface[data-tone='dark']`
-/// i app/globals.css), så appen ser ut som resten av Tickethalo.
+/// Mørk modus: nøytral grå bakgrunn (#333). Tekst og aksent er fra den
+/// mørke varianten av nettsidens flate (`.ev-surface[data-tone='dark']` i
+/// app/globals.css).
 ///
 /// Appen er alltid mørk (`UIUserInterfaceStyle` = Dark i Info.plist): den
 /// brukes i mørke lokaler, og systemkomponentene (menyer, søkefelt, ark)
 /// følger da samme modus som fargene her.
 enum Theme {
-    static let background = Color(hex: 0x1B0800)
+    static let background = Color(hex: 0x333333)
     /// Ark og andre flater som ligger over bakgrunnen.
-    static let elevated = Color(hex: 0x2A1308)
+    static let elevated = Color(hex: 0x3D3D3D)
     static let text = Color(hex: 0xFFF4EC)
     static let muted = text.opacity(0.78)
     static let faint = text.opacity(0.6)

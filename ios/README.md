@@ -39,9 +39,9 @@ for å se over skjermene og ta App Store-skjermbilder. Koder å prøve: `B3RT9WZ
 
 ## Farger
 
-Appen er alltid mørk (`UIUserInterfaceStyle` = Dark i `ios/Info.plist`). Fargene
-i `Sources/Theme.swift` er den mørke varianten av nettsiden
-(`.ev-surface[data-tone='dark']` i `app/globals.css`). Resultatskjermen bruker
+Appen er alltid mørk (`UIUserInterfaceStyle` = Dark i `ios/Info.plist`) med
+bakgrunn **#333**. Tekst og aksent i `Sources/Theme.swift` er fra den mørke
+varianten av nettsiden (`.ev-surface[data-tone='dark']` i `app/globals.css`). Resultatskjermen bruker
 `success`/`warning`/`danger` som flater med hvit tekst; tekst og ikoner rett på
 bakgrunnen bruker `successText`/`warningText`/`dangerText`.
 
