@@ -25,6 +25,13 @@ final class AuthStore {
     private static let keychainKey = "session"
 
     init() {
+        #if DEBUG
+        if Demo.isEnabled {
+            session = Demo.session
+            state = .signedIn
+            return
+        }
+        #endif
         if let data = Keychain.load(Self.keychainKey),
            let saved = try? JSONDecoder().decode(Session.self, from: data) {
             session = saved

@@ -17,6 +17,8 @@ struct TickethaloScannerApp: App {
                 switch auth.state {
                 case .loading:
                     ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.background.ignoresSafeArea())
                 case .signedOut:
                     LoginView()
                 case .signedIn:
@@ -26,6 +28,9 @@ struct TickethaloScannerApp: App {
             .environment(auth)
             .environment(api)
             .tint(Theme.accent)
+            // Lys modus kommer fra UIUserInterfaceStyle i Info.plist. En
+            // preferredColorScheme her ville overstyrt skannerens mørke
+            // statuslinje.
         }
     }
 }

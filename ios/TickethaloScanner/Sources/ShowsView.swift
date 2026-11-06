@@ -23,8 +23,16 @@ struct ShowsView: View {
             List {
                 if let error {
                     Section {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(Theme.danger)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(Theme.danger)
+                            Button("Try again") { Task { await load() } }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.accent)
+                                .disabled(isLoading)
+                        }
+                        .padding(.vertical, 4)
+                        .listRowBackground(Theme.card)
                     }
                 }
                 if !upcoming.isEmpty {
@@ -69,7 +77,9 @@ struct ShowsView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 if let me {
-                    Section(me.email) {
+                    // Seksjonstitler vises ikke i menyer på iOS 26 — derfor en egen linje.
+                    Text("Signed in as \(me.email)")
+                    Section {
                         if me.clubs.count > 1 {
                             Picker("Club", selection: Binding(
                                 get: { me.selectedClubId ?? "" },
@@ -94,7 +104,7 @@ struct ShowsView: View {
     }
 
     private func load() async {
-                isLoading = true
+        isLoading = true
         defer { isLoading = false }
         do {
             let me = try await api.me()

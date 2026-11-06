@@ -42,6 +42,7 @@ struct GuestListView: View {
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
 
             if let error {
                 Text(error).foregroundStyle(Theme.danger).font(.subheadline)
@@ -67,6 +68,7 @@ struct GuestListView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .contentMargins(.top, 12, for: .scrollContent)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Name, email or code")
         .refreshable { await onRefresh() }
         .confirmationDialog(

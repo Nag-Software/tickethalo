@@ -5,5 +5,13 @@
 	<!-- Appen bruker bare HTTPS fra systemet — ingen egen kryptering å deklarere. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Fargene er laget for lys bakgrunn; mørk modus ga hvit tekst på krem. -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 </dict>
 </plist>

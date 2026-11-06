@@ -55,6 +55,12 @@ final class APIClient {
     private struct ErrorResponse: Decodable { let error: String }
 
     private func send<T: Decodable>(_ path: String, body: [String: String]? = nil, retried: Bool = false) async throws -> T {
+        #if DEBUG
+        if Demo.isEnabled {
+            try await Task.sleep(for: .milliseconds(250))
+            return try JSONDecoder().decode(T.self, from: Demo.response(path: path, body: body))
+        }
+        #endif
         var request = URLRequest(url: Config.apiBaseURL.appending(path: path))
         request.timeoutInterval = 15
         request.setValue("Bearer \(try await auth.validAccessToken())", forHTTPHeaderField: "Authorization")

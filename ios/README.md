@@ -31,6 +31,20 @@ port, sett `TICKETHALO_API_URL` (f.eks. `http://localhost:3030`) under
 
 Simulatoren har ikke kamera — bruk «Type code».
 
+**Demomodus (bare debug-bygg):** sett `TICKETHALO_DEMO=1` i schemets miljø, så er
+appen innlogget med demoshow og -gjester uten nett (`Sources/Demo.swift`). Nyttig
+for å se over skjermene og ta App Store-skjermbilder. Koder å prøve: `B3RT9WZE`
+(slipp inn), `K7QM2XPA` (allerede inne), `P2DX6HJT` (refundert), `WRONG123`
+(feil show).
+
+## Farger
+
+Appen er låst til lys modus (`UIUserInterfaceStyle` i `ios/Info.plist`) — fargene
+er laget for kremfargen. Skanneskjermen er mørk med vilje og setter
+`preferredColorScheme(.dark)` og en svart navigasjonslinje i begge faner; ikke
+bytt modus når fanen byttes, da henger glasset i navigasjonslinja igjen i feil
+stil.
+
 ## Til App Store
 
 1. Apple Developer-konto (Nag Software). Sett teamet under *Signing & Capabilities*
