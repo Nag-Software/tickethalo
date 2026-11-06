@@ -1,4 +1,5 @@
 import { cache } from 'react'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Role } from '@/types/database'
@@ -33,12 +34,31 @@ export type SessionProfile = {
   clubs: SessionClub[]
 }
 
-/** Den innloggede brukeren, validert mot Supabase. Ett kall per request. */
+/**
+ * Den innloggede brukeren, validert mot Supabase. Ett kall per request.
+ *
+ * iOS-scanneren har ingen informasjonskapsler: den sender Supabase-tokenet
+ * som `Authorization: Bearer …`. Tokenet valideres mot Supabase på samme måte
+ * som cookien, så alle tilgangssjekkene videre (`getClubAccess`,
+ * `assertShowAccess`) gjelder uendret.
+ */
 export const getAuthUser = cache(async () => {
+  const bearer = await getBearerToken()
+  if (bearer) {
+    const { data: { user } } = await createAdminClient().auth.getUser(bearer)
+    return user
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   return user
 })
+
+async function getBearerToken() {
+  const authorization = (await headers()).get('authorization') ?? ''
+  const match = authorization.match(/^Bearer\s+(\S+)$/i)
+  return match?.[1] ?? null
+}
 
 /**
  * Profil + klubbmedlemskap i én spørring.

@@ -1,9 +1,11 @@
 import { cache } from 'react'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
 
 export const ADMIN_APP_CLUB_COOKIE = 'admin_app_club_id'
+/** Klubben iOS-scanneren har valgt. Appen har ingen cookie å bære den i. */
+export const SCANNER_CLUB_HEADER = 'x-tickethalo-club'
 
 export type ClubOption = {
   id: string
@@ -46,15 +48,23 @@ export const getClubAccess = cache(async (): Promise<ClubAccess> => {
       .select('id, name, city, logo_url')
       .order('name')
 
-    return toAccess(clubs ?? [], { isSuperadmin: true, selectedFromCookie: await getSelectedClubCookie() })
+    return toAccess(clubs ?? [], {
+      isSuperadmin: true,
+      selectedFromCookie: (await getSelectedClubHeader()) ?? (await getSelectedClubCookie()),
+    })
   }
 
-  return toAccess(profile.clubs, { isSuperadmin: false, selectedFromCookie: null })
+  // Valget fra appen godtas bare blant klubbene brukeren er medlem av — se `toAccess`.
+  return toAccess(profile.clubs, { isSuperadmin: false, selectedFromCookie: await getSelectedClubHeader() })
 })
 
 async function getSelectedClubCookie() {
   const cookieStore = await cookies()
   return cookieStore.get(ADMIN_APP_CLUB_COOKIE)?.value ?? null
+}
+
+async function getSelectedClubHeader() {
+  return (await headers()).get(SCANNER_CLUB_HEADER) || null
 }
 
 function toAccess(
