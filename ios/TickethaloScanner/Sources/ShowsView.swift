@@ -9,13 +9,14 @@ struct ShowsView: View {
     @State private var shows: [Show] = []
     @State private var error: String?
     @State private var isLoading = true
-    @State private var showAccessAlert = false
 
     private var today: Date { Calendar.current.startOfDay(for: Date()) }
     private var upcoming: [Show] {
         shows.filter { ($0.dateValue ?? .distantFuture) >= today }
             .sorted { ($0.dateValue ?? .distantFuture) < ($1.dateValue ?? .distantFuture) }
     }
+    private var tonight: [Show] { upcoming.filter { $0.dateValue.map { Calendar.current.isDateInToday($0) } ?? false } }
+    private var later: [Show] { upcoming.filter { !tonight.contains($0) } }
     private var past: [Show] { shows.filter { ($0.dateValue ?? .distantFuture) < today } }
 
     var body: some View {
@@ -25,7 +26,7 @@ struct ShowsView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
                             Label(error, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Theme.danger)
+                                .foregroundStyle(Theme.dangerText)
                             Button("Try again") { Task { await load() } }
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.accent)
@@ -35,8 +36,12 @@ struct ShowsView: View {
                         .listRowBackground(Theme.card)
                     }
                 }
-                if !upcoming.isEmpty {
-                    Section("Upcoming") { ForEach(upcoming) { row($0) } }
+                // Kveldens show øverst for seg — det er nesten alltid det døra skal ha.
+                if !tonight.isEmpty {
+                    Section("Today") { ForEach(tonight) { row($0) } }
+                }
+                if !later.isEmpty {
+                    Section("Upcoming") { ForEach(later) { row($0) } }
                 }
                 if !past.isEmpty {
                     Section("Past") { ForEach(past) { row($0) } }

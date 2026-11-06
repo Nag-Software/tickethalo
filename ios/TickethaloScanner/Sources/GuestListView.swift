@@ -45,7 +45,8 @@ struct GuestListView: View {
             .listRowSeparator(.hidden)
 
             if let error {
-                Text(error).foregroundStyle(Theme.danger).font(.subheadline)
+                Text(error).foregroundStyle(Theme.dangerText).font(.subheadline)
+                    .listRowBackground(Theme.card)
             }
 
             ForEach(visible) { ticket in
@@ -120,9 +121,9 @@ struct GuestListView: View {
 
     private func color(for ticket: Ticket) -> Color {
         switch ticket.status {
-        case "used": Theme.success
-        case "valid": Theme.muted
-        default: Theme.danger
+        case "used": Theme.successText
+        case "valid": Theme.faint
+        default: Theme.dangerText
         }
     }
 

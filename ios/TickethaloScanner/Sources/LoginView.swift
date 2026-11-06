@@ -2,6 +2,8 @@ import SwiftUI
 
 struct LoginView: View {
     @Environment(AuthStore.self) private var auth
+    /// Døra logger inn med samme konto kveld etter kveld — fyll inn e-posten.
+    @AppStorage("lastEmail") private var lastEmail = ""
     @State private var email = ""
     @State private var password = ""
     @State private var error: String?
@@ -49,7 +51,7 @@ struct LoginView: View {
                 if let error {
                     Text(error)
                         .font(.subheadline)
-                        .foregroundStyle(Theme.danger)
+                        .foregroundStyle(Theme.dangerText)
                         .accessibilityIdentifier("loginError")
                 }
 
@@ -75,6 +77,12 @@ struct LoginView: View {
             .padding(.horizontal, 24)
         }
         .scrollDismissesKeyboard(.interactively)
+        .onAppear {
+            if email.isEmpty, !lastEmail.isEmpty {
+                email = lastEmail
+                focus = .password
+            }
+        }
         .background(Theme.background.ignoresSafeArea())
     }
 
@@ -85,6 +93,7 @@ struct LoginView: View {
         Task {
             do {
                 try await auth.signIn(email: email, password: password)
+                lastEmail = email.trimmingCharacters(in: .whitespaces)
             } catch {
                 self.error = error.localizedDescription
             }

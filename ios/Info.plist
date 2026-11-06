@@ -5,9 +5,9 @@
 	<!-- Appen bruker bare HTTPS fra systemet — ingen egen kryptering å deklarere. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<!-- Fargene er laget for lys bakgrunn; mørk modus ga hvit tekst på krem. -->
+	<!-- Appen er alltid mørk; fargene i Theme.swift er laget for det. -->
 	<key>UIUserInterfaceStyle</key>
-	<string>Light</string>
+	<string>Dark</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

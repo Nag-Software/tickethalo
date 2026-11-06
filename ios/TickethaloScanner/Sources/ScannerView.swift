@@ -18,6 +18,7 @@ struct ScannerView: View {
     @State private var lastCode = ""
     @State private var lastCodeAt = Date.distantPast
     @State private var dismissTask: Task<Void, Never>?
+    @State private var hasLoaded = false
 
     enum Tab: String, CaseIterable { case scan = "Scan", guests = "Guests" }
 
@@ -35,26 +36,23 @@ struct ScannerView: View {
             switch tab {
             case .scan: scanner
             case .guests:
-                // Lista er lys som resten av appen, under den mørke toppen.
                 GuestListView(show: show, tickets: $tickets, onCheckIn: { code in Task { await process(code, force: true) } }, onRefresh: loadTickets)
-                    .background(Theme.background)
-                    .environment(\.colorScheme, .light)
-                    .tint(Theme.accent)
             }
         }
+        // Resultatet dekker begge fanene: også en innsjekking fra gjestelista
+        // skal gi samme tydelige svar som en skanning.
+        .overlay {
+            if let result {
+                ResultOverlay(outcome: result) { dismissResult() }
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: result)
         .safeAreaInset(edge: .top, spacing: 0) { header }
-        .background(Color.black)
+        .background(Theme.background)
         .navigationBarTitleDisplayMode(.inline)
-        // Toppen er alltid mørk her, også på gjestelista. Å bytte modus når
-        // fanen byttes etterlot knappene i navigasjonslinja i feil stil
-        // (mørk tekst på mørkt glass).
-        .tint(.white)
-        .preferredColorScheme(.dark)
-        // Glasset i navigasjonslinja følger innholdet under — den lyse lista
-        // gjorde knappene mørke på svart. Lås linja til mørk.
-        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(Theme.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("View", selection: $tab) {
@@ -67,10 +65,8 @@ struct ScannerView: View {
         .sheet(isPresented: $showManualEntry) {
             ManualEntryView { code in Task { await process(code, force: true) } }
                 .presentationDetents([.height(260)])
-                .presentationBackground(Theme.background)
+                .presentationBackground(Theme.elevated)
                 .presentationDragIndicator(.visible)
-                .tint(Theme.accent)
-                .environment(\.colorScheme, .light)
         }
         .task { await loadTickets() }
         .task {
@@ -94,25 +90,25 @@ struct ScannerView: View {
             HStack {
                 Text(show.subtitle).lineLimit(1)
                 Spacer()
-                Text("\(checkedIn) / \(tickets.count) in")
+                Text(hasLoaded ? "\(checkedIn) / \(tickets.count) in" : "– / – in")
                     .monospacedDigit()
                     .fontWeight(.semibold)
                     .accessibilityIdentifier("checkedInCount")
             }
             .font(.subheadline)
-            .opacity(0.75)
+            .foregroundStyle(Theme.muted)
             ProgressView(value: Double(checkedIn), total: Double(max(tickets.count, 1)))
                 .tint(Theme.accentFill)
             if let loadError {
                 Label(loadError, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(Theme.dangerOnDark)
+                    .foregroundStyle(Theme.dangerText)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.text)
         .padding(.horizontal)
         .padding(.bottom, 10)
-        .background(Color.black)
+        .background(Theme.background)
     }
 
     private var scanner: some View {
@@ -126,7 +122,8 @@ struct ScannerView: View {
                             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(Theme.accent)
+                        .tint(Theme.accentFill)
+                        .foregroundStyle(Theme.accentInk)
                     }
                 }
                 .foregroundStyle(.white)
@@ -139,11 +136,6 @@ struct ScannerView: View {
                 )
                 .ignoresSafeArea(edges: .bottom)
                 viewfinder
-            }
-
-            if let result {
-                ResultOverlay(outcome: result) { dismissResult() }
-                    .transition(.opacity)
             }
 
             VStack {
@@ -169,14 +161,13 @@ struct ScannerView: View {
                 .background(.ultraThinMaterial.opacity(0.9), in: Capsule())
                 .environment(\.colorScheme, .dark)
                 .padding()
-                .opacity(result == nil ? 1 : 0)
             }
 
             if isProcessing {
                 ProgressView().tint(.white).scaleEffect(1.5)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: result)
+        .background(Color.black)
     }
 
     private var viewfinder: some View {
@@ -192,6 +183,7 @@ struct ScannerView: View {
     private func loadTickets() async {
                 do {
             tickets = try await api.show(show.id).tickets
+            hasLoaded = true
             loadError = nil
         } catch {
             loadError = error.localizedDescription
@@ -351,6 +343,7 @@ private struct ManualEntryView: View {
                     .foregroundStyle(Theme.accentInk)
             }
             .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty)
+            .opacity(code.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
         }
         .padding(24)
         .frame(maxHeight: .infinity, alignment: .top)

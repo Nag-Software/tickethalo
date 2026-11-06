@@ -39,11 +39,11 @@ for å se over skjermene og ta App Store-skjermbilder. Koder å prøve: `B3RT9WZ
 
 ## Farger
 
-Appen er låst til lys modus (`UIUserInterfaceStyle` i `ios/Info.plist`) — fargene
-er laget for kremfargen. Skanneskjermen er mørk med vilje og setter
-`preferredColorScheme(.dark)` og en svart navigasjonslinje i begge faner; ikke
-bytt modus når fanen byttes, da henger glasset i navigasjonslinja igjen i feil
-stil.
+Appen er alltid mørk (`UIUserInterfaceStyle` = Dark i `ios/Info.plist`). Fargene
+i `Sources/Theme.swift` er den mørke varianten av nettsiden
+(`.ev-surface[data-tone='dark']` i `app/globals.css`). Resultatskjermen bruker
+`success`/`warning`/`danger` som flater med hvit tekst; tekst og ikoner rett på
+bakgrunnen bruker `successText`/`warningText`/`dangerText`.
 
 ## Til App Store
 
