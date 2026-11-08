@@ -31,11 +31,11 @@ enum Demo {
         let json: Any
         if path.hasSuffix("scanner/me") {
             json = ["name": "Door Staff", "email": "door@example.com", "role": "staff",
-                    "clubs": [["id": "c1", "name": "Latter Oslo", "city": "Oslo"], ["id": "c2", "name": "Comedy Bergen", "city": "Bergen"]],
+                    "clubs": [["id": "c1", "name": "Northside Comedy Club", "city": "Oslo"], ["id": "c2", "name": "Harbour Laughs", "city": "Bergen"]],
                     "selectedClubId": "c1"]
         } else if path.hasSuffix("scanner/shows") {
             json = ["shows": [
-                show("s1", "Friday Night Stand-up", today, "20:00:00"),
+                show("s1", "Stand-up Night", today, "20:00:00"),
                 show("s2", "New Talent Night", day(3), "19:30:00"),
                 show("s3", "Late Show", day(-4), "22:00:00", status: "completed"),
             ]]
@@ -65,7 +65,7 @@ enum Demo {
             }
             json = ["ok": true]
         } else {
-            json = ["show": show("s1", "Friday Night Stand-up", today, "20:00:00"),
+            json = ["show": show("s1", "Stand-up Night", today, "20:00:00"),
                     "tickets": tickets]
         }
         return try! JSONSerialization.data(withJSONObject: json)
