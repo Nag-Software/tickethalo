@@ -5,6 +5,9 @@ import UIKit
 /// Bakkameraet med QR-lesing. Hver lest kode sendes til `onCode`;
 /// skjermen bak bestemmer hva som skjer med gjentatte lesninger.
 struct CameraScanner: UIViewRepresentable {
+    /// Av mens gjestelista er oppe eller appen er i bakgrunnen. Økta stoppes
+    /// og startes på kamerakøen — visningen og økta beholdes.
+    var isActive: Bool
     var torchOn: Bool
     var onCode: (String) -> Void
     var onFailure: (CameraFailure) -> Void
@@ -20,7 +23,8 @@ struct CameraScanner: UIViewRepresentable {
 
     func updateUIView(_ view: PreviewView, context: Context) {
         context.coordinator.onCode = onCode
-        context.coordinator.setTorch(torchOn)
+        context.coordinator.setActive(isActive)
+        context.coordinator.setTorch(isActive && torchOn)
     }
 
     static func dismantleUIView(_ view: PreviewView, coordinator: Coordinator) {
@@ -38,6 +42,9 @@ struct CameraScanner: UIViewRepresentable {
         private let session = AVCaptureSession()
         private let queue = DispatchQueue(label: "com.tickethalo.scanner.camera")
         private var device: AVCaptureDevice?
+        /// Leses og skrives bare på `queue`.
+        private var isConfigured = false
+        private var wantsRunning = true
 
         init(onCode: @escaping (String) -> Void, onFailure: @escaping (CameraFailure) -> Void) {
             self.onCode = onCode
@@ -80,20 +87,36 @@ struct CameraScanner: UIViewRepresentable {
                     if device.isAutoFocusRangeRestrictionSupported { device.autoFocusRangeRestriction = .near }
                     device.unlockForConfiguration()
                 }
-                self.session.startRunning()
+                self.isConfigured = true
+                if self.wantsRunning { self.session.startRunning() }
+            }
+        }
+
+        func setActive(_ active: Bool) {
+            queue.async {
+                self.wantsRunning = active
+                guard self.isConfigured else { return }
+                if active, !self.session.isRunning { self.session.startRunning() }
+                if !active, self.session.isRunning { self.session.stopRunning() }
             }
         }
 
         func setTorch(_ on: Bool) {
             queue.async {
-                guard let device = self.device, device.hasTorch, (try? device.lockForConfiguration()) != nil else { return }
-                device.torchMode = on ? .on : .off
+                guard let device = self.device, device.hasTorch else { return }
+                let mode: AVCaptureDevice.TorchMode = on ? .on : .off
+                guard device.torchMode != mode, device.isTorchModeSupported(mode),
+                      (try? device.lockForConfiguration()) != nil else { return }
+                device.torchMode = mode
                 device.unlockForConfiguration()
             }
         }
 
         func stop() {
-            queue.async { if self.session.isRunning { self.session.stopRunning() } }
+            queue.async {
+                self.wantsRunning = false
+                if self.session.isRunning { self.session.stopRunning() }
+            }
         }
 
         private func fail(_ failure: CameraFailure) {

@@ -32,11 +32,17 @@ struct ScannerView: View {
     private var checkedIn: Int { tickets.filter(\.isCheckedIn).count }
 
     var body: some View {
-        VStack(spacing: 0) {
-            switch tab {
-            case .scan: scanner
-            case .guests:
+        ZStack {
+            // Kameraet blir liggende mens gjestelista er oppe, og settes bare
+            // på pause. Å rive ned og bygge opp kameraet ved hvert fanebytte
+            // frøs skjermen i flere sekunder på ekte telefoner.
+            scanner
+                .opacity(tab == .scan ? 1 : 0)
+                .allowsHitTesting(tab == .scan)
+                .accessibilityHidden(tab != .scan)
+            if tab == .guests {
                 GuestListView(show: show, tickets: $tickets, onCheckIn: { code in Task { await process(code, force: true) } }, onRefresh: loadTickets)
+                    .background(Theme.background)
             }
         }
         // Resultatet dekker begge fanene: også en innsjekking fra gjestelista
@@ -130,6 +136,7 @@ struct ScannerView: View {
                 .padding(32)
             } else {
                 CameraScanner(
+                    isActive: tab == .scan && scenePhase == .active,
                     torchOn: torchOn,
                     onCode: { code in Task { await process(code) } },
                     onFailure: { cameraFailure = $0 }
