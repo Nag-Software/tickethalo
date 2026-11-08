@@ -85,7 +85,7 @@ export function Discover({ shows, today }: { shows: PublicShow[]; today: string 
           </nav>
         </header>
 
-        <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-6 px-4 pb-10 pt-2 sm:gap-10 md:px-10 md:pb-24 md:pt-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+        <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-6 px-4 pb-8 pt-2 sm:gap-10 md:px-10 md:pb-14 md:pt-4 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
           <div className="order-2 min-w-0 lg:order-1">
             <p className="text-[13px] font-medium text-[var(--ev-muted)] sm:text-[14px]">
               {todayLabel}
@@ -277,8 +277,14 @@ function Squiggle() {
  */
 function HeroVisual({ next }: { next: PublicShow | undefined }) {
   return (
-    <div className="relative order-1 mx-auto w-full max-w-[520px] pb-16 sm:pb-14 lg:order-2 lg:pb-8">
-      <div className="relative aspect-[16/10] overflow-hidden rounded-[24px] bg-[var(--ev-poster-ground)] shadow-[0_40px_80px_-40px_rgba(46,12,1,0.55)] sm:aspect-[4/3] sm:rounded-[32px] lg:aspect-[5/6] lg:rotate-[2deg] lg:rounded-[36px]">
+    <div
+      className={cn(
+        'relative order-1 mx-auto w-full max-w-[460px] lg:order-2',
+        // Plass til billetten som henger under bildet — bare når det finnes en.
+        next ? 'pb-14 lg:pb-10' : 'pb-2'
+      )}
+    >
+      <div className="relative aspect-[2/1] overflow-hidden rounded-[24px] bg-[var(--ev-poster-ground)] shadow-[0_40px_80px_-40px_rgba(46,12,1,0.55)] sm:aspect-[16/9] sm:rounded-[32px] lg:aspect-[1/1] lg:rotate-[2deg] lg:rounded-[36px]">
         <Image
           src="/hero-audience-mobile.webp"
           alt="Two people laughing in the audience at a comedy club"
