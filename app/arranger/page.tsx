@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Bricolage_Grotesque } from 'next/font/google'
-import { Check, Mic, QrCode, Send, Ticket, Users, Wallet } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { BrandLogoResponsive } from '@/components/brand/brand-logo'
 import { PayoutCalculator } from '@/components/arranger/payout-calculator'
 import { cn } from '@/lib/utils'
@@ -12,7 +12,7 @@ const display = Bricolage_Grotesque({ subsets: ['latin'], variable: '--font-disp
 
 export const metadata = {
   title: 'Tickethalo for comedy clubs — tickets, booking and check-in',
-  description: 'Sell tickets, book comedians and scan at the door. Your club keeps 90% of every ticket.',
+  description: 'Sell tickets, book comedians and scan at the door. 10% per ticket, card fees included.',
 }
 
 const H = '[font-family:var(--font-display)]'
@@ -67,15 +67,60 @@ function Header() {
   )
 }
 
+/* ───────────────────────── Bilder ───────────────────────── */
+
+/**
+ * Stockbilder fra Unsplash (fri lisens, også kommersielt — ingen kreditering
+ * kreves). Lenket direkte, slik Unsplash selv ber om, med størrelse i URL-en.
+ * Bare klubbmotiver: scene, mikrofon, publikum ved bord.
+ */
+const photo = (id: string, w: number) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&q=75`
+
+const PHOTOS = {
+  comedian: { id: '1728674115193-6febdf9fe365', alt: 'Comedian with a microphone in front of a red curtain' },
+  laughing: { id: '1681641095463-b4d3693a0ee3', alt: 'Woman laughing at a table with drinks during a show' },
+  audience: { id: '1790348544752-b1d15a6d59a1', alt: 'Audience clapping during a live show' },
+  room: { id: '1641903806973-17eaf2d2634f', alt: 'Microphone and stool on a club stage in front of a brick wall' },
+  onStage: { id: '1647589047037-ba94e650388f', alt: 'Comedian on stage holding a microphone' },
+  mic: { id: '1580188928585-0ef5c1a5c4dd', alt: 'Microphone on a stand in front of a red curtain' },
+} as const
+
+function Photo({
+  p,
+  w,
+  className,
+  priority,
+  sizes = '(max-width: 768px) 100vw, 50vw',
+}: {
+  p: { id: string; alt: string }
+  w: number
+  className?: string
+  priority?: boolean
+  sizes?: string
+}) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={photo(p.id, w)}
+      srcSet={[640, 960, 1280, 1920].map((x) => `${photo(p.id, x)} ${x}w`).join(', ')}
+      sizes={sizes}
+      alt={p.alt}
+      loading={priority ? 'eager' : 'lazy'}
+      fetchPriority={priority ? 'high' : undefined}
+      className={cn('size-full object-cover', className)}
+    />
+  )
+}
+
 /* ───────────────────────── Hero ───────────────────────── */
 
 function Hero() {
   return (
-    <section className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] items-center gap-10 px-4 pb-14 pt-4 sm:gap-14 sm:pb-20 sm:pt-8 md:px-8 md:pt-14 lg:grid-cols-[1fr_1.05fr]">
+    <section className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] items-center gap-8 px-4 pb-14 pt-4 sm:gap-12 sm:pb-20 sm:pt-8 md:px-8 md:pt-12 lg:grid-cols-[1fr_1fr]">
       <div>
         <p className="text-[13px] font-semibold text-[var(--ev-accent)] sm:text-[14px]">For comedy clubs and promoters</p>
         <h1 className={cn(H, 'mt-3 text-balance text-[34px] font-bold leading-[1.04] tracking-[-0.035em] sm:mt-4 sm:text-[48px] lg:text-[58px]')}>
-          Tickets, booking and check‑in. One place.
+          Tickets, booking and check&#8209;in. One place.
         </h1>
         <p className="mt-4 max-w-lg text-[16px] leading-[1.5] text-[var(--ev-muted)] sm:mt-5 sm:text-[18px]">
           Publish a show, sell tickets, find comedians and scan your audience at the door. Built for clubs that would rather
@@ -89,11 +134,11 @@ function Hero() {
             className="inline-flex h-12 cursor-pointer items-center gap-2 rounded-full bg-[var(--ev-text)] px-6 text-[16px] font-semibold text-[var(--ev-bg)] hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]"
           />
           <a href="#pricing" className="inline-flex h-12 items-center px-3 text-[16px] font-semibold underline-offset-4 hover:underline">
-            See what you keep
+            Pricing
           </a>
         </div>
         <ul className="mt-6 flex flex-col gap-2 text-[14px] text-[var(--ev-muted)] sm:mt-8 sm:flex-row sm:flex-wrap sm:gap-x-6">
-          {['90% of the ticket price to your club', 'Card fees covered', 'Scanner app for iPhone'].map((t) => (
+          {['10% per ticket, card fees included', 'Scanner app for iPhone', 'Payouts via Stripe'].map((t) => (
             <li key={t} className="flex items-center gap-1.5">
               <Check className="size-4 text-[var(--ev-accent)]" aria-hidden /> {t}
             </li>
@@ -101,72 +146,18 @@ function Hero() {
         </ul>
       </div>
 
-      <ProductMock />
+      {/* To klubbfoto: scenen og salen. På mobil ett bredt bilde med det andre som et lite innfelt kort. */}
+      <div className="relative pb-10 sm:pb-12">
+        <div className="aspect-[4/3] overflow-hidden rounded-[24px] bg-[var(--ev-poster-ground)] sm:rounded-[32px] lg:aspect-[5/6]">
+          <Photo p={PHOTOS.comedian} w={1200} priority className="object-[50%_30%]" />
+        </div>
+        <div className="absolute bottom-0 left-3 w-[42%] overflow-hidden rounded-[18px] border-4 border-[var(--ev-bg)] shadow-[0_20px_40px_-20px_rgba(46,12,1,0.6)] sm:left-auto sm:right-[-12px] sm:w-[40%] sm:rounded-[24px] lg:-left-10 lg:right-auto">
+          <div className="aspect-[4/5]">
+            <Photo p={PHOTOS.laughing} w={600} sizes="(max-width: 768px) 42vw, 240px" />
+          </div>
+        </div>
+      </div>
     </section>
-  )
-}
-
-/** Et utsnitt av klubbportalen, tegnet i HTML — ikke et skjermbilde som går ut på dato. */
-function ProductMock() {
-  return (
-    <div aria-hidden className="relative mx-auto w-full max-w-[540px] pb-10 lg:pb-0">
-      {/* Showkortet fra portalen */}
-      <div className="rounded-[24px] bg-white p-4 text-[#1b0800] sm:rounded-[28px] sm:p-5 shadow-[0_40px_80px_-40px_rgba(46,12,1,0.45)] ring-1 ring-black/5 md:p-7">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[13px] font-medium text-black/50">Fri 21 Nov · 20:00</p>
-            <p className={cn(H, 'mt-1 text-[19px] font-bold leading-tight sm:text-[22px]')}>Friday Stand-up & Friends</p>
-          </div>
-          <span className="shrink-0 whitespace-nowrap rounded-full bg-[#e8f6ec] px-2.5 py-1 text-[12px] font-semibold text-[#1d6b35]">On sale</span>
-        </div>
-
-        <div className="mt-4 grid grid-cols-3 gap-2 sm:mt-6 sm:gap-3">
-          {[
-            ['Sold', '142 / 150'],
-            ['To your club', 'NOK 38,340'],
-            ['Avg. price', 'NOK 286'],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-2xl bg-black/[0.04] p-2.5 sm:p-3">
-              <p className="text-[12px] text-black/50">{k}</p>
-              <p className="mt-1 text-[14px] font-semibold tabular-nums sm:text-[17px]">{v}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-5">
-          <div className="h-2.5 overflow-hidden rounded-full bg-black/[0.06]">
-            <div className="h-full w-[94%] rounded-full bg-[var(--ev-accent-fill)]" />
-          </div>
-          <p className="mt-2 text-[12px] text-black/50">94% sold · 8 tickets left</p>
-        </div>
-
-        <div className="mt-6 space-y-2.5">
-          {[
-            ['Standard', 'NOK 300', '118'],
-            ['Student', 'NOK 220', '24'],
-          ].map(([name, price, sold]) => (
-            <div key={name} className="flex items-center justify-between rounded-xl border border-black/[0.07] px-3.5 py-2.5 text-[14px]">
-              <span className="font-medium">{name}</span>
-              <span className="text-black/50">
-                {price} · {sold} sold
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Skanneren — telefonen ligger over kortet */}
-      <div className="absolute -bottom-2 -right-1 w-[132px] rotate-[4deg] sm:w-[168px] rounded-[30px] bg-[#1b0800] p-2 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)] sm:-right-8 sm:w-[190px] lg:-bottom-14">
-        <div className="rounded-[24px] bg-[#1d6b35] px-4 pb-6 pt-8 text-center text-white">
-          <div className="mx-auto grid size-14 place-items-center rounded-full bg-white/20">
-            <Check className="size-8" strokeWidth={3} />
-          </div>
-          <p className={cn(H, 'mt-3 text-[20px] font-bold')}>Valid</p>
-          <p className="mt-1 text-[12px] text-white/80">Standard · 2 people</p>
-          <p className="mt-4 rounded-full bg-white/15 py-1.5 text-[11px] font-medium">Checked in 19:42</p>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -179,13 +170,17 @@ function Payout() {
         <div className="grid items-center gap-8 sm:gap-12 lg:grid-cols-2">
           <div>
             <p className="text-[14px] font-semibold text-[var(--ev-accent)]">Pricing</p>
-            <p className={cn(H, 'mt-2 text-[80px] font-bold leading-[0.85] tracking-[-0.05em] sm:mt-3 sm:text-[110px] md:text-[140px]')}>90%</p>
+            <p className={cn(H, 'mt-2 text-[80px] font-bold leading-[0.85] tracking-[-0.05em] sm:mt-3 sm:text-[110px] md:text-[140px]')}>10%</p>
             <h2 className={cn(H, 'mt-3 text-[24px] font-bold leading-[1.1] tracking-[-0.02em] sm:mt-4 md:text-[34px]')}>
-              of every ticket goes to your club.
+              per ticket sold. That&rsquo;s the whole price.
             </h2>
-            <p className="mt-3 max-w-md text-[16px] leading-[1.55] text-[var(--ev-muted)] sm:mt-4 sm:text-[17px]">
-              We take 10%, and we pay the card fees out of that. What you see in the calculator is what lands in your account.
-            </p>
+            <ul className="mt-5 flex flex-col gap-2.5 text-[16px] text-[var(--ev-muted)] sm:text-[17px]">
+              {['Card fees are included in our 10%', 'No tickets sold, nothing to pay', 'The rest is paid out to your club'].map((t) => (
+                <li key={t} className="flex items-start gap-2">
+                  <Check className="mt-1 size-4 shrink-0 text-[var(--ev-accent)]" aria-hidden /> {t}
+                </li>
+              ))}
+            </ul>
           </div>
           <PayoutCalculator />
         </div>
@@ -196,67 +191,75 @@ function Payout() {
 
 /* ───────────────────────── Funksjoner ───────────────────────── */
 
+/**
+ * Tre ting klubben faktisk gjør en kveld — selge, slippe inn, booke — hver
+ * med et bilde fra en klubb. Resten står som en kort liste under.
+ */
 const features = [
   {
-    icon: Ticket,
-    title: 'Ticket sales',
-    text: 'Every show gets its own page and a link to share. Multiple ticket types, promo codes, and sales end when you want.',
-    wide: true,
+    eyebrow: 'Ticket sales',
+    title: 'Fill the room.',
+    text: 'Every show gets its own page and a link you can share anywhere. Your shows are listed on Tickethalo too.',
+    points: ['Multiple ticket types', 'Promo codes', 'Choose when sales end'],
+    photo: PHOTOS.audience,
   },
   {
-    icon: QrCode,
-    title: 'Check-in at the door',
-    text: 'Scan tickets with the iPhone app or right in the browser.',
+    eyebrow: 'Check-in',
+    title: 'Get everyone in, fast.',
+    text: 'Scan tickets at the door with the iPhone app, or right in the browser. No extra hardware.',
+    points: ['Works on a regular iPhone', 'Browser scanner as backup', 'Tickets are checked once'],
+    photo: PHOTOS.room,
   },
   {
-    icon: Mic,
-    title: 'Find comedians',
-    text: 'Browse comedians on the platform and build your line-up.',
-  },
-  {
-    icon: Send,
-    title: 'Send booking offers',
-    text: 'Send an offer with date and fee. The comedian answers with one tap.',
-  },
-  {
-    icon: Wallet,
-    title: 'Payouts',
-    text: 'Money goes straight to your club’s account via Stripe. Sales and settlements are all in the portal.',
-    wide: true,
-  },
-  {
-    icon: Users,
-    title: 'Audience list',
-    text: 'See who bought tickets, and export the list when you want to reach them again.',
+    eyebrow: 'Booking',
+    title: 'Build your line-up.',
+    text: 'Browse comedians on the platform and send an offer with the date and fee. They answer with one tap.',
+    points: ['Discover comedians', 'Send booking offers', 'Keep every gig in one place'],
+    photo: PHOTOS.onStage,
   },
 ] as const
+
+const extras = ['Payouts via Stripe', 'Sales and settlements per show', 'Export your audience list', 'Use an external ticket link if you need to']
 
 function Features() {
   return (
     <section id="features" className="mx-auto max-w-6xl scroll-mt-6 px-4 py-14 sm:py-24 md:px-8">
-      <div className="max-w-2xl">
-        <p className="text-[14px] font-semibold text-[var(--ev-accent)]">Features</p>
-        <h2 className={cn(H, 'mt-2 text-[30px] font-bold leading-[1.05] tracking-[-0.03em] sm:mt-3 sm:text-[40px] md:text-[48px]')}>
-          Everything a club night needs. Nothing more.
-        </h2>
+      <p className="text-[13px] font-semibold text-[var(--ev-accent)] sm:text-[14px]">Features</p>
+      <h2 className={cn(H, 'mt-2 max-w-2xl text-[30px] font-bold leading-[1.05] tracking-[-0.03em] sm:mt-3 sm:text-[40px] md:text-[48px]')}>
+        Everything a club night needs. Nothing more.
+      </h2>
+
+      <div className="mt-10 flex flex-col gap-12 sm:mt-14 sm:gap-20">
+        {features.map((f, i) => (
+          <article key={f.eyebrow} className="grid items-center gap-5 sm:gap-8 md:grid-cols-2 md:gap-14">
+            <div className={cn('aspect-[4/3] overflow-hidden rounded-[24px] bg-[var(--ev-poster-ground)] sm:rounded-[32px]', i % 2 === 1 && 'md:order-2')}>
+              <Photo p={f.photo} w={1000} />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold uppercase tracking-[0.1em] text-[var(--ev-accent)]">{f.eyebrow}</p>
+              <h3 className={cn(H, 'mt-2 text-[28px] font-bold leading-[1.05] tracking-[-0.03em] sm:text-[36px]')}>{f.title}</h3>
+              <p className="mt-3 max-w-md text-[16px] leading-[1.55] text-[var(--ev-muted)] sm:text-[17px]">{f.text}</p>
+              <ul className="mt-5 flex flex-wrap gap-2">
+                {f.points.map((pt) => (
+                  <li key={pt} className="rounded-full bg-[var(--ev-card)] px-3.5 py-1.5 text-[14px] font-medium ring-1 ring-inset ring-[var(--ev-line)]">
+                    {pt}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+        ))}
       </div>
 
-      <div className="mt-7 grid gap-2.5 sm:mt-12 sm:gap-4 md:grid-cols-3">
-        {features.map(({ icon: Icon, title, text, ...rest }) => (
-          <div
-            key={title}
-            className={cn(
-              'grid grid-cols-[auto_1fr] gap-x-4 rounded-[20px] bg-[var(--ev-card)] p-4 ring-1 ring-inset ring-[var(--ev-line)] sm:block sm:rounded-[28px] sm:p-6 md:p-8',
-              'wide' in rest && rest.wide && 'md:col-span-2'
-            )}
-          >
-            <span className="row-span-2 grid size-10 place-items-center rounded-2xl bg-[var(--ev-accent-fill)] text-[var(--ev-accent-ink)] sm:size-11">
-              <Icon className="size-5" aria-hidden />
-            </span>
-            <h3 className={cn(H, 'text-[18px] font-bold tracking-[-0.01em] sm:mt-8 sm:text-[22px]')}>{title}</h3>
-            <p className="mt-1 max-w-md text-[15px] leading-[1.5] text-[var(--ev-muted)] sm:mt-2 sm:text-[16px]">{text}</p>
-          </div>
-        ))}
+      <div className="mt-14 rounded-[24px] bg-[var(--ev-card)] p-5 ring-1 ring-inset ring-[var(--ev-line)] sm:mt-20 sm:rounded-[28px] sm:p-8">
+        <p className="text-[15px] font-semibold">Also included</p>
+        <ul className="mt-3 grid gap-2.5 text-[15px] text-[var(--ev-muted)] sm:grid-cols-2 sm:gap-x-8">
+          {extras.map((e) => (
+            <li key={e} className="flex items-start gap-2">
+              <Check className="mt-0.5 size-4 shrink-0 text-[var(--ev-accent)]" aria-hidden /> {e}
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   )
@@ -299,7 +302,7 @@ const faq = [
   },
   {
     q: 'What does it cost?',
-    a: 'Tickethalo takes 10% of the ticket price. We pay the card fees out of our share, so your club gets 90% of what the audience pays.',
+    a: 'A 10% fee per ticket sold. Card fees are included in that, so the other 90% of what the audience pays goes to your club.',
   },
   {
     q: 'When do we get paid?',
@@ -344,19 +347,25 @@ function Faq() {
 function FinalCta() {
   return (
     <section className="px-3 pb-3 md:px-6 md:pb-6">
-      <div className="mx-auto max-w-6xl rounded-[28px] bg-[var(--ev-accent-fill)] px-5 py-12 text-center text-white sm:rounded-[40px] md:py-24">
-        <h2 className={cn(H, 'mx-auto max-w-2xl text-balance text-[30px] font-bold leading-[1.05] tracking-[-0.03em] sm:text-[40px] md:text-[52px]')}>
-          Want your club on board?
-        </h2>
-        <p className="mx-auto mt-3 max-w-md text-[16px] text-white/85 sm:mt-4 sm:text-[17px]">
-          Tickethalo is in beta, and we are adding new clubs all the time.
-        </p>
-        <BetaAccessDialog
-          source="arranger-final"
-          label="Request access"
-          withArrow
-          className="mt-6 inline-flex h-12 cursor-pointer items-center gap-2 rounded-full bg-white px-6 text-[15px] font-bold text-black sm:mt-8 sm:h-14 sm:px-7 sm:text-[16px] transition-transform hover:scale-[1.03]"
-        />
+      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[28px] bg-[var(--ev-poster-ground)] px-5 py-14 text-center text-white sm:rounded-[40px] md:py-24">
+        <div className="absolute inset-0">
+          <Photo p={PHOTOS.mic} w={1600} sizes="100vw" />
+        </div>
+        <div className="absolute inset-0 bg-black/55" aria-hidden />
+        <div className="relative">
+          <h2 className={cn(H, 'mx-auto max-w-2xl text-balance text-[30px] font-bold leading-[1.05] tracking-[-0.03em] sm:text-[40px] md:text-[52px]')}>
+            Want your club on board?
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-[16px] text-white/85 sm:mt-4 sm:text-[17px]">
+            Tickethalo is in beta, and we are adding new clubs all the time.
+          </p>
+          <BetaAccessDialog
+            source="arranger-final"
+            label="Request access"
+            withArrow
+            className="mt-6 inline-flex h-12 cursor-pointer items-center gap-2 rounded-full bg-[var(--ev-accent-fill)] px-6 text-[15px] font-bold text-[var(--ev-accent-ink)] transition-transform hover:scale-[1.03] sm:mt-8 sm:h-14 sm:px-7 sm:text-[16px]"
+          />
+        </div>
       </div>
     </section>
   )
