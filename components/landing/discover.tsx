@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { CalendarDays, MapPin, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PublicShow } from '@/lib/public-events'
-import { isInRange, type TimeRange } from '@/lib/event-filters'
+import { isInRange, parseIsoDate, type TimeRange } from '@/lib/event-filters'
 import { ShowCard } from '@/components/landing/show-card'
 import { BrandLogoResponsive } from '@/components/brand/brand-logo'
 
@@ -46,6 +46,17 @@ export function Discover({ shows, today }: { shows: PublicShow[]; today: string 
       !(showRail && s.date.slice(0, 10) === today)
   )
   const collage = shows.slice(0, 3)
+  const todayLabel = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).format(
+    parseIsoDate(today)
+  )
+  const placeLine =
+    cities.length === 0
+      ? 'Norway'
+      : cities.length <= 3
+        ? cities.length === 1
+          ? cities[0]
+          : `${cities.slice(0, -1).join(', ')} & ${cities.at(-1)}`
+        : `${cities.slice(0, 3).join(', ')} & more`
 
   return (
     <>
@@ -59,12 +70,11 @@ export function Discover({ shows, today }: { shows: PublicShow[]; today: string 
             <Link href="/artist-app/login" className="hidden rounded-full px-4 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] sm:block">
               Comedians
             </Link>
-            <Link href="/admin-app" prefetch={false} className="hidden rounded-full px-4 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] sm:block">
+            <Link href="/arranger" className="hidden rounded-full px-4 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] sm:block">
               Clubs
             </Link>
             <Link
-              href="/admin-app"
-              prefetch={false}
+              href="/arranger"
               className="rounded-full bg-[var(--ev-text)] px-4 py-2 text-[var(--ev-accent-ink)] transition-transform hover:scale-105"
             >
               Sell tickets
@@ -74,17 +84,23 @@ export function Discover({ shows, today }: { shows: PublicShow[]; today: string 
 
         <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 pb-16 pt-6 md:px-10 md:pb-24 md:pt-12 lg:grid-cols-[1.15fr_1fr]">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full bg-[var(--ev-card-hover)] px-3 py-1.5 text-[13px] font-semibold text-[var(--ev-muted)]">
-              <span className="size-2 animate-pulse rounded-full bg-[var(--ev-accent-fill)]" />
-              {tonight.length > 0 ? `${tonight.length} ${tonight.length === 1 ? 'show' : 'shows'} tonight` : 'Live stand-up across Norway'}
+            {/* Konkret, ikke slagord: dagens dato og byene det faktisk spilles i. */}
+            <p className="text-[14px] font-medium text-[var(--ev-muted)]">
+              {todayLabel}
+              {tonight.length > 0 && (
+                <>
+                  {' — '}
+                  <span className="text-[var(--ev-text)]">
+                    {tonight.length} {tonight.length === 1 ? 'show' : 'shows'} tonight
+                  </span>
+                </>
+              )}
             </p>
-            <h1 className="mt-6 text-[56px] font-extrabold leading-[0.9] tracking-[-0.045em] [font-family:var(--font-display)] sm:text-[80px] lg:text-[104px]">
-              Go out.
-              <br />
-              <span className="text-[var(--ev-accent-fill)]">Laugh</span> loud.
+            <h1 className="mt-4 max-w-[14ch] text-balance text-[42px] font-bold leading-[1] tracking-[-0.035em] [font-family:var(--font-display)] sm:text-[56px] lg:text-[68px]">
+              Comedy nights in {placeLine}.
             </h1>
-            <p className="mt-6 max-w-md text-[18px] leading-[1.45] text-[var(--ev-muted)]">
-              The best stand-up nights in your city. Pick a show, grab a ticket, done.
+            <p className="mt-5 max-w-md text-[17px] leading-[1.5] text-[var(--ev-muted)]">
+              Every stand-up show from the clubs on Tickethalo, in one place. Pick a night and get your tickets.
             </p>
 
             {/* Søkefeltet */}
@@ -166,11 +182,6 @@ export function Discover({ shows, today }: { shows: PublicShow[]; today: string 
           )}
         </div>
 
-        {/* Glød bak overskriften */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -left-40 top-20 size-[620px] rounded-full bg-[var(--ev-accent-fill)] opacity-25 blur-[140px]"
-        />
       </div>
 
       {/* ───────── Shows ───────── */}

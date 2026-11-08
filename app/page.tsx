@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 const display = Bricolage_Grotesque({ subsets: ['latin'], variable: '--font-display' })
 
 export const metadata = {
-  title: 'Tickethalo — go out, laugh loud',
+  title: 'Tickethalo — comedy nights near you',
   description: 'The best stand-up comedy nights in your city. Pick a show, grab a ticket, done.',
 }
 

@@ -35,8 +35,7 @@ export function ForClubs() {
         </ol>
 
         <Link
-          href="/admin-app"
-          prefetch={false}
+          href="/arranger"
           className="mt-10 inline-flex h-14 items-center gap-2 rounded-full bg-white px-7 text-[16px] font-bold text-black transition-transform hover:scale-[1.03]"
         >
           Start selling tickets <ArrowUpRight className="size-5" aria-hidden />
@@ -91,7 +90,7 @@ export function LandingFooter() {
           <nav aria-label="Footer" className="grid grid-cols-2 gap-x-12 gap-y-2 text-[15px] text-[var(--ev-muted)]">
             <Link href="/events" className="hover:text-[var(--ev-text)]">All events</Link>
             <Link href="/kjopsvilkar" className="hover:text-[var(--ev-text)]">Terms of purchase</Link>
-            <Link href="/admin-app" prefetch={false} className="hover:text-[var(--ev-text)]">For clubs</Link>
+            <Link href="/arranger" className="hover:text-[var(--ev-text)]">For clubs</Link>
             <Link href="/vilkar" className="hover:text-[var(--ev-text)]">Platform terms</Link>
             <Link href="/artist-app/login" className="hover:text-[var(--ev-text)]">For comedians</Link>
             <Link href="/personvern" className="hover:text-[var(--ev-text)]">Privacy</Link>
