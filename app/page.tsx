@@ -1,31 +1,35 @@
-import { SiteHeader } from '@/components/public/v2/site-header'
-import { HeroV2, AudienceSections } from '@/components/public/v2/home-sections'
-import { ShowList } from '@/components/public/v2/show-list'
+import { Bricolage_Grotesque } from 'next/font/google'
+import { Discover } from '@/components/landing/discover'
+import { ForClubs, ForComedians, LandingFooter } from '@/components/landing/sections'
 import { getUpcomingPublishedShows } from '@/lib/public-events'
 import { getOsloToday } from '@/lib/event-filters'
-import { Footer } from '@/components/Footer'
+import { cn } from '@/lib/utils'
 
 // EKSPERIMENTELL forside (branch experimental/landing-v2) — ikke merge til main.
-// Gammel versjon: se app/page.tsx på main.
+
+const display = Bricolage_Grotesque({ subsets: ['latin'], variable: '--font-display' })
 
 export const metadata = {
-  title: 'Tickethalo — great comedy nights, one tap away',
-  description: 'Find stand-up comedy near you and get tickets in seconds.',
+  title: 'Tickethalo — go out, laugh loud',
+  description: 'The best stand-up comedy nights in your city. Pick a show, grab a ticket, done.',
 }
 
 export const dynamic = 'force-dynamic'
 
 export default async function Page() {
-  const shows = await getUpcomingPublishedShows(20)
+  const shows = await getUpcomingPublishedShows(24)
   const today = getOsloToday()
 
   return (
-    <main lang="en" className="ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]" data-tone="light">
-      <SiteHeader />
-      <HeroV2 showCount={shows.length} />
-      <ShowList shows={shows} today={today} />
-      <AudienceSections />
-      <Footer />
+    <main
+      lang="en"
+      className={cn(display.variable, 'ev-surface min-h-screen bg-[var(--ev-bg)] text-[var(--ev-text)]')}
+      data-tone="light"
+    >
+      <Discover shows={shows} today={today} />
+      <ForClubs />
+      <ForComedians />
+      <LandingFooter />
     </main>
   )
 }
