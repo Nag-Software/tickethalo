@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Bricolage_Grotesque } from 'next/font/google'
 import { Check } from 'lucide-react'
-import { BrandLogoResponsive } from '@/components/brand/brand-logo'
+import { SiteNav } from '@/components/landing/site-nav'
 import { PayoutCalculator } from '@/components/arranger/payout-calculator'
 import { cn } from '@/lib/utils'
 import { BetaAccessDialog } from '@/components/public/beta-access-dialog'
@@ -40,30 +40,23 @@ export default function ArrangerPage() {
 
 function Header() {
   return (
-    <header className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:h-20 md:px-8">
-      <Link href="/arranger" className="flex h-9 items-center rounded-full bg-[var(--ev-accent-fill)] px-3">
-        <BrandLogoResponsive tone="dark" priority className="h-5" />
-      </Link>
-      <nav aria-label="Main" className="flex items-center gap-1 text-[14px] font-medium">
-        <a href="#pricing" className="hidden rounded-full px-3 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] md:block">
-          Pricing
-        </a>
-        <a href="#features" className="hidden rounded-full px-3 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] md:block">
-          Features
-        </a>
-        <a href="#faq" className="hidden rounded-full px-3 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] md:block">
-          FAQ
-        </a>
-        <Link href="/admin-app/login" className="rounded-full px-3 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)]">
-          Log in
-        </Link>
-        <BetaAccessDialog
-          source="arranger-header"
-          label="Request access"
-          className="cursor-pointer rounded-full bg-[var(--ev-text)] px-4 py-2 font-semibold text-[var(--ev-bg)] hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]"
-        />
-      </nav>
-    </header>
+    <SiteNav
+      actions={
+        <>
+          <Link
+            href="/admin-app/login"
+            className="inline-flex h-10 items-center rounded-full px-3 text-[14px] font-semibold text-[var(--ev-muted)] hover:text-[var(--ev-text)] sm:px-4"
+          >
+            Log in
+          </Link>
+          <BetaAccessDialog
+            source="arranger-header"
+            label="Request access"
+            className="ml-1 inline-flex h-10 cursor-pointer items-center rounded-full bg-[var(--ev-text)] px-4 text-[14px] font-semibold text-[var(--ev-bg)] hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]"
+          />
+        </>
+      }
+    />
   )
 }
 

@@ -9,7 +9,7 @@ import type { PublicShow } from '@/lib/public-events'
 import { formatShowPrice, formatShowTime } from '@/lib/public-show-format'
 import { isInRange, parseIsoDate, toIsoDate, type TimeRange } from '@/lib/event-filters'
 import { ShowCard, dateBadge } from '@/components/landing/show-card'
-import { BrandLogoResponsive } from '@/components/brand/brand-logo'
+import { SiteNav } from '@/components/landing/site-nav'
 import { CityCombobox } from '@/components/landing/city-combobox'
 import { WhenPicker, whenLabel } from '@/components/landing/when-picker'
 import { showVenue } from '@/lib/show-venue'
@@ -65,25 +65,7 @@ export function Discover({ shows, today }: { shows: PublicShow[]; today: string 
     <>
       {/* ───────── Hero (lys) ───────── */}
       <div className="relative overflow-hidden">
-        <header className="relative z-20 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:h-20 md:px-10">
-          <Link href="/" aria-label="Tickethalo home" className="flex h-9 items-center rounded-full bg-[var(--ev-accent-fill)] px-3">
-            <BrandLogoResponsive tone="dark" priority className="h-5" />
-          </Link>
-          <nav aria-label="Main" className="flex items-center gap-1 text-[14px] font-semibold">
-            <Link href="/artist-app/login" className="hidden rounded-full px-4 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] sm:block">
-              For comedians
-            </Link>
-            <Link href="/arranger" className="hidden rounded-full px-4 py-2 text-[var(--ev-muted)] hover:text-[var(--ev-text)] sm:block">
-              For clubs
-            </Link>
-            <Link
-              href="/arranger"
-              className="inline-flex h-10 items-center rounded-full bg-[var(--ev-text)] px-4 text-[var(--ev-bg)] transition-colors hover:bg-[var(--ev-accent-fill)] hover:text-[var(--ev-accent-ink)]"
-            >
-              Sell tickets
-            </Link>
-          </nav>
-        </header>
+        <SiteNav className="relative z-20" />
 
         <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-6 px-4 pb-8 pt-2 sm:gap-10 md:px-10 md:pb-14 md:pt-4 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
           <div className="order-2 min-w-0 lg:order-1">
@@ -295,26 +277,8 @@ function HeroVisual({ next }: { next: PublicShow | undefined }) {
         />
       </div>
 
-      <Sticker />
 
       {next && <NextTicket show={next} />}
-    </div>
-  )
-}
-
-function Sticker() {
-  return (
-    <div aria-hidden className="absolute -right-1 -top-4 size-20 sm:-right-6 sm:-top-6 sm:size-32">
-      <svg viewBox="0 0 120 120" className="size-full animate-[spin_18s_linear_infinite] motion-reduce:animate-none">
-        <defs>
-          <path id="sticker-circle" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0" />
-        </defs>
-        <circle cx="60" cy="60" r="60" fill="var(--ev-violet)" />
-        <text fill="white" fontSize="12.5" fontWeight="700" letterSpacing="2.2">
-          <textPath href="#sticker-circle">LIVE COMEDY • EVERY WEEK • </textPath>
-        </text>
-      </svg>
-      <span className="absolute inset-0 grid place-items-center text-[22px] sm:text-[30px]">🎤</span>
     </div>
   )
 }
