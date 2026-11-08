@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@400;500;600;700&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 5244px; height: 2950px; overflow: hidden;
+    background: #2a2a2a;
+    font-family: 'Host Grotesk', sans-serif;
+    color: #fff4ec;
+    position: relative;
+  }
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(1700px 1500px at 3700px 1350px, rgba(255, 91, 36, 0.38), rgba(255, 91, 36, 0) 70%),
+      radial-gradient(2600px 1800px at 600px 2900px, rgba(255, 152, 95, 0.10), rgba(255, 152, 95, 0) 70%),
+      linear-gradient(180deg, #333333 0%, #2a2a2a 100%);
+  }
+  .copy {
+    position: absolute; left: 420px; top: 760px; width: 2300px;
+  }
+  .logo { height: 190px; display: block; }
+  h1 {
+    margin: 150px 0 0;
+    font-size: 300px; line-height: 0.98; font-weight: 600; letter-spacing: -0.035em;
+  }
+  h1 em { font-style: normal; color: #ff985f; }
+  p {
+    margin: 110px 0 0; max-width: 1900px;
+    font-size: 112px; line-height: 1.25; font-weight: 400;
+    color: rgba(255, 244, 236, 0.78); letter-spacing: -0.01em;
+  }
+  .phone {
+    position: absolute; width: 900px; height: 1956px;
+    border-radius: 150px; background: #0d0d0d;
+    padding: 30px; box-sizing: border-box;
+    box-shadow: 0 120px 220px -60px rgba(0, 0, 0, 0.75), inset 0 0 0 6px #3a3a3a;
+  }
+  .phone img { width: 100%; height: 100%; border-radius: 122px; display: block; object-fit: cover; }
+  .back  { left: 3020px; top: 640px; transform: rotate(-7deg); opacity: 0.96; }
+  .front { left: 3860px; top: 470px; transform: rotate(5deg); }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="copy">
+    <img class="logo" src="logo-white.png" alt="">
+    <h1>Every guest in.<br><em>In seconds.</em></h1>
+    <p>Scan tickets at the door and get a clear yes or no.</p>
+  </div>
+  <div class="phone back"><img src="2-guests.png" alt=""></div>
+  <div class="phone front"><img src="3-checked-in.png" alt=""></div>
+</body>
+</html>

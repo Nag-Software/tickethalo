@@ -69,3 +69,12 @@ After signing in, open a show and use "Type code" to check in a ticket without t
 4. `screenshots/4-already-in.png` — «Already checked in»
 
 Laget i demomodus (`TICKETHALO_DEMO=1`) med oppdiktede klubber og gjester.
+
+## Header-bilde (5244 × 2950)
+`header-5244x2950.png`. Kilde: `header-source/header.html`. Rendres med headless Chrome
+etter at `logo-white.png` (fra `public/logo/dark/logo.png`) og skjermbildene
+`2-guests.png` og `3-checked-in.png` er kopiert inn ved siden av:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+      --hide-scrollbars --force-device-scale-factor=1 --window-size=5244,2950 \
+      --virtual-time-budget=8000 --screenshot=header.png file://$PWD/header.html
