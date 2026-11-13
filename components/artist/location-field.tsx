@@ -4,12 +4,36 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, LoaderCircle, MapPin, Navigation } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { PLACES, foldName, lookupCountry, nearestPlace, searchPlaces, type Place } from '@/lib/geo'
+import {
+  COUNTRIES,
+  PLACES,
+  foldName,
+  lookupCountry,
+  lookupPlace,
+  nearestPlace,
+  searchPlaces,
+  type CountryCode,
+  type Place,
+} from '@/lib/geo'
 
 export interface SelectedLocation {
   city: string
   country: string
 }
+
+/**
+ * Startlisten før man skriver. Ikke bare de første norske byene: en dansk
+ * komiker som bare ser Oslo, Bergen og Trondheim tror velgeren er norsk-only.
+ */
+const STARTER_PLACES: Place[] = ['Oslo', 'Bergen', 'Trondheim', 'Stockholm', 'København', 'London']
+  .map((name) => lookupPlace(name))
+  .filter((place): place is Place => Boolean(place))
+
+/**
+ * «Finn meg» godtar bare en by innen denne avstanden. Lenger unna er
+ * nærmeste kjente by ikke der man bor — da er det bedre å søke.
+ */
+const MAX_LOCATE_KM = 100
 
 /**
  * Stedvelger for skjema — skjemautgaven av `components/public/location-picker`.
@@ -37,6 +61,7 @@ export function LocationField({
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'idle' | 'locating' | 'failed'>('idle')
   const [activeIndex, setActiveIndex] = useState(0)
+  const [pickCountry, setPickCountry] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
   const aliveRef = useRef(true)
@@ -50,13 +75,14 @@ export function LocationField({
   // Uten søk vises et kort utvalg, ikke alle 120 — en liste du må scrolle
   // gjennom er ikke et bedre startpunkt enn å begynne å skrive.
   const rows = useMemo<Place[]>(
-    () => (query.trim() ? searchPlaces(query, PLACES, 8) : PLACES.slice(0, 6)),
+    () => (query.trim() ? searchPlaces(query, PLACES, 8) : STARTER_PLACES),
     [query]
   )
 
   const onQueryChange = (next: string) => {
     setQuery(next)
     setActiveIndex(0)
+    setPickCountry(false)
   }
 
   const onOpenChange = (next: boolean) => {
@@ -65,11 +91,20 @@ export function LocationField({
       setQuery('')
       setStatus('idle')
       setActiveIndex(0)
+      setPickCountry(false)
     }
   }
 
   const select = (place: Place) => {
     onChange({ city: place.name, country: place.country })
+    onOpenChange(false)
+  }
+
+  // Byen står ikke i listen: behold det de skrev og la dem velge landet.
+  const selectUnlisted = (country: CountryCode) => {
+    const city = query.trim().replace(/\s+/g, ' ')
+    if (!city) return
+    onChange({ city, country })
     onOpenChange(false)
   }
 
@@ -83,7 +118,11 @@ export function LocationField({
     navigator.geolocation.getCurrentPosition(
       (position) => {
         if (!aliveRef.current) return
-        const place = nearestPlace({ lat: position.coords.latitude, lon: position.coords.longitude })
+        const place = nearestPlace(
+          { lat: position.coords.latitude, lon: position.coords.longitude },
+          PLACES,
+          MAX_LOCATE_KM
+        )
         setStatus('idle')
         if (place) select(place)
         else setStatus('failed')
@@ -215,8 +254,40 @@ export function LocationField({
             </div>
           )}
 
-          {query.trim() && rows.length === 0 && (
-            <p className="px-1 text-[12px] text-[var(--ev-muted)]">Nothing matches “{query}”.</p>
+          {!query.trim() && (
+            <p className="px-1 text-[12px] text-[var(--ev-faint)]">
+              Type to search cities in Norway, the Nordics, the UK, Europe and the US.
+            </p>
+          )}
+
+          {query.trim() && rows.length > 0 && !pickCountry && (
+            <button
+              type="button"
+              onClick={() => setPickCountry(true)}
+              className="cursor-pointer self-start px-1 text-[12px] text-[var(--ev-muted)] underline underline-offset-2 hover:text-[var(--ev-text)]"
+            >
+              My city isn&apos;t listed
+            </button>
+          )}
+
+          {query.trim() && (rows.length === 0 || pickCountry) && (
+            <div className="grid shrink-0 gap-2 px-1">
+              <p className="text-[12px] text-[var(--ev-muted)]">
+                {`Use “${query.trim()}” and pick the country it's in:`}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {COUNTRIES.map((country) => (
+                  <button
+                    key={country.code}
+                    type="button"
+                    onClick={() => selectUnlisted(country.code)}
+                    className="cursor-pointer rounded-full px-2.5 py-1 text-[12px] ring-1 ring-inset ring-[var(--ev-line)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)]"
+                  >
+                    {country.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="flex items-center gap-3" aria-hidden>
@@ -241,7 +312,7 @@ export function LocationField({
 
           {status === 'failed' && (
             <p className="px-1 text-[13px] text-[var(--ev-accent)]">
-              Could not get your location. Search for a city instead.
+              Could not find a city near you. Search for your city instead.
             </p>
           )}
         </PopoverContent>

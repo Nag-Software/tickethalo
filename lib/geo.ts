@@ -63,6 +63,11 @@ export interface Place extends Coordinates {
   /** Shown as the second line in the picker, to separate the several Osloer of this world. */
   region: string
   country: CountryCode
+  /**
+   * Other spellings people type, mostly the English exonym ("Copenhagen" for
+   * København). Matched by search and lookup; `name` is still what we store.
+   */
+  aliases?: string[]
 }
 
 /**
@@ -166,17 +171,17 @@ const NORWEGIAN_PLACES: Omit<Place, 'country'>[] = [
  */
 const INTERNATIONAL_PLACES: Place[] = [
   { name: 'Stockholm', region: 'Stockholm', country: 'SE', lat: 59.3293, lon: 18.0686 },
-  { name: 'Göteborg', region: 'Västra Götaland', country: 'SE', lat: 57.7089, lon: 11.9746 },
+  { name: 'Göteborg', aliases: ['Gothenburg'], region: 'Västra Götaland', country: 'SE', lat: 57.7089, lon: 11.9746 },
   { name: 'Malmö', region: 'Skåne', country: 'SE', lat: 55.605, lon: 13.0038 },
   { name: 'Uppsala', region: 'Uppsala', country: 'SE', lat: 59.8586, lon: 17.6389 },
-  { name: 'København', region: 'Hovedstaden', country: 'DK', lat: 55.6761, lon: 12.5683 },
-  { name: 'Aarhus', region: 'Midtjylland', country: 'DK', lat: 56.1629, lon: 10.2039 },
+  { name: 'København', aliases: ['Copenhagen', 'Kobenhavn', 'Koebenhavn'], region: 'Hovedstaden', country: 'DK', lat: 55.6761, lon: 12.5683 },
+  { name: 'Aarhus', aliases: ['Århus'], region: 'Midtjylland', country: 'DK', lat: 56.1629, lon: 10.2039 },
   { name: 'Odense', region: 'Syddanmark', country: 'DK', lat: 55.4038, lon: 10.4024 },
-  { name: 'Aalborg', region: 'Nordjylland', country: 'DK', lat: 57.0488, lon: 9.9217 },
-  { name: 'Helsinki', region: 'Uusimaa', country: 'FI', lat: 60.1699, lon: 24.9384 },
-  { name: 'Tampere', region: 'Pirkanmaa', country: 'FI', lat: 61.4978, lon: 23.761 },
-  { name: 'Turku', region: 'Varsinais-Suomi', country: 'FI', lat: 60.4518, lon: 22.2666 },
-  { name: 'Reykjavík', region: 'Höfuðborgarsvæðið', country: 'IS', lat: 64.1466, lon: -21.9426 },
+  { name: 'Aalborg', aliases: ['Ålborg'], region: 'Nordjylland', country: 'DK', lat: 57.0488, lon: 9.9217 },
+  { name: 'Helsinki', aliases: ['Helsingfors'], region: 'Uusimaa', country: 'FI', lat: 60.1699, lon: 24.9384 },
+  { name: 'Tampere', aliases: ['Tammerfors'], region: 'Pirkanmaa', country: 'FI', lat: 61.4978, lon: 23.761 },
+  { name: 'Turku', aliases: ['Åbo'], region: 'Varsinais-Suomi', country: 'FI', lat: 60.4518, lon: 22.2666 },
+  { name: 'Reykjavík', aliases: ['Reykjavik'], region: 'Höfuðborgarsvæðið', country: 'IS', lat: 64.1466, lon: -21.9426 },
   { name: 'London', region: 'England', country: 'GB', lat: 51.5074, lon: -0.1278 },
   { name: 'Manchester', region: 'England', country: 'GB', lat: 53.4808, lon: -2.2426 },
   { name: 'Birmingham', region: 'England', country: 'GB', lat: 52.4862, lon: -1.8904 },
@@ -191,16 +196,16 @@ const INTERNATIONAL_PLACES: Place[] = [
   { name: 'Utrecht', region: 'Utrecht', country: 'NL', lat: 52.0907, lon: 5.1214 },
   { name: 'Berlin', region: 'Berlin', country: 'DE', lat: 52.52, lon: 13.405 },
   { name: 'Hamburg', region: 'Hamburg', country: 'DE', lat: 53.5511, lon: 9.9937 },
-  { name: 'München', region: 'Bayern', country: 'DE', lat: 48.1351, lon: 11.582 },
-  { name: 'Köln', region: 'Nordrhein-Westfalen', country: 'DE', lat: 50.9375, lon: 6.9603 },
-  { name: 'Frankfurt', region: 'Hessen', country: 'DE', lat: 50.1109, lon: 8.6821 },
+  { name: 'München', aliases: ['Munich', 'Muenchen'], region: 'Bayern', country: 'DE', lat: 48.1351, lon: 11.582 },
+  { name: 'Köln', aliases: ['Cologne', 'Koeln'], region: 'Nordrhein-Westfalen', country: 'DE', lat: 50.9375, lon: 6.9603 },
+  { name: 'Frankfurt', aliases: ['Frankfurt am Main'], region: 'Hessen', country: 'DE', lat: 50.1109, lon: 8.6821 },
   { name: 'Paris', region: 'Île-de-France', country: 'FR', lat: 48.8566, lon: 2.3522 },
   { name: 'Lyon', region: 'Auvergne-Rhône-Alpes', country: 'FR', lat: 45.764, lon: 4.8357 },
   { name: 'Marseille', region: "Provence-Alpes-Côte d'Azur", country: 'FR', lat: 43.2965, lon: 5.3698 },
   { name: 'Madrid', region: 'Madrid', country: 'ES', lat: 40.4168, lon: -3.7038 },
   { name: 'Barcelona', region: 'Catalunya', country: 'ES', lat: 41.3851, lon: 2.1734 },
-  { name: 'Valencia', region: 'València', country: 'ES', lat: 39.4699, lon: -0.3763 },
-  { name: 'New York', region: 'New York', country: 'US', lat: 40.7128, lon: -74.006 },
+  { name: 'Valencia', aliases: ['València'], region: 'València', country: 'ES', lat: 39.4699, lon: -0.3763 },
+  { name: 'New York', aliases: ['NYC', 'New York City'], region: 'New York', country: 'US', lat: 40.7128, lon: -74.006 },
   { name: 'Los Angeles', region: 'California', country: 'US', lat: 34.0522, lon: -118.2437 },
   { name: 'Chicago', region: 'Illinois', country: 'US', lat: 41.8781, lon: -87.6298 },
   { name: 'Austin', region: 'Texas', country: 'US', lat: 30.2672, lon: -97.7431 },
@@ -233,7 +238,18 @@ export function foldName(value: string): string {
     .trim()
 }
 
-const PLACES_BY_FOLDED_NAME = new Map(PLACES.map((place) => [foldName(place.name), place]))
+function placeNames(place: Place): string[] {
+  return [place.name, ...(place.aliases ?? [])]
+}
+
+// Første treff vinner, så den norske byen beholder navnet ved sammenfall.
+const PLACES_BY_FOLDED_NAME = new Map<string, Place>()
+for (const place of PLACES) {
+  for (const name of placeNames(place)) {
+    const key = foldName(name)
+    if (!PLACES_BY_FOLDED_NAME.has(key)) PLACES_BY_FOLDED_NAME.set(key, place)
+  }
+}
 
 /** Resolves a club's `city` string to a known place, or undefined if we do not have it. */
 export function lookupPlace(city: string | null | undefined): Place | undefined {
@@ -261,8 +277,17 @@ export function haversineKm(from: Coordinates, to: Coordinates): number {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)))
 }
 
-/** The known place closest to a coordinate — how a raw GPS fix becomes "Bergen". */
-export function nearestPlace(coords: Coordinates, places: Place[] = PLACES): Place | undefined {
+/**
+ * The known place closest to a coordinate — how a raw GPS fix becomes "Bergen".
+ *
+ * `maxKm` caps how far away "closest" may be. Without it someone in Warsaw is
+ * told they live in Berlin; with it they get nothing and can search instead.
+ */
+export function nearestPlace(
+  coords: Coordinates,
+  places: Place[] = PLACES,
+  maxKm = Infinity
+): Place | undefined {
   let best: Place | undefined
   let bestKm = Infinity
   for (const place of places) {
@@ -272,7 +297,7 @@ export function nearestPlace(coords: Coordinates, places: Place[] = PLACES): Pla
       best = place
     }
   }
-  return best
+  return bestKm <= maxKm ? best : undefined
 }
 
 /**
@@ -308,9 +333,9 @@ export function searchPlaces(query: string, places: Place[] = PLACES, limit = 8)
   const prefix: Place[] = []
   const contains: Place[] = []
   for (const place of places) {
-    const name = foldName(place.name)
-    if (name.startsWith(needle)) prefix.push(place)
-    else if (name.includes(needle)) contains.push(place)
+    const names = placeNames(place).map(foldName)
+    if (names.some((name) => name.startsWith(needle))) prefix.push(place)
+    else if (names.some((name) => name.includes(needle))) contains.push(place)
   }
 
   const byLength = (a: Place, b: Place) => a.name.length - b.name.length
