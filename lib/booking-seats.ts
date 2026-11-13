@@ -48,5 +48,5 @@ export async function rollBackIfSeatWasTaken(
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
     .eq('id', spotId)
 
-  throw new Error(`Rollen "${requirement.role_name}" ble fylt av en annen akkurat nå. Prøv igjen.`)
+  throw new Error(`The role "${requirement.role_name}" was just filled by someone else. Try again.`)
 }

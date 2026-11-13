@@ -246,7 +246,7 @@ export async function saveUnavailableDatesAction(input: {
 export async function acceptOfferAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
   const token = textValue(formData.get('token'))
-  if (!token) throw new Error('Bookingtilbudet mangler token.')
+  if (!token) throw new Error('The booking offer is missing a token.')
 
   const { data: offer } = await db
     .from('booking_offers')
@@ -264,7 +264,7 @@ export async function acceptOfferAction(formData: FormData) {
 export async function declineOfferAction(formData: FormData) {
   const { artist, db } = await getCurrentArtist()
   const token = textValue(formData.get('token'))
-  if (!token) throw new Error('Bookingtilbudet mangler token.')
+  if (!token) throw new Error('The booking offer is missing a token.')
 
   const { data: offer } = await db
     .from('booking_offers')

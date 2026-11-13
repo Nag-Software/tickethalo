@@ -88,7 +88,7 @@ export async function getDefaultClubIdForAdmin() {
 
   const clubId = access.selectedClubId ?? access.clubIds[0]
   if (!clubId) {
-    throw new Error('Du har ikke tilgang til noen klubb.')
+    throw new Error('You don\'t have access to any club.')
   }
 
   return clubId
@@ -96,14 +96,14 @@ export async function getDefaultClubIdForAdmin() {
 
 export async function assertShowAccess(showId: string) {
   if (!showId) {
-    throw new Error('Mangler show-id.')
+    throw new Error('Missing show ID.')
   }
 
   const access = await getClubAccess()
   const db = createAdminClient()
 
   if (access.clubIds.length === 0) {
-    throw new Error('Du har ikke tilgang til noen klubb.')
+    throw new Error('You don\'t have access to any club.')
   }
 
   // Et arkivert show (`deleted_at`) er slettet for bookeren. Det står bare
@@ -119,7 +119,7 @@ export async function assertShowAccess(showId: string) {
   const { data: show } = await query.maybeSingle()
 
   if (!show) {
-    throw new Error('Du har ikke tilgang til dette showet.')
+    throw new Error('You don\'t have access to this show.')
   }
 
   return show
@@ -127,7 +127,7 @@ export async function assertShowAccess(showId: string) {
 
 export async function assertRequirementAccess(showId: string, requirementId: string) {
   if (!requirementId) {
-    throw new Error('Mangler show-krav.')
+    throw new Error('Missing show requirement.')
   }
 
   await assertShowAccess(showId)
@@ -152,12 +152,12 @@ export async function assertRequirementAccess(showId: string, requirementId: str
  */
 export async function assertOrderAccess(orderId: string) {
   if (!orderId) {
-    throw new Error('Mangler ordre-id.')
+    throw new Error('Missing order ID.')
   }
 
   const access = await getClubAccess()
   if (access.clubIds.length === 0) {
-    throw new Error('Du har ikke tilgang til noen klubb.')
+    throw new Error('You don\'t have access to any club.')
   }
 
   const db = createAdminClient()
@@ -169,7 +169,7 @@ export async function assertOrderAccess(orderId: string) {
     .maybeSingle()
 
   if (!order) {
-    throw new Error('Du har ikke tilgang til denne ordren.')
+    throw new Error('You don\'t have access to this order.')
   }
 
   return order
@@ -177,7 +177,7 @@ export async function assertOrderAccess(orderId: string) {
 
 export async function assertOfferAccess(showId: string, offerId: string) {
   if (!offerId) {
-    throw new Error('Mangler tilbud.')
+    throw new Error('Missing offer.')
   }
 
   await assertShowAccess(showId)
@@ -198,7 +198,7 @@ export async function assertOfferAccess(showId: string, offerId: string) {
 
 export async function assertSpotAccess(showId: string, spotId: string) {
   if (!spotId) {
-    throw new Error('Mangler lineup-spot.')
+    throw new Error('Missing lineup spot.')
   }
 
   await assertShowAccess(showId)

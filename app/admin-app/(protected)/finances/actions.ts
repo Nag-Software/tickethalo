@@ -58,12 +58,12 @@ function toActionError(error: unknown, fallback: string): { error: string } {
   if (error instanceof Error && error.message) {
     if (PLATFORM_MISCONFIGURED.test(error.message)) {
       console.error(
-        `[Finances] Stripe-oppsettet på plattformen svarer ikke: ${error.message} — ` +
-          'sjekk at STRIPE_SECRET_KEY i dette miljøet tilhører Connect-plattformen ' +
-          '(live krever aktivert konto på dashboard.stripe.com/account/onboarding og fullført ' +
-          'plattformprofil på dashboard.stripe.com/account/applications/settings).',
+        `[Finances] The platform's Stripe setup is not responding: ${error.message} — ` +
+          'check that STRIPE_SECRET_KEY in this environment belongs to the Connect platform ' +
+          '(live requires an activated account at dashboard.stripe.com/account/onboarding and a completed ' +
+          'platform profile at dashboard.stripe.com/account/applications/settings).',
       )
-      return { error: 'Stripe-koblingen vår er ikke satt opp riktig. Dette er på oss — vi har fått beskjed.' }
+      return { error: 'Our Stripe connection is not set up correctly. That is on us — we have been notified.' }
     }
 
     console.error(`[Finances] ${error.message}`)

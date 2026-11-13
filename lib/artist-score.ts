@@ -41,10 +41,10 @@ const RATING_WEIGHT: Record<PerformanceRating, number> = {
 export const PERFORMANCE_RATINGS: PerformanceRating[] = ['strong', 'medium', 'weak', 'no_show']
 
 export const RATING_LABELS: Record<PerformanceRating, string> = {
-  strong: 'Sterkt',
-  medium: 'Middels',
-  weak: 'Svakt',
-  no_show: 'Avlyste / møtte ikke',
+  strong: 'Strong',
+  medium: 'Medium',
+  weak: 'Weak',
+  no_show: 'Cancelled / no-show',
 }
 
 /** Scoren en komiker uten vurderinger har. Midt på skalaen. */

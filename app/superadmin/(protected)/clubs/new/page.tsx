@@ -10,7 +10,7 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { CLUB_COUNTRIES, DEFAULT_CLUB_COUNTRY } from '@/lib/ticket-vat'
 
-export const metadata = { title: 'Ny klubb — Superadmin' }
+export const metadata = { title: 'New club — Superadmin' }
 
 export default async function NewClubPage({
   searchParams,
@@ -23,36 +23,36 @@ export default async function NewClubPage({
 
   return (
     <div>
-      <AdminHeader title="Ny klubb" description="Klubben får konto og admin med en gang. Stripe-oppsettet gjør klubben selv etterpå." />
+      <AdminHeader title="New club" description="The club gets an account and an admin right away. The club sets up Stripe itself afterwards." />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
         <Button variant="ghost" size="sm" asChild className="-mb-2 -ml-2 w-fit text-muted-foreground">
           <Link href="/superadmin/clubs">
             <ChevronLeft className="size-4" />
-            Klubber
+            Clubs
           </Link>
         </Button>
 
         <ToastActionForm action={createClubAction} className="max-w-lg space-y-5 rounded-xl border bg-card p-6">
           {request && <input type="hidden" name="beta_request_id" value={request} />}
           <div className="space-y-1.5">
-            <Label htmlFor="name">Klubbnavn *</Label>
+            <Label htmlFor="name">Club name *</Label>
             <Input id="name" name="name" placeholder="Oslo Comedy Club" defaultValue={name ?? ''} required />
-            <p className="text-xs text-muted-foreground">Adressen til klubbsiden lages av navnet.</p>
+            <p className="text-xs text-muted-foreground">The club page address is made from the name.</p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="admin-email">Klubbens e-post</Label>
-            <Input id="admin-email" name="admin_email" type="email" placeholder="post@klubb.no" defaultValue={email ?? ''} />
+            <Label htmlFor="admin-email">Club email</Label>
+            <Input id="admin-email" name="admin_email" type="email" placeholder="hello@club.com" defaultValue={email ?? ''} />
             <p className="text-xs text-muted-foreground">
-              Blir admin for klubben med en gang og får en e-post med lenke for å sette passord. Tom = ingen admin ennå.
+              Becomes the club’s admin right away and gets an email with a link to set a password. Empty = no admin yet.
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="city">By</Label>
+            <Label htmlFor="city">City</Label>
             <Input id="city" name="city" placeholder="Oslo" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="country">Land</Label>
+            <Label htmlFor="country">Country</Label>
             <select
               id="country"
               name="country"
@@ -62,21 +62,21 @@ export default async function NewClubPage({
               {CLUB_COUNTRIES.map((country) => (
                 <option key={country.code} value={country.code}>
                   {country.label} · {country.currency}
-                  {country.ticketVatBps > 0 ? ` · ${country.ticketVatBps / 100} % moms på billetter` : ' · momsfrie billetter'}
+                  {country.ticketVatBps > 0 ? ` · ${country.ticketVatBps / 100}% VAT on tickets` : ' · VAT-free tickets'}
                 </option>
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              Styrer Stripe-kontoens land, valutaen og momsen på billettene. Kan ikke endres etter at Stripe er koblet.
+              Sets the Stripe account’s country, the currency and the VAT on tickets. Can’t be changed once Stripe is connected.
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="description">Beskrivelse</Label>
-            <Textarea id="description" name="description" rows={3} placeholder="Kort beskrivelse av klubben..." className="resize-none" />
+            <Label htmlFor="description">Description</Label>
+            <Textarea id="description" name="description" rows={3} placeholder="Short description of the club..." className="resize-none" />
           </div>
           {/* Oppretter klubben, kontoen og sender e-posten: et par sekunder. */}
-          <PendingButton type="submit" className="w-full" pendingLabel="Oppretter klubb og sender e-post…">
-            Opprett klubb
+          <PendingButton type="submit" className="w-full" pendingLabel="Creating club and sending email…">
+            Create club
           </PendingButton>
         </ToastActionForm>
       </div>

@@ -59,7 +59,7 @@ export async function clubIdForShow(db: Db, showId: string): Promise<string | nu
  * innom en nedtrekksliste.
  */
 export async function assertArtistBookableByClub(db: Db, clubId: string | null, artistId: string) {
-  if (!artistId) throw new Error('Mangler komiker.')
+  if (!artistId) throw new Error('Missing comedian.')
 
   if (!clubId) {
     throw new Error('This show is not connected to a club, so no comedians can be booked for it.')

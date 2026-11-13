@@ -112,7 +112,7 @@ describe('club checkout readiness', () => {
   it('rejects a missing club', () => {
     expect(isClubPayoutReady(null)).toBe(false)
     expect(isClubPayoutReady(undefined)).toBe(false)
-    expect(missingReadinessLabels(null)).toEqual(['Showet er ikke koblet til en klubb'])
+    expect(missingReadinessLabels(null)).toEqual(['The show is not linked to a club'])
   })
 
   it.each([

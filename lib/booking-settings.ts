@@ -70,79 +70,79 @@ export type BookingSettingField = {
 export const BOOKING_SETTING_FIELDS: BookingSettingField[] = [
   {
     key: 'offers_per_day',
-    label: 'Nye tilbud per plass per dag',
-    unit: 'tilbud',
-    help: 'Første dagen får de beste tilbudet. Hver morgen øker antallet med dette, til taket under.',
+    label: 'New offers per spot per day',
+    unit: 'offers',
+    help: 'On the first day the best get the offer. Every morning the number grows by this much, up to the cap below.',
     min: 1, max: 10, step: 1, decimals: false,
   },
   {
     key: 'offers_per_slot',
-    label: 'Maks tilbud ute på én plass',
-    unit: 'tilbud',
-    help: 'Taket for hvor mange som venter på svar på det samme setet samtidig.',
+    label: 'Max open offers on one spot',
+    unit: 'offers',
+    help: 'The cap on how many can be waiting to answer for the same spot at once.',
     min: 1, max: 50, step: 1, decimals: false,
   },
   {
     key: 'offer_response_days',
-    label: 'Svarfrist',
-    unit: 'dager',
-    help: 'Hvor lenge et tilbud står. Aldri lenger enn lineup-fristen, og aldri forbi showdagen.',
+    label: 'Response deadline',
+    unit: 'days',
+    help: 'How long an offer stays open. Never longer than the lineup deadline, and never past the show date.',
     min: 1, max: 60, step: 1, decimals: false,
   },
   {
     key: 'reminder_hours',
-    label: 'Påminnelse før fristen',
-    unit: 'timer',
-    help: 'Komikeren får én e-post når det er så lite igjen av fristen. 0 slår av påminnelsen.',
+    label: 'Reminder before the deadline',
+    unit: 'hours',
+    help: 'The comedian gets one email when this much of the deadline is left. 0 turns the reminder off.',
     min: 0, max: 168, step: 1, decimals: false,
   },
   {
     key: 'lineup_deadline_days',
-    label: 'Lineup-frist før showet',
-    unit: 'dager',
-    help: 'Standarden for alle klubber. Hver klubb kan sette sin egen på Min klubb.',
+    label: 'Lineup deadline before the show',
+    unit: 'days',
+    help: 'The default for every club. Each club can set its own under My club.',
     min: 1, max: 120, step: 1, decimals: false,
   },
   {
     key: 'rush_days',
-    label: 'Full utsendelse fra',
-    unit: 'dager før fristen',
-    help: 'Så nær lineup-fristen slutter motoren å trappe opp og sender alle tilbudene med en gang.',
+    label: 'Send everything from',
+    unit: 'days before the deadline',
+    help: 'This close to the lineup deadline the engine stops stepping up and sends all offers at once.',
     min: 0, max: 60, step: 1, decimals: false,
   },
   {
     key: 'late_offer_response_hours',
-    label: 'Svarfrist etter lineup-fristen',
-    unit: 'timer',
-    help: 'Kortere frist når fristen har gått. Tilbud går aldri ut senere enn dagen før showet.',
+    label: 'Response deadline after the lineup deadline',
+    unit: 'hours',
+    help: 'A shorter deadline once the lineup deadline has passed. Offers never go out later than the day before the show.',
     min: 1, max: 168, step: 1, decimals: false,
   },
   {
     key: 'rotation_penalty',
-    label: 'Trekk per show i samme klubb',
-    unit: 'poeng',
-    help: '10 poeng er ett scorepoeng. Sprer bookingene, så publikum ser flere ansikter.',
+    label: 'Penalty per show at the same club',
+    unit: 'points',
+    help: '10 points is one score point. Spreads the bookings so audiences see more faces.',
     min: 0, max: 100, step: 1, decimals: false,
   },
   {
     key: 'rotation_window_days',
-    label: 'Periode for det trekket',
-    unit: 'dager',
-    help: 'Så mange dager før og etter showdatoen ser motoren etter andre plasser i klubben.',
+    label: 'Window for that penalty',
+    unit: 'days',
+    help: 'How many days before and after the show date the engine looks for other spots at the club.',
     min: 0, max: 365, step: 1, decimals: false,
   },
   {
     key: 'conflict_window_hours',
-    label: 'Kollisjon mellom to show',
-    unit: 'timer',
-    help: 'Starter to show nærmere hverandre enn dette samme dag, kan ikke den samme komikeren ta begge. Mangler et av dem starttid, gjelder hele dagen.',
+    label: 'Clash between two shows',
+    unit: 'hours',
+    help: 'If two shows on the same day start closer together than this, the same comedian can’t take both. If either has no start time, the whole day counts.',
     min: 0, max: 24, step: 0.5, decimals: true,
   },
   {
     key: 'quality_weight',
-    label: 'Vekt på score',
-    unit: 'poeng for score 10',
-    help: 'Hvor mye kvalitet betyr mot rotasjonstrekket. 100 gir 10 poeng per scorepoeng.',
+    label: 'Score weight',
+    unit: 'points for score 10',
+    help: 'How much quality counts against the rotation penalty. 100 gives 10 points per score point.',
     min: 0, max: 1000, step: 10, decimals: false,
   },
 ]
@@ -206,25 +206,25 @@ export function parseBookingSettings(
     const text = String(rawValue ?? '').trim().replace(',', '.')
 
     if (text.length === 0) {
-      issues.push({ key: field.key, message: `${field.label} må fylles ut.` })
+      issues.push({ key: field.key, message: `${field.label} is required.` })
       continue
     }
 
     const parsed = Number(text)
     if (!Number.isFinite(parsed)) {
-      issues.push({ key: field.key, message: `${field.label} må være et tall.` })
+      issues.push({ key: field.key, message: `${field.label} must be a number.` })
       continue
     }
 
     if (!field.decimals && !Number.isInteger(parsed)) {
-      issues.push({ key: field.key, message: `${field.label} må være et helt tall.` })
+      issues.push({ key: field.key, message: `${field.label} must be a whole number.` })
       continue
     }
 
     if (parsed < field.min || parsed > field.max) {
       issues.push({
         key: field.key,
-        message: `${field.label} må være mellom ${field.min} og ${field.max} ${field.unit}.`,
+        message: `${field.label} must be between ${field.min} and ${field.max} ${field.unit}.`,
       })
       continue
     }
@@ -237,7 +237,7 @@ export function parseBookingSettings(
   if (perDay != null && perSlot != null && perDay > perSlot) {
     issues.push({
       key: 'offers_per_day',
-      message: 'Tilbud per dag kan ikke være flere enn taket for hvor mange som står ute på plassen.',
+      message: 'Offers per day can’t be more than the cap on open offers per spot.',
     })
   }
 

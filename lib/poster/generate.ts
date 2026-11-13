@@ -47,7 +47,7 @@ export type GeneratePosterOptions = {
   throwOnError?: boolean
 }
 
-export const POSTER_FOOTER = 'Billetter · Tickethalo'
+export const POSTER_FOOTER = 'Tickets · Tickethalo'
 
 function isHeadlinerRole(roleName: string | null) {
   const normalized = roleName?.toLowerCase() ?? ''
@@ -57,7 +57,7 @@ function isHeadlinerRole(roleName: string | null) {
 export function formatPosterDate(value: string) {
   const date = new Date(`${value}T12:00:00`)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'short' }).format(date)
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).format(date)
 }
 
 /** Samme navn to ganger i lineupen er én artist, ikke to ruter. */
@@ -236,7 +236,7 @@ export async function generateShowPoster(showId: string, opts: GeneratePosterOpt
       kind: 'poster',
       source: 'ai',
       lineup_snapshot: lineup,
-      label: `${opts.title} — ${new Intl.DateTimeFormat('nb-NO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`,
+      label: `${opts.title} — ${new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Oslo' }).format(new Date())}`,
       file_url: publicUrl,
       file_path: filePath,
       file_name: filePath.split('/').pop()!,

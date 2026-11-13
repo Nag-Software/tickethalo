@@ -10,11 +10,11 @@
  */
 
 const MONTHS_NB = [
-  'januar', 'februar', 'mars', 'april', 'mai', 'juni',
-  'juli', 'august', 'september', 'oktober', 'november', 'desember',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-const WEEKDAYS_NB = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag']
+const WEEKDAYS_NB = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export type MarketingCopyInput = {
   title: string
@@ -32,11 +32,11 @@ export type MarketingCopyInput = {
 export function formatNorwegianDate(date: string): string {
   const parsed = new Date(`${date}T12:00:00`)
   if (Number.isNaN(parsed.getTime())) return date
-  return `${WEEKDAYS_NB[parsed.getDay()]} ${parsed.getDate()}. ${MONTHS_NB[parsed.getMonth()]} ${parsed.getFullYear()}`
+  return `${WEEKDAYS_NB[parsed.getDay()]} ${parsed.getDate()} ${MONTHS_NB[parsed.getMonth()]} ${parsed.getFullYear()}`
 }
 
 function timeLabel(startTime: string | null) {
-  return startTime ? `kl. ${startTime.slice(0, 5)}` : null
+  return startTime ? `at ${startTime.slice(0, 5)}` : null
 }
 
 /** Lang tekst — beskrivelsesfeltet på Facebook-eventet. */
@@ -45,20 +45,20 @@ export function facebookEventDescription(input: MarketingCopyInput): string {
   const rest = input.lineup.filter((entry) => !headliners.includes(entry))
 
   return [
-    input.description?.trim() || `${input.title} — en kveld med stand-up.`,
+    input.description?.trim() || `${input.title} — a night of stand-up comedy.`,
     '',
     'LINEUP',
     ...[...headliners, ...rest].map((entry) => (
       entry.roleLabel ? `• ${entry.name} (${entry.roleLabel})` : `• ${entry.name}`
     )),
-    input.lineup.length === 0 ? '• Lineup annonseres snart' : null,
+    input.lineup.length === 0 ? '• Lineup to be announced soon' : null,
     '',
-    'PRAKTISK',
-    `• ${formatNorwegianDate(input.date)}${timeLabel(input.startTime) ? `, ${timeLabel(input.startTime)}` : ''}`,
+    'DETAILS',
+    `• ${formatNorwegianDate(input.date)}${timeLabel(input.startTime) ? ` ${timeLabel(input.startTime)}` : ''}`,
     input.venue ? `• ${input.venue}${input.city ? `, ${input.city}` : ''}` : null,
-    input.priceLabel ? `• Billetter fra ${input.priceLabel}` : null,
+    input.priceLabel ? `• Tickets from ${input.priceLabel}` : null,
     '',
-    input.ticketUrl ? `Billetter: ${input.ticketUrl}` : null,
+    input.ticketUrl ? `Tickets: ${input.ticketUrl}` : null,
   ]
     .filter((line) => line !== null)
     .join('\n')
@@ -70,14 +70,14 @@ export function facebookEventDescription(input: MarketingCopyInput): string {
 export function socialCaption(input: MarketingCopyInput): string {
   const names = input.lineup.map((entry) => entry.name)
   const nameLine = names.length > 0
-    ? names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} og ${names[names.length - 1]}`
+    ? names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
     : null
 
   return [
     `${input.title.toUpperCase()} 🎤`,
     nameLine,
     `${formatNorwegianDate(input.date)}${timeLabel(input.startTime) ? ` ${timeLabel(input.startTime)}` : ''}${input.venue ? ` · ${input.venue}` : ''}`,
-    input.ticketUrl ? `Billetter i bio / ${input.ticketUrl}` : 'Billetter i bio',
+    input.ticketUrl ? `Tickets in bio / ${input.ticketUrl}` : 'Tickets in bio',
   ]
     .filter(Boolean)
     .join('\n')

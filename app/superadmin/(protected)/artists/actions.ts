@@ -27,11 +27,11 @@ export async function setArtistStatusAction(formData: FormData): Promise<ArtistS
 
     const artistId = String(formData.get('artist_id') ?? '')
     const status = String(formData.get('status') ?? '') as ArtistStatus
-    if (!artistId) return { error: 'Mangler komiker.' }
-    if (!SETTABLE.includes(status)) return { error: 'Ugyldig status.' }
+    if (!artistId) return { error: 'Missing comedian.' }
+    if (!SETTABLE.includes(status)) return { error: 'Invalid status.' }
 
     const { error } = await createAdminClient().from('artists').update({ status }).eq('id', artistId)
-    if (error) return { error: 'Kunne ikke oppdatere statusen.' }
+    if (error) return { error: 'Could not update the status.' }
 
     revalidatePath('/superadmin/artists')
     revalidatePath('/superadmin/overview')
@@ -39,6 +39,6 @@ export async function setArtistStatusAction(formData: FormData): Promise<ArtistS
     revalidatePath('/admin-app/artists')
     return { ok: true }
   } catch (error) {
-    return { error: error instanceof Error && error.message ? error.message : 'Noe gikk galt.' }
+    return { error: error instanceof Error && error.message ? error.message : 'Something went wrong.' }
   }
 }

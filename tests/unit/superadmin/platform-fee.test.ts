@@ -18,14 +18,14 @@ describe('parseCommissionPercent', () => {
   })
 
   it('refuses an empty or non-numeric value', () => {
-    expect(parseCommissionPercent('')).toEqual({ error: 'Provisjon er påkrevd.' })
-    expect(parseCommissionPercent(null)).toEqual({ error: 'Provisjon er påkrevd.' })
-    expect(parseCommissionPercent('ti')).toEqual({ error: 'Provisjonen må være et tall.' })
+    expect(parseCommissionPercent('')).toEqual({ error: 'Commission is required.' })
+    expect(parseCommissionPercent(null)).toEqual({ error: 'Commission is required.' })
+    expect(parseCommissionPercent('ti')).toEqual({ error: 'The commission must be a number.' })
   })
 
   // Under 5 % taper Tickethalo penger på hvert salg; over 30 % er en skrivefeil.
   it('keeps the commission between the floor and the ceiling', () => {
-    const error = { error: 'Provisjonen må være mellom 5 og 30 %.' }
+    const error = { error: 'The commission must be between 5 and 30%.' }
     expect(parseCommissionPercent('4.9')).toEqual(error)
     expect(parseCommissionPercent('0')).toEqual(error)
     expect(parseCommissionPercent('-5')).toEqual(error)

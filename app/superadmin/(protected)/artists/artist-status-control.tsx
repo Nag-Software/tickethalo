@@ -7,9 +7,9 @@ import { setArtistStatusAction } from './actions'
 import type { ArtistStatus } from '@/types/database'
 
 const OPTIONS: Array<{ value: ArtistStatus; label: string }> = [
-  { value: 'approved', label: 'Aktiv' },
-  { value: 'inactive', label: 'Inaktiv — satt på pause' },
-  { value: 'rejected', label: 'Avvist — ute av plattformen' },
+  { value: 'approved', label: 'Active' },
+  { value: 'inactive', label: 'Inactive — paused' },
+  { value: 'rejected', label: 'Rejected — off the platform' },
 ]
 
 /**
@@ -39,10 +39,10 @@ export function ArtistStatusControl({
 
     if (next !== 'approved') {
       const bookings = upcomingBookings > 0
-        ? ` Hen står i ${upcomingBookings} ${upcomingBookings === 1 ? 'kommende booking' : 'kommende bookinger'}, som ikke fjernes automatisk.`
+        ? ` They are in ${upcomingBookings} ${upcomingBookings === 1 ? 'upcoming booking' : 'upcoming bookings'}, which are not removed automatically.`
         : ''
       const ok = window.confirm(
-        `Ta ${artistName} ut av plattformen? Hen mister tilgang til portalen og får ingen tilbud fra noen klubb.${bookings}`,
+        `Take ${artistName} off the platform? They lose access to the portal and get no offers from any club.${bookings}`,
       )
       if (!ok) return
     }
@@ -61,7 +61,7 @@ export function ArtistStatusControl({
         toast.error(result.error)
         return
       }
-      toast.success(next === 'approved' ? `${artistName} er aktiv igjen.` : `${artistName} er tatt ut av plattformen.`)
+      toast.success(next === 'approved' ? `${artistName} is active again.` : `${artistName} has been taken off the platform.`)
       router.refresh()
     })
   }
@@ -77,7 +77,7 @@ export function ArtistStatusControl({
       onChange={(event) => change(event.target.value as ArtistStatus)}
       className="h-8 w-full max-w-56 rounded-full border border-input bg-background px-3 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
     >
-      {legacy && <option value={value}>{value === 'flagged' ? 'Flagget (gammel status)' : 'Til vurdering'}</option>}
+      {legacy && <option value={value}>{value === 'flagged' ? 'Flagged (old status)' : 'Under review'}</option>}
       {OPTIONS.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}

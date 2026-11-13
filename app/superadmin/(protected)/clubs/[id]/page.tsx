@@ -111,18 +111,18 @@ export default async function ClubDetailPage({
     <div>
       <AdminHeader
         title={club.name}
-        description={[club.city, `Opprettet ${formatDate(club.created_at)}`].filter(Boolean).join(' · ')}
+        description={[club.city, `Created ${formatDate(club.created_at)}`].filter(Boolean).join(' · ')}
         actions={
           <>
             {/* Setter klubben i klubbvelgeren og åpner portalen som den klubben. */}
             <Button asChild variant="outline" size="sm">
               <Link href={`/admin-app/select-club?club=${club.id}&next=${encodeURIComponent('/admin-app/shows')}`}>
                 <ExternalLink className="size-4" />
-                Åpne i klubbportalen
+                Open in club portal
               </Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
-              <Link href={`/clubs/${club.slug}`} target="_blank">Offentlig side</Link>
+              <Link href={`/clubs/${club.slug}`} target="_blank">Public page</Link>
             </Button>
           </>
         }
@@ -132,34 +132,34 @@ export default async function ClubDetailPage({
         <Button variant="ghost" size="sm" asChild className="-mb-4 -ml-2 w-fit text-muted-foreground">
           <Link href="/superadmin/clubs">
             <ChevronLeft className="size-4" />
-            Klubber
+            Clubs
           </Link>
         </Button>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard label="Brutto inntekt" value={formatNok(grossRevenue)} detail={`${paidOrders.length} betalte ordrer`} />
+          <MetricCard label="Gross revenue" value={formatNok(grossRevenue)} detail={`${paidOrders.length} paid ${paidOrders.length === 1 ? 'order' : 'orders'}`} />
           <MetricCard
-            label="Billetter solgt"
+            label="Tickets sold"
             value={String(ticketsSold)}
-            detail={totalCapacity > 0 ? `${fillRate} % av kapasiteten · ${checkedIn} sjekket inn` : `${checkedIn} sjekket inn`}
+            detail={totalCapacity > 0 ? `${fillRate}% of capacity · ${checkedIn} checked in` : `${checkedIn} checked in`}
           />
           <MetricCard
-            label="Show"
+            label="Shows"
             value={String(allShows.length)}
-            detail={`${upcoming.length} kommende${(archivedShows ?? 0) > 0 ? ` · ${archivedShows} arkivert` : ''}`}
+            detail={`${upcoming.length} upcoming${(archivedShows ?? 0) > 0 ? ` · ${archivedShows} archived` : ''}`}
           />
           <MetricCard
-            label="Snitt per show"
+            label="Average per show"
             value={formatNok(allShows.length > 0 ? Math.round(grossRevenue / allShows.length) : 0)}
-            detail="Brutto delt på antall show"
+            detail="Gross divided by number of shows"
           />
         </div>
 
         <div className="grid gap-8 lg:grid-cols-2">
           {/* ── Kan klubben selge? ─────────────────────────── */}
           <Section
-            title="Billettsalg"
-            description="Et show kan ikke publiseres før alt her er på plass. Klubben fullfører det selv under Finances."
+            title="Ticket sales"
+            description="A show can't be published until everything here is in place. The club completes it under Finances."
             actions={<ClubReadinessPill hasAccount={Boolean(club.stripe_account_id)} missing={missing} />}
           >
             <ul className="divide-y overflow-hidden rounded-xl border bg-card text-sm">
@@ -176,7 +176,7 @@ export default async function ClubDetailPage({
             </ul>
             {club.stripe_account_id && (
               <p className="text-xs text-muted-foreground">
-                Stripe-konto: <code className="rounded bg-muted px-1 py-0.5">{club.stripe_account_id}</code>
+                Stripe account: <code className="rounded bg-muted px-1 py-0.5">{club.stripe_account_id}</code>
               </p>
             )}
           </Section>
@@ -184,22 +184,22 @@ export default async function ClubDetailPage({
           {/* ── Hvem driver klubben ────────────────────────── */}
           <Section
             title={`Admins (${memberships?.length ?? 0})`}
-            description="Finnes ikke brukeren, lages kontoen og en e-post med lenke for å sette passord går ut."
+            description="If the user doesn't exist, the account is created and an email with a link to set a password goes out."
           >
             {adminError && (
               <p className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {adminError} Prøv «Legg til» under.
+                {adminError} Try “Add” below.
               </p>
             )}
             {!memberships || memberships.length === 0 ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-                Ingen admins ennå — ingen kan logge inn og drive klubben.
+                No admins yet — nobody can sign in and run the club.
               </p>
             ) : (
               <ul className="divide-y overflow-hidden rounded-xl border bg-card">
                 {memberships.map((membership) => {
                   const profile = Array.isArray(membership.profiles) ? membership.profiles[0] : membership.profiles
-                  const label = profile?.full_name ?? profile?.email ?? 'Ukjent bruker'
+                  const label = profile?.full_name ?? profile?.email ?? 'Unknown user'
                   return (
                     <li key={membership.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                       <div className="min-w-0">
@@ -209,11 +209,11 @@ export default async function ClubDetailPage({
                       <ConfirmActionButton
                         action={removeClubAdminAction}
                         fields={{ membership_id: membership.id, club_id: club.id }}
-                        confirmMessage={`Fjerne ${label} som admin for ${club.name}?`}
-                        successMessage={`${label} er fjernet.`}
+                        confirmMessage={`Remove ${label} as admin of ${club.name}?`}
+                        successMessage={`${label} has been removed.`}
                         variant="ghost"
                         size="icon"
-                        aria-label={`Fjern ${label}`}
+                        aria-label={`Remove ${label}`}
                         className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
                       >
                         <UserMinus className="size-3.5" />
@@ -224,28 +224,28 @@ export default async function ClubDetailPage({
               </ul>
             )}
 
-            <ToastActionForm action={addClubAdminAction} successMessage="Admin lagt til, og e-post er sendt." className="flex gap-2">
+            <ToastActionForm action={addClubAdminAction} successMessage="Admin added, and the email has been sent." className="flex gap-2">
               <input type="hidden" name="club_id" value={club.id} />
-              <Label htmlFor="admin-email" className="sr-only">E-post</Label>
-              <Input id="admin-email" name="email" type="email" placeholder="admin@klubb.no" required />
-              <PendingButton type="submit" size="sm" className="h-9" pendingLabel="Oppretter…">Legg til</PendingButton>
+              <Label htmlFor="admin-email" className="sr-only">Email</Label>
+              <Input id="admin-email" name="email" type="email" placeholder="admin@club.com" required />
+              <PendingButton type="submit" size="sm" className="h-9" pendingLabel="Creating…">Add</PendingButton>
             </ToastActionForm>
           </Section>
 
           {/* ── Hva Tickethalo tar ─────────────────────────── */}
           <Section
-            title="Provisjon"
-            description="Andelen av billettprisen Tickethalo tar på hvert kjøp. Gjelder fra neste kjøp; betalte ordrer beholder provisjonen de ble solgt med."
+            title="Commission"
+            description="The share of the ticket price Tickethalo takes on each purchase. Applies from the next purchase; paid orders keep the commission they were sold with."
           >
             <ToastActionForm
               action={updateClubCommissionAction}
-              successMessage="Provisjonen er lagret."
+              successMessage="Commission saved."
               className="flex flex-col gap-3 rounded-xl border bg-card p-4"
             >
               <input type="hidden" name="club_id" value={club.id} />
               <div className="flex items-end gap-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="commission-percent">Provisjon i prosent</Label>
+                  <Label htmlFor="commission-percent">Commission in percent</Label>
                   <div className="flex items-center gap-2">
                     <Input
                       id="commission-percent"
@@ -262,29 +262,29 @@ export default async function ClubDetailPage({
                     <span className="text-sm text-muted-foreground">%</span>
                   </div>
                 </div>
-                <Button type="submit" size="sm" className="h-9">Lagre</Button>
+                <Button type="submit" size="sm" className="h-9">Save</Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Standard er 10 %. Stripe-gebyret betales av Tickethalo og utgjør rundt 4 % av billettprisen,
-                så under {MIN_PLATFORM_FEE_PERCENT} % taper vi penger på hvert salg.
+                The default is 10%. Tickethalo pays the Stripe fee, which is around 4% of the ticket price,
+                so below {MIN_PLATFORM_FEE_PERCENT}% we lose money on every sale.
               </p>
             </ToastActionForm>
           </Section>
 
           {/* ── Land og moms på billettene ─────────────────── */}
           <Section
-            title="Land og moms"
-            description="Momsen regnes ut av billettprisen og trekkes fra honorargrunnlaget til komikerne. Gjelder fra neste kjøp; betalte ordrer beholder momsen de ble solgt med."
+            title="Country and VAT"
+            description="VAT is calculated from the ticket price and deducted from the comedians' fee basis. Applies from the next purchase; paid orders keep the VAT they were sold with."
           >
             <ToastActionForm
               action={updateClubTaxAction}
-              successMessage="Land og moms er lagret."
+              successMessage="Country and VAT saved."
               className="flex flex-col gap-3 rounded-xl border bg-card p-4"
             >
               <input type="hidden" name="club_id" value={club.id} />
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="club-country">Land</Label>
+                  <Label htmlFor="club-country">Country</Label>
                   <select
                     id="club-country"
                     name="country"
@@ -300,7 +300,7 @@ export default async function ClubDetailPage({
                   {club.stripe_account_id && <input type="hidden" name="country" value={club.country} />}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="ticket-vat-percent">Moms på billetter</Label>
+                  <Label htmlFor="ticket-vat-percent">VAT on tickets</Label>
                   <div className="flex items-center gap-2">
                     <Input
                       id="ticket-vat-percent"
@@ -317,19 +317,19 @@ export default async function ClubDetailPage({
                     <span className="text-sm text-muted-foreground">%</span>
                   </div>
                 </div>
-                <Button type="submit" size="sm" className="h-9">Lagre</Button>
+                <Button type="submit" size="sm" className="h-9">Save</Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Standard for {CLUB_COUNTRIES.find((country) => country.code === club.country)?.label ?? club.country} er{' '}
-                {formatVatPercent(defaultTicketVatBps(club.country))} %. Valuta: {club.currency}. Sett 0 for en klubb som er
-                unntatt moms, for eksempel en forening.
+                The default for {CLUB_COUNTRIES.find((country) => country.code === club.country)?.label ?? club.country} is{' '}
+                {formatVatPercent(defaultTicketVatBps(club.country))}%. Currency: {club.currency}. Set 0 for a club that is
+                VAT-exempt, for example a non-profit association.
               </p>
             </ToastActionForm>
           </Section>
         </div>
 
         <Section
-          title="Show"
+          title="Shows"
           actions={
             <div className="flex flex-wrap gap-1.5">
               {STATUS_ORDER.map((status) => {
@@ -346,7 +346,7 @@ export default async function ClubDetailPage({
         >
           {allShows.length === 0 ? (
             <p className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-              Ingen show tilknyttet denne klubben ennå.
+              No shows linked to this club yet.
             </p>
           ) : (
             <div className="overflow-x-auto rounded-xl border bg-card">
@@ -354,8 +354,8 @@ export default async function ClubDetailPage({
                 <thead>
                   <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
                     <th className="px-4 py-2.5 font-medium">Show</th>
-                    <th className="px-4 py-2.5 font-medium">Dato</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Solgt</th>
+                    <th className="px-4 py-2.5 font-medium">Date</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Sold</th>
                     <th className="px-4 py-2.5 text-right font-medium">Status</th>
                   </tr>
                 </thead>
@@ -375,25 +375,25 @@ export default async function ClubDetailPage({
             </div>
           )}
           {allShows.length > upcoming.length + past.length && (
-            <p className="text-xs text-muted-foreground">Viser alle kommende og de åtte siste spilte showene.</p>
+            <p className="text-xs text-muted-foreground">Showing all upcoming shows and the last eight past shows.</p>
           )}
         </Section>
 
         {/* ── Faresone ─────────────────────────────────────── */}
         <Section
-          title="Slett klubb"
-          description="Fjerner klubben, admin-tilgangene og klubbens oppsett. En klubb med ordrer kan ikke slettes — regnskapet må bli stående."
+          title="Delete club"
+          description="Removes the club, the admin access and the club's setup. A club with orders can't be deleted — the accounts must stay."
         >
           <ConfirmActionButton
             action={deleteClubAction}
             fields={{ club_id: club.id }}
-            confirmMessage={`Slette ${club.name} for godt? Dette kan ikke angres.`}
+            confirmMessage={`Delete ${club.name} permanently? This can't be undone.`}
             variant="outline"
             size="sm"
             className="w-fit border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             <Trash2 className="size-4" />
-            Slett {club.name}
+            Delete {club.name}
           </ConfirmActionButton>
         </Section>
       </div>

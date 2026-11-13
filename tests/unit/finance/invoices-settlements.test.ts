@@ -50,9 +50,9 @@ describe('fee invoice references', () => {
 describe('fee invoice amount formatting', () => {
   it.each([
     [0, 'NOK', /0/],
-    [100_000, 'NOK', /1[\s ]000/],
-    [14_328, 'NOK', /143,28/],
-    [1_050, 'EUR', /10,50/],
+    [100_000, 'NOK', /1,000/],
+    [14_328, 'NOK', /143\.28/],
+    [1_050, 'EUR', /10\.50/],
   ] as const)('formats %i minor %s', (amount, currency, expected) => {
     expect(formatMinor(amount, currency)).toMatch(expected)
   })

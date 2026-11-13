@@ -67,7 +67,7 @@ describe('ingen kandidater', () => {
       requirements: [spot({ matching: 0, available: 0, pendingAuto: 0, relaxable: { blocker: 'energy', count: 4 } })],
     })])
     const alert = alerts.find((row) => row.id.endsWith('no-candidates-spot-1'))
-    expect(alert?.message).toContain('4 komikere passer om energinivået lempes')
+    expect(alert?.message).toContain('4 comedians fit if the energy level is relaxed')
   })
 
   it('varsler ikke når det finnes kandidater', () => {
@@ -150,8 +150,8 @@ describe('publisering', () => {
     const tonight = run([show({ status: 'published', date: '2026-03-01' })])
       .find((alert) => alert.id.endsWith('published-open'))
 
-    expect(tonight?.message).toContain('sender ikke tilbud på showdagen')
-    expect(tonight?.action).toContain('Ring')
+    expect(tonight?.message).toContain('does not send offers on the day of the show')
+    expect(tonight?.action).toContain('Call')
   })
 
   it('varsler når lineupen er full, men klubben ikke kan ta imot penger', () => {
@@ -206,7 +206,7 @@ describe('bookingen er ikke startet', () => {
       requirements: [spot({ id: 'a' }), spot({ id: 'b', autoStarted: false, pendingAuto: 0 })],
     })
     const alert = run([half]).find((row) => row.id.endsWith('not-started'))
-    expect(alert?.message).toContain('1 plass er')
+    expect(alert?.message).toContain('1 spot is')
   })
 
   it('varsler ikke om en plass som er åpen for søknader', () => {
@@ -300,7 +300,7 @@ describe('en komiker er tatt ut, og bookeren har ikke valgt', () => {
 
   it('varsler at plassen venter på et valg', () => {
     const alert = run([show({ requirements: [paused] })]).find((row) => row.id.endsWith('rebook-paused'))
-    expect(alert?.message).toContain('venter på at dere velger')
+    expect(alert?.message).toContain('waiting for you to choose')
     expect(alert?.spot).toBe('Headliner')
   })
 
@@ -311,7 +311,7 @@ describe('en komiker er tatt ut, og bookeren har ikke valgt', () => {
 
   it('lover ikke at systemet fyller en publisert plass som står på pause', () => {
     const alert = run([show({ status: 'published', requirements: [paused] })]).find((row) => row.id.endsWith('published-open'))
-    expect(alert?.message).toContain('til dere velger')
-    expect(alert?.message).not.toContain('Systemet fyller den igjen')
+    expect(alert?.message).toContain('until you choose')
+    expect(alert?.message).not.toContain('The system will fill it again')
   })
 })

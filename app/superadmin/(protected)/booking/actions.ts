@@ -28,11 +28,11 @@ export type BookingSettingsFormState = {
  */
 async function assertSuperadmin() {
   const user = await getAuthUser()
-  if (!user) throw new Error('Ikke innlogget.')
+  if (!user) throw new Error('Not signed in.')
 
   const profile = await getSessionProfile(user.id)
   if (!profile || profile.role !== 'superadmin') {
-    throw new Error('Bare superadmin kan endre bookinginnstillingene.')
+    throw new Error('Only superadmins can change the booking settings.')
   }
 }
 
@@ -52,7 +52,7 @@ export async function saveBookingSettingsAction(
     if (issues.length > 0) {
       return {
         status: 'error',
-        message: issues.length === 1 ? 'Én verdi må rettes før det kan lagres.' : `${issues.length} verdier må rettes før det kan lagres.`,
+        message: issues.length === 1 ? 'One value must be fixed before saving.' : `${issues.length} values must be fixed before saving.`,
         issues: Object.fromEntries(issues.map((issue) => [issue.key, issue.message])),
         savedAt: null,
       }
@@ -61,11 +61,11 @@ export async function saveBookingSettingsAction(
     await saveBookingSettings(createAdminClient(), settings)
 
     revalidatePath('/superadmin/booking')
-    return { status: 'saved', message: 'Innstillingene er lagret.', issues: {}, savedAt: Date.now() }
+    return { status: 'saved', message: 'Settings saved.', issues: {}, savedAt: Date.now() }
   } catch (error) {
     return {
       status: 'error',
-      message: error instanceof Error ? error.message : 'Kunne ikke lagre innstillingene.',
+      message: error instanceof Error ? error.message : 'Could not save the settings.',
       issues: {},
       savedAt: null,
     }
@@ -86,7 +86,7 @@ export async function setClubLineupDeadlineAction(formData: FormData): Promise<{
     await assertSuperadmin()
 
     const clubId = String(formData.get('club_id') ?? '')
-    if (!clubId) return { error: 'Mangler klubb.' }
+    if (!clubId) return { error: 'Missing club.' }
 
     const raw = String(formData.get('lineup_deadline_days') ?? '').trim()
     let value: number | null = null
@@ -94,7 +94,7 @@ export async function setClubLineupDeadlineAction(formData: FormData): Promise<{
     if (raw.length > 0) {
       const parsed = Number(raw)
       if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120) {
-        return { error: 'Lineup-fristen må være et helt tall mellom 1 og 120 dager.' }
+        return { error: 'The lineup deadline must be a whole number between 1 and 120 days.' }
       }
       value = parsed
     }
@@ -104,11 +104,11 @@ export async function setClubLineupDeadlineAction(formData: FormData): Promise<{
       .update({ lineup_deadline_days: value })
       .eq('id', clubId)
 
-    if (error) return { error: 'Kunne ikke lagre fristen.' }
+    if (error) return { error: 'Could not save the deadline.' }
 
     revalidatePath('/superadmin/booking')
     return undefined
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Kunne ikke lagre fristen.' }
+    return { error: error instanceof Error ? error.message : 'Could not save the deadline.' }
   }
 }

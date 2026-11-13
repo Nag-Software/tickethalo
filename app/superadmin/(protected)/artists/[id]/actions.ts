@@ -30,7 +30,7 @@ export async function updateArtistAsSuperadminAction(formData: FormData): Promis
     await assertSuperadmin()
 
     const id = String(formData.get('artist_id') ?? '')
-    if (!UUID_PATTERN.test(id)) return { error: 'Mangler komiker.' }
+    if (!UUID_PATTERN.test(id)) return { error: 'Missing comedian.' }
 
     const db = createAdminClient()
     const { data: artist } = await db
@@ -38,31 +38,31 @@ export async function updateArtistAsSuperadminAction(formData: FormData): Promis
       .select('id, auth_user_id, email, whatsapp_consent_at, flagged_at, is_flagged')
       .eq('id', id)
       .maybeSingle()
-    if (!artist) return { error: 'Fant ikke komikeren.' }
+    if (!artist) return { error: 'Comedian not found.' }
 
     const fullName = text(formData, 'full_name')
-    if (!fullName) return { error: 'Fullt navn kan ikke være tomt.' }
+    if (!fullName) return { error: 'Full name can’t be empty.' }
 
     const email = text(formData, 'email')?.toLowerCase()
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Ugyldig e-post.' }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Invalid email.' }
 
     const countryText = text(formData, 'country')?.toUpperCase() ?? null
-    if (countryText && !lookupCountry(countryText)) return { error: 'Ukjent land.' }
+    if (countryText && !lookupCountry(countryText)) return { error: 'Unknown country.' }
 
     const status = String(formData.get('status') ?? '') as ArtistStatus
-    if (!STATUSES.includes(status)) return { error: 'Ugyldig status.' }
+    if (!STATUSES.includes(status)) return { error: 'Invalid status.' }
 
     const genderText = text(formData, 'gender')
     const gender = genderText ? (GENDERS.find((value) => value === genderText) ?? null) : null
-    if (genderText && !gender) return { error: 'Ugyldig kjønn.' }
+    if (genderText && !gender) return { error: 'Invalid gender.' }
 
     const energyText = text(formData, 'admin_energy_level')
     const energy = energyText ? (ENERGY.find((value) => value === energyText) ?? null) : null
-    if (energyText && !energy) return { error: 'Ugyldig energinivå.' }
+    if (energyText && !energy) return { error: 'Invalid energy level.' }
 
     const scoreText = text(formData, 'admin_score')
     const adminScore = scoreText == null ? null : Number(scoreText.replace(',', '.'))
-    if (adminScore != null && !Number.isFinite(adminScore)) return { error: 'Admin-score må være et tall.' }
+    if (adminScore != null && !Number.isFinite(adminScore)) return { error: 'Admin score must be a number.' }
 
     const languages = normalizeLanguages(formData.getAll('language').map(String))
     const roles = canonicalRoleValues(formData.getAll('category').map(String)) as ArtistType[]
@@ -84,11 +84,11 @@ export async function updateArtistAsSuperadminAction(formData: FormData): Promis
     let profileImageUrl = text(formData, 'profile_image_url') ?? null
     const imageFile = formData.get('profile_image_file')
     if (imageFile instanceof File && imageFile.size > 0) {
-      if (!imageFile.type.startsWith('image/')) return { error: 'Profilbildet må være et bilde.' }
+      if (!imageFile.type.startsWith('image/')) return { error: 'The profile picture must be an image.' }
       const ext = (imageFile.name.split('.').pop() ?? 'jpg').toLowerCase()
       const path = `${artist.auth_user_id ?? artist.id}/profile-${Date.now()}.${ext}`
       const { error: uploadError } = await db.storage.from('artist-images').upload(path, imageFile, { upsert: true })
-      if (uploadError) return { error: 'Kunne ikke laste opp bildet.' }
+      if (uploadError) return { error: 'Could not upload the image.' }
       profileImageUrl = db.storage.from('artist-images').getPublicUrl(path).data.publicUrl
     }
 
@@ -126,12 +126,12 @@ export async function updateArtistAsSuperadminAction(formData: FormData): Promis
         email,
         email_confirm: true,
       })
-      if (authError) return { error: `Innloggings-e-posten ble ikke endret: ${authError.message}` }
+      if (authError) return { error: `The sign-in email was not changed: ${authError.message}` }
       await db.from('profiles').update({ email }).eq('auth_user_id', artist.auth_user_id)
     }
 
     const { error } = await db.from('artists').update(update).eq('id', id)
-    if (error) return { error: `Kunne ikke lagre: ${error.message}` }
+    if (error) return { error: `Could not save: ${error.message}` }
 
     revalidatePath(`/superadmin/artists/${id}`)
     revalidatePath('/superadmin/artists')
@@ -139,7 +139,7 @@ export async function updateArtistAsSuperadminAction(formData: FormData): Promis
     revalidatePath('/admin-app/artists')
     return { ok: true }
   } catch (error) {
-    return { error: error instanceof Error && error.message ? error.message : 'Noe gikk galt.' }
+    return { error: error instanceof Error && error.message ? error.message : 'Something went wrong.' }
   }
 }
 

@@ -24,7 +24,7 @@ const base: MarketingCopyInput = {
 
 describe('marketing copy', () => {
   it('formats a valid date in Norwegian', () => {
-    expect(formatNorwegianDate('2026-09-18')).toBe('fredag 18. september 2026')
+    expect(formatNorwegianDate('2026-09-18')).toBe('Friday 18 September 2026')
   })
 
   it('preserves an invalid date rather than inventing one', () => {
@@ -40,25 +40,25 @@ describe('marketing copy', () => {
     ['A sharp night of stand-up.'],
     ['LINEUP'],
     ['• Main Name (Headliner)'],
-    ['fredag 18. september 2026, kl. 20:30'],
+    ['• Friday 18 September 2026 at 20:30'],
     ['• Comedy House, Oslo'],
-    ['• Billetter fra NOK 250'],
-    ['Billetter: https://tickethalo.com/events/friday-laughs'],
+    ['• Tickets from NOK 250'],
+    ['Tickets: https://tickethalo.com/events/friday-laughs'],
   ])('includes required event information %s', (line) => {
     expect(facebookEventDescription(base)).toContain(line)
   })
 
   it('uses safe fallback copy and lineup placeholder', () => {
     const copy = facebookEventDescription({ ...base, description: ' ', lineup: [] })
-    expect(copy).toContain('Friday Laughs — en kveld med stand-up.')
-    expect(copy).toContain('• Lineup annonseres snart')
+    expect(copy).toContain('Friday Laughs — a night of stand-up comedy.')
+    expect(copy).toContain('• Lineup to be announced soon')
   })
 
   it.each([
-    ['startTime', null, 'kl.'],
+    ['startTime', null, 'at 20:30'],
     ['venue', null, 'Comedy House'],
-    ['priceLabel', null, 'Billetter fra'],
-    ['ticketUrl', null, 'Billetter:'],
+    ['priceLabel', null, 'Tickets from'],
+    ['ticketUrl', null, 'Tickets:'],
   ] as const)('omits optional %s content', (key, value, absent) => {
     expect(facebookEventDescription({ ...base, [key]: value })).not.toContain(absent)
   })
@@ -68,7 +68,7 @@ describe('marketing copy', () => {
   })
 
   it('creates a compact caption with natural name joining', () => {
-    expect(socialCaption(base)).toContain('Support Star og Main Name')
+    expect(socialCaption(base)).toContain('Support Star and Main Name')
   })
 
   it('handles one artist without a conjunction', () => {
@@ -76,7 +76,7 @@ describe('marketing copy', () => {
   })
 
   it('falls back to bio ticket copy when URL is missing', () => {
-    expect(socialCaption({ ...base, ticketUrl: null })).toMatch(/Billetter i bio$/)
+    expect(socialCaption({ ...base, ticketUrl: null })).toMatch(/Tickets in bio$/)
   })
 
   it('adds the headliner to the Facebook title', () => {

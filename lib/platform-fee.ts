@@ -24,12 +24,12 @@ export type CommissionInput = { bps: number } | { error: string }
 /** «7», «7,5» og «7.5» er alle gyldige. Avrundes til nærmeste hundredels prosent. */
 export function parseCommissionPercent(raw: FormDataEntryValue | null | undefined): CommissionInput {
   const text = String(raw ?? '').trim().replace(',', '.')
-  if (!text) return { error: 'Provisjon er påkrevd.' }
+  if (!text) return { error: 'Commission is required.' }
 
   const percent = Number(text)
-  if (!Number.isFinite(percent)) return { error: 'Provisjonen må være et tall.' }
+  if (!Number.isFinite(percent)) return { error: 'The commission must be a number.' }
   if (percent < MIN_PLATFORM_FEE_PERCENT || percent > MAX_PLATFORM_FEE_PERCENT) {
-    return { error: `Provisjonen må være mellom ${MIN_PLATFORM_FEE_PERCENT} og ${MAX_PLATFORM_FEE_PERCENT} %.` }
+    return { error: `The commission must be between ${MIN_PLATFORM_FEE_PERCENT} and ${MAX_PLATFORM_FEE_PERCENT}%.` }
   }
 
   return { bps: Math.round(percent * 100) }

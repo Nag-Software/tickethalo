@@ -7,24 +7,24 @@ import { DeleteButton } from '@/components/admin/delete-button'
 import { setBetaRequestStatusAction, deleteBetaRequestAction } from './actions'
 import type { ClubBetaRequest, ClubBetaRequestStatus } from '@/types/database'
 
-export const metadata = { title: 'Betasøknader — Superadmin' }
+export const metadata = { title: 'Beta requests — Superadmin' }
 
 /** Rekkefølgen knappene står i, og hvordan hver status ser ut i listen. */
 const STATUS: Record<ClubBetaRequestStatus, { label: string; pill: string }> = {
-  new:       { label: 'Ny',        pill: 'bg-amber-100 text-amber-700' },
-  contacted: { label: 'Kontaktet', pill: 'bg-blue-100 text-blue-700' },
-  approved:  { label: 'Godkjent',  pill: 'bg-emerald-100 text-emerald-700' },
-  declined:  { label: 'Avslått',   pill: 'bg-muted text-muted-foreground' },
+  new:       { label: 'New',       pill: 'bg-amber-100 text-amber-700' },
+  contacted: { label: 'Contacted', pill: 'bg-blue-100 text-blue-700' },
+  approved:  { label: 'Approved',  pill: 'bg-emerald-100 text-emerald-700' },
+  declined:  { label: 'Declined',  pill: 'bg-muted text-muted-foreground' },
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  'login-hero': 'Hero-lenken',
-  'login-form': 'Under innloggingen',
+  'login-hero': 'Hero link',
+  'login-form': 'Below the sign-in',
   'login-booker': 'One-click Booker',
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('nb-NO', {
+  return new Date(iso).toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -45,22 +45,22 @@ export default async function BetaRequestsPage() {
 
   return (
     <div>
-      <AdminHeader title="Betasøknader" description={`${pending.length} ubehandlet av ${requests.length}`} />
+      <AdminHeader title="Beta requests" description={`${pending.length} unhandled of ${requests.length}`} />
 
       <div className="mx-auto flex max-w-4xl flex-col gap-8 p-6">
         {requests.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-4 py-24 text-muted-foreground">
             <Inbox className="size-10 opacity-30" />
-            <p className="text-sm">Ingen har søkt om betatilgang ennå.</p>
+            <p className="text-sm">Nobody has requested beta access yet.</p>
           </div>
         ) : (
           <>
             <section className="space-y-3">
               <h2 className="text-sm font-medium text-muted-foreground">
-                Nye søknader ({pending.length})
+                New requests ({pending.length})
               </h2>
               {pending.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Alt er behandlet.</p>
+                <p className="text-sm text-muted-foreground">Everything is handled.</p>
               ) : (
                 pending.map((request) => <RequestCard key={request.id} request={request} />)
               )}
@@ -69,7 +69,7 @@ export default async function BetaRequestsPage() {
             {handled.length > 0 && (
               <section className="space-y-3">
                 <h2 className="text-sm font-medium text-muted-foreground">
-                  Behandlet ({handled.length})
+                  Handled ({handled.length})
                 </h2>
                 {handled.map((request) => (
                   <RequestCard key={request.id} request={request} />
@@ -105,8 +105,8 @@ function RequestCard({ request }: { request: ClubBetaRequest }) {
             {request.email}
           </a>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>Søkte {formatDate(request.created_at)}</span>
-            {source && <span>Fra: {source}</span>}
+            <span>Requested {formatDate(request.created_at)}</span>
+            {source && <span>From: {source}</span>}
           </div>
         </div>
 
@@ -117,7 +117,7 @@ function RequestCard({ request }: { request: ClubBetaRequest }) {
           <Button variant="outline" size="sm" asChild>
             <Link href={`/superadmin/clubs/${request.club_id}`}>
               <Building2 className="size-4" />
-              Åpne klubben
+              Open club
             </Link>
           </Button>
         ) : request.status === 'declined' ? null : (
@@ -126,7 +126,7 @@ function RequestCard({ request }: { request: ClubBetaRequest }) {
               href={`/superadmin/clubs/new?name=${encodeURIComponent(request.club_name)}&email=${encodeURIComponent(request.email)}&request=${request.id}`}
             >
               <Building2 className="size-4" />
-              Opprett klubb
+              Create club
             </Link>
           </Button>
         )}
@@ -153,8 +153,8 @@ function RequestCard({ request }: { request: ClubBetaRequest }) {
             action={deleteBetaRequestAction}
             id={request.id}
             idField="id"
-            label="Slett"
-            confirmMessage={`Slette søknaden fra ${request.club_name}?`}
+            label="Delete"
+            confirmMessage={`Delete the request from ${request.club_name}?`}
           />
         </div>
       </div>

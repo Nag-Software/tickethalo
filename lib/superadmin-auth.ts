@@ -10,11 +10,11 @@ import { getAuthUser, getSessionProfile } from '@/lib/session'
  */
 export async function assertSuperadmin() {
   const user = await getAuthUser()
-  if (!user) throw new Error('Ikke innlogget.')
+  if (!user) throw new Error('Not signed in.')
 
   const profile = await getSessionProfile(user.id)
   if (!profile || profile.role !== 'superadmin') {
-    throw new Error('Bare superadmin har tilgang til dette.')
+    throw new Error('Only superadmins have access to this.')
   }
 
   return profile

@@ -41,8 +41,8 @@ export async function createClubAction(formData: FormData) {
   const adminEmail = String(formData.get('admin_email') ?? '').trim().toLowerCase()
   const betaRequestId = String(formData.get('beta_request_id') ?? '').trim() || null
 
-  if (!name) return { error: 'Navn er påkrevd.' }
-  if (adminEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(adminEmail)) return { error: 'E-postadressen til admin ser ikke riktig ut.' }
+  if (!name) return { error: 'Name is required.' }
+  if (adminEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(adminEmail)) return { error: 'The admin email address doesn’t look right.' }
 
   // Landet avgjør Stripe-kontoens land, valutaen og momsen på billettene.
   // Satsen kan endres etterpå; landet kan det ikke når Stripe-kontoen finnes.
@@ -77,8 +77,8 @@ export async function createClubAction(formData: FormData) {
     .single()
 
   if (error) {
-    if (error.code === '23505') return { error: 'En klubb med dette navnet finnes allerede.' }
-    return { error: 'Kunne ikke opprette klubb.' }
+    if (error.code === '23505') return { error: 'A club with this name already exists.' }
+    return { error: 'Could not create the club.' }
   }
 
   let adminError: string | null = null
@@ -86,12 +86,12 @@ export async function createClubAction(formData: FormData) {
     try {
       const admin = await provisionClubAdmin({ clubId: data.id, clubName: name, email: adminEmail })
       if (!admin.emailSent) {
-        adminError = `Kontoen til ${adminEmail} er opprettet, men velkomst-e-posten gikk ikke ut (${admin.emailError ?? 'ukjent feil'}). Be klubben bruke «Glemt passord».`
+        adminError = `The account for ${adminEmail} was created, but the welcome email didn’t go out (${admin.emailError ?? 'unknown error'}). Ask the club to use “Forgot password”.`
       }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       await recordError('club_onboarding', cause, { club_id: data.id, email: adminEmail })
-      adminError = `Klubben er opprettet, men kontoen til ${adminEmail} ble ikke laget: ${message}`
+      adminError = `The club was created, but the account for ${adminEmail} wasn’t: ${message}`
     }
   }
 
@@ -122,7 +122,7 @@ export async function createClubAction(formData: FormData) {
 export async function deleteClubAction(formData: FormData) {
   await assertSuperadmin()
   const clubId = String(formData.get('club_id') ?? '')
-  if (!clubId) return { error: 'Mangler klubb.' }
+  if (!clubId) return { error: 'Missing club.' }
 
   const db = createAdminClient()
   const { data: shows } = await db.from('shows').select('id').eq('club_id', clubId)
@@ -135,12 +135,12 @@ export async function deleteClubAction(formData: FormData) {
       .in('show_id', showIds)
 
     if ((orders ?? 0) > 0) {
-      return { error: `Klubben har ${orders} ordrer og kan ikke slettes. Regnskapet må bli stående.` }
+      return { error: `The club has ${orders} ${orders === 1 ? 'order' : 'orders'} and can’t be deleted. The accounts must stay.` }
     }
   }
 
   const { error } = await db.from('clubs').delete().eq('id', clubId)
-  if (error) return { error: 'Kunne ikke slette klubben.' }
+  if (error) return { error: 'Could not delete the club.' }
 
   revalidatePath('/superadmin/clubs')
   revalidatePath('/superadmin/overview')
@@ -158,7 +158,7 @@ export async function deleteClubAction(formData: FormData) {
 export async function updateClubCommissionAction(formData: FormData) {
   await assertSuperadmin()
   const clubId = String(formData.get('club_id') ?? '')
-  if (!clubId) return { error: 'Mangler klubb.' }
+  if (!clubId) return { error: 'Missing club.' }
 
   const parsed = parseCommissionPercent(formData.get('commission_percent'))
   if ('error' in parsed) return { error: parsed.error }
@@ -168,7 +168,7 @@ export async function updateClubCommissionAction(formData: FormData) {
     .update({ platform_fee_bps: parsed.bps })
     .eq('id', clubId)
 
-  if (error) return { error: 'Kunne ikke lagre provisjonen.' }
+  if (error) return { error: 'Could not save the commission.' }
 
   revalidatePath(`/superadmin/clubs/${clubId}`)
   revalidatePath('/superadmin/clubs')
@@ -188,7 +188,7 @@ export async function updateClubCommissionAction(formData: FormData) {
 export async function updateClubTaxAction(formData: FormData) {
   await assertSuperadmin()
   const clubId = String(formData.get('club_id') ?? '')
-  if (!clubId) return { error: 'Mangler klubb.' }
+  if (!clubId) return { error: 'Missing club.' }
 
   const parsedCountry = parseClubCountry(formData.get('country'))
   if ('error' in parsedCountry) return { error: parsedCountry.error }
@@ -197,10 +197,10 @@ export async function updateClubTaxAction(formData: FormData) {
 
   const db = createAdminClient()
   const { data: club } = await db.from('clubs').select('country, stripe_account_id').eq('id', clubId).maybeSingle()
-  if (!club) return { error: 'Fant ikke klubben.' }
+  if (!club) return { error: 'Club not found.' }
 
   if (club.stripe_account_id && club.country !== parsedCountry.country) {
-    return { error: 'Landet kan ikke endres etter at Stripe-kontoen er opprettet.' }
+    return { error: 'The country can’t be changed once the Stripe account exists.' }
   }
 
   // Bytter landet før Stripe er koblet, følger valutaen med: en dansk konto
@@ -215,7 +215,7 @@ export async function updateClubTaxAction(formData: FormData) {
     })
     .eq('id', clubId)
 
-  if (error) return { error: 'Kunne ikke lagre land og moms.' }
+  if (error) return { error: 'Could not save country and VAT.' }
 
   revalidatePath(`/superadmin/clubs/${clubId}`)
   revalidatePath('/superadmin/clubs')
@@ -237,12 +237,12 @@ export async function addClubAdminAction(formData: FormData) {
 
   // Meldingene returneres, ikke kastes: Next fjerner teksten fra kastede feil
   // i produksjon.
-  if (!clubId) return { error: 'Mangler klubb.' }
-  if (!email) return { error: 'E-post er påkrevd.' }
+  if (!clubId) return { error: 'Missing club.' }
+  if (!email) return { error: 'Email is required.' }
 
   const db = createAdminClient()
   const { data: club } = await db.from('clubs').select('id, name').eq('id', clubId).maybeSingle()
-  if (!club) return { error: 'Fant ikke klubben.' }
+  if (!club) return { error: 'Club not found.' }
 
   const { data: membership } = await db
     .from('club_memberships')
@@ -250,14 +250,14 @@ export async function addClubAdminAction(formData: FormData) {
     .eq('club_id', clubId)
     .eq('profiles.email', email)
     .maybeSingle()
-  if (membership) return { error: 'Denne brukeren er allerede admin for klubben.' }
+  if (membership) return { error: 'This user is already an admin of the club.' }
 
   try {
     const admin = await provisionClubAdmin({ clubId, clubName: club.name, email })
     revalidatePath(`/superadmin/clubs/${clubId}`)
     revalidatePath('/superadmin/overview')
     if (!admin.emailSent) {
-      return { error: `${email} har fått tilgang, men e-posten gikk ikke ut (${admin.emailError ?? 'ukjent feil'}). Be dem bruke «Glemt passord».` }
+      return { error: `${email} has been given access, but the email didn’t go out (${admin.emailError ?? 'unknown error'}). Ask them to use “Forgot password”.` }
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)

@@ -46,13 +46,13 @@ export function ClubDeadlineForm({
         step={1}
         defaultValue={value ?? ''}
         placeholder={String(placeholder)}
-        aria-label={`Lineup-frist for ${clubName}, i dager`}
+        aria-label={`Lineup deadline for ${clubName}, in days`}
         aria-invalid={Boolean(state?.error)}
         className="h-8 w-24 text-right"
       />
-      <span className="text-xs text-muted-foreground">dager før showet</span>
+      <span className="text-xs text-muted-foreground">days before the show</span>
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>
-        {pending ? 'Lagrer …' : 'Lagre'}
+        {pending ? 'Saving …' : 'Save'}
       </Button>
     </form>
   )

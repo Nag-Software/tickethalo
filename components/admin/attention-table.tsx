@@ -20,7 +20,7 @@ const LEVEL_STYLE: Record<AttentionLevel, string> = {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: 'short' }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(new Date(value))
 }
 
 export function AttentionTable({ alerts }: { alerts: AttentionAlert[] }) {
@@ -32,10 +32,10 @@ export function AttentionTable({ alerts }: { alerts: AttentionAlert[] }) {
     <section className="mb-6 overflow-hidden rounded-xl border">
       <header className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
         <AlertTriangle className="size-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold">Trenger oppmerksomhet</h2>
+        <h2 className="text-sm font-semibold">Needs attention</h2>
         <span className="text-xs text-muted-foreground">
-          {alerts.length} {alerts.length === 1 ? 'sak' : 'saker'}
-          {critical > 0 && ` · ${critical} kritisk`}
+          {alerts.length} {alerts.length === 1 ? 'issue' : 'issues'}
+          {critical > 0 && ` · ${critical} critical`}
         </span>
       </header>
 
@@ -43,11 +43,11 @@ export function AttentionTable({ alerts }: { alerts: AttentionAlert[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-xs text-muted-foreground">
-              <th className="px-4 py-2 text-left font-medium">Nivå</th>
+              <th className="px-4 py-2 text-left font-medium">Level</th>
               <th className="px-4 py-2 text-left font-medium">Show</th>
-              <th className="px-4 py-2 text-left font-medium">Plass</th>
-              <th className="px-4 py-2 text-left font-medium">Hva som er galt</th>
-              <th className="px-4 py-2 text-right font-medium">Handling</th>
+              <th className="px-4 py-2 text-left font-medium">Spot</th>
+              <th className="px-4 py-2 text-left font-medium">What&apos;s wrong</th>
+              <th className="px-4 py-2 text-right font-medium">Action</th>
             </tr>
           </thead>
           <tbody>

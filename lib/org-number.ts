@@ -12,7 +12,7 @@ type Rule = { label: string; digits: number; example: string }
 const RULES: Record<string, Rule> = {
   NO: { label: 'Organisation number', digits: 9, example: '999 999 999' },
   DK: { label: 'CVR number', digits: 8, example: '12345678' },
-  SE: { label: 'Organisationsnummer', digits: 10, example: '556677-8899' },
+  SE: { label: 'Organisation number', digits: 10, example: '556677-8899' },
 }
 
 function ruleFor(country: string | null | undefined): Rule {

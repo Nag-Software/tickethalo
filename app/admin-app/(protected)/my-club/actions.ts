@@ -75,7 +75,7 @@ function getLocations(formData: FormData): LocationInput[] {
     .filter((location) => location.name.length > 0)
 
   if (locations.length > MAX_LOCATIONS) {
-    throw new Error(`En klubb kan ha maks ${MAX_LOCATIONS} lokasjoner.`)
+    throw new Error(`A club can have at most ${MAX_LOCATIONS} locations.`)
   }
 
   return locations
@@ -171,7 +171,7 @@ export async function saveClubProfileAction(formData: FormData) {
     .single()
 
   if (currentClubError || !currentClub) {
-    throw new Error('Fant ikke valgt klubb.')
+    throw new Error('Could not find the selected club.')
   }
 
   // Kontakten sjekkes før noe lagres eller lastes opp. Feilen returneres i

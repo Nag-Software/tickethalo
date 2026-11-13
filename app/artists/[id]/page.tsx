@@ -20,15 +20,15 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const artist = await getPublicArtistById(id)
-  if (!artist) return { title: 'Artist ikke funnet — Tickethalo' }
+  if (!artist) return { title: 'Artist not found — Tickethalo' }
   const name = artistDisplayName(artist)
 
   return {
     title: `${name} — Tickethalo`,
-    description: artist.bio ?? `${name} i Tickethalo-lineupen.`,
+    description: artist.bio ?? `${name} in the Tickethalo line-up.`,
     openGraph: {
       title: name,
-      description: artist.bio ?? `${name} i Tickethalo-lineupen.`,
+      description: artist.bio ?? `${name} in the Tickethalo line-up.`,
       images: artist.profile_image_url ? [{ url: artist.profile_image_url, alt: name }] : undefined,
     },
   }
@@ -58,7 +58,7 @@ export default async function ArtistDetailPage({ params }: Props) {
           href="/artists"
           className="mb-7 inline-flex items-center gap-2 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
         >
-          <ArrowLeft className="size-4" /> Alle komikere
+          <ArrowLeft className="size-4" /> All comedians
         </Link>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-14">
@@ -105,7 +105,7 @@ export default async function ArtistDetailPage({ params }: Props) {
           <div className="flex flex-col gap-8">
             <header className="flex flex-col gap-2">
               <p className="text-[13px] text-[var(--ev-faint)]">
-                {formatArtistRoleSummary(artist.category, 'Komiker')}
+                {formatArtistRoleSummary(artist.category, 'Comedian')}
                 {artist.city && <> · {artist.city}</>}
                 {formatLanguageSummary(artist.languages) && (
                   <> · {formatLanguageSummary(artist.languages)}</>
@@ -120,7 +120,7 @@ export default async function ArtistDetailPage({ params }: Props) {
             </header>
 
             {artist.bio && (
-              <Section title="Om komikeren">
+              <Section title="About the comedian">
                 <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--ev-muted)]">
                   {artist.bio}
                 </p>
@@ -128,11 +128,11 @@ export default async function ArtistDetailPage({ params }: Props) {
             )}
 
             <Section
-              title="Kommende show"
+              title="Upcoming shows"
               aside={shows.length > 0 ? `${shows.length}` : undefined}
             >
               {shows.length === 0 ? (
-                <p className="text-[15px] text-[var(--ev-faint)]">Ingen publiserte kommende show.</p>
+                <p className="text-[15px] text-[var(--ev-faint)]">No upcoming shows published.</p>
               ) : (
                 // Samme radoppsett som eventlisten, uten pris og kjøpsknapp:
                 // getPublicArtistShows henter en slankere type uten billettdata.
@@ -173,7 +173,7 @@ export default async function ArtistDetailPage({ params }: Props) {
                             {show.title}
                           </span>
                           <span className="mt-0.5 block truncate text-[12.5px] text-[var(--ev-faint)]">
-                            {showVenue(show).venue ?? 'Sted kommer'}
+                            {showVenue(show).venue ?? 'Venue to be announced'}
                           </span>
                         </span>
 

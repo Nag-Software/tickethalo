@@ -103,7 +103,7 @@ export function LocationPicker({
           const right = b.km ?? Infinity
           if (left !== right) return left - right
         }
-        return a.city.localeCompare(b.city, 'nb-NO')
+        return a.city.localeCompare(b.city, 'en-GB')
       })
 
     // Places we do not have shows in yet. Only worth showing once someone has

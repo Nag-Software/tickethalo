@@ -258,7 +258,7 @@ export async function automateFullbookedShow(showId: string) {
     return {
       fullbooked: false,
       reason: 'requirements_not_filled' as const,
-      message: `Krav "${open.role_name}" er ikke fylt (${open.filled}/${open.quantity})`,
+      message: `Requirement "${open.role_name}" is not filled (${open.filled}/${open.quantity})`,
     }
   }
 
@@ -519,14 +519,14 @@ export async function acceptBookingOfferById(offerId: string) {
     .eq('id', offerId)
     .single()
 
-  if (offerError || !offer) throw new Error(offerError?.message ?? 'Bookingtilbudet finnes ikke.')
+  if (offerError || !offer) throw new Error(offerError?.message ?? 'The booking offer does not exist.')
 
   // Statusen ble lest, men aldri sjekket. Bookeren kunne dermed sette et
   // avslått, utløpt eller trukket tilbud til «godtatt» fra nedtrekkslisten,
   // og komikeren havnet i lineupen på et show hen hadde sagt nei til — og
   // fikk i tillegg sine *andre* bookinger trukket som kolliderende.
   if (!['sent', 'accepted'].includes(offer.status)) {
-    throw new Error('Dette tilbudet er allerede besvart, og kan ikke godtas på nytt.')
+    throw new Error('This offer has already been answered and can\'t be accepted again.')
   }
 
   const { data: existingOfferSpot } = await admin
@@ -558,7 +558,7 @@ export async function acceptBookingOfferById(offerId: string) {
       .from('booking_offers')
       .update({ status: 'cancelled', responded_at: new Date().toISOString() })
       .eq('id', offer.id)
-    throw new Error('Denne artisten er allerede i lineupen for dette showet.')
+    throw new Error('This comedian is already in the lineup for this show.')
   }
 
   // Samme grense som når komikeren svarer selv: ingen kan stå på to scener
@@ -583,7 +583,7 @@ export async function acceptBookingOfferById(offerId: string) {
       .from('booking_offers')
       .update({ status: 'filled_by_other', responded_at: new Date().toISOString() })
       .eq('id', offer.id)
-    throw new Error(`Rollen "${requirement.role_name}" er allerede fylt.`)
+    throw new Error(`The role "${requirement.role_name}" is already filled.`)
   }
 
   const { data: spot, error: spotError } = await admin
@@ -601,7 +601,7 @@ export async function acceptBookingOfferById(offerId: string) {
     .select('id')
     .single()
 
-  if (spotError || !spot) throw new Error(spotError?.message ?? 'Kunne ikke opprette lineup-spot.')
+  if (spotError || !spot) throw new Error(spotError?.message ?? 'Could not create the lineup spot.')
 
   // Tellingen over og innsettingen her er to omganger. Kom noen annen inn
   // imellom, angrer vi vår egen rad i stedet for å la plassen stå overfylt.
@@ -755,9 +755,9 @@ export async function sendManualBookingOffer(
     admin.from('artists').select('id, email, full_name').eq('id', artistId).single(),
   ])
 
-  if (!show) throw new Error('Showet finnes ikke.')
-  if (!requirement) throw new Error('Denne lineup-plassen tilhører ikke showet.')
-  if (!artist) throw new Error('Komikeren finnes ikke.')
+  if (!show) throw new Error('The show does not exist.')
+  if (!requirement) throw new Error('This lineup spot does not belong to the show.')
+  if (!artist) throw new Error('The comedian does not exist.')
 
   await assertArtistBookableForShow(admin, showId, artistId)
 
@@ -780,9 +780,9 @@ export async function sendManualBookingOffer(
       .maybeSingle(),
   ])
 
-  if ((filled ?? 0) >= requirement.quantity) throw new Error('Denne lineup-plassen er allerede fylt.')
-  if (existingSpot) throw new Error('Denne komikeren er allerede i lineupen.')
-  if (existingOffer) throw new Error('Denne komikeren har allerede et tilbud som venter på svar.')
+  if ((filled ?? 0) >= requirement.quantity) throw new Error('This lineup spot is already filled.')
+  if (existingSpot) throw new Error('This comedian is already in the lineup.')
+  if (existingOffer) throw new Error('This comedian already has an offer waiting for a reply.')
 
   const settings = await loadBookingSettings(admin)
   const { data: club } = show.club_id
@@ -816,7 +816,7 @@ export async function sendManualBookingOffer(
     .select('token')
     .single()
 
-  if (error || !offer) throw new Error(error?.message ?? 'Kunne ikke opprette tilbudet.')
+  if (error || !offer) throw new Error(error?.message ?? 'Could not create the offer.')
 
   // Dekker de manuelle tilbudene nå alle de ledige setene på plassen, skal
   // motorens egne trekkes. `offerQuota` stopper bare *nye* tilbud; sto det

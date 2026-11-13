@@ -101,7 +101,7 @@ export function BookingSettingsForm({ settings }: { settings: BookingSettings })
                   <span>{field.unit}</span>
                   <span id={`${field.key}-range`} className="block text-muted-foreground/70">
                     {field.min}–{field.max}
-                    {changed ? ` · standard ${fallback}` : ' · standard'}
+                    {changed ? ` · default ${fallback}` : ' · default'}
                   </span>
                 </div>
               </div>
@@ -113,16 +113,16 @@ export function BookingSettingsForm({ settings }: { settings: BookingSettings })
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={pending}>
           <Save className="size-4" />
-          {pending ? 'Lagrer …' : 'Lagre innstillingene'}
+          {pending ? 'Saving …' : 'Save settings'}
         </Button>
 
         <Button type="button" variant="ghost" disabled={pending} onClick={fillWithDefaults}>
           <RotateCcw className="size-4" />
-          Fyll inn standardverdiene
+          Fill in the defaults
         </Button>
 
         <span className="text-[12.5px] text-muted-foreground">
-          Ingenting endres før du lagrer.
+          Nothing changes until you save.
         </span>
       </div>
     </form>

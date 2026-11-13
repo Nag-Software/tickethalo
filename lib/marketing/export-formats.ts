@@ -38,7 +38,7 @@ export const MARKETING_EXPORT_SPECS: MarketingExportSpec[] = [
   {
     format: 'facebook_event',
     label: 'Facebook event',
-    usage: 'Coverbildet på Facebook-eventet (1920×1005).',
+    usage: 'Cover image for the Facebook event (1920×1005).',
     width: 1920,
     height: 1005,
     fit: 'blur',
@@ -47,8 +47,8 @@ export const MARKETING_EXPORT_SPECS: MarketingExportSpec[] = [
   },
   {
     format: 'social_post',
-    label: 'SoMe post',
-    usage: 'Feed-post på Instagram og Facebook (1080×1350).',
+    label: 'Social post',
+    usage: 'Feed post on Instagram and Facebook (1080×1350).',
     width: 1080,
     height: 1350,
     fit: 'cover',
@@ -57,8 +57,8 @@ export const MARKETING_EXPORT_SPECS: MarketingExportSpec[] = [
   },
   {
     format: 'social_story',
-    label: 'SoMe story',
-    usage: 'Story og Reels-cover (1080×1920).',
+    label: 'Social story',
+    usage: 'Story and Reels cover (1080×1920).',
     width: 1080,
     height: 1920,
     fit: 'blur',
@@ -68,7 +68,7 @@ export const MARKETING_EXPORT_SPECS: MarketingExportSpec[] = [
   {
     format: 'print_a4',
     label: 'A4 print',
-    usage: 'Trykkeklar A4 i 300 dpi (2480×3508).',
+    usage: 'Print-ready A4 at 300 dpi (2480×3508).',
     width: 2480,
     height: 3508,
     fit: 'cover',
@@ -78,7 +78,7 @@ export const MARKETING_EXPORT_SPECS: MarketingExportSpec[] = [
   {
     format: 'print_a3',
     label: 'A3 print',
-    usage: 'Trykkeklar A3 i 300 dpi (3508×4961).',
+    usage: 'Print-ready A3 at 300 dpi (3508×4961).',
     width: 3508,
     height: 4961,
     fit: 'cover',

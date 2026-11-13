@@ -8,7 +8,7 @@ import { ClubReadinessPill, EmptyState } from '@/components/superadmin/ui'
 import { describeClubReadiness } from '@/lib/stripe-connect'
 import { getOsloToday } from '@/lib/event-filters'
 
-export const metadata = { title: 'Klubber — Superadmin' }
+export const metadata = { title: 'Clubs — Superadmin' }
 
 export default async function ClubsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const query = ((await searchParams).q ?? '').trim()
@@ -47,13 +47,13 @@ export default async function ClubsPage({ searchParams }: { searchParams: Promis
   return (
     <div>
       <AdminHeader
-        title="Klubber"
-        description={`${all.length} klubber · ${readyCount} klare for salg`}
+        title="Clubs"
+        description={`${all.length} ${all.length === 1 ? 'club' : 'clubs'} · ${readyCount} ready to sell`}
         actions={
           <Button asChild size="sm">
             <Link href="/superadmin/clubs/new">
               <Plus className="size-4" />
-              Ny klubb
+              New club
             </Link>
           </Button>
         }
@@ -62,32 +62,32 @@ export default async function ClubsPage({ searchParams }: { searchParams: Promis
       <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
         {all.length === 0 ? (
           <EmptyState icon={Building2}>
-            <p>Ingen klubber ennå.</p>
+            <p>No clubs yet.</p>
             <Button asChild variant="outline" size="sm" className="mt-3">
-              <Link href="/superadmin/clubs/new">Opprett første klubb</Link>
+              <Link href="/superadmin/clubs/new">Create the first club</Link>
             </Button>
           </EmptyState>
         ) : (
           <>
             <form method="get" className="relative w-full sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input name="q" defaultValue={query} placeholder="Søk på klubb eller by" className="pl-9" />
+              <Input name="q" defaultValue={query} placeholder="Search by club or city" className="pl-9" />
             </form>
 
             {visible.length === 0 ? (
-              <EmptyState icon={Building2}>Ingen klubber passer søket.</EmptyState>
+              <EmptyState icon={Building2}>No clubs match the search.</EmptyState>
             ) : (
               <div className="overflow-x-auto rounded-xl border bg-card">
                 <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
-                      <th className="px-4 py-2.5 font-medium">Klubb</th>
+                      <th className="px-4 py-2.5 font-medium">Club</th>
                       <th className="px-4 py-2.5 text-right font-medium">Admins</th>
-                      <th className="px-4 py-2.5 text-right font-medium">Show</th>
-                      <th className="px-4 py-2.5 text-right font-medium">Kommende</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Shows</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Upcoming</th>
                       {/* En klubb uten ferdig Connect-konto kan ikke selge billetter
                           — showene blir liggende upublisert. Det bør ses herfra. */}
-                      <th className="px-4 py-2.5 font-medium">Billettsalg</th>
+                      <th className="px-4 py-2.5 font-medium">Ticket sales</th>
                       <th className="px-4 py-2.5" />
                     </tr>
                   </thead>
@@ -115,7 +115,7 @@ export default async function ClubsPage({ searchParams }: { searchParams: Promis
                             <ClubReadinessPill hasAccount={Boolean(club.stripe_account_id)} missing={missing} />
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <Link href={href} aria-label={`Åpne ${club.name}`} className="inline-flex text-muted-foreground hover:text-foreground">
+                            <Link href={href} aria-label={`Open ${club.name}`} className="inline-flex text-muted-foreground hover:text-foreground">
                               <ChevronRight className="size-4" />
                             </Link>
                           </td>

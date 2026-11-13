@@ -31,9 +31,9 @@ export const DEFAULT_MARKETING_SEED = '#ff5b24'
 const SURFACE_DARK: Rgb = { r: 18, g: 14, b: 12 }
 
 export const MARKETING_PALETTE_ROLES = [
-  { key: 'primary', label: 'Primary', hint: 'Flatefarge — bakgrunn, bånd og knapper.' },
-  { key: 'secondary', label: 'Secondary', hint: 'Mørk motvekt — tekstflater og dybde.' },
-  { key: 'accent', label: 'Accent', hint: 'Blikkfang — dato, pris og billettlenke.' },
+  { key: 'primary', label: 'Primary', hint: 'Surface colour — background, bands and buttons.' },
+  { key: 'secondary', label: 'Secondary', hint: 'Dark counterweight — text areas and depth.' },
+  { key: 'accent', label: 'Accent', hint: 'Eye-catcher — date, price and ticket link.' },
 ] as const satisfies ReadonlyArray<{ key: keyof MarketingPalette; label: string; hint: string }>
 
 export function isHexColor(value: unknown): value is string {

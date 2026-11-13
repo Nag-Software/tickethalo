@@ -8,8 +8,8 @@ import { PublicHeader } from '@/components/public/public-header'
 import { Footer } from '@/components/Footer'
 
 export const metadata = {
-  title: 'Komikere — Tickethalo',
-  description: 'Se godkjente komikere og artister i Tickethalo-lineupen.',
+  title: 'Comedians — Tickethalo',
+  description: 'Browse the approved comedians and artists in the Tickethalo line-up.',
 }
 
 export const dynamic = 'force-dynamic'
@@ -29,23 +29,23 @@ export default async function ArtistsPage() {
           href="/"
           className="mb-7 inline-flex items-center gap-2 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
         >
-          <ArrowLeft className="size-4" /> Forsiden
+          <ArrowLeft className="size-4" /> Home
         </Link>
 
         <header className="mb-9 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-balance text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl">
-              Våre komikere
+              Our comedians
             </h1>
             <p className="mt-2 text-[15px] text-[var(--ev-muted)]">
-              {artists.length} {artists.length === 1 ? 'komiker' : 'komikere'} i lineupen.
+              {artists.length} {artists.length === 1 ? 'comedian' : 'comedians'} in the line-up.
             </p>
           </div>
           <Link
             href="/events"
             className="inline-flex items-center gap-1.5 text-[13px] text-[var(--ev-muted)] transition-colors hover:text-[var(--ev-text)]"
           >
-            Se show <ArrowRight className="size-4" />
+            See shows <ArrowRight className="size-4" />
           </Link>
         </header>
 
@@ -54,7 +54,7 @@ export default async function ArtistsPage() {
             className="border border-dashed border-[var(--ev-line-strong)] px-6 py-16 text-center text-[15px] text-[var(--ev-muted)]"
             style={{ borderRadius: 'var(--ev-r-card)' }}
           >
-            Ingen godkjente komikere ennå.
+            No approved comedians yet.
           </div>
         ) : (
           // To i bredden på mobil: portretter leses fint i par, i motsetning
@@ -89,7 +89,7 @@ export default async function ArtistsPage() {
                 </div>
 
                 <p className="text-[12.5px] text-[var(--ev-faint)]">
-                  {formatArtistRoleSummary(artist.category, 'Komiker')}
+                  {formatArtistRoleSummary(artist.category, 'Comedian')}
                 </p>
                 <h2 className="mt-0.5 truncate text-[15px] font-semibold leading-snug tracking-[-0.01em]">
                   {artistDisplayName(artist)}

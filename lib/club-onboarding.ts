@@ -82,7 +82,7 @@ export async function provisionClubAdmin(input: {
       .select('id')
       .single()
     if (profileError || !profile) {
-      throw new Error(`Kunne ikke opprette profilen for ${email}: ${profileError?.message ?? 'ingen rad'}`)
+      throw new Error(`Could not create the profile for ${email}: ${profileError?.message ?? 'no row'}`)
     }
     profileId = profile.id
     created = true
@@ -99,7 +99,7 @@ export async function provisionClubAdmin(input: {
     .insert({ club_id: input.clubId, profile_id: profileId })
   // 23505: medlemskapet finnes alt. Det er målet, ikke en feil.
   if (membershipError && membershipError.code !== '23505') {
-    throw new Error(`Kunne ikke gi ${email} tilgang til klubben: ${membershipError.message}`)
+    throw new Error(`Could not give ${email} access to the club: ${membershipError.message}`)
   }
 
   const result = await sendClubWelcomeEmail({
@@ -128,11 +128,11 @@ async function createOrFindAuthUser(email: string): Promise<string> {
   if (!error && data.user) return data.user.id
 
   const alreadyRegistered = /already (been )?registered|already exists/i.test(error?.message ?? '')
-  if (!alreadyRegistered) throw new Error(`Kunne ikke opprette brukeren for ${email}: ${error?.message ?? 'ukjent feil'}`)
+  if (!alreadyRegistered) throw new Error(`Could not create the user for ${email}: ${error?.message ?? 'unknown error'}`)
 
   const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: 'recovery', email })
   if (linkError || !link?.user) {
-    throw new Error(`Brukeren ${email} finnes alt hos Supabase, men kunne ikke slås opp: ${linkError?.message ?? 'ingen bruker'}`)
+    throw new Error(`The user ${email} already exists in Supabase but could not be looked up: ${linkError?.message ?? 'no user'}`)
   }
   return link.user.id
 }

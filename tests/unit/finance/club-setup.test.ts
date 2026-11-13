@@ -49,7 +49,7 @@ describe('parseOrgNumber', () => {
   it('refuses the wrong length with the country’s own name for the number', () => {
     expect(parseOrgNumber('12345678', 'NO')).toEqual({ error: 'The organisation number must be 9 digits.' })
     expect(parseOrgNumber('999999999', 'DK')).toEqual({ error: 'The cvr number must be 8 digits.' })
-    expect(parseOrgNumber('12345678', 'SE')).toEqual({ error: 'The organisationsnummer must be 10 digits.' })
+    expect(parseOrgNumber('12345678', 'SE')).toEqual({ error: 'The organisation number must be 10 digits.' })
   })
 
   it('treats an empty field as not filled in, and an unknown country as Norway', () => {
@@ -60,7 +60,7 @@ describe('parseOrgNumber', () => {
 
   it('labels the field per country', () => {
     expect(orgNumberFieldLabel('DK')).toBe('CVR number')
-    expect(orgNumberFieldLabel('SE')).toBe('Organisationsnummer')
+    expect(orgNumberFieldLabel('SE')).toBe('Organisation number')
     expect(orgNumberFieldLabel('NO')).toBe('Organisation number')
   })
 })

@@ -21,9 +21,9 @@
  */
 
 export const CLUB_COUNTRIES = [
-  { code: 'NO', label: 'Norge', ticketVatBps: 0, currency: 'NOK' },
-  { code: 'DK', label: 'Danmark', ticketVatBps: 2500, currency: 'DKK' },
-  { code: 'SE', label: 'Sverige', ticketVatBps: 600, currency: 'SEK' },
+  { code: 'NO', label: 'Norway', ticketVatBps: 0, currency: 'NOK' },
+  { code: 'DK', label: 'Denmark', ticketVatBps: 2500, currency: 'DKK' },
+  { code: 'SE', label: 'Sweden', ticketVatBps: 600, currency: 'SEK' },
 ] as const
 
 export type ClubCountryCode = (typeof CLUB_COUNTRIES)[number]['code']
@@ -69,8 +69,8 @@ export type CountryInput = { country: ClubCountryCode } | { error: string }
 
 export function parseClubCountry(raw: FormDataEntryValue | null | undefined): CountryInput {
   const text = String(raw ?? '').trim().toUpperCase()
-  if (!text) return { error: 'Land er påkrevd.' }
-  if (!isClubCountry(text)) return { error: 'Landet støttes ikke ennå.' }
+  if (!text) return { error: 'Country is required.' }
+  if (!isClubCountry(text)) return { error: 'That country is not supported yet.' }
   return { country: text }
 }
 
@@ -79,12 +79,12 @@ export type VatInput = { bps: number } | { error: string }
 /** «25», «6» og «0» er alle gyldige, også med komma. Avrundes til hundredels prosent. */
 export function parseVatPercent(raw: FormDataEntryValue | null | undefined): VatInput {
   const text = String(raw ?? '').trim().replace(',', '.')
-  if (!text) return { error: 'Momssats er påkrevd. Skriv 0 når billettene er momsfrie.' }
+  if (!text) return { error: 'VAT rate is required. Enter 0 if the tickets are VAT-exempt.' }
 
   const percent = Number(text)
-  if (!Number.isFinite(percent)) return { error: 'Momssatsen må være et tall.' }
+  if (!Number.isFinite(percent)) return { error: 'The VAT rate must be a number.' }
   if (percent < 0 || percent > MAX_TICKET_VAT_PERCENT) {
-    return { error: `Momssatsen må være mellom 0 og ${MAX_TICKET_VAT_PERCENT} %.` }
+    return { error: `The VAT rate must be between 0 and ${MAX_TICKET_VAT_PERCENT}%.` }
   }
 
   return { bps: Math.round(percent * 100) }
@@ -100,7 +100,7 @@ export function formatVatPercent(bps: number): string {
 // ─────────────────────────────────────────────────────────────
 
 /** Hva foretaksnummeret heter der klubben er: «CVR-nr» i Danmark, «Org.nr» ellers. */
-export function orgNumberLabel(country: string | null | undefined, locale: 'nb' | 'en' = 'nb'): string {
+export function orgNumberLabel(country: string | null | undefined, locale: 'nb' | 'en' = 'en'): string {
   if (country === 'DK') return 'CVR-nr'
   return locale === 'en' ? 'Org. no.' : 'Org.nr'
 }
@@ -113,7 +113,7 @@ export function orgNumberLabel(country: string | null | undefined, locale: 'nb' 
  */
 export function receiptVatNote(
   seller: { ticket_vat_bps?: number | null },
-  locale: 'nb' | 'en' = 'nb',
+  locale: 'nb' | 'en' = 'en',
 ): string {
   const bps = seller.ticket_vat_bps ?? 0
   if (bps > 0) {
@@ -123,6 +123,6 @@ export function receiptVatNote(
       : `Billettprisen er inkl. ${percent} % moms.`
   }
   return locale === 'en'
-    ? 'No VAT is added to the ticket price — admission to a cultural event is outside the scope of Norwegian VAT (mval. § 3-7).'
+    ? 'No VAT is added to the ticket price — admission to a cultural event is outside the scope of Norwegian VAT (Norwegian VAT Act § 3-7).'
     : 'Billettprisen er uten merverdiavgift — adgang til kulturarrangement er unntatt mva. (mval. § 3-7).'
 }

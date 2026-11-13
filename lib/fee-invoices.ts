@@ -192,7 +192,7 @@ export async function issueFeeInvoice(input: IssueFeeInvoiceInput): Promise<Arti
     if (raced) return raced as ArtistFeeInvoice
   }
 
-  console.error(`[FeeInvoice] ${input.spotId}: fant ingen ledig referanse`)
+  console.error(`[FeeInvoice] ${input.spotId}: found no free reference`)
   return null
 }
 
@@ -299,7 +299,7 @@ export function formatMinor(amount: number, currency: string) {
   // Samme regel som i e-postmalen: ører vises når de finnes. Kontrollen
   // sammenligner på øret, og da må tallet den viser gjøre det samme.
   const digits = amount % 100 === 0 ? 0 : 2
-  return new Intl.NumberFormat('nb-NO', {
+  return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: currency.toUpperCase(),
     minimumFractionDigits: digits,
@@ -537,8 +537,8 @@ export async function setFeeInvoiceStatus(opts: {
     .select('id')
     .maybeSingle()
 
-  if (error) throw new Error(`Kunne ikke oppdatere grunnlaget: ${error.message}`)
+  if (error) throw new Error(`Could not update the invoice basis: ${error.message}`)
   // Ingen rad truffet betyr at grunnlaget ikke er klubbens. Det er ikke en
   // teknisk feil, men det skal heller ikke se ut som om noe ble gjort.
-  if (!data) throw new Error('Fant ikke fakturagrunnlaget.')
+  if (!data) throw new Error('Could not find the fee invoice basis.')
 }

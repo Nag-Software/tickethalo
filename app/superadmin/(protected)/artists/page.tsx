@@ -11,13 +11,13 @@ import { formatScore } from '@/lib/artist-score'
 import { ArtistStatusControl } from './artist-status-control'
 import type { ArtistStatus } from '@/types/database'
 
-export const metadata = { title: 'Komikere — Superadmin' }
+export const metadata = { title: 'Comedians — Superadmin' }
 
 const FILTERS = [
-  { key: 'all', label: 'Alle', statuses: null },
-  { key: 'active', label: 'Aktive', statuses: ['approved'] },
-  { key: 'out', label: 'Tatt ut', statuses: ['inactive', 'rejected'] },
-  { key: 'review', label: 'Til vurdering', statuses: ['pending_review', 'flagged'] },
+  { key: 'all', label: 'All', statuses: null },
+  { key: 'active', label: 'Active', statuses: ['approved'] },
+  { key: 'out', label: 'Taken off', statuses: ['inactive', 'rejected'] },
+  { key: 'review', label: 'Under review', statuses: ['pending_review', 'flagged'] },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; statuses: readonly ArtistStatus[] | null }>
 
 type FilterKey = (typeof FILTERS)[number]['key']
@@ -94,11 +94,11 @@ export default async function SuperadminArtistsPage({
 
   return (
     <div>
-      <AdminHeader title="Komikere" description={`${all.length} registrert · ${counts.active} aktive`} />
+      <AdminHeader title="Comedians" description={`${all.length} registered · ${counts.active} active`} />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <nav className="flex flex-wrap gap-1.5" aria-label="Filtrer på status">
+          <nav className="flex flex-wrap gap-1.5" aria-label="Filter by status">
             {FILTERS
               // «Til vurdering» er en gammel tilstand: vis den bare når noen faktisk står der.
               .filter((item) => item.key !== 'review' || counts.review > 0 || filter === 'review')
@@ -123,27 +123,27 @@ export default async function SuperadminArtistsPage({
           <form method="get" className="relative w-full sm:w-72">
             {filter !== 'all' && <input type="hidden" name="status" value={filter} />}
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input name="q" defaultValue={query} placeholder="Søk på navn, e-post eller by" className="pl-9" />
+            <Input name="q" defaultValue={query} placeholder="Search by name, email or city" className="pl-9" />
           </form>
         </div>
 
         {visible.length === 0 ? (
           <EmptyState icon={Mic}>
-            {all.length === 0 ? 'Ingen komikere har registrert seg ennå.' : 'Ingen komikere passer søket.'}
+            {all.length === 0 ? 'No comedians have signed up yet.' : 'No comedians match the search.'}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto rounded-xl border bg-card">
             <table className="w-full min-w-[840px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-2.5 font-medium">Komiker</th>
-                  <th className="px-4 py-2.5 font-medium">By</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Klubber</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Kommende</th>
-                  <th className="px-4 py-2.5 text-right font-medium" title="Snittet av klubbenes score, vektet med antall vurderinger. Brukes ikke i bookingen.">
+                  <th className="px-4 py-2.5 font-medium">Comedian</th>
+                  <th className="px-4 py-2.5 font-medium">City</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Clubs</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Upcoming</th>
+                  <th className="px-4 py-2.5 text-right font-medium" title="The average of the clubs' scores, weighted by number of reviews. Not used in booking.">
                     Global score
                   </th>
-                  <th className="px-4 py-2.5 font-medium">Registrert</th>
+                  <th className="px-4 py-2.5 font-medium">Registered</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
                   <th className="px-4 py-2.5" />
                 </tr>
@@ -189,13 +189,13 @@ export default async function SuperadminArtistsPage({
                           href={`/superadmin/artists/${artist.id}`}
                           className="mr-3 text-xs font-medium hover:underline"
                         >
-                          Rediger
+                          Edit
                         </Link>
                         <Link
                           href={`/admin-app/artists/${artist.id}`}
                           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                         >
-                          Profil
+                          Profile
                           <ExternalLink className="size-3" />
                         </Link>
                       </td>
@@ -218,7 +218,7 @@ function GlobalScoreCell({ row }: { row?: { score: number | null; review_count: 
     <div className="leading-tight">
       <p className="font-medium tabular-nums">{formatScore(row.score)}</p>
       <p className="text-[11px] text-muted-foreground tabular-nums">
-        {row.review_count} {row.review_count === 1 ? 'vurdering' : 'vurderinger'} · {row.club_count} {row.club_count === 1 ? 'klubb' : 'klubber'}
+        {row.review_count} {row.review_count === 1 ? 'review' : 'reviews'} · {row.club_count} {row.club_count === 1 ? 'club' : 'clubs'}
       </p>
     </div>
   )

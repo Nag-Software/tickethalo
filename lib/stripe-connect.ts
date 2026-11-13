@@ -121,7 +121,7 @@ export function describeClubReadiness(club: ClubReadiness): ReadinessItem[] {
 
 /** Kort liste over hva som mangler, til feilmeldinger i admin. */
 export function missingReadinessLabels(club: ClubReadiness | null): string[] {
-  if (!club) return ['Showet er ikke koblet til en klubb']
+  if (!club) return ['The show is not linked to a club']
   return describeClubReadiness(club)
     .filter((item) => !item.done)
     .map((item) => item.label)
@@ -195,7 +195,7 @@ export async function getOrCreateConnectedAccount(club: ConnectClub): Promise<st
   if (!contactEmail) {
     // Stripe krever kontakt-e-post for merchant-konfigurasjonen, og adressen
     // er uansett klubbens kontaktpunkt mot billettkjøperen.
-    throw new Error('Fyll inn kontakt for billettkjøpere før du kobler Stripe-kontoen.')
+    throw new Error('Fill in the contact for ticket buyers before you connect the Stripe account.')
   }
 
   const clubUrl = publicClubUrl(club)
@@ -637,7 +637,7 @@ export async function createDashboardLink(accountId: string) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (message.includes('has not completed onboarding')) {
-      throw new Error('Stripe-dashbordet åpnes først når onboardingen er fullført.')
+      throw new Error('The Stripe dashboard opens once onboarding is complete.')
     }
     throw error
   }
@@ -872,7 +872,7 @@ export async function assertClubCanSell(showId: string) {
 
   const missing = missingReadinessLabels(club).join(', ')
   throw new Error(
-    `Klubben er ikke klar for billettsalg ennå. Mangler: ${missing}. ` +
-      'Fullfør oppsettet under Økonomi.',
+    `The club is not ready for ticket sales yet. Missing: ${missing}. ` +
+      'Complete the setup under Finances.',
   )
 }

@@ -18,12 +18,12 @@ import {
 } from '@/components/ui/sidebar'
 
 const NAV = [
-  { key: 'overview', label: 'Oversikt', href: '/superadmin/overview', icon: LayoutDashboard },
-  { key: 'clubs', label: 'Klubber', href: '/superadmin/clubs', icon: Building2 },
-  { key: 'artists', label: 'Komikere', href: '/superadmin/artists', icon: Mic },
-  { key: 'beta', label: 'Betasøknader', href: '/superadmin/beta-requests', icon: Inbox },
-  { key: 'booking', label: 'Bookingmotoren', href: '/superadmin/booking', icon: SlidersHorizontal },
-  { key: 'errors', label: 'Feil', href: '/superadmin/errors', icon: AlertTriangle },
+  { key: 'overview', label: 'Overview', href: '/superadmin/overview', icon: LayoutDashboard },
+  { key: 'clubs', label: 'Clubs', href: '/superadmin/clubs', icon: Building2 },
+  { key: 'artists', label: 'Comedians', href: '/superadmin/artists', icon: Mic },
+  { key: 'beta', label: 'Beta requests', href: '/superadmin/beta-requests', icon: Inbox },
+  { key: 'booking', label: 'Booking engine', href: '/superadmin/booking', icon: SlidersHorizontal },
+  { key: 'errors', label: 'Errors', href: '/superadmin/errors', icon: AlertTriangle },
 ] as const
 
 /**
@@ -65,7 +65,7 @@ export function SuperadminSidebar({
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Plattform</SidebarGroupLabel>
+          <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarMenu>
             {NAV.map((item) => {
               const badge = badges[item.key] ?? 0
@@ -85,13 +85,13 @@ export function SuperadminSidebar({
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>Snarveier</SidebarGroupLabel>
+          <SidebarGroupLabel>Shortcuts</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="Klubbportalen">
+              <SidebarMenuButton asChild tooltip="Club portal">
                 <Link href="/admin-app/shows">
                   <ExternalLink />
-                  <span>Klubbportalen</span>
+                  <span>Club portal</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -105,11 +105,11 @@ export function SuperadminSidebar({
             <div className="truncate px-2 py-1.5 text-xs text-muted-foreground">{email}</div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Logg ut">
+            <SidebarMenuButton asChild tooltip="Log out">
               <form action="/superadmin/logout" method="post">
                 <button type="submit" className="flex w-full items-center gap-2">
                   <LogOut className="size-4" />
-                  <span>Logg ut</span>
+                  <span>Log out</span>
                 </button>
               </form>
             </SidebarMenuButton>

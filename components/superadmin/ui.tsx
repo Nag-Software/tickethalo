@@ -4,12 +4,12 @@ import type { ShowStatus } from '@/types/database'
 /** Delte byggeklosser for superadmin, så sidene sier det samme med samme form. */
 
 export const SHOW_STATUS_LABELS: Record<ShowStatus, string> = {
-  draft: 'Planlegger',
+  draft: 'Planning',
   booking: 'Booking',
   fullbooked: 'Full lineup',
-  published: 'Publisert',
-  completed: 'Gjennomført',
-  cancelled: 'Avlyst',
+  published: 'Published',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
 }
 
 const SHOW_STATUS_TONES: Record<ShowStatus, Tone> = {
@@ -88,13 +88,13 @@ export function EmptyState({ icon: Icon, children }: { icon: React.ComponentType
 }
 
 export function formatNok(amountMinor: number) {
-  return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(amountMinor / 100)
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(amountMinor / 100)
 }
 
 /** `shows.date` er en ren dato; bygges midt på dagen i UTC så den ikke tipper over. */
 export function formatDate(value: string) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00Z`) : new Date(value)
-  return date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/Oslo' })
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/Oslo' })
 }
 
 /**
@@ -102,12 +102,12 @@ export function formatDate(value: string) {
  * fordi klubbportalen er engelsk — superadmin er norsk.
  */
 export const READINESS_LABELS_NB: Record<string, string> = {
-  stripe_account: 'Stripe-konto opprettet',
-  charges: 'Kan ta imot betaling',
-  payouts: 'Bankkonto for utbetaling',
-  payout_schedule: 'Utbetalinger holdes til etter showet',
-  legal_name: 'Juridisk navn',
-  org_number: 'Organisasjonsnummer',
+  stripe_account: 'Stripe account created',
+  charges: 'Can accept payments',
+  payouts: 'Bank account for payouts',
+  payout_schedule: 'Payouts held until after the show',
+  legal_name: 'Legal name',
+  org_number: 'Organisation number',
 }
 
 /**
@@ -122,13 +122,13 @@ export function ClubReadinessPill({
   hasAccount: boolean
   missing: Array<{ key: string }>
 }) {
-  if (missing.length === 0) return <Pill tone="green">Klar for salg</Pill>
+  if (missing.length === 0) return <Pill tone="green">Ready to sell</Pill>
 
   const title = missing.map((item) => READINESS_LABELS_NB[item.key] ?? item.key).join(', ')
   const onlySchedule = missing.every((item) => item.key === 'payout_schedule')
   return (
     <Pill tone={onlySchedule ? 'red' : 'amber'} title={title}>
-      {!hasAccount ? 'Ingen Stripe-konto' : onlySchedule ? 'Utbetalingsplan ikke manuell' : 'Oppsett ikke fullført'}
+      {!hasAccount ? 'No Stripe account' : onlySchedule ? 'Payout schedule not manual' : 'Setup not complete'}
     </Pill>
   )
 }

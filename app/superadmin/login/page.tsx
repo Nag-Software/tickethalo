@@ -19,9 +19,9 @@ export default async function SuperadminLoginPage({
 
   const errorMessage =
     error === 'unauthorized'
-      ? 'Denne kontoen hører til et annet panel.'
+      ? 'This account belongs to a different panel.'
       : error === 'invalid'
-        ? 'Feil e-post eller passord.'
+        ? 'Wrong email or password.'
         : undefined
 
   return (
@@ -29,7 +29,7 @@ export default async function SuperadminLoginPage({
       <div className="w-full max-w-sm">
         <LoginForm
           title="Tickethalo"
-          description="Superadmin-innlogging"
+          description="Superadmin sign-in"
           action="/superadmin/login/submit"
           errorMessage={errorMessage}
           showSignupLink={false}

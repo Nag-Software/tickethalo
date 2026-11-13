@@ -97,7 +97,7 @@ export function formatArtistRoleList(values: string | string[] | null | undefine
   return normalizeArtistRoleList(values).map((value) => ARTIST_ROLE_LABELS[value])
 }
 
-export function formatArtistRoleSummary(values: string | string[] | null | undefined, fallback = 'Komiker') {
+export function formatArtistRoleSummary(values: string | string[] | null | undefined, fallback = 'Comedian') {
   const labels = formatArtistRoleList(values)
   return labels.length > 0 ? labels.join(', ') : fallback
 }

@@ -59,9 +59,9 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      // Var "en". Med engelsk språkkode leser skjermlesere norsk tekst med
-      // engelsk uttale — WCAG 3.1.1, og i praksis uforståelig.
-      lang="nb"
+      // Engelsk, som resten av plattformen. Språkkoden må følge teksten,
+      // ellers leser skjermlesere den med feil uttale (WCAG 3.1.1).
+      lang="en"
       className={cn("h-full", "antialiased", geistMono.variable, "font-sans", hostGrotesk.variable)}
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>

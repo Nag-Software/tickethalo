@@ -46,7 +46,7 @@ export function ConfirmActionButton({
         router.refresh()
       } catch (error) {
         if (isNextControlFlowError(error)) throw error
-        toast.error(error instanceof Error && error.message ? error.message : 'Noe gikk galt.')
+        toast.error(error instanceof Error && error.message ? error.message : 'Something went wrong.')
       }
     })
   }

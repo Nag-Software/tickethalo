@@ -63,7 +63,7 @@ describe('skjemaet i superadmin', () => {
     const { issues } = parseBookingSettings(fullForm({ offers_per_slot: 400 }))
     expect(issues).toHaveLength(1)
     expect(issues[0].key).toBe('offers_per_slot')
-    expect(issues[0].message).toContain('1 og 50')
+    expect(issues[0].message).toContain('between 1 and 50')
   })
 
   it('sier fra om tomme felt', () => {

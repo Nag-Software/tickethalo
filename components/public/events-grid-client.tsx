@@ -79,7 +79,7 @@ export function EventsGridClient({ shows, today }: Props) {
           .map((show) => show.clubCity?.trim())
           .filter((value): value is string => Boolean(value))
           // City names stay Norwegian, so they still sort by Norwegian rules.
-          .sort((a, b) => a.localeCompare(b, 'nb-NO'))
+          .sort((a, b) => a.localeCompare(b, 'en-GB'))
       ),
     ],
     [shows]

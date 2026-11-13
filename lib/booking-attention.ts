@@ -90,10 +90,10 @@ export type AttentionInput = {
 }
 
 const BLOCKER_TEXT: Record<RequirementBlocker, string> = {
-  role: 'rollen',
-  energy: 'energinivået',
-  gender: 'kjønnskravet',
-  skill: 'kravet til skill level',
+  role: 'the role',
+  energy: 'the energy level',
+  gender: 'the gender requirement',
+  skill: 'the skill level requirement',
 }
 
 /** Bookerens eget tilbud som holder setet lenger enn dette, er verdt et varsel. */
@@ -109,7 +109,7 @@ const LEVEL_ORDER: Record<AttentionLevel, number> = { critical: 0, warning: 1, f
 
 function spotLabel(req: AttentionRequirement): string {
   const open = req.quantity - req.filled
-  return req.quantity > 1 ? `${req.roleName} (${open} av ${req.quantity} ledig)` : req.roleName
+  return req.quantity > 1 ? `${req.roleName} (${open} of ${req.quantity} open)` : req.roleName
 }
 
 function daysBetweenDates(from: string, to: string): number {
@@ -163,8 +163,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
         add(
           'followup',
           'unreviewed',
-          `Showet er spilt, og ${show.unreviewedSpots} ${show.unreviewedSpots === 1 ? 'komiker' : 'komikere'} er ikke vurdert.`,
-          'Vurder lineupen',
+          `The show has been played, and ${show.unreviewedSpots} ${show.unreviewedSpots === 1 ? 'comedian has' : 'comedians have'} not been reviewed.`,
+          'Review the lineup',
         )
       }
       continue
@@ -177,8 +177,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
           'warning',
           'draft-late',
           daysToDeadline < 0
-            ? 'Utkastet er ikke startet, og lineup-fristen er passert.'
-            : `Utkastet er ikke startet, og lineup-fristen er om ${daysToDeadline} ${daysToDeadline === 1 ? 'dag' : 'dager'}.`,
+            ? 'The draft has not been started, and the lineup deadline has passed.'
+            : `The draft has not been started, and the lineup deadline is in ${daysToDeadline} ${daysToDeadline === 1 ? 'day' : 'days'}.`,
           'Start booking',
         )
       }
@@ -197,11 +197,11 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
         'critical',
         'published-open',
         isShowDay
-          ? 'Showet er i kveld, og en plass står tom. Systemet sender ikke tilbud på showdagen.'
+          ? 'The show is tonight, and a spot is empty. The system does not send offers on the day of the show.'
           : waitingOnBooker
-            ? 'Showet er publisert, men en komiker er tatt ut. Plassen står til dere velger hvem som fyller den.'
-            : 'Showet er publisert, men en plass har blitt ledig. Systemet fyller den igjen.',
-        isShowDay ? 'Ring noen, eller slett plassen' : 'Følg med, og oppdater plakaten',
+            ? 'The show is published, but a comedian has been removed. The spot stays open until you choose who fills it.'
+            : 'The show is published, but a spot has opened up. The system will fill it again.',
+        isShowDay ? 'Call someone, or delete the spot' : 'Keep an eye on it, and update the poster',
       )
     }
 
@@ -215,8 +215,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
         'critical',
         'not-started',
         idleSpots.length === show.requirements.length
-          ? 'Bookingen er ikke startet, så systemet sender ingen tilbud på dette showet.'
-          : `${idleSpots.length} ${idleSpots.length === 1 ? 'plass er' : 'plasser er'} ikke med i bookingen, og får ingen tilbud.`,
+          ? 'Booking has not been started, so the system is not sending any offers for this show.'
+          : `${idleSpots.length} ${idleSpots.length === 1 ? 'spot is' : 'spots are'} not part of the booking and won't get any offers.`,
         'Start booking',
       )
     }
@@ -230,8 +230,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       add(
         'warning',
         'rebook-paused',
-        `En komiker er tatt ut, og ${pausedSpots.length === 1 ? 'plassen venter' : `${pausedSpots.length} plasser venter`} på at dere velger. Systemet sender ingen tilbud før det.`,
-        'Velg selv eller auto-book',
+        `A comedian has been removed, and ${pausedSpots.length === 1 ? 'the spot is' : `${pausedSpots.length} spots are`} waiting for you to choose. The system won't send any offers until then.`,
+        'Pick yourself or auto-book',
         pausedSpots.length === 1 ? spotLabel(pausedSpots[0]) : null,
       )
     }
@@ -241,8 +241,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       add(
         'critical',
         'not-payable',
-        'Lineupen er full, men showet kan ikke publiseres før klubbens utbetalingsoppsett er ferdig.',
-        'Fullfør Økonomi',
+        'The lineup is full, but the show can\'t be published until the club\'s payout setup is complete.',
+        'Complete Finances',
         null,
         '/admin-app/finances',
       )
@@ -257,8 +257,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       add(
         'warning',
         'ready-to-publish',
-        'Lineupen er full, men showet er ikke publisert. Billettsalget åpner ikke før dere publiserer.',
-        'Se over og publiser',
+        'The lineup is full, but the show is not published. Ticket sales won\'t open until you publish.',
+        'Review and publish',
       )
     }
 
@@ -268,17 +268,17 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
         add(
           'critical',
           'deadline-passed',
-          `Lineup-fristen er passert, og ${openSpots.length} ${openSpots.length === 1 ? 'plass står' : 'plasser står'} tom.`,
-          'Fyll selv, eller slett plassen',
+          `The lineup deadline has passed, and ${openSpots.length} ${openSpots.length === 1 ? 'spot is' : 'spots are'} empty.`,
+          'Fill it yourself, or delete the spot',
         )
       } else if (daysToDeadline <= settings.rush_days) {
         add(
           'warning',
           'deadline-near',
           daysToDeadline === 0
-            ? `Lineup-fristen er i dag, og ${openSpots.length} ${openSpots.length === 1 ? 'plass står' : 'plasser står'} tom.`
-            : `Lineup-fristen er om ${daysToDeadline} ${daysToDeadline === 1 ? 'dag' : 'dager'}, og ${openSpots.length} ${openSpots.length === 1 ? 'plass står' : 'plasser står'} tom.`,
-          'Følg med, eller fyll selv',
+            ? `The lineup deadline is today, and ${openSpots.length} ${openSpots.length === 1 ? 'spot is' : 'spots are'} empty.`
+            : `The lineup deadline is in ${daysToDeadline} ${daysToDeadline === 1 ? 'day' : 'days'}, and ${openSpots.length} ${openSpots.length === 1 ? 'spot is' : 'spots are'} empty.`,
+          'Keep an eye on it, or fill it yourself',
         )
       }
     }
@@ -288,8 +288,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       add(
         'critical',
         'no-spots',
-        'Showet har ingen plasser i lineupen, og kan ikke publiseres.',
-        'Legg til minst én plass',
+        'The show has no spots in the lineup and can\'t be published.',
+        'Add at least one spot',
       )
     }
 
@@ -299,21 +299,21 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
 
       if (!req.submissionsOpen && req.matching === 0) {
         const hint = req.relaxable
-          ? ` ${req.relaxable.count} ${req.relaxable.count === 1 ? 'komiker passer' : 'komikere passer'} om ${BLOCKER_TEXT[req.relaxable.blocker]} lempes.`
+          ? ` ${req.relaxable.count} ${req.relaxable.count === 1 ? 'comedian fits' : 'comedians fit'} if ${BLOCKER_TEXT[req.relaxable.blocker]} is relaxed.`
           : ''
         add(
           'critical',
           `no-candidates-${req.id}`,
-          `Ingen på listen oppfyller kravene til plassen.${hint}`,
-          'Lemp kravet, hent komikere, eller åpne for søknader',
+          `No one on the list meets the requirements for this spot.${hint}`,
+          'Relax the requirement, add comedians, or open for submissions',
           label,
         )
       } else if (!req.submissionsOpen && req.available === 0 && req.pendingAuto === 0 && req.pendingManual === 0) {
         add(
           'critical',
           `exhausted-${req.id}`,
-          'Alle som oppfyller kravene har fått tilbud eller er tatt av showet, og ingen svar venter.',
-          'Lemp kravet, hent komikere, eller send tilbud selv',
+          'Everyone who meets the requirements has had an offer or been taken off the show, and no replies are pending.',
+          'Relax the requirement, add comedians, or send an offer yourself',
           label,
         )
       }
@@ -324,8 +324,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
           add(
             'warning',
             `manual-wait-${req.id}`,
-            `Ditt eget tilbud har ventet i ${Math.floor(waitedDays)} døgn og holder plassen.`,
-            'Trekk tilbudet, så tar systemet over',
+            `Your own offer has been waiting for ${Math.floor(waitedDays)} ${Math.floor(waitedDays) === 1 ? 'day' : 'days'} and is holding the spot.`,
+            'Withdraw the offer and the system takes over',
             label,
           )
         }
@@ -335,8 +335,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
         add(
           'warning',
           `declines-${req.id}`,
-          `${req.declined} har sagt nei til denne plassen.`,
-          'Sjekk honorar og krav',
+          `${req.declined} have declined this spot.`,
+          'Check the fee and requirements',
           label,
         )
       }
@@ -347,8 +347,8 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
       add(
         'followup',
         'submissions',
-        `${show.pendingSubmissions} ${show.pendingSubmissions === 1 ? 'søknad venter' : 'søknader venter'} på svar.`,
-        'Svar',
+        `${show.pendingSubmissions} ${show.pendingSubmissions === 1 ? 'submission is' : 'submissions are'} waiting for a reply.`,
+        'Reply',
         null,
         `/admin-app/shows/${show.id}?tab=submissions`,
       )
@@ -363,7 +363,7 @@ export function bookingAttention({ shows, settings, now = new Date() }: Attentio
 }
 
 export const ATTENTION_LEVEL_LABELS: Record<AttentionLevel, string> = {
-  critical: 'Kritisk',
-  warning: 'Advarsel',
-  followup: 'Oppfølging',
+  critical: 'Critical',
+  warning: 'Warning',
+  followup: 'Follow-up',
 }

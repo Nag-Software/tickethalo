@@ -15,10 +15,10 @@ export async function setBetaRequestStatusAction(formData: FormData) {
   const id = formData.get('id') as string
   const status = formData.get('status') as ClubBetaRequestStatus
 
-  if (!id) throw new Error('Mangler søknad.')
+  if (!id) throw new Error('Missing request.')
   // Statusen kommer fra en knapp i skjemaet, men check-constrainten i databasen
   // avviser bare med en rå Postgres-feil — vi stopper den her i stedet.
-  if (!STATUSES.includes(status)) throw new Error('Ugyldig status.')
+  if (!STATUSES.includes(status)) throw new Error('Invalid status.')
 
   const db = createAdminClient()
   const { error } = await db
@@ -26,7 +26,7 @@ export async function setBetaRequestStatusAction(formData: FormData) {
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
 
-  if (error) throw new Error('Kunne ikke oppdatere søknaden.')
+  if (error) throw new Error('Could not update the request.')
 
   revalidatePath('/superadmin/beta-requests')
   revalidatePath('/superadmin', 'layout')
@@ -38,7 +38,7 @@ export async function setBetaRequestStatusAction(formData: FormData) {
 export async function deleteBetaRequestAction(formData: FormData) {
   await assertSuperadmin()
   const id = formData.get('id') as string
-  if (!id) throw new Error('Mangler søknad.')
+  if (!id) throw new Error('Missing request.')
 
   const db = createAdminClient()
   await db.from('club_beta_requests').delete().eq('id', id)

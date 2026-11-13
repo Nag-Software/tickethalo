@@ -205,7 +205,7 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
   // felt. Eposten sier hva som mangler, og advarselen her sier det til oss.
   const recipient = clubInvoiceRecipient(club)
   if (!recipient.email) {
-    console.warn(`[ArtistFees] ${show.id}: klubben ${club.name} har ingen fakturaadresse`)
+    console.warn(`[ArtistFees] ${show.id}: club ${club.name} has no billing address`)
   }
 
   const { data: requirements } = await db
@@ -266,7 +266,7 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
 
         if (existing) {
           console.warn(
-            `[ArtistFees] ${show.id}/${fee.spotId}: honoraret er falt til 0 etter at ${existing.reference} gikk ut`,
+            `[ArtistFees] ${show.id}/${fee.spotId}: the fee dropped to 0 after ${existing.reference} expired`,
           )
         }
         continue
@@ -317,7 +317,7 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
     })
 
     if (!invoice) {
-      console.error(`[ArtistFees] ${show.id}/${fee.spotId}: kunne ikke opprette fakturagrunnlag`)
+      console.error(`[ArtistFees] ${show.id}/${fee.spotId}: could not create fee invoice basis`)
       continue
     }
 
@@ -356,7 +356,7 @@ async function settleShow(show: ShowRow): Promise<ShowFeeOutcome> {
 
   if (breakdown.overCommitted) {
     console.warn(
-      `[ArtistFees] ${show.id}: faste honorarer (${breakdown.total}) overstiger potten (${breakdown.pot})`,
+      `[ArtistFees] ${show.id}: fixed fees (${breakdown.total}) exceed the pot (${breakdown.pot})`,
     )
   }
 
@@ -610,15 +610,15 @@ export async function resendFeeInvoiceEmail({ invoiceId, clubId }: { invoiceId: 
     .maybeSingle()
 
   const invoice = invoiceRow as ArtistFeeInvoice | null
-  if (!invoice) throw new Error('Fant ikke fakturagrunnlaget.')
+  if (!invoice) throw new Error('Could not find the fee invoice basis.')
 
   const [{ data: artist }, { data: show }] = await Promise.all([
     db.from('artists').select('id, full_name, email').eq('id', invoice.artist_id).single(),
     db.from('shows').select('id, title, date').eq('id', invoice.show_id).single(),
   ])
 
-  if (!artist?.email) throw new Error('Komikeren har ingen e-postadresse.')
-  if (!show) throw new Error('Fant ikke showet.')
+  if (!artist?.email) throw new Error('The comedian has no email address.')
+  if (!show) throw new Error('Could not find the show.')
 
   const result = await sendArtistFeeEmail({
     email: artist.email,
@@ -632,7 +632,7 @@ export async function resendFeeInvoiceEmail({ invoiceId, clubId }: { invoiceId: 
 
   if (!result.success) {
     console.error(`[ArtistFees] resend ${invoice.reference}: ${result.error}`)
-    throw new Error('E-posten kunne ikke sendes. Prøv igjen om litt.')
+    throw new Error('The email could not be sent. Try again in a moment.')
   }
 
   const now = new Date().toISOString()

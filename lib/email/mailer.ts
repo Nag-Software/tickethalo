@@ -354,7 +354,7 @@ export type PurchasedTicket = {
  */
 /** «Billett 2 av 3 · Student». Typen står bare når den finnes. */
 export function ticketLabel(ticket: Pick<PurchasedTicket, 'typeName'>, index: number, count: number) {
-  const base = count > 1 ? `Billett ${index + 1} av ${count}` : 'Billett'
+  const base = count > 1 ? `Ticket ${index + 1} of ${count}` : 'Ticket'
   const type = ticket.typeName?.trim()
   return type ? `${base} · ${type}` : base
 }
@@ -377,8 +377,8 @@ export async function sendTicketPurchaseEmail(opts: {
 
   const many = tickets.length > 1
   const subject = many
-    ? `Billettene dine til ${opts.show_title} (${tickets.length})`
-    : `Din billett til ${opts.show_title}`
+    ? `Your tickets for ${opts.show_title} (${tickets.length})`
+    : `Your ticket for ${opts.show_title}`
 
   try {
     const attachments = await Promise.all(
@@ -398,10 +398,10 @@ export async function sendTicketPurchaseEmail(opts: {
 
     const displayName = escapeHtml(opts.buyer_name || opts.email)
     const showTitle = escapeHtml(opts.show_title || 'Tickethalo')
-    const dateLabel = showDateLabel(opts.show_date, 'nb-NO') || 'Dato kommer'
+    const dateLabel = showDateLabel(opts.show_date, 'en-GB') || 'Date to be announced'
     const showDate = escapeHtml(dateLabel)
-    const showTime = escapeHtml(opts.show_time || 'Tid kommer')
-    const venueName = escapeHtml(opts.venue_name || 'Sted kommer')
+    const showTime = escapeHtml(opts.show_time || 'Time to be announced')
+    const venueName = escapeHtml(opts.venue_name || 'Venue to be announced')
     const venueAddress = escapeHtml(opts.venue_address)
 
     const seller = opts.seller ?? null
@@ -418,17 +418,17 @@ export async function sendTicketPurchaseEmail(opts: {
     // gjelder der klubben er: unntatt i Norge, inkl. moms i Danmark og Sverige.
     const priceText = opts.free ? '' : `\n${vatNote}`
     const sellerText = sellerName
-      ? `\nSelger og arrangør: ${sellerLines.join(' · ')}\nBillett formidlet gjennom Tickethalo. Spørsmål om arrangementet rettes til arrangøren.${priceText}\n`
+      ? `\nSeller and organiser: ${sellerLines.join(' · ')}\nTicket sold through Tickethalo. Questions about the event should go to the organiser.${priceText}\n`
       : ''
 
     const sellerHtml = sellerName
       ? `
                 <div style="margin-top:26px;border-top:1px solid #e4e4e7;padding-top:18px">
-                  <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Selger og arrangør</div>
+                  <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Seller and organiser</div>
                   <div style="font-size:15px;font-weight:700;color:#18181b;margin-top:6px">${escapeHtml(sellerName)}</div>
                   ${seller?.org_number ? `<div style="font-size:13px;color:#52525b;margin-top:2px">${orgLabel} ${escapeHtml(seller.org_number)}</div>` : ''}
                   ${seller?.support_email ? `<div style="font-size:13px;color:#52525b;margin-top:2px"><a href="mailto:${escapeHtml(seller.support_email)}" style="color:#52525b">${escapeHtml(seller.support_email)}</a></div>` : ''}
-                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">Billetten er formidlet gjennom Tickethalo. Spørsmål om arrangementet${opts.free ? '' : ', ombooking og refusjon'} rettes til arrangøren.${opts.free ? '' : `<br />${escapeHtml(vatNote)}`}</p>
+                  <p style="margin:12px 0 0;color:#71717a;font-size:12px;line-height:1.6">This ticket was sold through Tickethalo. Questions about the event${opts.free ? '' : ', rebooking and refunds'} should go to the organiser.${opts.free ? '' : `<br />${escapeHtml(vatNote)}`}</p>
                 </div>`
       : ''
 
@@ -446,7 +446,7 @@ export async function sendTicketPurchaseEmail(opts: {
                         <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:20px;font-weight:700;letter-spacing:0.12em;color:#18181b;margin-top:8px;word-break:break-all">${escapeHtml(formatTicketCode(ticket.code))}</div>
                       </td>
                       <td style="width:150px;text-align:center;vertical-align:middle">
-                        <img src="cid:ticket-qr-${index + 1}" width="132" height="132" alt="QR-kode for billett" style="display:block;border:0;width:132px;height:132px;margin:0 auto" />
+                        <img src="cid:ticket-qr-${index + 1}" width="132" height="132" alt="Ticket QR code" style="display:block;border:0;width:132px;height:132px;margin:0 auto" />
                       </td>
                     </tr>
                   </table>
@@ -458,7 +458,7 @@ export async function sendTicketPurchaseEmail(opts: {
       .map((ticket, index) => {
         const holder = ticket.holderName?.trim() || opts.buyer_name || ''
         const label = ticketLabel(ticket, index, tickets.length)
-        return `${label}${holder ? ` — ${holder}` : ''}\nBillettkode: ${formatTicketCode(ticket.code)}\nQR-verifisering: ${ticket.verificationUrl}`
+        return `${label}${holder ? ` — ${holder}` : ''}\nTicket code: ${formatTicketCode(ticket.code)}\nQR verification: ${ticket.verificationUrl}`
       })
       .join('\n\n')
 
@@ -469,34 +469,34 @@ export async function sendTicketPurchaseEmail(opts: {
       replyTo: seller?.support_email?.trim() || REPLY_TO_EMAIL,
       subject,
       attachments,
-      text: `Hei ${opts.buyer_name || opts.email}\n\n${opts.free ? 'Du er på lista.' : 'Takk for kjøpet.'} ${many ? `Her er de ${tickets.length} billettene dine` : 'Dette er billetten din'} til ${opts.show_title}.\n\nDato: ${dateLabel}\nTid: ${opts.show_time || 'Tid kommer'}\nSted: ${opts.venue_name || 'Sted kommer'}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nVis QR-koden eller billettkoden i døren.\n${sellerText}`,
+      text: `Hi ${opts.buyer_name || opts.email}\n\n${opts.free ? 'You\'re on the list.' : 'Thanks for your purchase.'} ${many ? `Here are your ${tickets.length} tickets` : 'Here is your ticket'} for ${opts.show_title}.\n\nDate: ${dateLabel}\nTime: ${opts.show_time || 'Time to be announced'}\nVenue: ${opts.venue_name || 'Venue to be announced'}${opts.venue_address ? `, ${opts.venue_address}` : ''}\n\n${ticketText}\n\nShow the QR code or the ticket code at the door.\n${sellerText}`,
       html: `
         <div style="margin:0;background:#f4f4f5;padding:32px 12px;font-family:Inter,Arial,sans-serif;color:#18181b">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden">
             <tr>
               <td style="background:#111827;color:#ffffff;padding:28px 30px">
                 <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#a7f3d0;font-weight:700">Tickethalo</div>
-                <h1 style="margin:10px 0 0;font-size:30px;line-height:1.1;font-weight:800">${many ? `Billettene dine er klare` : 'Din billett er klar'}</h1>
-                <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hei ${displayName}, ${opts.free ? 'du er på lista' : 'betalingen er godkjent'}. Vis ${many ? 'QR-kodene' : 'QR-koden'} i døren.</p>
+                <h1 style="margin:10px 0 0;font-size:30px;line-height:1.1;font-weight:800">${many ? `Your tickets are ready` : 'Your ticket is ready'}</h1>
+                <p style="margin:10px 0 0;color:#d1d5db;font-size:15px;line-height:1.5">Hi ${displayName}, ${opts.free ? 'you\'re on the list' : 'your payment has been approved'}. Show the ${many ? 'QR codes' : 'QR code'} at the door.</p>
               </td>
             </tr>
             <tr>
               <td style="padding:30px">
-                <div style="font-size:13px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Arrangement</div>
+                <div style="font-size:13px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em">Event</div>
                 <h2 style="margin:8px 0 20px;font-size:26px;line-height:1.2;color:#18181b">${showTitle}</h2>
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
                     <td style="vertical-align:top;padding-right:18px">
-                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Dato</div>
+                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Date</div>
                       <div style="font-size:17px;font-weight:700;color:#18181b">${showDate}</div>
                     </td>
                     <td style="vertical-align:top;padding-right:18px">
-                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Tid</div>
+                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Time</div>
                       <div style="font-size:17px;font-weight:700;color:#18181b">${showTime}</div>
                     </td>
                     <td style="vertical-align:top">
-                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Sted</div>
+                      <div style="font-size:12px;color:#71717a;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Venue</div>
                       <div style="font-size:17px;font-weight:700;color:#18181b">${venueName}</div>
                       ${venueAddress ? `<div style="font-size:14px;color:#52525b;margin-top:2px">${venueAddress}</div>` : ''}
                     </td>
@@ -504,7 +504,7 @@ export async function sendTicketPurchaseEmail(opts: {
                 </table>
 ${ticketBlocks}
 
-                <p style="margin:22px 0 0;color:#52525b;font-size:14px;line-height:1.6">${many ? 'Hver billett har sin egen QR-kode og gjelder én person.' : 'QR-koden og billettkoden er personlige.'} Ta med denne e-posten til inngangen, så scanner vi ${many ? 'billettene' : 'billetten'} og bekrefter at ${many ? 'de' : 'den'} er gyldig${many ? 'e' : ''}.</p>
+                <p style="margin:22px 0 0;color:#52525b;font-size:14px;line-height:1.6">${many ? 'Each ticket has its own QR code and admits one person.' : 'The QR code and ticket code are personal.'} Bring this email to the entrance and we'll scan ${many ? 'the tickets' : 'the ticket'} and confirm ${many ? 'they are' : 'it is'} valid.</p>
 ${sellerHtml}
               </td>
             </tr>

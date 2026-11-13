@@ -58,7 +58,7 @@ describe('superadmin actions refuse everyone but a superadmin', () => {
   it('set artist status answers with an error and never touches the database', async () => {
     signIn('admin')
     const result = await setArtistStatusAction(form({ artist_id: 'a1', status: 'rejected' }))
-    expect(result).toEqual({ error: 'Bare superadmin har tilgang til dette.' })
+    expect(result).toEqual({ error: 'Only superadmins have access to this.' })
     expect(createAdminClient).not.toHaveBeenCalled()
   })
 })
@@ -67,7 +67,7 @@ describe('setArtistStatusAction', () => {
   it('only accepts the statuses moderation is meant to set', async () => {
     signIn('superadmin')
     for (const status of ['pending_review', 'flagged', 'owner', '']) {
-      expect(await setArtistStatusAction(form({ artist_id: 'a1', status }))).toEqual({ error: 'Ugyldig status.' })
+      expect(await setArtistStatusAction(form({ artist_id: 'a1', status }))).toEqual({ error: 'Invalid status.' })
     }
     expect(createAdminClient).not.toHaveBeenCalled()
   })
@@ -92,9 +92,9 @@ describe('updateClubCommissionAction', () => {
   it('answers with the validation error and never touches the database', async () => {
     signIn('superadmin')
     expect(await updateClubCommissionAction(form({ club_id: 'c1', commission_percent: '2' }))).toEqual({
-      error: 'Provisjonen må være mellom 5 og 30 %.',
+      error: 'The commission must be between 5 and 30%.',
     })
-    expect(await updateClubCommissionAction(form({ commission_percent: '7' }))).toEqual({ error: 'Mangler klubb.' })
+    expect(await updateClubCommissionAction(form({ commission_percent: '7' }))).toEqual({ error: 'Missing club.' })
     expect(createAdminClient).not.toHaveBeenCalled()
   })
 

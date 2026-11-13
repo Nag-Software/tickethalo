@@ -46,7 +46,7 @@ function money(amount: number, currency: string) {
   // med ørene, ellers fakturerer komikeren 143 og beløpskontrollen slår ut på
   // en differanse ingen har gjort. Runde beløp skrives fortsatt «2 500 kr».
   const digits = amount % 100 === 0 ? 0 : 2
-  return new Intl.NumberFormat('nb-NO', {
+  return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency,
     minimumFractionDigits: digits,

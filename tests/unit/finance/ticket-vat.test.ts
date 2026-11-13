@@ -55,9 +55,9 @@ describe('parseClubCountry', () => {
   })
 
   it('refuses missing and unsupported countries', () => {
-    expect(parseClubCountry('')).toEqual({ error: 'Land er påkrevd.' })
-    expect(parseClubCountry(null)).toEqual({ error: 'Land er påkrevd.' })
-    expect(parseClubCountry('DE')).toEqual({ error: 'Landet støttes ikke ennå.' })
+    expect(parseClubCountry('')).toEqual({ error: 'Country is required.' })
+    expect(parseClubCountry(null)).toEqual({ error: 'Country is required.' })
+    expect(parseClubCountry('DE')).toEqual({ error: 'That country is not supported yet.' })
   })
 })
 
@@ -70,10 +70,10 @@ describe('parseVatPercent', () => {
   })
 
   it('refuses an empty, non-numeric or out-of-range value', () => {
-    expect(parseVatPercent('')).toEqual({ error: 'Momssats er påkrevd. Skriv 0 når billettene er momsfrie.' })
-    expect(parseVatPercent('moms')).toEqual({ error: 'Momssatsen må være et tall.' })
-    expect(parseVatPercent('-1')).toEqual({ error: 'Momssatsen må være mellom 0 og 30 %.' })
-    expect(parseVatPercent('31')).toEqual({ error: 'Momssatsen må være mellom 0 og 30 %.' })
+    expect(parseVatPercent('')).toEqual({ error: 'VAT rate is required. Enter 0 if the tickets are VAT-exempt.' })
+    expect(parseVatPercent('moms')).toEqual({ error: 'The VAT rate must be a number.' })
+    expect(parseVatPercent('-1')).toEqual({ error: 'The VAT rate must be between 0 and 30%.' })
+    expect(parseVatPercent('31')).toEqual({ error: 'The VAT rate must be between 0 and 30%.' })
   })
 
   it('round-trips through the form value', () => {
@@ -86,20 +86,25 @@ describe('parseVatPercent', () => {
 
 describe('receipt wording', () => {
   it('keeps the Norwegian exemption with its legal basis for clubs without VAT', () => {
-    expect(receiptVatNote({ ticket_vat_bps: 0 })).toContain('mval. § 3-7')
-    expect(receiptVatNote({})).toContain('uten merverdiavgift')
+    expect(receiptVatNote({ ticket_vat_bps: 0 })).toContain('(Norwegian VAT Act § 3-7)')
+    expect(receiptVatNote({})).toContain('No VAT is added')
     expect(receiptVatNote({ ticket_vat_bps: null }, 'en')).toContain('No VAT is added')
+    expect(receiptVatNote({ ticket_vat_bps: 0 }, 'nb')).toContain('mval. § 3-7')
+    expect(receiptVatNote({}, 'nb')).toContain('uten merverdiavgift')
   })
 
   it('states the VAT included in the price for Danish and Swedish clubs', () => {
-    expect(receiptVatNote({ ticket_vat_bps: 2500 })).toBe('Billettprisen er inkl. 25 % moms.')
+    expect(receiptVatNote({ ticket_vat_bps: 2500 })).toBe('The ticket price includes 25% VAT.')
     expect(receiptVatNote({ ticket_vat_bps: 600 }, 'en')).toBe('The ticket price includes 6% VAT.')
+    expect(receiptVatNote({ ticket_vat_bps: 2500 }, 'nb')).toBe('Billettprisen er inkl. 25 % moms.')
   })
 
   it("calls the registration number what it is called in the seller's country", () => {
     expect(orgNumberLabel('DK')).toBe('CVR-nr')
-    expect(orgNumberLabel('NO')).toBe('Org.nr')
+    expect(orgNumberLabel('NO')).toBe('Org. no.')
     expect(orgNumberLabel('SE', 'en')).toBe('Org. no.')
-    expect(orgNumberLabel(null)).toBe('Org.nr')
+    expect(orgNumberLabel(null)).toBe('Org. no.')
+    expect(orgNumberLabel('NO', 'nb')).toBe('Org.nr')
+    expect(orgNumberLabel('DK', 'nb')).toBe('CVR-nr')
   })
 })

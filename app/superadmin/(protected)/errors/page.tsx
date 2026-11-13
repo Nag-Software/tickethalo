@@ -8,22 +8,22 @@ import { Button } from '@/components/ui/button'
 import type { AppError } from '@/types/database'
 import { resolveAllErrorsAction, resolveErrorAction } from './actions'
 
-export const metadata = { title: 'Feil — Superadmin' }
+export const metadata = { title: 'Errors — Superadmin' }
 
 /** Nok til å se et mønster; eldre feil er historikk, ikke arbeid. */
 const UNRESOLVED_LIMIT = 200
 const RESOLVED_LIMIT = 50
 
 const SCOPE_LABELS: Record<string, string> = {
-  checkout: 'Kjøp',
-  free_tickets: 'Gratisbilletter',
-  ticket_email: 'Billettepost',
-  stripe_webhook: 'Stripe-webhook',
+  checkout: 'Checkout',
+  free_tickets: 'Free tickets',
+  ticket_email: 'Ticket email',
+  stripe_webhook: 'Stripe webhook',
   cron: 'Cron',
 }
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleString('nb-NO', {
+  return new Date(value).toLocaleString('en-GB', {
     timeZone: 'Europe/Oslo',
     day: '2-digit',
     month: 'short',
@@ -53,39 +53,39 @@ export default async function ErrorsPage() {
   return (
     <div>
       <AdminHeader
-        title="Feil"
-        description="Det appen ikke fikk til: kjøp, billettepost, Stripe-webhook og cron"
+        title="Errors"
+        description="What the app couldn't do: checkout, ticket email, Stripe webhook and cron"
       />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-8 p-6">
         <Section
-          title={`Venter (${unresolved.length}${unresolved.length === UNRESOLVED_LIMIT ? '+' : ''})`}
-          description="Hver rad er noe som gikk galt for en kunde, en klubb eller en jobb. Kvitter ut når du har sett på den."
+          title={`Open (${unresolved.length}${unresolved.length === UNRESOLVED_LIMIT ? '+' : ''})`}
+          description="Each row is something that went wrong for a customer, a club or a job. Resolve it once you've looked at it."
           actions={
             unresolved.length > 0 ? (
               <ConfirmActionButton
                 action={resolveAllErrorsAction}
                 fields={{}}
-                confirmMessage={`Kvittere ut alle ${unresolved.length} feilene?`}
-                successMessage="Alle feil er kvittert ut."
+                confirmMessage={`Resolve all ${unresolved.length} errors?`}
+                successMessage="All errors resolved."
                 variant="outline"
                 size="sm"
               >
                 <Check className="size-4" />
-                Kvitter ut alle
+                Resolve all
               </ConfirmActionButton>
             ) : null
           }
         >
           {unresolved.length === 0 ? (
-            <EmptyState icon={AlertTriangle}>Ingen feil venter.</EmptyState>
+            <EmptyState icon={AlertTriangle}>No open errors.</EmptyState>
           ) : (
             <ErrorList errors={unresolved} resolvable />
           )}
         </Section>
 
         {resolved.length > 0 && (
-          <Section title="Kvittert ut" description={`De ${RESOLVED_LIMIT} siste.`}>
+          <Section title="Resolved" description={`The last ${RESOLVED_LIMIT}.`}>
             <ErrorList errors={resolved} />
           </Section>
         )}
@@ -108,7 +108,7 @@ function ErrorList({ errors, resolvable = false }: { errors: AppError[]; resolva
                     vises som ett tidspunkt. */}
                 <span className="text-xs tabular-nums text-muted-foreground">
                   {row.occurrences > 1
-                    ? `${row.occurrences} ganger · første ${formatTime(row.created_at)} · siste ${formatTime(row.last_seen_at)}`
+                    ? `${row.occurrences} times · first ${formatTime(row.created_at)} · last ${formatTime(row.last_seen_at)}`
                     : formatTime(row.created_at)}
                 </span>
               </div>
@@ -131,11 +131,11 @@ function ErrorList({ errors, resolvable = false }: { errors: AppError[]; resolva
               )}
             </div>
             {resolvable && (
-              <ToastActionForm action={resolveErrorAction} successMessage="Kvittert ut." className="shrink-0">
+              <ToastActionForm action={resolveErrorAction} successMessage="Resolved." className="shrink-0">
                 <input type="hidden" name="error_id" value={row.id} />
-                <Button type="submit" variant="ghost" size="sm" aria-label="Kvitter ut">
+                <Button type="submit" variant="ghost" size="sm" aria-label="Resolve">
                   <Check className="size-4" />
-                  Sett
+                  Seen
                 </Button>
               </ToastActionForm>
             )}

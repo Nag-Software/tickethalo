@@ -9,7 +9,7 @@ import { getAuthUser } from '@/lib/session'
 export async function resolveErrorAction(formData: FormData) {
   await assertSuperadmin()
   const id = String(formData.get('error_id') ?? '')
-  if (!id) return { error: 'Mangler feil.' }
+  if (!id) return { error: 'Missing error.' }
 
   const user = await getAuthUser()
   const { error } = await createAdminClient()
@@ -18,7 +18,7 @@ export async function resolveErrorAction(formData: FormData) {
     .eq('id', id)
     .is('resolved_at', null)
 
-  if (error) return { error: 'Kunne ikke kvittere ut feilen.' }
+  if (error) return { error: 'Could not resolve the error.' }
   revalidatePath('/superadmin/errors')
   revalidatePath('/superadmin', 'layout')
 }
@@ -32,7 +32,7 @@ export async function resolveAllErrorsAction() {
     .update({ resolved_at: new Date().toISOString(), resolved_by: user?.id ?? null })
     .is('resolved_at', null)
 
-  if (error) return { error: 'Kunne ikke kvittere ut feilene.' }
+  if (error) return { error: 'Could not resolve the errors.' }
   revalidatePath('/superadmin/errors')
   revalidatePath('/superadmin', 'layout')
 }

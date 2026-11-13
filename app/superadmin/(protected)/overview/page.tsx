@@ -7,7 +7,7 @@ import { describeClubReadiness } from '@/lib/stripe-connect'
 import { getOsloToday } from '@/lib/event-filters'
 import type { ShowStatus } from '@/types/database'
 
-export const metadata = { title: 'Oversikt — Superadmin' }
+export const metadata = { title: 'Overview — Superadmin' }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -74,33 +74,33 @@ export default async function SuperadminOverviewPage() {
     ...((newBetaRequests ?? 0) > 0
       ? [{
         key: 'beta',
-        text: `${newBetaRequests} ${newBetaRequests === 1 ? 'ny betasøknad' : 'nye betasøknader'} venter på svar`,
+        text: `${newBetaRequests} ${newBetaRequests === 1 ? 'new beta request' : 'new beta requests'} awaiting a reply`,
         href: '/superadmin/beta-requests',
       }]
       : []),
     ...notReady.map((club) => ({
       key: `ready-${club.id}`,
-      text: `${club.name} kan ikke selge billetter`,
+      text: `${club.name} can't sell tickets`,
       detail: describeClubReadiness(club).filter((item) => !item.done).map((item) => item.label).join(' · '),
       href: `/superadmin/clubs/${club.id}`,
     })),
     ...withoutAdmins.map((club) => ({
       key: `admins-${club.id}`,
-      text: `${club.name} har ingen admin`,
-      detail: 'Ingen kan logge inn og drive klubben.',
+      text: `${club.name} has no admin`,
+      detail: 'Nobody can sign in and run the club.',
       href: `/superadmin/clubs/${club.id}`,
     })),
     ...awaitingPublish.map((show) => ({
       key: `publish-${show.id}`,
-      text: `«${show.title}» har full lineup, men er ikke publisert`,
-      detail: `${clubById.get(show.club_id ?? '')?.name ?? 'Uten klubb'} · ${formatDate(show.date)}`,
+      text: `“${show.title}” has a full lineup but isn't published`,
+      detail: `${clubById.get(show.club_id ?? '')?.name ?? 'No club'} · ${formatDate(show.date)}`,
       href: show.club_id ? `/superadmin/clubs/${show.club_id}` : '/superadmin/clubs',
     })),
     ...((failedEmails ?? []).length > 0
       ? [{
         key: 'emails',
-        text: `${failedEmails!.length}${failedEmails!.length === 5 ? '+' : ''} e-poster feilet siste 7 dager`,
-        detail: `Sist: ${failedEmails![0].template_name ?? 'ukjent mal'} til ${failedEmails![0].recipient_email} — ${failedEmails![0].error_message ?? 'ukjent feil'}`,
+        text: `${failedEmails!.length}${failedEmails!.length === 5 ? '+' : ''} emails failed in the last 7 days`,
+        detail: `Latest: ${failedEmails![0].template_name ?? 'unknown template'} to ${failedEmails![0].recipient_email} — ${failedEmails![0].error_message ?? 'unknown error'}`,
         href: '/superadmin/overview#epost',
       }]
       : []),
@@ -108,14 +108,14 @@ export default async function SuperadminOverviewPage() {
 
   return (
     <div>
-      <AdminHeader title="Oversikt" description="Hva står til på plattformen, og hva venter på noen" />
+      <AdminHeader title="Overview" description="How the platform is doing, and what is waiting on someone" />
 
       <div className="mx-auto flex max-w-6xl flex-col gap-8 p-6">
-        <Section title="Trenger oppmerksomhet">
+        <Section title="Needs attention">
           {alerts.length === 0 ? (
             <div className="flex items-center gap-2.5 rounded-xl border bg-card px-4 py-3.5 text-sm text-muted-foreground">
               <CheckCircle2 className="size-4 text-emerald-600" />
-              Ingenting venter. Alle klubber kan selge, og ingen søknader ligger ubehandlet.
+              Nothing is waiting. Every club can sell, and no requests are unhandled.
             </div>
           ) : (
             <ul className="divide-y overflow-hidden rounded-xl border bg-card">
@@ -135,38 +135,38 @@ export default async function SuperadminOverviewPage() {
           )}
         </Section>
 
-        <Section title="Plattformen nå">
+        <Section title="Platform right now">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard
-              label="Klubber"
+              label="Clubs"
               value={String((clubs ?? []).length)}
-              detail={`${(clubs ?? []).length - notReady.length} klare for salg`}
+              detail={`${(clubs ?? []).length - notReady.length} ready to sell`}
             />
-            <MetricCard label="Komikere" value={String(approvedArtists ?? 0)} detail="Godkjent og aktive" />
+            <MetricCard label="Comedians" value={String(approvedArtists ?? 0)} detail="Approved and active" />
             <MetricCard
-              label="Kommende show"
+              label="Upcoming shows"
               value={String((upcomingShows ?? []).length)}
-              detail={`${(upcomingShows ?? []).filter((show) => show.status === 'published').length} publisert`}
+              detail={`${(upcomingShows ?? []).filter((show) => show.status === 'published').length} published`}
             />
             <MetricCard
-              label="Omsetning siste 30 dager"
+              label="Revenue last 30 days"
               value={formatNok(revenue)}
-              detail={`${(recentOrders ?? []).length} betalte ordrer`}
+              detail={`${(recentOrders ?? []).length} paid ${(recentOrders ?? []).length === 1 ? 'order' : 'orders'}`}
             />
           </div>
         </Section>
 
-        <Section title="Neste show" description="De ti neste showene på tvers av klubbene.">
+        <Section title="Next shows" description="The next ten shows across all clubs.">
           {(upcomingShows ?? []).length === 0 ? (
-            <p className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Ingen kommende show.</p>
+            <p className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">No upcoming shows.</p>
           ) : (
             <div className="overflow-hidden rounded-xl border bg-card">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
                     <th className="px-4 py-2.5 font-medium">Show</th>
-                    <th className="px-4 py-2.5 font-medium">Klubb</th>
-                    <th className="px-4 py-2.5 font-medium">Dato</th>
+                    <th className="px-4 py-2.5 font-medium">Club</th>
+                    <th className="px-4 py-2.5 font-medium">Date</th>
                     <th className="px-4 py-2.5 text-right font-medium">Status</th>
                   </tr>
                 </thead>
@@ -196,16 +196,16 @@ export default async function SuperadminOverviewPage() {
 
         {(failedEmails ?? []).length > 0 && (
           <div id="epost" className="scroll-mt-6">
-            <Section title="E-poster som feilet" description="Siste 7 dager. Hele loggen ligger i tabellen email_logs.">
+            <Section title="Failed emails" description="Last 7 days. The full log is in the email_logs table.">
               <ul className="divide-y overflow-hidden rounded-xl border bg-card text-sm">
                 {failedEmails!.map((email) => (
                   <li key={email.id} className="px-4 py-2.5">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-                      <span className="font-medium">{email.template_name ?? 'Ukjent mal'}</span>
+                      <span className="font-medium">{email.template_name ?? 'Unknown template'}</span>
                       <span className="text-xs text-muted-foreground">{formatDate(email.created_at)}</span>
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      {email.recipient_email} — {email.error_message ?? 'ukjent feil'}
+                      {email.recipient_email} — {email.error_message ?? 'unknown error'}
                     </p>
                   </li>
                 ))}

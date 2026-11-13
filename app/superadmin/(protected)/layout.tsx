@@ -33,7 +33,7 @@ export default async function SuperadminProtectedLayout({ children }: { children
   ])
 
   return (
-    <div lang="nb" className="admin-app-shell">
+    <div lang="en" className="admin-app-shell">
       <SidebarProvider>
         <SuperadminSidebar
           email={profile.email ?? user.email ?? ''}

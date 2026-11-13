@@ -33,7 +33,7 @@ export function formatMoney(amount: number | null | undefined, currency = 'NOK')
   // skal fakturere, og portalen må vise det samme som e-posten.
   const value = amount ?? 0
   const digits = value % 100 === 0 ? 0 : 2
-  return new Intl.NumberFormat('nb-NO', {
+  return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency,
     minimumFractionDigits: digits,

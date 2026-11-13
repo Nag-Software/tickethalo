@@ -1266,7 +1266,7 @@ export async function removeSpotAndReopenAction(formData: FormData) {
       showId,
       clubId: show?.club_id ?? null,
       rating: 'no_show',
-      notes: 'Avlyste plassen.',
+      notes: 'Cancelled the spot.',
       reviewedBy: await currentProfileId(),
     })
   }

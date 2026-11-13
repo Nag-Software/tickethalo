@@ -61,7 +61,7 @@ export async function publishShow(showId: string) {
     return {
       published: false,
       reason: 'requirements_not_filled' as const,
-      message: `Krav "${open.role_name}" er ikke fylt (${open.filled}/${open.quantity})`,
+      message: `Requirement "${open.role_name}" is not filled (${open.filled}/${open.quantity})`,
     }
   }
 
@@ -84,7 +84,7 @@ export async function publishShow(showId: string) {
     return {
       published: false,
       reason: 'club_not_payable' as const,
-      message: `Klubben mangler: ${missingReadinessLabels(club).join(', ')}`,
+      message: `The club is missing: ${missingReadinessLabels(club).join(', ')}`,
     }
   }
 
@@ -179,20 +179,20 @@ export async function publishShow(showId: string) {
   if (!publishedRows?.length) {
     // Statusen endret seg under oss — avlyst eller spilt. Ingenting ble
     // publisert, og da skal svaret ikke si at det ble det.
-    return { published: false, reason: 'publish_rejected' as const, message: 'Showet kan ikke publiseres fra statusen det har nå.' }
+    return { published: false, reason: 'publish_rejected' as const, message: 'The show can\'t be published from its current status.' }
   }
 
   // Markedsføringsoppgavene hører til publiseringen, ikke til hvilken vei
   // siste plass ble fylt. Et show bookeren fylte ved å legge komikere rett
   // inn i lineupen fikk før ingen oppgaver i det hele tatt.
   await admin.from('marketing_tasks').upsert([
-    { show_id: showId, task_key: 'publish_event_page', label: 'Publiser event-side', is_completed: true },
-    { show_id: showId, task_key: 'activate_ticket_sales', label: 'Aktiver billettsalg', is_completed: false },
-    { show_id: showId, task_key: 'upload_poster', label: 'Plakat på plass', is_completed: Boolean(posterUrl) },
-    { show_id: showId, task_key: 'create_facebook_event', label: 'Opprett Facebook-event', is_completed: false },
-    { show_id: showId, task_key: 'share_facebook_groups', label: 'Del i Facebook-grupper', is_completed: false },
-    { show_id: showId, task_key: 'send_calendar_partners', label: 'Send til kalenderpartnere', is_completed: false },
-    { show_id: showId, task_key: 'schedule_email', label: 'Planlegg e-postkampanje', is_completed: false },
+    { show_id: showId, task_key: 'publish_event_page', label: 'Publish event page', is_completed: true },
+    { show_id: showId, task_key: 'activate_ticket_sales', label: 'Activate ticket sales', is_completed: false },
+    { show_id: showId, task_key: 'upload_poster', label: 'Poster in place', is_completed: Boolean(posterUrl) },
+    { show_id: showId, task_key: 'create_facebook_event', label: 'Create Facebook event', is_completed: false },
+    { show_id: showId, task_key: 'share_facebook_groups', label: 'Share in Facebook groups', is_completed: false },
+    { show_id: showId, task_key: 'send_calendar_partners', label: 'Send to calendar partners', is_completed: false },
+    { show_id: showId, task_key: 'schedule_email', label: 'Schedule email campaign', is_completed: false },
   ], { onConflict: 'show_id,task_key', ignoreDuplicates: true })
 
   // Fylles siste plass av et ja, har `accept_booking_offer` allerede seedet

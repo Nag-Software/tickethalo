@@ -35,8 +35,8 @@ describe('artist portal presentation', () => {
   })
 
   it('formats whole and fractional minor-unit money', () => {
-    expect(formatMoney(100_000, 'NOK')).toMatch(/1[\s ]000/)
-    expect(formatMoney(14_328, 'NOK')).toMatch(/143,28/)
+    expect(formatMoney(100_000, 'NOK')).toMatch(/1,000/)
+    expect(formatMoney(14_328, 'NOK')).toMatch(/143\.28/)
   })
 
   it('treats a missing amount as zero', () => {
