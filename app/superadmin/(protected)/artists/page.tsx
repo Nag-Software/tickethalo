@@ -160,7 +160,9 @@ export default async function SuperadminArtistsPage({
                             <AvatarFallback className="text-xs">{name.charAt(0).toUpperCase() || '?'}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <p className="truncate font-medium">{name}</p>
+                            <Link href={`/superadmin/artists/${artist.id}`} className="block truncate font-medium hover:underline">
+                              {name}
+                            </Link>
                             <p className="truncate text-xs text-muted-foreground">{artist.email}</p>
                           </div>
                         </div>
@@ -182,7 +184,13 @@ export default async function SuperadminArtistsPage({
                           upcomingBookings={bookingsByArtist.get(artist.id) ?? 0}
                         />
                       </td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        <Link
+                          href={`/superadmin/artists/${artist.id}`}
+                          className="mr-3 text-xs font-medium hover:underline"
+                        >
+                          Rediger
+                        </Link>
                         <Link
                           href={`/admin-app/artists/${artist.id}`}
                           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
