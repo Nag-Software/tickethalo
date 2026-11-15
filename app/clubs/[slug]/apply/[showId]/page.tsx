@@ -10,12 +10,12 @@ import { formatShowDate, formatShowTime } from '@/lib/public-show-format'
 import {
   getClubOpenCalls,
   getOpenCallStateForArtist,
+  lineupSummary,
   submissionStatusLabel,
-  type OpenCallSpot,
-  type OpenCallSpotState,
+  type OpenCallState,
 } from '@/lib/open-spots'
 import { getOpenCallViewer } from '@/lib/open-call-viewer'
-import { applyForSpotAction } from '@/app/artist-app/open-spots/actions'
+import { applyForShowAction } from '@/app/artist-app/open-spots/actions'
 
 /**
  * Ett show fra «Apply for a spot» på klubbsiden: det en komiker trenger for
@@ -62,13 +62,7 @@ export default async function ApplyForShowPage({ params }: Props) {
   if (!loaded) notFound()
 
   const { club, call, kind, viewer } = loaded
-  const states = viewer ? await getOpenCallStateForArtist(call, viewer) : null
-
-  // Samme sperre gjelder hver plass (profilen, opptatt dag, allerede booket),
-  // så den står én gang over listen i stedet for på hver rad.
-  const blocker = states
-    ? [...states.values()].find((state): state is Extract<OpenCallSpotState, { kind: 'blocked' }> => state.kind === 'blocked')?.reason ?? null
-    : null
+  const state = viewer ? await getOpenCallStateForArtist(call, viewer) : null
 
   // Innloggingen godtar bare stier under /artist-app, så komikeren lander
   // på «Open spots» med dette showet øverst — der knappen er den samme.
@@ -141,33 +135,35 @@ export default async function ApplyForShowPage({ params }: Props) {
         <section aria-labelledby="spots-heading">
           <div className="mb-4 flex items-baseline justify-between gap-4 border-b border-[var(--ev-line-strong)] pb-3">
             <h2 id="spots-heading" className="text-2xl font-medium tracking-[-0.01em]">
-              {call.spots.length === 1 ? 'The spot' : 'The spots'}
+              The line-up
             </h2>
             {call.waitlistOnly && (
               <span className="text-[15px] text-[var(--ev-faint)] sm:text-[13px]">Line-up is full</span>
             )}
           </div>
 
-          {kind === 'artist' && blocker && (
-            <p
-              className="mb-4 border border-dashed border-[var(--ev-line-strong)] p-4 text-[15px] text-[var(--ev-muted)]"
-              style={{ borderRadius: 'var(--ev-r-card)' }}
-            >
-              {blocker}
-            </p>
-          )}
-
-          <ul className="flex flex-col gap-3">
-            {call.spots.map((spot) => (
-              <SpotCard key={spot.requirementId} spot={spot} state={states?.get(spot.requirementId) ?? null} />
+          <ul className="flex flex-col gap-2">
+            {lineupSummary(call.spots).map((role) => (
+              <li
+                key={`${role.roleName}|${role.feeLabel}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 bg-[var(--ev-card)] px-4 py-3 sm:px-5"
+                style={{ borderRadius: 'var(--ev-r-card)' }}
+              >
+                <span className="text-[17px] font-semibold">{role.roleName}</span>
+                <span className="text-[15px] text-[var(--ev-faint)] sm:text-[14px]">
+                  {[role.feeLabel, availability(role)].filter(Boolean).join(' · ')}
+                </span>
+              </li>
             ))}
           </ul>
 
-          {call.waitlistOnly && (
-            <p className="mt-4 text-[15px] leading-relaxed text-[var(--ev-muted)]">
-              Every spot is booked. Join the waitlist and the club sees your application first if someone drops out.
-            </p>
-          )}
+          <p className="mt-4 text-[15px] leading-relaxed text-[var(--ev-muted)]">
+            {call.waitlistOnly
+              ? 'Every spot is booked. Join the waitlist and the club sees your application first if someone drops out.'
+              : 'You apply for the show, not a single spot. The club picks the spot that fits you.'}
+          </p>
+
+          {kind === 'artist' && state && <ApplyBox state={state} showId={call.showId} waitlist={call.waitlistOnly} />}
         </section>
 
         {kind !== 'artist' && (
@@ -222,54 +218,56 @@ export default async function ApplyForShowPage({ params }: Props) {
   )
 }
 
-function availability(spot: OpenCallSpot) {
-  if (spot.waitlist) return 'Full — waitlist open'
-  if (spot.quantity === 1) return '1 spot open'
-  return spot.spotsLeft < spot.quantity
-    ? `${spot.spotsLeft} of ${spot.quantity} spots open`
-    : `${spot.quantity} spots open`
+function availability(role: { quantity: number; spotsLeft: number }) {
+  if (role.spotsLeft === 0) return 'Full'
+  if (role.quantity === 1) return '1 spot open'
+  return role.spotsLeft < role.quantity
+    ? `${role.spotsLeft} of ${role.quantity} spots open`
+    : `${role.quantity} spots open`
 }
 
-function SpotCard({ spot, state }: { spot: OpenCallSpot; state: OpenCallSpotState | null }) {
-  return (
-    <li
-      className="flex flex-col gap-3 bg-[var(--ev-card)] p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5"
-      style={{ borderRadius: 'var(--ev-r-card)' }}
-    >
-      <div className="min-w-0 flex-1">
-        <p className="text-[17px] font-semibold">{spot.roleName}</p>
-        <p className="text-[15px] text-[var(--ev-faint)] sm:text-[14px]">
-          {[spot.feeLabel, availability(spot)].filter(Boolean).join(' · ')}
-        </p>
+function ApplyBox({ state, showId, waitlist }: { state: OpenCallState; showId: string; waitlist: boolean }) {
+  if (state.kind === 'blocked') {
+    return (
+      <p
+        className="mt-4 border border-dashed border-[var(--ev-line-strong)] p-4 text-[15px] text-[var(--ev-muted)]"
+        style={{ borderRadius: 'var(--ev-r-card)' }}
+      >
+        {state.reason}
+      </p>
+    )
+  }
+
+  if (state.kind === 'applied') {
+    return (
+      <div
+        className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-[var(--ev-card)] p-4 sm:p-5"
+        style={{ borderRadius: 'var(--ev-r-card)' }}
+      >
+        <span className="text-[15px] font-medium">{submissionStatusLabel(state.status, waitlist)}</span>
+        <Link
+          href={`/artist-app/open-spots/${state.submissionId}`}
+          className="text-[15px] text-[var(--ev-muted)] underline underline-offset-[3px] hover:text-[var(--ev-text)] sm:text-[13px]"
+        >
+          Your application
+        </Link>
       </div>
+    )
+  }
 
-      {state?.kind === 'apply' && (
-        <form action={applyForSpotAction} className="shrink-0">
-          <input type="hidden" name="requirement_id" value={spot.requirementId} />
-          <button
-            type="submit"
-            className={
-              spot.waitlist
-                ? 'inline-flex h-11 w-full items-center justify-center rounded-full px-5 text-[16px] font-semibold ring-1 ring-[var(--ev-line-strong)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:w-auto'
-                : 'inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--ev-accent-fill)] px-5 text-[16px] font-semibold text-[var(--ev-accent-ink)] transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:w-auto'
-            }
-          >
-            {spot.waitlist ? 'Join the waitlist' : 'Apply'}
-          </button>
-        </form>
-      )}
-
-      {state?.kind === 'applied' && (
-        <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end sm:gap-1">
-          <span className="text-[15px] font-medium">{submissionStatusLabel(state.status, spot.waitlist)}</span>
-          <Link
-            href={`/artist-app/open-spots/${state.submissionId}`}
-            className="text-[15px] text-[var(--ev-muted)] underline underline-offset-[3px] hover:text-[var(--ev-text)] sm:text-[13px]"
-          >
-            Your application
-          </Link>
-        </div>
-      )}
-    </li>
+  return (
+    <form action={applyForShowAction} className="mt-4">
+      <input type="hidden" name="show_id" value={showId} />
+      <button
+        type="submit"
+        className={
+          waitlist
+            ? 'inline-flex h-12 w-full items-center justify-center rounded-full px-6 text-[17px] font-semibold ring-1 ring-[var(--ev-line-strong)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:w-auto'
+            : 'inline-flex h-12 w-full items-center justify-center rounded-full bg-[var(--ev-accent-fill)] px-6 text-[17px] font-semibold text-[var(--ev-accent-ink)] transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] sm:w-auto'
+        }
+      >
+        {waitlist ? 'Join the waitlist' : 'Apply for this show'}
+      </button>
+    </form>
   )
 }

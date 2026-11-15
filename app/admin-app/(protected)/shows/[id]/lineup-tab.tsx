@@ -195,7 +195,7 @@ export function LineupTab({
   submissionsAudience,
   submissionsCloseAt,
   rosterSize,
-  pendingByRequirement,
+  pendingSubmissionTotal,
   removedArtistIds,
 }: {
   showId: string
@@ -216,7 +216,7 @@ export function LineupTab({
   submissionsAudience: SubmissionsAudience
   submissionsCloseAt: string | null
   rosterSize: number
-  pendingByRequirement: Record<string, number>
+  pendingSubmissionTotal: number
   /**
    * Komikere bookeren har tatt av showet. Motoren spør dem ikke igjen, men
    * bookeren kan fortsatt velge dem for hånd — da står det hvorfor.
@@ -685,8 +685,6 @@ export function LineupTab({
   const offerableArtists = selectableArtists.filter(a => !pendingOfferArtistIds.has(a.id))
   const removedArtists = new Set(removedArtistIds)
 
-  const pendingSubmissionTotal = Object.values(pendingByRequirement).reduce((sum, count) => sum + count, 0)
-
   return (
     <div className="space-y-3">
       {/* Søknadsinnstillingene hører hjemme her også — det er denne fanen
@@ -766,7 +764,6 @@ export function LineupTab({
                 showId={showId}
                 reqId={req.id}
                 open={req.submissions_open}
-                pendingCount={pendingByRequirement[req.id] ?? 0}
                 disabled={showStatus === 'completed' || showStatus === 'cancelled'}
               />
 

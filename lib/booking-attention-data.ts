@@ -8,7 +8,7 @@ import {
   type RequirementBlocker,
 } from '@/lib/booking-rules'
 import { osloDateString } from '@/lib/booking-schedule'
-import { isWaitlisted } from '@/lib/open-spots'
+import { isWaitlisted, showAvailability, spotAvailability } from '@/lib/open-spots'
 import { lineupDeadlineDaysFor } from '@/lib/booking-settings'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { isClubPayoutReady } from '@/lib/stripe-connect'
@@ -100,7 +100,7 @@ export async function loadBookingAttention(
     db.from('booking_offers')
       .select('id, show_id, artist_id, show_requirement_id, status, source, sent_at')
       .in('show_id', showIds),
-    db.from('show_submissions').select('show_id, show_requirement_id, artist_id, status').in('show_id', showIds).eq('status', 'pending'),
+    db.from('show_submissions').select('show_id, artist_id, status').in('show_id', showIds).eq('status', 'pending'),
     db.from('artist_performance_reviews').select('confirmed_spot_id').in('show_id', showIds),
     db.from('show_artist_booking_exclusions').select('show_id, artist_id').in('show_id', showIds),
   ])
@@ -177,16 +177,24 @@ export async function loadBookingAttention(
     booked.add(spot.artist_id)
     bookedByShow.set(spot.show_id, booked)
   }
-  const quantityByRequirement = new Map((requirements ?? []).map((req) => [req.id, req.quantity]))
   const statusByShow = new Map(shows.map((show) => [show.id, show.status]))
+
+  // Søknadene gjelder showet: ventelisten slår inn først når hver åpne plass
+  // er full.
+  const fullShows = new Set<string>()
+  for (const show of shows) {
+    const open = (requirements ?? []).filter((req) => req.show_id === show.id && req.submissions_open)
+    const { waitlist } = showAvailability(open.map((req) =>
+      spotAvailability({ quantity: req.quantity, filled: filledByRequirement.get(req.id) ?? 0 })))
+    if (waitlist) fullShows.add(show.id)
+  }
 
   const submissionsByShow = new Map<string, number>()
   for (const row of submissions ?? []) {
-    const quantity = quantityByRequirement.get(row.show_requirement_id)
     const showStatus = statusByShow.get(row.show_id)
     const waitlisted = isWaitlisted({
       status: row.status,
-      isFull: quantity != null && (filledByRequirement.get(row.show_requirement_id) ?? 0) >= quantity,
+      isFull: fullShows.has(row.show_id),
       showClosed: showStatus === 'completed' || showStatus === 'cancelled',
       alreadyBooked: bookedByShow.get(row.show_id)?.has(row.artist_id) ?? false,
     })

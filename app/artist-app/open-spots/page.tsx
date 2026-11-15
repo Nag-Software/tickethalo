@@ -3,12 +3,13 @@ import { getCurrentArtist } from '@/lib/artist-portal'
 import {
   artistCanApply,
   getOpenSpotsForArtist,
+  lineupSummary,
+  OPEN_SUBMISSION_STATUSES,
   submissionStatusLabel,
-  type OpenSpot,
   type OpenSpotShow,
 } from '@/lib/open-spots'
 import { Chip, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
-import { applyForSpotAction } from './actions'
+import { applyForShowAction } from './actions'
 
 export const metadata = { title: 'Open spots — Tickethalo' }
 export const dynamic = 'force-dynamic'
@@ -45,18 +46,17 @@ export default async function OpenSpotsPage({
   const focused = focusId ? found.find((show) => show.showId === focusId) : undefined
   const shows = focused ? [focused, ...found.filter((show) => show !== focused)] : found
 
-  const spotCount = shows.reduce((sum, show) => sum + show.spots.length, 0)
   const invitedCount = shows.filter((show) => show.invited).length
 
   return (
     <>
       <PageHeader
         title="Open spots"
-        description="Spots clubs have opened for applications. One click puts your profile in front of the booker — nothing is booked until they send you an offer. When a line-up is full, you can join the waitlist."
+        description="Shows clubs have opened for applications. Apply once per show — the club picks which spot fits you. Nothing is booked until they send you an offer. When a line-up is full, you can join the waitlist."
         actions={
           shows.length > 0 ? (
             <>
-              <Chip tone="ink">{spotCount} {spotCount === 1 ? 'spot' : 'spots'}</Chip>
+              <Chip tone="ink">{shows.length} {shows.length === 1 ? 'show' : 'shows'}</Chip>
               {invitedCount > 0 && <Chip tone="accent">{invitedCount} invited</Chip>}
             </>
           ) : undefined
@@ -88,6 +88,19 @@ export default async function OpenSpotsPage({
 function ShowPanel({ show, focused }: { show: OpenSpotShow; focused: boolean }) {
   const when = [formatDate(show.date), show.startTime?.slice(0, 5)].filter(Boolean).join(', ')
   const where = [show.clubName, show.venue].filter(Boolean).join(' · ')
+  const applied = show.submission
+  const settled = applied != null && !OPEN_SUBMISSION_STATUSES.includes(applied.status)
+
+  const detail = applied
+    ? submissionStatusLabel(applied.status, show.waitlist)
+    : [
+      show.waitlist
+        ? 'Line-up full — join the waitlist in case someone drops out'
+        : `${show.spotsLeft} ${show.spotsLeft === 1 ? 'spot' : 'spots'} open`,
+      show.applicantCount > 0
+        ? `${show.applicantCount} ${show.applicantCount === 1 ? 'has' : 'have'} applied`
+        : null,
+    ].filter(Boolean).join(' · ')
 
   return (
     <Panel
@@ -102,58 +115,38 @@ function ShowPanel({ show, focused }: { show: OpenSpotShow; focused: boolean }) 
         </>
       }
     >
-      <div className="flex flex-col gap-2">
-        {show.spots.map((spot) => (
-          <SpotRow key={spot.requirementId} spot={spot} />
-        ))}
+      <div className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-1 text-[14px]">
+          {lineupSummary(show.spots).map((role) => (
+            <li key={`${role.roleName}|${role.feeLabel}`} className="flex flex-wrap items-baseline justify-between gap-x-4">
+              <span>
+                <span className="font-semibold">{role.roleName}</span>
+                <span className="text-[var(--ev-muted)]">
+                  {' '}· {role.spotsLeft === 0 ? 'full' : role.spotsLeft < role.quantity ? `${role.spotsLeft} of ${role.quantity} open` : `${role.quantity} ${role.quantity === 1 ? 'spot' : 'spots'}`}
+                </span>
+              </span>
+              <span className="tabular-nums text-[var(--ev-muted)]">{role.feeLabel}</span>
+            </li>
+          ))}
+        </ul>
+
+        <Row muted={settled}>
+          <div className="min-w-0 text-[13px] text-[var(--ev-muted)]">{detail}</div>
+
+          {applied ? (
+            <Link href={`/artist-app/open-spots/${applied.id}`} className={portalButton.secondary}>
+              {settled ? 'See application' : 'Your application'}
+            </Link>
+          ) : (
+            <form action={applyForShowAction}>
+              <input type="hidden" name="show_id" value={show.showId} />
+              <button type="submit" className={show.waitlist ? portalButton.secondary : portalButton.primary}>
+                {show.waitlist ? 'Join the waitlist' : 'Apply for this show'}
+              </button>
+            </form>
+          )}
+        </Row>
       </div>
     </Panel>
-  )
-}
-
-function SpotRow({ spot }: { spot: OpenSpot }) {
-  const applied = spot.submission
-  const settled = applied != null && !['pending', 'shortlisted'].includes(applied.status)
-
-  const detail = applied
-    ? submissionStatusLabel(applied.status, spot.waitlist)
-    : [
-      spot.waitlist
-        ? 'Full — join the waitlist in case someone drops out'
-        : spot.spotsLeft < spot.quantity
-          ? `${spot.spotsLeft} of ${spot.quantity} spots left`
-          : `${spot.quantity} ${spot.quantity === 1 ? 'spot' : 'spots'}`,
-      spot.applicantCount > 0
-        ? `${spot.applicantCount} ${spot.applicantCount === 1 ? 'has' : 'have'} applied`
-        : null,
-    ].filter(Boolean).join(' · ')
-
-  return (
-    <Row muted={settled}>
-      <div className="min-w-0">
-        <div className="text-[15px] font-semibold">{spot.roleName}</div>
-        <div className="mt-0.5 text-[13px] text-[var(--ev-muted)]">{detail}</div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-4">
-        <div className="text-right">
-          <div className="text-[12px] text-[var(--ev-faint)]">Fee</div>
-          <div className="text-[15px] font-semibold tabular-nums">{spot.feeLabel}</div>
-        </div>
-
-        {applied ? (
-          <Link href={`/artist-app/open-spots/${applied.id}`} className={portalButton.secondary}>
-            {settled ? 'See application' : 'Your application'}
-          </Link>
-        ) : (
-          <form action={applyForSpotAction}>
-            <input type="hidden" name="requirement_id" value={spot.requirementId} />
-            <button type="submit" className={spot.waitlist ? portalButton.secondary : portalButton.primary}>
-              {spot.waitlist ? 'Join the waitlist' : 'Apply for spot'}
-            </button>
-          </form>
-        )}
-      </div>
-    </Row>
   )
 }

@@ -18,8 +18,8 @@ import { MarketingTab } from './marketing/marketing-tab'
 import { CommunicationTab } from './communication-tab'
 import { changeCount } from '@/lib/lineup-changes'
 import { SubmissionsTab } from './submissions-tab'
-import { loadSubmissionGroups } from './submissions-data'
-import { isWaitlisted } from '@/lib/open-spots'
+import { loadSubmissions } from './submissions-data'
+import { isWaitlisted, showAvailability, spotAvailability } from '@/lib/open-spots'
 import { matchesHardRequirements } from '@/lib/booking-rules'
 import { canReviewShow, reviewCounts, reviewsForShow } from '@/lib/artist-reviews'
 import { LineupReviewPanel, type ReviewableSpot } from '@/components/admin/lineup-review-panel'
@@ -160,39 +160,34 @@ export default async function ShowDetailPage({
   // Compute fill status per requirement
   const activeLineup = (lineup ?? []).filter(s => ['confirmed', 'completed', 'paid'].includes(s.status))
 
-  // Ubehandlede søknader per lineup-plass. Bare `pending` telles: en søknad
-  // som er godtatt eller avslått er ikke noe bookeren skal minnes på. Det er
-  // heller ikke ventelisten — en full plass kan ikke godtas før noen faller
-  // fra, og fanen viser den for seg (se `isWaitlisted`).
+  // Ubehandlede søknader på showet. Bare `pending` telles: en søknad som er
+  // godtatt eller avslått er ikke noe bookeren skal minnes på. Det er heller
+  // ikke ventelisten — når hver åpne plass er full, kan ingen godtas før
+  // noen faller fra, og fanen viser dem for seg (se `isWaitlisted`).
   // Hentes på alle faner — tellingen står på «Submissions»-fanen.
   const { data: pendingSubmissions } = await db
     .from('show_submissions')
-    .select('show_requirement_id, artist_id, status')
+    .select('artist_id, status')
     .eq('show_id', id)
     .eq('status', 'pending')
 
   const showClosed = show?.status === 'completed' || show?.status === 'cancelled'
   const bookedArtistIds = new Set(activeLineup.map(spot => spot.artist_id))
-  const filledByRequirement = activeLineup.reduce<Record<string, number>>((counts, spot) => {
-    if (spot.show_requirement_id) counts[spot.show_requirement_id] = (counts[spot.show_requirement_id] ?? 0) + 1
-    return counts
-  }, {})
-  const quantityByRequirement = new Map((requirements ?? []).map(r => [r.id, r.quantity]))
+  const lineupIsFull = showAvailability((requirements ?? [])
+    .filter(r => r.submissions_open)
+    .map(r => spotAvailability({
+      quantity: r.quantity,
+      filled: activeLineup.filter(spot => spot.show_requirement_id === r.id).length,
+    }))).waitlist
 
-  const pendingSubmissionsByRequirement = (pendingSubmissions ?? [])
+  const pendingSubmissionTotal = (pendingSubmissions ?? [])
     .filter(row => !isWaitlisted({
       status: row.status,
-      isFull: (filledByRequirement[row.show_requirement_id] ?? 0) >= (quantityByRequirement.get(row.show_requirement_id) ?? Infinity),
+      isFull: lineupIsFull,
       showClosed,
       alreadyBooked: bookedArtistIds.has(row.artist_id),
     }))
-    .reduce<Record<string, number>>(
-      (counts, row) => {
-        counts[row.show_requirement_id] = (counts[row.show_requirement_id] ?? 0) + 1
-        return counts
-      },
-      {},
-    )
+    .length
   const reqFillStatus = (requirements ?? []).map(r => {
     const filled = activeLineup.filter(s => s.show_requirement_id === r.id).length
     const pendingOffers = (offers ?? []).filter(o => o.show_requirement_id === r.id && o.status === 'sent').length
@@ -293,7 +288,6 @@ export default async function ShowDetailPage({
     declined: (offers ?? []).filter(o => o.status === 'declined').length,
   }
 
-  const pendingSubmissionTotal = (pendingSubmissions ?? []).length
 
   const TABS: { key: ShowTab; label: string; badge?: number }[] = [
     { key: 'overview', label: 'Overview' },
@@ -348,8 +342,8 @@ export default async function ShowDetailPage({
     })
     : []
 
-  const submissionGroups = tab === 'submissions'
-    ? await loadSubmissionGroups(db, {
+  const submissionsView = tab === 'submissions'
+    ? await loadSubmissions(db, {
       showId: id,
       clubId: showClubId,
       showStatus: show.status,
@@ -358,7 +352,7 @@ export default async function ShowDetailPage({
       lineup: lineup ?? [],
       offers: offers ?? [],
     })
-    : []
+    : null
 
   // Etter showet: «Hvordan gikk det?». Vurderingen endrer scoren, og scoren
   // avgjør hvem som får tilbud på neste show — se lib/artist-reviews.ts.
@@ -476,7 +470,7 @@ export default async function ShowDetailPage({
                 submissionsAudience={(show.submissions_audience ?? 'roster') as SubmissionsAudience}
                 submissionsCloseAt={show.submissions_close_at ?? null}
                 rosterSize={roster.length}
-                pendingByRequirement={pendingSubmissionsByRequirement}
+                pendingSubmissionTotal={pendingSubmissionTotal}
                 percentLimit={percentLimit}
                 matchCounts={requirementMatchCounts}
               />
@@ -527,7 +521,7 @@ export default async function ShowDetailPage({
                 submissionsAudience={(show.submissions_audience ?? 'roster') as SubmissionsAudience}
                 submissionsCloseAt={show.submissions_close_at ?? null}
                 rosterSize={roster.length}
-                pendingByRequirement={pendingSubmissionsByRequirement}
+                pendingSubmissionTotal={pendingSubmissionTotal}
                 removedArtistIds={[...excludedArtistIds]}
               />
         )}
@@ -536,7 +530,7 @@ export default async function ShowDetailPage({
         {tab === 'communication' && <CommunicationTab showId={show.id} />}
 
         {/* ══════════════════ SUBMISSIONS ══════════════════ */}
-        {tab === 'submissions' && <SubmissionsTab showId={show.id} groups={submissionGroups} />}
+        {tab === 'submissions' && submissionsView && <SubmissionsTab showId={show.id} view={submissionsView} />}
 
         {/* ══════════════════ MARKETING ══════════════════ */}
         {tab === 'marketing' && <MarketingTab showId={id} />}

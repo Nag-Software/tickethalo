@@ -5,6 +5,7 @@ import {
   assertArtistCanApply,
   audienceBlockReason,
   getClubOpenCalls,
+  showAvailability,
   showClosedReason,
   spotAvailability,
   submissionStatusLabel,
@@ -91,12 +92,21 @@ describe('who may apply', () => {
 })
 
 describe('the waitlist', () => {
-  it('is a full spot, not a stored state', () => {
+  it('is a full line-up, not a stored state', () => {
     expect(spotAvailability({ quantity: 3, filled: 0 })).toEqual({ spotsLeft: 3, waitlist: false })
     expect(spotAvailability({ quantity: 3, filled: 2 })).toEqual({ spotsLeft: 1, waitlist: false })
     expect(spotAvailability({ quantity: 3, filled: 3 })).toEqual({ spotsLeft: 0, waitlist: true })
     // Overfylt skjer ikke, men skal ikke gi negative plasser.
     expect(spotAvailability({ quantity: 1, filled: 2 })).toEqual({ spotsLeft: 0, waitlist: true })
+  })
+
+  it('starts for the show only when every open spot is full', () => {
+    const full = { spotsLeft: 0, waitlist: true }
+    const free = { spotsLeft: 2, waitlist: false }
+    expect(showAvailability([full, free])).toEqual({ spotsLeft: 2, waitlist: false })
+    expect(showAvailability([full, full])).toEqual({ spotsLeft: 0, waitlist: true })
+    // Ingen åpne plasser er ikke en venteliste — showet tar ikke imot søknader.
+    expect(showAvailability([])).toEqual({ spotsLeft: 0, waitlist: false })
   })
 
   it('tells the comedian they are waiting for a drop-out, not for the club', () => {
@@ -116,14 +126,21 @@ type ApplyWorld = {
   audience?: 'roster' | 'everyone'
   review?: { is_flagged: boolean } | null
   filled?: number
+  otherFilled?: number
   ownSpot?: boolean
   unavailable?: boolean
 }
 
+/**
+ * Et show med to åpne plasser: én for to (`filled` av dem tatt) og én for
+ * én (`otherFilled`). Med `submissionsOpen: false` er ingen plass åpen.
+ */
 function applyDb(world: ApplyWorld = {}) {
   return fakeQueryDb({
     show_requirements: () => ({
-      data: { id: 'req-1', show_id: 'show-1', role_name: 'Opener', quantity: 2, submissions_open: world.submissionsOpen ?? true },
+      data: (world.submissionsOpen ?? true)
+        ? [{ id: 'req-1', quantity: 2 }, { id: 'req-2', quantity: 1 }]
+        : [],
     }),
     artists: () => ({ data: { id: 'artist-1', status: 'approved' } }),
     shows: () => ({
@@ -140,56 +157,66 @@ function applyDb(world: ApplyWorld = {}) {
     club_artists: () => ({ data: world.review ?? null }),
     artist_unavailable_dates: () => ({ data: world.unavailable ? { id: 'u-1' } : null }),
     confirmed_spots: (query: FakeQuery) =>
-      query.head
-        ? { count: world.filled ?? 0 }
-        : { data: world.ownSpot ? { id: 'spot-1' } : null },
+      query.filters.artist_id
+        ? { data: world.ownSpot ? { id: 'spot-1' } : null }
+        : {
+          data: [
+            ...Array.from({ length: world.filled ?? 0 }, () => ({ show_requirement_id: 'req-1' })),
+            ...Array.from({ length: world.otherFilled ?? 0 }, () => ({ show_requirement_id: 'req-2' })),
+          ],
+        },
   })
 }
 
-describe('applying for a spot', () => {
+describe('applying for a show', () => {
   it('applies normally while there are seats left', async () => {
     const { db } = applyDb({ filled: 1 })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).resolves.toMatchObject({ waitlist: false })
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).resolves.toMatchObject({ waitlist: false })
   })
 
-  it('accepts an application for a full spot as the waitlist', async () => {
+  it('is not the waitlist while another open spot has a seat', async () => {
     const { db } = applyDb({ filled: 2 })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).resolves.toMatchObject({ waitlist: true })
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).resolves.toMatchObject({ waitlist: false })
+  })
+
+  it('accepts an application as the waitlist once every open spot is full', async () => {
+    const { db } = applyDb({ filled: 2, otherFilled: 1 })
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).resolves.toMatchObject({ waitlist: true })
   })
 
   it('accepts the waitlist on a show that is already published', async () => {
-    const { db } = applyDb({ filled: 2, status: 'published' })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).resolves.toMatchObject({ waitlist: true })
+    const { db } = applyDb({ filled: 2, otherFilled: 1, status: 'published' })
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).resolves.toMatchObject({ waitlist: true })
   })
 
-  it('refuses a spot the club has not opened', async () => {
+  it('refuses a show where the club has opened no spots', async () => {
     const { db } = applyDb({ submissionsOpen: false })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).rejects.toThrow('This spot is not open for submissions.')
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('This show is not open for submissions.')
   })
 
   it('refuses a draft', async () => {
     const { db } = applyDb({ status: 'draft' })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).rejects.toThrow('This show is not taking submissions.')
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('This show is not taking submissions.')
   })
 
   it('refuses a roster show to a comedian the club does not know', async () => {
     const { db } = applyDb({ audience: 'roster', review: null })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).rejects.toThrow('only open to comedians the club already works with')
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('only open to comedians the club already works with')
   })
 
   it('refuses a flagged comedian', async () => {
     const { db } = applyDb({ review: { is_flagged: true } })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).rejects.toThrow('You cannot apply for spots at this club.')
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('You cannot apply for spots at this club.')
   })
 
   it('refuses a comedian who is already on the line-up, full or not', async () => {
     const { db } = applyDb({ filled: 2, ownSpot: true })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).rejects.toThrow('You already have a spot on this show.')
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('You already have a spot on this show.')
   })
 
   it('refuses a date the comedian marked as unavailable', async () => {
     const { db } = applyDb({ unavailable: true })
-    await expect(assertArtistCanApply(db, 'artist-1', 'req-1')).rejects.toThrow('marked that date as unavailable')
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('marked that date as unavailable')
   })
 })
 

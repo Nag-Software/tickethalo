@@ -19,7 +19,7 @@ vi.mock('@/lib/email/mailer', () => ({
   sendWaitlistSpotOpenEmail: (opts: Record<string, unknown>) => sendWaitlistSpotOpenEmail(opts),
 }))
 
-const { applyForSpotAction } = await import('@/app/artist-app/open-spots/actions')
+const { applyForShowAction } = await import('@/app/artist-app/open-spots/actions')
 const { notifyClubWaitlist } = await import('@/lib/waitlist')
 
 beforeEach(() => {
@@ -29,12 +29,11 @@ beforeEach(() => {
 
 // ─── Komikeren søker ─────────────────────────────────────────────────────
 
-/** Et show med én plass for to, som allerede er full. */
-function fullSpotDb({ duplicate = false } = {}) {
+/** Et show med én åpen plass for to, som allerede er full. */
+function fullShowDb({ duplicate = false, existing = null }: { duplicate?: boolean; existing?: { id: string; status: string } | null } = {}) {
+  let lookups = 0
   return fakeQueryDb({
-    show_requirements: () => ({
-      data: { id: 'req-1', show_id: 'show-1', role_name: 'Opener', quantity: 2, submissions_open: true },
-    }),
+    show_requirements: () => ({ data: [{ id: 'req-1', quantity: 2 }] }),
     artists: () => ({ data: { id: 'artist-1', status: 'approved' } }),
     shows: () => ({
       data: {
@@ -49,7 +48,10 @@ function fullSpotDb({ duplicate = false } = {}) {
     }),
     club_artists: () => ({ data: null }),
     artist_unavailable_dates: () => ({ data: null }),
-    confirmed_spots: (query: FakeQuery) => (query.head ? { count: 2 } : { data: null }),
+    // Komikerens egen plass: ingen. Plassen ellers: to av to.
+    confirmed_spots: (query: FakeQuery) => (query.filters.artist_id
+      ? { data: null }
+      : { data: [{ show_requirement_id: 'req-1' }, { show_requirement_id: 'req-1' }] }),
     show_submission_invitations: () => ({ data: null }),
     show_submissions: (query: FakeQuery) => {
       if (query.write === 'insert') {
@@ -57,6 +59,11 @@ function fullSpotDb({ duplicate = false } = {}) {
           ? { data: null, error: { code: '23505', message: 'duplicate key value' } }
           : { data: { id: 'sub-new' } }
       }
+      if (query.write === 'update') return { data: null, error: null }
+      // Første oppslag: finnes det en søknad fra før? Andre: den som kom
+      // imellom ved et dobbeltklikk.
+      lookups++
+      if (lookups === 1) return { data: existing }
       return { data: { id: 'sub-existing' } }
     },
   })
@@ -64,21 +71,21 @@ function fullSpotDb({ duplicate = false } = {}) {
 
 function applyForm() {
   const form = new FormData()
-  form.set('requirement_id', 'req-1')
+  form.set('show_id', 'show-1')
   return form
 }
 
-describe('applying for a full spot', () => {
+describe('applying for a full show', () => {
   it('puts the comedian on the waitlist instead of refusing', async () => {
-    const { db, queries } = fullSpotDb()
+    const { db, queries } = fullShowDb()
     getCurrentArtist.mockResolvedValue({ artist: { id: 'artist-1' }, db })
 
-    await expect(applyForSpotAction(applyForm())).rejects.toThrow('REDIRECT /artist-app/open-spots/sub-new')
+    await expect(applyForShowAction(applyForm())).rejects.toThrow('REDIRECT /artist-app/open-spots/sub-new')
 
+    // Søknaden gjelder showet. Plassen velger klubben når den godkjenner.
     const insert = queries.find((query) => query.table === 'show_submissions' && query.write === 'insert')
     expect(insert?.values).toEqual({
       show_id: 'show-1',
-      show_requirement_id: 'req-1',
       artist_id: 'artist-1',
       source: 'open_call',
       invitation_id: null,
@@ -86,10 +93,37 @@ describe('applying for a full spot', () => {
   })
 
   it('sends a second click to the application that is already there', async () => {
-    const { db } = fullSpotDb({ duplicate: true })
+    const { db } = fullShowDb({ duplicate: true })
     getCurrentArtist.mockResolvedValue({ artist: { id: 'artist-1' }, db })
 
-    await expect(applyForSpotAction(applyForm())).rejects.toThrow('REDIRECT /artist-app/open-spots/sub-existing')
+    await expect(applyForShowAction(applyForm())).rejects.toThrow('REDIRECT /artist-app/open-spots/sub-existing')
+  })
+
+  it('reopens a withdrawn application instead of adding a second one', async () => {
+    const { db, queries } = fullShowDb({ existing: { id: 'sub-old', status: 'withdrawn' } })
+    getCurrentArtist.mockResolvedValue({ artist: { id: 'artist-1' }, db })
+
+    await expect(applyForShowAction(applyForm())).rejects.toThrow('REDIRECT /artist-app/open-spots/sub-old')
+
+    expect(queries.some((query) => query.table === 'show_submissions' && query.write === 'insert')).toBe(false)
+    const update = queries.find((query) => query.table === 'show_submissions' && query.write === 'update')
+    expect(update?.values).toEqual({ status: 'pending', responded_at: null, show_requirement_id: null })
+  })
+
+  it('refuses a show with no open spots', async () => {
+    const { db } = fakeQueryDb({
+      show_requirements: () => ({ data: [] }),
+      artists: () => ({ data: { id: 'artist-1', status: 'approved' } }),
+      shows: () => ({
+        data: {
+          id: 'show-1', title: 'Club Night', date: '2099-01-01', status: 'booking',
+          club_id: 'club-1', submissions_audience: 'everyone', submissions_close_at: null,
+        },
+      }),
+    })
+    getCurrentArtist.mockResolvedValue({ artist: { id: 'artist-1' }, db })
+
+    await expect(applyForShowAction(applyForm())).rejects.toThrow('This show is not open for submissions.')
   })
 })
 
