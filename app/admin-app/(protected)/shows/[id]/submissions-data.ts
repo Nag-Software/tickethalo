@@ -2,7 +2,7 @@ import { formatDistanceToNowStrict } from 'date-fns'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { formatArtistRole } from '@/lib/artist-roles'
-import { isWaitlisted } from '@/lib/open-spots'
+import { isWaitlisted, showAvailability, spotAvailability } from '@/lib/open-spots'
 import type { BookingOffer, ConfirmedSpot, ShowRequirement, ShowStatus, SubmissionSource, SubmissionStatus } from '@/types/database'
 
 /**
@@ -44,9 +44,12 @@ export type SubmissionItem = {
   waitlist: boolean
   /** Hvorfor «Approve» er stengt. Null = kan godtas. */
   blocker: string | null
+  /** Plassen bookeren ga komikeren. Bare på en godtatt søknad. */
+  spotLabel: string | null
 }
 
-export type SubmissionGroup = {
+/** En lineup-plass bookeren kan gi en søker. */
+export type SubmissionSpot = {
   requirementId: string
   position: number
   roleName: string
@@ -54,13 +57,23 @@ export type SubmissionGroup = {
   open: boolean
   quantity: number
   filled: number
+}
+
+/**
+ * Søknadene på showet. Komikeren søker på showet, ikke en plass, så det er
+ * én liste — og plassene bookeren kan velge blant når hen godkjenner.
+ */
+export type SubmissionsView = {
+  spots: SubmissionSpot[]
   items: SubmissionItem[]
+  /** Hver åpne plass er full. Ubesvarte søknader står da på ventelisten. */
+  isFull: boolean
 }
 
 const OPEN_STATUSES: SubmissionStatus[] = ['pending', 'shortlisted']
 const ACTIVE_SPOT_STATUSES = ['confirmed', 'completed', 'paid']
 
-export async function loadSubmissionGroups(
+export async function loadSubmissions(
   db: Db,
   {
     showId,
@@ -79,7 +92,7 @@ export async function loadSubmissionGroups(
     lineup: ConfirmedSpot[]
     offers: BookingOffer[]
   },
-): Promise<SubmissionGroup[]> {
+): Promise<SubmissionsView> {
   const { data: submissions, error } = await db
     .from('show_submissions')
     .select('id, show_requirement_id, artist_id, source, status, message, created_at, updated_at, responded_at, booking_offer_id')
@@ -108,87 +121,90 @@ export async function loadSubmissionGroups(
   const artistsWithOpenOffer = new Set(offers.filter((offer) => offer.status === 'sent').map((offer) => offer.artist_id))
   const showClosed = showStatus === 'completed' || showStatus === 'cancelled'
 
-  const groups = [...requirements]
+  const spots = [...requirements]
     .sort((left, right) => left.lineup_position - right.lineup_position)
-    .map<SubmissionGroup>((requirement, index) => {
-      const filled = activeLineup.filter((spot) => spot.show_requirement_id === requirement.id).length
-      const isFull = filled >= requirement.quantity
+    .map<SubmissionSpot>((requirement, index) => ({
+      requirementId: requirement.id,
+      position: index + 1,
+      roleName: requirement.role_name,
+      feeLabel: requirementFeeLabel(requirement, currency || 'NOK'),
+      open: Boolean(requirement.submissions_open),
+      quantity: requirement.quantity,
+      filled: activeLineup.filter((spot) => spot.show_requirement_id === requirement.id).length,
+    }))
+  const spotById = new Map(spots.map((spot) => [spot.requirementId, spot]))
 
-      const items = (submissions ?? [])
-        .filter((row) => row.show_requirement_id === requirement.id)
-        // Ubesvarte først, eldste øverst — de har ventet lengst. Deretter de
-        // behandlede, sist behandlet øverst.
-        .sort((left, right) => {
-          const leftOpen = OPEN_STATUSES.includes(left.status)
-          const rightOpen = OPEN_STATUSES.includes(right.status)
-          if (leftOpen !== rightOpen) return leftOpen ? -1 : 1
-          if (leftOpen) return left.created_at.localeCompare(right.created_at)
-          return (right.responded_at ?? right.updated_at).localeCompare(left.responded_at ?? left.updated_at)
-        })
-        .flatMap<SubmissionItem>((row) => {
-          const artist = artistById.get(row.artist_id)
-          if (!artist) return []
+  // Ventelisten gjelder showet: ingen kan godkjennes før et av setene på de
+  // åpne plassene er ledig.
+  const isFull = showAvailability(
+    spots.filter((spot) => spot.open).map((spot) => spotAvailability(spot)),
+  ).waitlist
 
-          const review = reviewByArtist.get(row.artist_id)
-          const stageName = artist.stage_name?.trim()
-          const roles = (review?.category ?? artist.category ?? [])
-            .map((role) => formatArtistRole(role))
-            .filter((role): role is string => Boolean(role))
+  const items = (submissions ?? [])
+    // Ubesvarte først, eldste øverst — de har ventet lengst. Deretter de
+    // behandlede, sist behandlet øverst.
+    .sort((left, right) => {
+      const leftOpen = OPEN_STATUSES.includes(left.status)
+      const rightOpen = OPEN_STATUSES.includes(right.status)
+      if (leftOpen !== rightOpen) return leftOpen ? -1 : 1
+      if (leftOpen) return left.created_at.localeCompare(right.created_at)
+      return (right.responded_at ?? right.updated_at).localeCompare(left.responded_at ?? left.updated_at)
+    })
+    .flatMap<SubmissionItem>((row) => {
+      const artist = artistById.get(row.artist_id)
+      if (!artist) return []
 
-          const waitlist = isWaitlisted({
-            status: row.status,
-            isFull,
-            showClosed,
-            alreadyBooked: bookedArtists.has(row.artist_id),
-          })
+      const review = reviewByArtist.get(row.artist_id)
+      const stageName = artist.stage_name?.trim()
+      const roles = (review?.category ?? artist.category ?? [])
+        .map((role) => formatArtistRole(role))
+        .filter((role): role is string => Boolean(role))
 
-          const blocker = !OPEN_STATUSES.includes(row.status)
-            ? null
-            : showClosed
-              ? 'The show is over'
-              : bookedArtists.has(row.artist_id)
-                ? 'Already in the lineup'
-                : isFull
-                  ? 'On the waitlist — the spot is full'
-                  : artistsWithOpenOffer.has(row.artist_id)
-                    ? 'Has an offer waiting'
-                    : null
+      const waitlist = isWaitlisted({
+        status: row.status,
+        isFull,
+        showClosed,
+        alreadyBooked: bookedArtists.has(row.artist_id),
+      })
 
-          return [{
-            id: row.id,
-            status: row.status,
-            source: row.source,
-            message: row.message?.trim() || null,
-            appliedLabel: formatDistanceToNowStrict(new Date(row.created_at), { addSuffix: true }),
-            respondedLabel: row.responded_at
-              ? formatDistanceToNowStrict(new Date(row.responded_at), { addSuffix: true })
-              : null,
-            artist: {
-              id: artist.id,
-              name: stageName || artist.full_name,
-              legalName: stageName && stageName !== artist.full_name ? artist.full_name : null,
-              imageUrl: artist.profile_image_url,
-              details: [artist.city, roles.slice(0, 3).join(', ')].filter((part): part is string => Boolean(part)),
-            },
-            onRoster: Boolean(review),
-            flagged: Boolean(review?.is_flagged),
-            offerStatus: row.booking_offer_id ? offerById.get(row.booking_offer_id)?.status ?? null : null,
-            waitlist,
-            blocker,
-          }]
-        })
+      const blocker = !OPEN_STATUSES.includes(row.status)
+        ? null
+        : showClosed
+          ? 'The show is over'
+          : bookedArtists.has(row.artist_id)
+            ? 'Already in the lineup'
+            : isFull
+              ? 'On the waitlist — the line-up is full'
+              : artistsWithOpenOffer.has(row.artist_id)
+                ? 'Has an offer waiting'
+                : null
 
-      return {
-        requirementId: requirement.id,
-        position: index + 1,
-        roleName: requirement.role_name,
-        feeLabel: requirementFeeLabel(requirement, currency || 'NOK'),
-        open: Boolean(requirement.submissions_open),
-        quantity: requirement.quantity,
-        filled,
-        items,
-      }
+      const assigned = row.show_requirement_id ? spotById.get(row.show_requirement_id) : undefined
+
+      return [{
+        id: row.id,
+        status: row.status,
+        source: row.source,
+        message: row.message?.trim() || null,
+        appliedLabel: formatDistanceToNowStrict(new Date(row.created_at), { addSuffix: true }),
+        respondedLabel: row.responded_at
+          ? formatDistanceToNowStrict(new Date(row.responded_at), { addSuffix: true })
+          : null,
+        artist: {
+          id: artist.id,
+          name: stageName || artist.full_name,
+          legalName: stageName && stageName !== artist.full_name ? artist.full_name : null,
+          imageUrl: artist.profile_image_url,
+          details: [artist.city, roles.slice(0, 3).join(', ')].filter((part): part is string => Boolean(part)),
+        },
+        onRoster: Boolean(review),
+        flagged: Boolean(review?.is_flagged),
+        offerStatus: row.booking_offer_id ? offerById.get(row.booking_offer_id)?.status ?? null : null,
+        waitlist,
+        blocker,
+        spotLabel: row.status === 'accepted' && assigned ? `${assigned.position}. ${assigned.roleName}` : null,
+      }]
     })
 
-  return groups
+  return { spots, items, isFull }
 }

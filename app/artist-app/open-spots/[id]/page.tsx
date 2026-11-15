@@ -5,7 +5,7 @@ import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 import { updateSubmissionMessageAction, withdrawSubmissionAction } from '../actions'
 import { showVenue } from '@/lib/show-venue'
-import { OPEN_SUBMISSION_STATUSES, spotAvailability } from '@/lib/open-spots'
+import { OPEN_SUBMISSION_STATUSES, showAvailability, spotAvailability } from '@/lib/open-spots'
 
 export const metadata = { title: 'Your application — Tickethalo' }
 export const dynamic = 'force-dynamic'
@@ -13,12 +13,12 @@ export const dynamic = 'force-dynamic'
 const STATUS: Record<string, { label: string; lede: string; tone: 'accent' | 'neutral' | 'ink' }> = {
   pending: {
     label: 'Waiting for the club',
-    lede: 'The club can see your profile on this spot. Nothing is booked yet — if they pick you, you get a normal booking offer to accept or decline.',
+    lede: 'The club can see your profile on this show. Nothing is booked yet — if they pick you, they choose the spot and you get a normal booking offer to accept or decline.',
     tone: 'neutral',
   },
   shortlisted: {
     label: 'Shortlisted',
-    lede: 'The club has marked you as a candidate for this spot. You will hear from them before the lineup is set.',
+    lede: 'The club has marked you as a candidate for this show. You will hear from them before the lineup is set.',
     tone: 'accent',
   },
   accepted: {
@@ -28,7 +28,7 @@ const STATUS: Record<string, { label: string; lede: string; tone: 'accent' | 'ne
   },
   declined: {
     label: 'Not this time',
-    lede: 'The club went with someone else for this spot.',
+    lede: 'The club went with someone else for this show.',
     tone: 'neutral',
   },
   withdrawn: {
@@ -45,7 +45,7 @@ const STATUS: Record<string, { label: string; lede: string; tone: 'accent' | 'ne
   },
   filled_by_other: {
     label: 'Filled by someone else',
-    lede: 'This spot was filled while your application was in. Nothing you did — it just went first.',
+    lede: 'The line-up was filled while your application was in. Nothing you did — it just went first.',
     tone: 'neutral',
   },
 }
@@ -73,51 +73,65 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
 
   if (!submission) notFound()
 
-  const [{ data: show }, { data: requirement }, { count: applicants }, { count: filled }] = await Promise.all([
+  // Plassen finnes bare når klubben har godkjent søknaden og valgt den.
+  const [{ data: show }, { data: requirements }, { data: assigned }, { count: applicants }] = await Promise.all([
     db.from('shows')
       .select('title, date, start_time, venue_name, venue_address, currency, club_id')
       .eq('id', submission.show_id)
       .single(),
     db.from('show_requirements')
-      .select('role_name, quantity, compensation_type, compensation_amount, compensation_percent')
-      .eq('id', submission.show_requirement_id)
-      .single(),
+      .select('id, quantity')
+      .eq('show_id', submission.show_id)
+      .eq('submissions_open', true),
+    submission.show_requirement_id
+      ? db.from('show_requirements')
+        .select('role_name, compensation_type, compensation_amount, compensation_percent')
+        .eq('id', submission.show_requirement_id)
+        .maybeSingle()
+      : Promise.resolve({ data: null }),
     db.from('show_submissions')
       .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', submission.show_requirement_id)
+      .eq('show_id', submission.show_id)
       .in('status', OPEN_SUBMISSION_STATUSES),
-    db.from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', submission.show_requirement_id)
-      .in('status', ['confirmed', 'completed', 'paid']),
   ])
+
+  const { data: filledSpots } = requirements?.length
+    ? await db.from('confirmed_spots')
+      .select('show_requirement_id')
+      .in('show_requirement_id', requirements.map((req) => req.id))
+      .in('status', ['confirmed', 'completed', 'paid'])
+    : { data: [] as Array<{ show_requirement_id: string | null }> }
 
   const { data: club } = show?.club_id
     ? await db.from('clubs').select('name').eq('id', show.club_id).maybeSingle()
     : { data: null }
 
   const open = OPEN_SUBMISSION_STATUSES.includes(submission.status)
-  const waitlist = open && spotAvailability({ quantity: requirement?.quantity ?? 1, filled: filled ?? 0 }).waitlist
+  const availability = showAvailability((requirements ?? []).map((req) => spotAvailability({
+    quantity: req.quantity,
+    filled: (filledSpots ?? []).filter((spot) => spot.show_requirement_id === req.id).length,
+  })))
+  const waitlist = open && availability.waitlist
   const state = (waitlist ? STATUS.waitlist : STATUS[submission.status]) ?? STATUS.pending
   const currency = show?.currency || 'NOK'
-  const feeLabel = requirement ? requirementFeeLabel(requirement, currency) : 'Not set'
+  const others = (applicants ?? 0) - (open ? 1 : 0)
 
   return (
     <>
       <PageHeader
         title={
-          requirement
-            ? waitlist
-              ? `You’re on the waitlist for the ${requirement.role_name} spot`
-              : `You applied for the ${requirement.role_name} spot`
-            : 'Your application'
+          assigned && submission.status === 'accepted'
+            ? `The club picked you for the ${assigned.role_name} spot`
+            : waitlist
+              ? `You’re on the waitlist for ${show?.title ?? 'this show'}`
+              : `You applied for ${show?.title ?? 'this show'}`
         }
         description={state.lede}
         actions={<Chip tone={state.tone}>{state.label}</Chip>}
       />
 
       <Panel
-        title="The spot"
+        title="The show"
         actions={
           submission.source === 'invitation' ? <Chip tone="accent">You were invited</Chip> : undefined
         }
@@ -129,15 +143,22 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
           <DataRow label="Time" value={show?.start_time ? show.start_time.slice(0, 5) : '—'} />
           <DataRow label="Venue" value={showVenue(show).venue ?? '—'} />
           {showVenue(show).address && <DataRow label="Address" value={showVenue(show).address ?? ''} />}
-          <DataRow label="The fee if you get it" value={feeLabel} />
-          <DataRow
-            label="Others applying"
-            value={
-              (applicants ?? 0) > 1
-                ? `${(applicants ?? 0) - (open ? 1 : 0)} ${(applicants ?? 0) - (open ? 1 : 0) === 1 ? 'other' : 'others'} · ${requirement?.quantity ?? 1} ${requirement?.quantity === 1 ? 'spot' : 'spots'}`
-                : 'Just you so far'
-            }
-          />
+          {assigned && (
+            <>
+              <DataRow label="Your spot" value={assigned.role_name} />
+              <DataRow label="The fee" value={requirementFeeLabel(assigned, currency)} />
+            </>
+          )}
+          {open && (
+            <DataRow
+              label="Others applying"
+              value={
+                others > 0
+                  ? `${others} ${others === 1 ? 'other' : 'others'} · ${availability.spotsLeft} ${availability.spotsLeft === 1 ? 'spot' : 'spots'} open`
+                  : 'Just you so far'
+              }
+            />
+          )}
         </div>
       </Panel>
 

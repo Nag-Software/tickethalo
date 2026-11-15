@@ -6,7 +6,8 @@ import { OPEN_SUBMISSION_STATUSES, showClosedReason, spotAvailability } from '@/
 /**
  * Når en komiker faller fra en plass som har venteliste.
  *
- * Ventelisten er ubesvarte søknader på en full plass (lib/open-spots.ts).
+ * Ventelisten er ubesvarte søknader på et show der hver åpne plass er full
+ * (lib/open-spots.ts).
  * Plasser som er åpne for søknader holder motoren seg unna, så ingen andre
  * fyller setet når noen faller fra — klubben velger selv fra ventelisten
  * (eierens valg, 2026-10-20). Søknadene blir godkjennbare av seg selv i det
@@ -52,9 +53,10 @@ export async function notifyClubWaitlist(
       .select('*', { count: 'exact', head: true })
       .eq('show_requirement_id', requirement.id)
       .in('status', ['confirmed', 'completed', 'paid']),
+    // Søknadene gjelder showet, ikke plassen: alle som venter kan få setet.
     db.from('show_submissions')
       .select('artist_id')
-      .eq('show_requirement_id', requirement.id)
+      .eq('show_id', requirement.show_id)
       .in('status', OPEN_SUBMISSION_STATUSES)
       .order('created_at'),
     db.from('show_artist_booking_exclusions').select('artist_id').eq('show_id', requirement.show_id),

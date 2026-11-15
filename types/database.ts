@@ -511,7 +511,8 @@ export type ShowRequirement = {
 export type ShowSubmission = {
   id: string
   show_id: string
-  show_requirement_id: string
+  /** Plassen klubben valgte da søknaden ble godtatt. Null så lenge den venter. */
+  show_requirement_id: string | null
   artist_id: string
   source: SubmissionSource
   invitation_id: string | null
@@ -1436,7 +1437,7 @@ export type Database = {
         Insert: {
           id?: string
           show_id: string
-          show_requirement_id: string
+          show_requirement_id?: string | null
           artist_id: string
           source?: SubmissionSource
           invitation_id?: string | null

@@ -102,19 +102,18 @@ export function LineupCallout({
  * Skriver direkte i stedet for å gå gjennom autolagringen til kortet: de
  * andre feltene er tekst bookeren redigerer, dette er en bryter som skal
  * virke i det den trykkes. Lukking rører ikke søknadene som allerede ligger
- * der — derfor blir tellingen stående også når plassen er lukket.
+ * der. Søknadene gjelder showet, ikke plassen, så tellingen står i
+ * `SubmissionsBar`, ikke her.
  */
 export function SubmissionsToggle({
   showId,
   reqId,
   open,
-  pendingCount,
   disabled,
 }: {
   showId: string
   reqId: string
   open: boolean
-  pendingCount: number
   disabled: boolean
 }) {
   const router = useRouter()
@@ -143,7 +142,7 @@ export function SubmissionsToggle({
         onClick={toggle}
         disabled={disabled || pending}
         aria-pressed={open}
-        title={open ? 'Comedians can apply for this spot' : 'Open this spot for submissions'}
+        title={open ? 'Comedians can apply for this show, and you can give them this spot' : 'Open this spot for submissions'}
         className={cn(
           'inline-flex h-[26px] cursor-pointer items-center gap-1.5 rounded-4xl px-2.5 text-xs font-medium transition-colors',
           'disabled:cursor-not-allowed disabled:opacity-60',
@@ -155,15 +154,6 @@ export function SubmissionsToggle({
         {open && <Check className="size-3.5" aria-hidden />}
         {open ? 'Open' : 'Open for submissions'}
       </button>
-
-      {pendingCount > 0 && (
-        <a
-          href={`/admin-app/shows/${showId}?tab=submissions`}
-          className="text-[13px] whitespace-nowrap text-muted-foreground hover:text-foreground"
-        >
-          {pendingCount} applied
-        </a>
-      )}
     </div>
   )
 }

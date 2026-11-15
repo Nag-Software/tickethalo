@@ -4,30 +4,36 @@ import type { ArtistStatus, ConfirmedSpotStatus, SubmissionStatus, SubmissionsAu
 import { showVenue } from '@/lib/show-venue'
 
 /**
- * Plassene én komiker kan søke på.
+ * Showene én komiker kan søke på.
+ *
+ * Komikeren søker på showet, ikke på en enkelt plass, og klubben velger
+ * plassen når den godkjenner (prosjektleder, 2026-11-15 — åtte plasser
+ * ga åtte knapper, og komikerne trykket på alle). Plassene vises bare så
+ * komikeren ser hva kvelden har å by på.
  *
  * Inngangene til open calls er komikerportalen («Open spots») og
  * «Apply for a spot» nederst på den offentlige klubbsiden. Begge leser
  * reglene herfra, så synlighetsregelen står ett sted i stedet for som filtre
  * spredd i sidene.
  *
- * En plass er synlig når *alle* disse holder:
+ * Et show er synlig når *alle* disse holder:
  *   1. showet er i gang med booking eller lagt ut (`APPLY_SHOW_STATUSES`) og
  *      ikke har vært
- *   2. plassen er åpnet av klubben (`submissions_open`)
+ *   2. minst én plass er åpnet av klubben (`submissions_open`)
  *   3. fristen har ikke gått (`submissions_close_at`)
  *   4. publikummet slipper komikeren inn (`submissions_audience`)
  *   5. klubben har ikke flagget komikeren
  *   6. komikeren har ikke plass på showet fra før
  *   7. komikeren har ikke markert dagen som opptatt
  *
- * En full plass er fortsatt synlig, og søknaden blir en plass på
- * ventelisten. Eieren vil ha det slik (2026-10-20): faller noen fra, skal
- * klubben ha folk å ta av. Ventelisten er ikke lagret noe sted — den er
- * ubesvarte søknader på en plass som er full (`spotAvailability`). Et lagret
- * flagg ville drevet fra sannheten: den som søkte på en ledig plass som så
- * ble full, står like mye på venteliste, og blir plassen ledig igjen, er
- * alle søknadene godkjennbare uten at noe må skrives om.
+ * Et show der alle de åpne plassene er fulle, er fortsatt synlig, og
+ * søknaden blir en plass på ventelisten. Eieren vil ha det slik
+ * (2026-10-20): faller noen fra, skal klubben ha folk å ta av. Ventelisten
+ * er ikke lagret noe sted — den er ubesvarte søknader på et show der hver
+ * åpne plass er full (`showAvailability`). Et lagret flagg ville drevet fra
+ * sannheten: den som søkte mens det var ledig og så ble fullt, står like
+ * mye på venteliste, og blir et sete ledig igjen, er alle søknadene
+ * godkjennbare uten at noe må skrives om.
  *
  * Punkt 6 er ikke en høflighet: migrasjon 007 har en unik indeks på
  * (show_id, artist_id) blant aktive plasser. En komiker kan ikke ha to
@@ -130,19 +136,57 @@ function countBy<T>(rows: T[], key: (row: T) => string): Map<string, number> {
 
 // ─── Komikerportalen ─────────────────────────────────────────────────────
 
+/**
+ * Én åpen plass på et show. Komikeren søker ikke på plassen — hen søker på
+ * showet, og klubben velger plassen (prosjektleder, 2026-11-15). Plassene
+ * står der så komikeren ser hva kvelden har å by på.
+ */
 export type OpenSpot = {
   requirementId: string
   roleName: string
-  /** Seter igjen på rollen. 0 = full, og en søknad blir venteliste. */
+  /** Seter igjen på rollen. 0 = full. */
   spotsLeft: number
   quantity: number
   /** Plassen er full. Se `spotAvailability`. */
   waitlist: boolean
   feeLabel: string
-  /** Hvor mange som har søkt på rollen, inkludert komikeren selv. */
-  applicantCount: number
-  /** Komikerens egen søknad på denne plassen, om hen har en. */
-  submission: { id: string; status: SubmissionStatus } | null
+}
+
+/**
+ * Showet sett under ett: hvor mange seter som står ledige på de åpne
+ * plassene, og om en søknad nå havner på ventelisten — det gjør den først
+ * når hver eneste åpne plass er full.
+ */
+export function showAvailability(spots: Array<{ spotsLeft: number; waitlist: boolean }>) {
+  return {
+    spotsLeft: spots.reduce((sum, spot) => sum + spot.spotsLeft, 0),
+    waitlist: spots.length > 0 && spots.every((spot) => spot.waitlist),
+  }
+}
+
+/**
+ * Plassene slått sammen per rolle, i lineup-rekkefølge: «Stand-up ×4», ikke
+ * fire rader. Komikeren skal se hva kvelden har, ikke velge blant plassene.
+ *
+ * Honorarene kan være ulike innen samme rolle. Da står de alle, i
+ * lineup-rekkefølge — men «Not set» bare når ingen av plassene har et
+ * honorar, for den sier ingenting ved siden av et tall.
+ */
+export function lineupSummary<T extends { roleName: string; quantity: number; spotsLeft: number; feeLabel: string | null }>(spots: T[]) {
+  const groups = new Map<string, { roleName: string; fees: string[]; quantity: number; spotsLeft: number }>()
+  for (const spot of spots) {
+    const key = spot.roleName.trim().toLowerCase()
+    const group = groups.get(key) ?? { roleName: spot.roleName.trim(), fees: [], quantity: 0, spotsLeft: 0 }
+    group.quantity += spot.quantity
+    group.spotsLeft += spot.spotsLeft
+    if (spot.feeLabel && !group.fees.includes(spot.feeLabel)) group.fees.push(spot.feeLabel)
+    groups.set(key, group)
+  }
+  return [...groups.values()].map(({ fees, ...group }) => {
+    const known = fees.filter((fee) => fee !== 'Not set')
+    const shown = known.length > 0 ? known : fees
+    return { ...group, feeLabel: shown.length > 0 ? shown.join(' / ') : null }
+  })
 }
 
 export type OpenSpotShow = {
@@ -157,6 +201,14 @@ export type OpenSpotShow = {
   /** Klubben har invitert komikeren til å søke på dette showet. */
   invited: boolean
   spots: OpenSpot[]
+  /** Ledige seter på de åpne plassene til sammen. */
+  spotsLeft: number
+  /** Alle de åpne plassene er fulle. En søknad nå blir venteliste. */
+  waitlist: boolean
+  /** Hvor mange som har en åpen søknad på showet, inkludert komikeren selv. */
+  applicantCount: number
+  /** Komikerens egen søknad på showet, om hen har en. */
+  submission: { id: string; status: SubmissionStatus } | null
 }
 
 /** Komikeren må være godkjent på plattformen for å kunne søke. */
@@ -233,9 +285,11 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
       .in('show_id', liveShowIds)
       .in('status', ACTIVE_SPOT_STATUSES),
     db.from('show_submissions')
-      .select('id, show_requirement_id, status')
+      .select('id, show_id, status')
       .eq('artist_id', artistId)
-      .in('show_requirement_id', requirementIds),
+      .in('show_id', liveShowIds)
+      // En trukket søknad er ingen søknad — knappen skal stå der igjen.
+      .neq('status', 'withdrawn'),
     db.from('show_submission_invitations')
       .select('show_id')
       .eq('artist_id', artistId)
@@ -247,22 +301,22 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
       .in('unavailable_date', [...new Set(shows.map((show) => show.date))]),
   ])
 
-  // Søkertellingen er delt av alle som ser plassen, så den hentes for seg.
+  // Søkertellingen er delt av alle som ser showet, så den hentes for seg.
   const { data: allSubmissions } = await db
     .from('show_submissions')
-    .select('show_requirement_id')
-    .in('show_requirement_id', requirementIds)
+    .select('show_id')
+    .in('show_id', liveShowIds)
     .in('status', OPEN_SUBMISSION_STATUSES)
 
   const clubName = new Map((clubs ?? []).map((club) => [club.id, club.name]))
   const membership = new Map((memberships ?? []).map((row) => [row.club_id, row]))
-  const mySubmission = new Map((submissions ?? []).map((row) => [row.show_requirement_id, row]))
+  const mySubmission = new Map((submissions ?? []).map((row) => [row.show_id, row]))
   const invitedShows = new Set((invitations ?? []).map((row) => row.show_id))
   const bookedShows = new Set((myActiveSpots ?? []).map((row) => row.show_id))
   const unavailable = new Set((unavailableDates ?? []).map((row) => row.unavailable_date))
 
-  const filledByRequirement = countBy(filledSpots ?? [], (row) => row.show_requirement_id)
-  const applicantsByRequirement = countBy(allSubmissions ?? [], (row) => row.show_requirement_id)
+  const filledByRequirement = countBy(filledSpots ?? [], (row) => row.show_requirement_id ?? '')
+  const applicantsByShow = countBy(allSubmissions ?? [], (row) => row.show_id)
 
   const result: OpenSpotShow[] = []
 
@@ -280,22 +334,22 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
 
     const spots = requirements
       .filter((req) => req.show_id === show.id)
-      .map<OpenSpot>((req) => {
-        const submission = mySubmission.get(req.id)
-        return {
-          requirementId: req.id,
-          roleName: req.role_name,
-          quantity: req.quantity,
-          ...spotAvailability({ quantity: req.quantity, filled: filledByRequirement.get(req.id) ?? 0 }),
-          feeLabel: requirementFeeLabel(req, show.currency || 'NOK'),
-          applicantCount: applicantsByRequirement.get(req.id) ?? 0,
-          submission: submission ? { id: submission.id, status: submission.status as SubmissionStatus } : null,
-        }
-      })
+      .map<OpenSpot>((req) => ({
+        requirementId: req.id,
+        roleName: req.role_name,
+        quantity: req.quantity,
+        ...spotAvailability({ quantity: req.quantity, filled: filledByRequirement.get(req.id) ?? 0 }),
+        feeLabel: requirementFeeLabel(req, show.currency || 'NOK'),
+      }))
 
     if (spots.length === 0) continue
 
+    const submission = mySubmission.get(show.id)
+
     result.push({
+      ...showAvailability(spots),
+      applicantCount: applicantsByShow.get(show.id) ?? 0,
+      submission: submission ? { id: submission.id, status: submission.status as SubmissionStatus } : null,
       showId: show.id,
       title: show.title,
       date: show.date,
@@ -448,30 +502,33 @@ export async function getClubOpenCalls(
   })
 }
 
-/** Hva en innlogget komiker kan gjøre på én plass i showvisningen. */
-export type OpenCallSpotState =
+/** Hva en innlogget komiker kan gjøre på showet. */
+export type OpenCallState =
   | { kind: 'apply' }
   | { kind: 'applied'; submissionId: string; status: SubmissionStatus }
   | { kind: 'blocked'; reason: string }
 
 /**
- * Komikerens forhold til showets plasser: egen søknad, eller hvorfor hen
- * ikke kan søke. Punkt 1–5 er allerede sjekket av `getClubOpenCalls` — her
- * står det som gjelder komikeren selv.
+ * Komikerens forhold til showet: egen søknad, eller hvorfor hen ikke kan
+ * søke. Punkt 1–5 er allerede sjekket av `getClubOpenCalls` — her står det
+ * som gjelder komikeren selv.
  *
  * En søknad vinner over en sperre: har hen søkt, skal hen se søknaden sin,
- * også om dagen senere ble markert som opptatt.
+ * også om dagen senere ble markert som opptatt. En trukket søknad er ingen
+ * søknad — hen kan søke igjen.
  */
 export async function getOpenCallStateForArtist(
   call: OpenCall,
   viewer: NonNullable<OpenCallViewer>,
   db: Db = createAdminClient(),
-): Promise<Map<string, OpenCallSpotState>> {
-  const [{ data: submissions }, { data: ownSpot }, { data: unavailable }] = await Promise.all([
+): Promise<OpenCallState> {
+  const [{ data: submission }, { data: ownSpot }, { data: unavailable }] = await Promise.all([
     db.from('show_submissions')
-      .select('id, show_requirement_id, status')
+      .select('id, status')
       .eq('artist_id', viewer.artistId)
-      .in('show_requirement_id', call.spots.map((spot) => spot.requirementId)),
+      .eq('show_id', call.showId)
+      .neq('status', 'withdrawn')
+      .maybeSingle(),
     db.from('confirmed_spots')
       .select('id')
       .eq('show_id', call.showId)
@@ -494,51 +551,40 @@ export async function getOpenCallStateForArtist(
         ? 'You have marked this date as unavailable. Clear it in your calendar to apply.'
         : null
 
-  const mine = new Map((submissions ?? []).map((row) => [row.show_requirement_id, row]))
-
-  return new Map(call.spots.map((spot) => {
-    const submission = mine.get(spot.requirementId)
-    const state: OpenCallSpotState = submission
-      ? { kind: 'applied', submissionId: submission.id, status: submission.status as SubmissionStatus }
-      : blocker
-        ? { kind: 'blocked', reason: blocker }
-        : { kind: 'apply' }
-    return [spot.requirementId, state]
-  }))
+  if (submission) {
+    return { kind: 'applied', submissionId: submission.id, status: submission.status as SubmissionStatus }
+  }
+  return blocker ? { kind: 'blocked', reason: blocker } : { kind: 'apply' }
 }
 
 // ─── Søknaden ────────────────────────────────────────────────────────────
 
 /**
- * Kaster hvis komikeren ikke har lov til å søke på plassen.
+ * Kaster hvis komikeren ikke har lov til å søke på showet.
  *
  * Gjentar hele regelen fra `getOpenSpotsForArtist`, og det er med vilje:
- * handlingen er et kallbart endepunkt, så en requirement-id kan sendes inn
- * uten å ha vært innom noen liste. Samme lærdom som `assertArtistBookableForShow`
+ * handlingen er et kallbart endepunkt, så en show-id kan sendes inn uten å
+ * ha vært innom noen liste. Samme lærdom som `assertArtistBookableForShow`
  * i lib/club-artists.ts.
  *
- * En full plass avvises ikke — søknaden blir venteliste, og `waitlist` sier
- * det til kalleren. Returnerer også showet og plassen, så kalleren slipper å
- * hente dem på nytt.
+ * Et show uten åpne plasser tar ikke imot søknader. Et show der alle de
+ * åpne plassene er fulle, avvises ikke — søknaden blir venteliste, og
+ * `waitlist` sier det til kalleren. Returnerer også showet, så kalleren
+ * slipper å hente det på nytt.
  */
-export async function assertArtistCanApply(db: Db, artistId: string, requirementId: string) {
-  const { data: requirement } = await db
-    .from('show_requirements')
-    .select('id, show_id, role_name, quantity, submissions_open')
-    .eq('id', requirementId)
-    .maybeSingle()
-
-  if (!requirement) throw new Error('This spot does not exist.')
-  if (!requirement.submissions_open) throw new Error('This spot is not open for submissions.')
-
-  const [{ data: artist }, { data: show }] = await Promise.all([
+export async function assertArtistCanApply(db: Db, artistId: string, showId: string) {
+  const [{ data: artist }, { data: show }, { data: requirements }] = await Promise.all([
     db.from('artists').select('id, status').eq('id', artistId).maybeSingle(),
     db.from('shows')
       .select('id, title, date, status, club_id, submissions_audience, submissions_close_at')
-      .eq('id', requirement.show_id)
+      .eq('id', showId)
       // Et arkivert show finnes ikke lenger for komikerne.
       .is('deleted_at', null)
       .maybeSingle(),
+    db.from('show_requirements')
+      .select('id, quantity')
+      .eq('show_id', showId)
+      .eq('submissions_open', true),
   ])
 
   if (!artist) throw new Error('This comedian does not exist.')
@@ -548,6 +594,7 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
   if (!show) throw new Error('This show does not exist.')
   const closed = showClosedReason(show)
   if (closed) throw new Error(closed)
+  if (!requirements?.length) throw new Error('This show is not open for submissions.')
 
   const { data: review } = show.club_id
     ? await db.from('club_artists').select('is_flagged').eq('club_id', show.club_id).eq('artist_id', artistId).maybeSingle()
@@ -569,10 +616,10 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
     throw new Error('You have marked that date as unavailable. Clear it in your calendar first.')
   }
 
-  const [{ count: filled }, { data: ownSpot }] = await Promise.all([
+  const [{ data: filledSpots }, { data: ownSpot }] = await Promise.all([
     db.from('confirmed_spots')
-      .select('*', { count: 'exact', head: true })
-      .eq('show_requirement_id', requirementId)
+      .select('show_requirement_id')
+      .in('show_requirement_id', requirements.map((req) => req.id))
       .in('status', ACTIVE_SPOT_STATUSES),
     db.from('confirmed_spots')
       .select('id')
@@ -584,8 +631,10 @@ export async function assertArtistCanApply(db: Db, artistId: string, requirement
 
   if (ownSpot) throw new Error('You already have a spot on this show.')
 
-  const { waitlist } = spotAvailability({ quantity: requirement.quantity, filled: filled ?? 0 })
-  return { requirement, show, waitlist }
+  const filledByRequirement = countBy(filledSpots ?? [], (row) => row.show_requirement_id ?? '')
+  const { waitlist } = showAvailability(requirements.map((req) =>
+    spotAvailability({ quantity: req.quantity, filled: filledByRequirement.get(req.id) ?? 0 })))
+  return { show, waitlist }
 }
 
 /**

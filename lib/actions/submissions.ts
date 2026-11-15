@@ -159,13 +159,15 @@ async function loadSubmissionForBooker(formData: FormData) {
   if (error) throw new Error(error.message)
   if (!submission) throw new Error('This application no longer exists.')
 
-  await assertRequirementAccess(submission.show_id, submission.show_requirement_id)
+  await assertShowAccess(submission.show_id)
   return { db, submission }
 }
 
 /**
- * Bookeren godtar søknaden: et vanlig tilbud går ut, og komikeren svarer på
- * det som på alle andre tilbud. Her slutter søknaden.
+ * Bookeren godtar søknaden og velger plassen: et vanlig tilbud går ut for
+ * den plassen, og komikeren svarer på det som på alle andre tilbud. Her
+ * slutter søknaden. Komikeren søkte på showet, ikke plassen — plassen er
+ * klubbens valg (prosjektleder, 2026-11-15).
  *
  * Søknaden låses først (`pending` → `accepted` med vilkår på status), så to
  * klikk — eller to bookere — ikke sender to tilbud. Feiler tilbudet, settes
@@ -177,7 +179,10 @@ async function loadSubmissionForBooker(formData: FormData) {
  */
 export async function approveSubmissionAction(formData: FormData): Promise<{ artistName: string }> {
   const { db, submission } = await loadSubmissionForBooker(formData)
-  const { show_id: showId, show_requirement_id: requirementId, artist_id: artistId } = submission
+  const { show_id: showId, artist_id: artistId } = submission
+  const requirementId = String(formData.get('show_requirement_id') ?? '')
+  if (!requirementId) throw new Error('Pick the spot to offer.')
+  await assertRequirementAccess(showId, requirementId)
 
   if (!OPEN_SUBMISSION_STATUSES.includes(submission.status)) {
     throw new Error('This application has already been handled.')
@@ -185,7 +190,7 @@ export async function approveSubmissionAction(formData: FormData): Promise<{ art
 
   const { data: claimed, error: claimError } = await db
     .from('show_submissions')
-    .update({ status: 'accepted', responded_at: new Date().toISOString() })
+    .update({ status: 'accepted', responded_at: new Date().toISOString(), show_requirement_id: requirementId })
     .eq('id', submission.id)
     .in('status', OPEN_SUBMISSION_STATUSES)
     .select('id')
@@ -242,7 +247,7 @@ export async function approveSubmissionAction(formData: FormData): Promise<{ art
   } catch (error) {
     await db
       .from('show_submissions')
-      .update({ status: submission.status, responded_at: null })
+      .update({ status: submission.status, responded_at: null, show_requirement_id: null })
       .eq('id', submission.id)
 
     if (connectedHere && clubId) {
@@ -262,7 +267,7 @@ export async function declineSubmissionAction(formData: FormData) {
 
   const { data, error } = await db
     .from('show_submissions')
-    .update({ status: 'declined', responded_at: new Date().toISOString() })
+    .update({ status: 'declined', responded_at: new Date().toISOString(), show_requirement_id: null })
     .eq('id', submission.id)
     .in('status', OPEN_SUBMISSION_STATUSES)
     .select('id')

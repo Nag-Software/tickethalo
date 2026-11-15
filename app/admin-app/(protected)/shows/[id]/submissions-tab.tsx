@@ -4,10 +4,18 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Check, ChevronRight, Inbox, Megaphone, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Inbox, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import {
   approveSubmissionAction,
@@ -15,19 +23,19 @@ import {
   reopenSubmissionAction,
 } from '@/lib/actions/submissions'
 import { LineupCallout, SpotNumber, spotCardClass } from './lineup-ui'
-import type { SubmissionGroup, SubmissionItem } from './submissions-data'
+import type { SubmissionItem, SubmissionSpot, SubmissionsView } from './submissions-data'
 
 /**
- * Søknadsfanen: komikerne som har meldt seg på showets åpne plasser.
+ * Søknadsfanen: komikerne som har søkt på showet.
  *
- * Tegnet med de samme delene som lineup-fanen — én kortflate per plass, med
- * plassnummer og rolle i hodet — så bookeren kjenner igjen plassene hen
- * åpnet. Hver søknad er én rad: hvem (lenke til profilen), hva hen skrev,
- * og ja eller nei.
+ * Komikeren søker på showet, ikke en plass, så det er én liste. Bookeren
+ * velger plassen i det hen godkjenner — «Approve» åpner plassene som har
+ * ledige seter (prosjektleder, 2026-11-15). Hver søknad er én rad: hvem
+ * (lenke til profilen), hva hen skrev, og ja eller nei.
  *
- * Ubesvarte søknader på en full plass står for seg under «Waitlist». Klubben
+ * Når hver åpne plass er full, står de ubesvarte under «Waitlist». Klubben
  * kan ikke si ja før noen faller fra, så de skal ikke telle som noe som
- * venter på svar — men de skal være lette å finne den dagen plassen åpner.
+ * venter på svar — men de skal være lette å finne den dagen et sete åpner.
  */
 
 type Filter = 'waiting' | 'waitlist' | 'handled' | 'all'
@@ -92,17 +100,20 @@ function initials(name: string) {
 
 export function SubmissionsTab({
   showId,
-  groups,
+  view,
 }: {
   showId: string
-  groups: SubmissionGroup[]
+  view: SubmissionsView
 }) {
-  const allItems = groups.flatMap((group) => group.items)
+  const allItems = view.items
   const waitingCount = allItems.filter(isWaiting).length
   const waitlistCount = allItems.filter((item) => item.waitlist).length
   const handledCount = allItems.filter((item) => !isOpen(item)).length
   const offersSent = allItems.filter((item) => item.status === 'accepted').length
-  const anyOpen = groups.some((group) => group.open)
+  const openSpots = view.spots.filter((spot) => spot.open)
+  // Plassene bookeren kan gi en søker: åpne, med minst ett ledig sete.
+  const freeSpots = openSpots.filter((spot) => spot.filled < spot.quantity)
+  const seatsLeft = freeSpots.reduce((sum, spot) => sum + spot.quantity - spot.filled, 0)
 
   // Starter på det som venter — med mindre ingenting gjør det.
   const [filter, setFilter] = React.useState<Filter>(
@@ -114,36 +125,29 @@ export function SubmissionsTab({
   if (allItems.length === 0) {
     return (
       <LineupCallout
-        title={anyOpen ? 'No applications yet' : 'No spots are open for submissions'}
+        title={openSpots.length > 0 ? 'No applications yet' : 'No spots are open for submissions'}
         action={
           <Button asChild variant="outline" size="sm">
             <Link href={lineupHref}>
-              {anyOpen ? 'Submission settings' : 'Open a spot'}
+              {openSpots.length > 0 ? 'Submission settings' : 'Open a spot'}
               <ChevronRight data-icon="inline-end" />
             </Link>
           </Button>
         }
       >
         <p className="text-[13px] text-muted-foreground">
-          {anyOpen
-            ? 'Comedians who apply for your open spots show up here, ready for a yes or a no.'
-            : 'Open a lineup spot for submissions and comedians can apply for it themselves. Their applications land here.'}
+          {openSpots.length > 0
+            ? 'Comedians apply for the show once. They show up here, and you pick their spot when you approve.'
+            : 'Open lineup spots for submissions and comedians can apply for the show themselves. Their applications land here.'}
         </p>
       </LineupCallout>
     )
   }
 
-  const visibleGroups = groups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => matchesFilter(item, filter)),
-      // Ventelisten filtrert bort under «Waiting»: plassen er ikke stille,
-      // den er full — og det skal stå.
-      hiddenWaitlist: filter === 'waiting' ? group.items.filter((item) => item.waitlist).length : 0,
-    }))
-    // En åpen plass uten søknader blir stående under «Waiting» og «All»: den
-    // sier at det er stille, ikke at plassen er borte.
-    .filter((group) => group.items.length > 0 || (group.open && (filter === 'waiting' || filter === 'all')))
+  const visible = allItems.filter((item) => matchesFilter(item, filter))
+  const waitlist = visible.filter((item) => item.waitlist)
+  const others = visible.filter((item) => !item.waitlist)
+  const hiddenWaitlist = filter === 'waiting' ? waitlistCount : 0
 
   const filters: { key: Filter; label: string; count: number }[] = [
     { key: 'waiting', label: 'Waiting', count: waitingCount },
@@ -164,6 +168,13 @@ export function SubmissionsTab({
           {waitingCount > 0
             ? `${waitingCount} waiting for an answer`
             : 'All caught up'}
+        </span>
+        <span className="text-[13px] whitespace-nowrap text-muted-foreground">
+          {openSpots.length === 0
+            ? 'No spots open'
+            : view.isFull
+              ? 'Line-up full'
+              : `${seatsLeft} open ${seatsLeft === 1 ? 'spot' : 'spots'} left`}
         </span>
         {waitlistCount > 0 && (
           <span className="text-[13px] whitespace-nowrap text-muted-foreground">
@@ -206,7 +217,7 @@ export function SubmissionsTab({
         </div>
       </div>
 
-      {visibleGroups.length === 0 && (
+      {visible.length === 0 ? (
         <div className={cn(spotCardClass, 'flex flex-col items-center gap-1 px-6 py-12 text-center')}>
           <Check className="mb-1 size-6 text-[var(--ev-accent-fill)]" aria-hidden />
           <p className="text-sm font-semibold">
@@ -214,106 +225,34 @@ export function SubmissionsTab({
           </p>
           <p className="text-[13px] text-muted-foreground">
             {filter === 'waiting'
-              ? 'Every application has an answer. New ones show up here.'
+              ? hiddenWaitlist > 0
+                ? `The line-up is full. ${hiddenWaitlist} on the waitlist.`
+                : 'Every application has an answer. New ones show up here.'
               : filter === 'waitlist'
-                ? 'Comedians who apply for a full spot wait here in case someone drops out.'
+                ? 'Comedians who apply when the line-up is full wait here in case someone drops out.'
                 : 'Applications you approve or decline move here.'}
           </p>
+          {hiddenWaitlist > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter('waitlist')}
+              className="mt-1 cursor-pointer text-[13px] text-muted-foreground underline underline-offset-[3px] hover:text-foreground"
+            >
+              See the waitlist
+            </button>
+          )}
         </div>
-      )}
-
-      {visibleGroups.map((group) => (
-        <SpotGroup
-          key={group.requirementId}
-          group={group}
-          lineupHref={lineupHref}
-          hiddenWaitlist={group.hiddenWaitlist}
-          onShowWaitlist={() => setFilter('waitlist')}
-        />
-      ))}
-    </div>
-  )
-}
-
-// ─── Én plass ────────────────────────────────────────────────────────────────
-
-function SpotGroup({
-  group,
-  lineupHref,
-  hiddenWaitlist,
-  onShowWaitlist,
-}: {
-  group: SubmissionGroup
-  lineupHref: string
-  hiddenWaitlist: number
-  onShowWaitlist: () => void
-}) {
-  const isFull = group.filled >= group.quantity
-  const waitlist = group.items.filter((item) => item.waitlist)
-  const others = group.items.filter((item) => !item.waitlist)
-
-  return (
-    <section className={cn(spotCardClass, 'overflow-hidden')} aria-label={`${group.roleName} applications`}>
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3.5 sm:px-5">
-        <SpotNumber position={group.position} />
-        <RoleIcon roleName={group.roleName} className="size-5 shrink-0 text-[var(--ev-accent-fill)]" />
-        <span className="truncate text-base font-bold">{group.roleName}</span>
-        <span className="text-[13px] whitespace-nowrap text-muted-foreground">{group.feeLabel}</span>
-
-        <div className="ml-auto flex items-center gap-2">
-          <span
-            className={cn(
-              PILL_CLASS,
-              isFull
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
-                : 'bg-muted text-muted-foreground',
-            )}
-          >
-            {isFull ? 'Filled' : `${group.filled} of ${group.quantity} filled`}
-          </span>
-          <span
-            className={cn(
-              PILL_CLASS,
-              'gap-1',
-              group.open ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground',
-            )}
-            title={group.open ? 'Comedians can apply for this spot' : 'Closed for new applications'}
-          >
-            <Megaphone className="size-3" aria-hidden />
-            {group.open ? 'Open' : 'Closed'}
-          </span>
-        </div>
-      </header>
-
-      {group.items.length === 0 && hiddenWaitlist > 0 ? (
-        <p className="border-t px-4 py-5 text-[13px] text-muted-foreground sm:px-5">
-          The spot is full. {hiddenWaitlist} on the waitlist.{' '}
-          <button
-            type="button"
-            onClick={onShowWaitlist}
-            className="cursor-pointer underline underline-offset-[3px] hover:text-foreground"
-          >
-            See the waitlist
-          </button>
-        </p>
-      ) : group.items.length === 0 ? (
-        <p className="border-t px-4 py-5 text-[13px] text-muted-foreground sm:px-5">
-          No applications for this spot yet.{' '}
-          <Link href={lineupHref} className="underline underline-offset-[3px] hover:text-foreground">
-            Change who can apply
-          </Link>
-        </p>
       ) : (
-        <>
+        <section className={cn(spotCardClass, 'overflow-hidden')} aria-label="Applications">
           {others.length > 0 && (
-            <ul className="divide-y border-t">
+            <ul className="divide-y">
               {others.map((item) => (
-                <SubmissionRow key={item.id} item={item} roleName={group.roleName} />
+                <SubmissionRow key={item.id} item={item} freeSpots={freeSpots} />
               ))}
             </ul>
           )}
           {waitlist.length > 0 && (
-            <div className="border-t">
+            <div className={cn(others.length > 0 && 'border-t')}>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-muted/50 px-4 py-2.5 sm:px-5">
                 <span className="text-[13px] font-semibold">Waitlist · {waitlist.length}</span>
                 <span className="text-xs text-muted-foreground">
@@ -322,20 +261,20 @@ function SpotGroup({
               </div>
               <ul className="divide-y border-t">
                 {waitlist.map((item) => (
-                  <SubmissionRow key={item.id} item={item} roleName={group.roleName} />
+                  <SubmissionRow key={item.id} item={item} freeSpots={freeSpots} />
                 ))}
               </ul>
             </div>
           )}
-        </>
+        </section>
       )}
-    </section>
+    </div>
   )
 }
 
 // ─── Én søknad ───────────────────────────────────────────────────────────────
 
-function SubmissionRow({ item, roleName }: { item: SubmissionItem; roleName: string }) {
+function SubmissionRow({ item, freeSpots }: { item: SubmissionItem; freeSpots: SubmissionSpot[] }) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   // Ventelisten får også knappene: «Decline» virker, «Approve» sier hvorfor ikke.
@@ -345,9 +284,11 @@ function SubmissionRow({ item, roleName }: { item: SubmissionItem; roleName: str
   function run(
     action: (fd: FormData) => Promise<unknown>,
     { success, failure }: { success: (result: unknown) => void; failure: string },
+    extra: Record<string, string> = {},
   ) {
     const fd = new FormData()
     fd.set('submission_id', item.id)
+    for (const [key, value] of Object.entries(extra)) fd.set(key, value)
 
     startTransition(async () => {
       try {
@@ -360,15 +301,17 @@ function SubmissionRow({ item, roleName }: { item: SubmissionItem; roleName: str
     })
   }
 
-  function approve() {
+  function approve(spot: SubmissionSpot) {
     run(approveSubmissionAction, {
       failure: 'Could not approve the application',
       success: () =>
         toast.success(`Offer sent to ${item.artist.name}`, {
-          description: `They get a booking offer for ${roleName} to accept or decline.`,
+          description: `They get a booking offer for ${spot.roleName} to accept or decline.`,
         }),
-    })
+    }, { show_requirement_id: spot.requirementId })
   }
+
+  const blocker = item.blocker ?? (freeSpots.length === 0 ? 'No open spot has a free seat' : null)
 
   function decline() {
     run(declineSubmissionAction, {
@@ -472,24 +415,47 @@ function SubmissionRow({ item, roleName }: { item: SubmissionItem; roleName: str
                 <X data-icon="inline-start" />
                 Decline
               </Button>
-              <Button
-                size="sm"
-                onClick={approve}
-                disabled={pending || Boolean(item.blocker)}
-                title={item.blocker ?? `Send ${item.artist.name} a booking offer`}
-                className="flex-1 sm:flex-none"
-              >
-                <Check data-icon="inline-start" />
-                Approve
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    disabled={pending || Boolean(blocker)}
+                    title={blocker ?? `Pick a spot for ${item.artist.name}`}
+                    className="flex-1 sm:flex-none"
+                  >
+                    <Check data-icon="inline-start" />
+                    Approve
+                    <ChevronDown data-icon="inline-end" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-64">
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Which spot? They get a booking offer for it.
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {freeSpots.map((spot) => (
+                    <DropdownMenuItem key={spot.requirementId} onSelect={() => approve(spot)} className="gap-2.5">
+                      <SpotNumber position={spot.position} />
+                      <RoleIcon roleName={spot.roleName} className="size-4 shrink-0 text-[var(--ev-accent-fill)]" />
+                      <span className="flex-1 truncate font-medium">{spot.roleName}</span>
+                      <span className="text-xs whitespace-nowrap text-muted-foreground">
+                        {spot.quantity > 1 ? `${spot.quantity - spot.filled} left · ` : ''}{spot.feeLabel}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <p className="text-xs text-muted-foreground sm:text-right">
-              {item.blocker ?? (item.onRoster ? 'Approving sends a booking offer' : 'Approving adds them and sends an offer')}
+              {blocker ?? (item.onRoster ? 'Pick a spot — they get a booking offer' : 'Approving adds them and sends an offer')}
             </p>
           </>
         ) : (
           <div className="flex items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
             <span className={cn(PILL_CLASS, result.className)}>{result.label}</span>
+            {item.spotLabel && (
+              <span className="text-xs whitespace-nowrap text-muted-foreground">{item.spotLabel}</span>
+            )}
             <div className="flex items-center gap-2">
               {item.respondedLabel && (
                 <span className="text-xs text-muted-foreground">{item.respondedLabel}</span>

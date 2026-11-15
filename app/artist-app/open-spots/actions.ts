@@ -16,17 +16,21 @@ import { assertArtistCanApply } from '@/lib/open-spots'
 const OPEN_SPOTS = '/artist-app/open-spots'
 
 /**
- * Ett klikk: søknaden legges inn på plassen.
+ * Ett klikk: søknaden legges inn på showet. Komikeren velger ikke plass —
+ * det gjør klubben når den godkjenner.
  *
  * Er komikeren invitert til showet, merkes søknaden som det. Bookeren skal
  * kunne se forskjell på «meldte seg selv» og «vi spurte».
+ *
+ * Har komikeren trukket en søknad på showet før, åpnes den samme raden
+ * igjen: én søknad per komiker per show, og den gamle har køplassen sin.
  */
-export async function applyForSpotAction(formData: FormData) {
-  const requirementId = String(formData.get('requirement_id') ?? '')
-  if (!requirementId) throw new Error('Missing spot.')
+export async function applyForShowAction(formData: FormData) {
+  const showId = String(formData.get('show_id') ?? '')
+  if (!showId) throw new Error('Missing show.')
 
   const { artist, db } = await getCurrentArtist()
-  const { show } = await assertArtistCanApply(db, artist.id, requirementId)
+  const { show } = await assertArtistCanApply(db, artist.id, showId)
 
   const { data: invitation } = await db
     .from('show_submission_invitations')
@@ -35,11 +39,30 @@ export async function applyForSpotAction(formData: FormData) {
     .eq('artist_id', artist.id)
     .maybeSingle()
 
+  const { data: existing } = await db
+    .from('show_submissions')
+    .select('id, status')
+    .eq('show_id', show.id)
+    .eq('artist_id', artist.id)
+    .maybeSingle()
+
+  if (existing) {
+    if (existing.status === 'withdrawn') {
+      const { error } = await db
+        .from('show_submissions')
+        .update({ status: 'pending', responded_at: null, show_requirement_id: null })
+        .eq('id', existing.id)
+        .eq('status', 'withdrawn')
+      if (error) throw new Error(error.message)
+      revalidateAfterApply(show.id)
+    }
+    redirect(`${OPEN_SPOTS}/${existing.id}`)
+  }
+
   const { data: submission, error } = await db
     .from('show_submissions')
     .insert({
       show_id: show.id,
-      show_requirement_id: requirementId,
       artist_id: artist.id,
       source: invitation ? 'invitation' : 'open_call',
       invitation_id: invitation?.id ?? null,
@@ -48,24 +71,28 @@ export async function applyForSpotAction(formData: FormData) {
     .single()
 
   if (error) {
-    // Unik-constrainten på (show_requirement_id, artist_id). Å søke to ganger
-    // er ikke en feil komikeren har gjort — det er som regel et dobbeltklikk.
+    // Unik-constrainten på (show_id, artist_id). Å søke to ganger er ikke en
+    // feil komikeren har gjort — det er som regel et dobbeltklikk.
     if (error.code === '23505') {
-      const { data: existing } = await db
+      const { data: raced } = await db
         .from('show_submissions')
         .select('id')
-        .eq('show_requirement_id', requirementId)
+        .eq('show_id', show.id)
         .eq('artist_id', artist.id)
         .single()
 
-      if (existing) redirect(`${OPEN_SPOTS}/${existing.id}`)
+      if (raced) redirect(`${OPEN_SPOTS}/${raced.id}`)
     }
     throw new Error(error.message)
   }
 
-  revalidatePath(OPEN_SPOTS)
-  revalidatePath(`/admin-app/shows/${show.id}`)
+  revalidateAfterApply(show.id)
   redirect(`${OPEN_SPOTS}/${submission.id}`)
+}
+
+function revalidateAfterApply(showId: string) {
+  revalidatePath(OPEN_SPOTS)
+  revalidatePath(`/admin-app/shows/${showId}`)
 }
 
 /** Notatet til bookeren. Valgfritt, og kan endres til søknaden er behandlet. */

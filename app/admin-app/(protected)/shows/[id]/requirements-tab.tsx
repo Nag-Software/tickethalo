@@ -90,7 +90,7 @@ type Props = {
   /** Antall komikere klubben har knyttet til seg — publikummet ved 'roster'. */
   rosterSize: number
   /** Ubehandlede søknader på showet, per lineup-plass. */
-  pendingByRequirement: Record<string, number>
+  pendingSubmissionTotal: number
   /**
    * Taket for prosentavtalene samlet — klubbens andel av billettinntekten
    * (`clubs.artist_share_bps`, 90 % som standard). Samme grense som
@@ -394,7 +394,7 @@ export function RequirementsTab({
   submissionsAudience,
   submissionsCloseAt,
   rosterSize,
-  pendingByRequirement,
+  pendingSubmissionTotal,
   percentLimit,
   matchCounts,
 }: Props) {
@@ -789,7 +789,7 @@ export function RequirementsTab({
   if (blockingIssueCount > 0) bookingBlockers.push(`${blockingIssueCount} spot${blockingIssueCount > 1 ? 's have' : ' has'} invalid values`)
   if (totalPercent > percentLimit + 0.0001) bookingBlockers.push(`Percentage allocation is ${Math.round(totalPercent * 10) / 10}% (max ${percentLimit}%)`)
   const canStartBooking = bookingBlockers.length === 0
-  const pendingTotal = Object.values(pendingByRequirement).reduce((sum, count) => sum + count, 0)
+  const pendingTotal = pendingSubmissionTotal
 
   return (
     <div className="max-w-4xl space-y-2.5">
@@ -875,7 +875,6 @@ export function RequirementsTab({
                     showId={showId}
                     reqId={req.id}
                     open={state.submissions_open}
-                    pendingCount={pendingByRequirement[req.id] ?? 0}
                     disabled={!canEdit}
                   />
 
