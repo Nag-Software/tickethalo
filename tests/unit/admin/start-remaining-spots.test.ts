@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fakeQueryDb, type FakeQuery, type FakeTables } from '../booking/fake-query-db'
+import { fakeQueryDb } from '../booking/fake-query-db'
 
 /**
  * Kortet for resten av plassene (ClickUp «Auto suggest selv om valgt en
