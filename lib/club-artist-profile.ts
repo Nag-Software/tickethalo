@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { NEUTRAL_SCORE } from '@/lib/artist-score'
-import type { Artist, ArtistType, ClubArtist, EnergyLevel } from '@/types/database'
+import { NEUTRAL_SCORE, isSkillLevel } from '@/lib/artist-score'
+import type { Artist, ArtistType, ClubArtist, EnergyLevel, SkillLevel } from '@/types/database'
 
 type Db = ReturnType<typeof createAdminClient>
 
@@ -15,11 +15,11 @@ type Db = ReturnType<typeof createAdminClient>
  * Derfor går alle klubbflater gjennom denne modulen.
  */
 
-const REVIEW_FIELDS = 'artist_id, category, admin_energy_level, admin_notes, is_flagged, flag_reason, flagged_at, score'
+const REVIEW_FIELDS = 'artist_id, category, admin_energy_level, admin_notes, is_flagged, flag_reason, flagged_at, score, skill_level_override'
 
 export type ClubArtistReview = Pick<
   ClubArtist,
-  'category' | 'admin_energy_level' | 'admin_notes' | 'is_flagged' | 'flag_reason' | 'flagged_at' | 'score'
+  'category' | 'admin_energy_level' | 'admin_notes' | 'is_flagged' | 'flag_reason' | 'flagged_at' | 'score' | 'skill_level_override'
 >
 
 /** Det en komiker har før klubben har vurdert hen. */
@@ -31,6 +31,7 @@ export const EMPTY_REVIEW: ClubArtistReview = {
   flag_reason: null,
   flagged_at: null,
   score: NEUTRAL_SCORE,
+  skill_level_override: null,
 }
 
 /** Klubbens vurdering av én komiker. Null = ikke knyttet til klubben. */
@@ -199,6 +200,7 @@ function toReview(row: Record<string, unknown>): ClubArtistReview {
     flagged_at: (row.flagged_at as string | null) ?? null,
     // numeric kommer som tekst fra PostgREST.
     score: row.score != null ? Number(row.score) : NEUTRAL_SCORE,
+    skill_level_override: isSkillLevel(row.skill_level_override) ? row.skill_level_override : null,
   }
 }
 
@@ -214,10 +216,16 @@ function toReview(row: Record<string, unknown>): ClubArtistReview {
 export function withClubReview<T extends { id: string }>(
   artists: T[],
   reviews: Map<string, ClubArtistReview>,
-): Array<T & { category: ArtistType[] | null; admin_energy_level: EnergyLevel | null; score: number }> {
+): Array<T & { category: ArtistType[] | null; admin_energy_level: EnergyLevel | null; score: number; skill_level_override: SkillLevel | null }> {
   return artists.flatMap((artist) => {
     const review = reviews.get(artist.id)
     if (!review || review.is_flagged) return []
-    return [{ ...artist, category: review.category, admin_energy_level: review.admin_energy_level, score: review.score }]
+    return [{
+      ...artist,
+      category: review.category,
+      admin_energy_level: review.admin_energy_level,
+      score: review.score,
+      skill_level_override: review.skill_level_override,
+    }]
   })
 }

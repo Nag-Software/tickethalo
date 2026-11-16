@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatScore, globalScore, meetsSkillLevel, NEUTRAL_SCORE, scoreFromRatings, SKILL_LEVELS, SKILL_REQUIREMENT_LABELS, skillLevelFromScore } from '@/lib/artist-score'
+import { effectiveSkillLevel, formatScore, globalScore, meetsSkillLevel, NEUTRAL_SCORE, scoreFromRatings, SKILL_LEVELS, SKILL_REQUIREMENT_LABELS, skillLevelFromScore } from '@/lib/artist-score'
 import type { PerformanceRating } from '@/types/database'
 
 const repeat = (rating: PerformanceRating, times: number): PerformanceRating[] =>
@@ -138,5 +138,29 @@ describe('den globale scoren', () => {
 
   it('runder til én desimal', () => {
     expect(globalScore([{ score: 8.3, reviewCount: 2 }, { score: 6.7, reviewCount: 1 }]).score).toBe(7.8)
+  })
+})
+
+describe('skill level set by the club', () => {
+  it('follows the score when the club has not set it', () => {
+    expect(effectiveSkillLevel(5, null)).toBe('medium')
+    expect(effectiveSkillLevel(8.3, undefined)).toBe('high')
+  })
+
+  it('lets the club set the level over the score, both ways', () => {
+    expect(effectiveSkillLevel(5, 'high')).toBe('high')
+    expect(effectiveSkillLevel(8.3, 'low')).toBe('low')
+  })
+
+  it('ignores a value that is not a level', () => {
+    expect(effectiveSkillLevel(5, 'expert' as never)).toBe('medium')
+  })
+
+  it('uses the club level against the spot minimum', () => {
+    expect(meetsSkillLevel(5, 'high')).toBe(false)
+    expect(meetsSkillLevel(5, 'high', 'high')).toBe(true)
+    expect(meetsSkillLevel(8.3, 'medium', 'low')).toBe(false)
+    expect(meetsSkillLevel(8.3, 'low', 'low')).toBe(true)
+    expect(meetsSkillLevel(2, null, 'low')).toBe(true)
   })
 })

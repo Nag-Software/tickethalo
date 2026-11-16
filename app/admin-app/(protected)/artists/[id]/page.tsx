@@ -8,7 +8,7 @@ import { AdminHeader } from '@/components/admin/admin-header'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { ArtistProfileCard } from '@/components/admin/artist-profile-card'
 import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge, SkillLevelBadge } from '@/components/admin/artist-badges'
-import { skillLevelFromScore } from '@/lib/artist-score'
+import { SKILL_LEVEL_LABELS, effectiveSkillLevel, skillLevelFromScore } from '@/lib/artist-score'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -117,8 +117,12 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 <ArtistStatusBadge status={artist.status} />
                 {/* Nivået, ikke scoren: bookeren setter krav etter det på lineup-plassene. */}
                 {inClub && (
-                  <span title="Based on your club's reviews after each show">
-                    <SkillLevelBadge level={skillLevelFromScore(review.score)} />
+                  <span
+                    title={review.skill_level_override
+                      ? 'Set by your club'
+                      : "Based on your club's reviews after each show"}
+                  >
+                    <SkillLevelBadge level={effectiveSkillLevel(review.score, review.skill_level_override)} />
                   </span>
                 )}
                 {review.admin_energy_level && <ArtistEnergyBadge level={review.admin_energy_level} />}
@@ -201,6 +205,24 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                         { value: 'low', label: 'Low' },
                       ]}
                     />
+
+                    <div className="flex flex-col gap-1.5">
+                      <ChipGroup
+                        label="Skill level"
+                        name="skill_level_override"
+                        current={review.skill_level_override ?? ''}
+                        chips={[
+                          { value: '', label: 'Auto' },
+                          { value: 'low', label: SKILL_LEVEL_LABELS.low },
+                          { value: 'medium', label: SKILL_LEVEL_LABELS.medium },
+                          { value: 'high', label: SKILL_LEVEL_LABELS.high },
+                        ]}
+                      />
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Auto follows your reviews after each show (now {SKILL_LEVEL_LABELS[skillLevelFromScore(review.score)]}).
+                        Pick a level to set it yourself — it decides which spots they can be offered.
+                      </p>
+                    </div>
 
                     <div className="flex flex-col gap-2">
                       <Label>Book them as</Label>

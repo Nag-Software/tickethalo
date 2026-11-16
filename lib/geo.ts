@@ -18,8 +18,10 @@ export interface Coordinates {
   lon: number
 }
 
+import { ALL_COUNTRIES, type CountryCode } from '@/lib/countries'
+
 /** ISO 3166-1 alpha-2. Stored on the artist so booking can scope by country. */
-export type CountryCode = 'NO' | 'SE' | 'DK' | 'FI' | 'IS' | 'GB' | 'IE' | 'NL' | 'DE' | 'FR' | 'ES' | 'US'
+export type { CountryCode }
 
 export interface Country {
   code: CountryCode
@@ -31,20 +33,44 @@ export interface Country {
   defaultLanguages: LanguageCode[]
 }
 
-export const COUNTRIES: Country[] = [
-  { code: 'NO', name: 'Norway', defaultLanguages: ['no'] },
-  { code: 'SE', name: 'Sweden', defaultLanguages: ['sv'] },
-  { code: 'DK', name: 'Denmark', defaultLanguages: ['da'] },
-  { code: 'FI', name: 'Finland', defaultLanguages: ['fi'] },
-  { code: 'IS', name: 'Iceland', defaultLanguages: ['is'] },
-  { code: 'GB', name: 'United Kingdom', defaultLanguages: ['en'] },
-  { code: 'IE', name: 'Ireland', defaultLanguages: ['en'] },
-  { code: 'NL', name: 'Netherlands', defaultLanguages: ['nl'] },
-  { code: 'DE', name: 'Germany', defaultLanguages: ['de'] },
-  { code: 'FR', name: 'France', defaultLanguages: ['fr'] },
-  { code: 'ES', name: 'Spain', defaultLanguages: ['es'] },
-  { code: 'US', name: 'United States', defaultLanguages: ['en'] },
-]
+/** Språkforslagene vi har. Land som ikke står her, får ingen forslag. */
+const DEFAULT_LANGUAGES: Partial<Record<CountryCode, LanguageCode[]>> = {
+  NO: ['no'],
+  SE: ['sv'],
+  DK: ['da'],
+  FI: ['fi'],
+  IS: ['is'],
+  GB: ['en'],
+  IE: ['en'],
+  NL: ['nl'],
+  DE: ['de'],
+  AT: ['de'],
+  FR: ['fr'],
+  ES: ['es'],
+  IT: ['it'],
+  PL: ['pl'],
+  PT: ['pt'],
+  US: ['en'],
+  CA: ['en'],
+  AU: ['en'],
+  NZ: ['en'],
+}
+
+/**
+ * Alle land, sortert på navn. Lagring og validering godtar hvilket som helst
+ * av dem — se `lookupCountry`.
+ */
+export const COUNTRIES: Country[] = ALL_COUNTRIES.map((country) => ({
+  code: country.code,
+  name: country.name,
+  defaultLanguages: DEFAULT_LANGUAGES[country.code] ?? [],
+}))
+
+/**
+ * Landene stedvelgeren viser som knapper når byen ikke står i listen — der
+ * de fleste komikerne på plattformen bor. Resten velges fra en liste.
+ */
+export const FEATURED_COUNTRY_CODES: CountryCode[] = ['NO', 'SE', 'DK', 'FI', 'IS', 'GB', 'IE', 'NL', 'DE', 'FR', 'ES', 'US']
 
 const COUNTRY_BY_CODE = new Map(COUNTRIES.map((country) => [country.code, country]))
 

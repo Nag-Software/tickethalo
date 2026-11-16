@@ -21,8 +21,10 @@ export type MatchableArtist = {
   admin_energy_level: EnergyLevel | null
   gender: ArtistGender | null
   category: ArtistType[] | null
-  /** `club_artists.score`, 0–10. Gir skill level — se `skillLevelFromScore`. */
+  /** `club_artists.score`, 0–10. Gir skill level — se `effectiveSkillLevel`. */
   score: number
+  /** Klubbens eget valg av nivå. Null/utelatt = følg scoren. */
+  skill_level_override?: SkillLevel | null
 }
 
 /** Kravene på en plass. De lempes aldri av motoren — bare av bookeren. */
@@ -48,7 +50,7 @@ export function requirementBlocker(artist: MatchableArtist, req: HardRequirement
   if (req.required_gender && req.required_gender !== 'any' && artist.gender !== req.required_gender) return 'gender'
   // Sist: nivået er det bookeren oftest kan gi slipp på, og det eneste kravet
   // som flytter seg av seg selv — én vurdering kan løfte en komiker over.
-  if (!meetsSkillLevel(artist.score, req.min_skill_level)) return 'skill'
+  if (!meetsSkillLevel(artist.score, req.min_skill_level, artist.skill_level_override)) return 'skill'
   return null
 }
 

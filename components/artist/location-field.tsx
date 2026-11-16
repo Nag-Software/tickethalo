@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import {
   COUNTRIES,
+  FEATURED_COUNTRY_CODES,
   PLACES,
   foldName,
   lookupCountry,
@@ -35,6 +36,11 @@ const STARTER_PLACES: Place[] = ['Oslo', 'Bergen', 'Trondheim', 'Stockholm', 'K�
  */
 const MAX_LOCATE_KM = 100
 
+const FEATURED_COUNTRIES = FEATURED_COUNTRY_CODES.flatMap((code) => lookupCountry(code) ?? [])
+
+/** Ingen rad er markert før man har skrevet noe — se `onKeyDown`. */
+const NO_ROW = -1
+
 /**
  * Stedvelger for skjema — skjemautgaven av `components/public/location-picker`.
  *
@@ -60,8 +66,10 @@ export function LocationField({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'idle' | 'locating' | 'failed'>('idle')
-  const [activeIndex, setActiveIndex] = useState(0)
+  const [activeIndex, setActiveIndex] = useState(NO_ROW)
   const [pickCountry, setPickCountry] = useState(false)
+  /** Landet valgt i lista, før det bekreftes — se «Use» under. */
+  const [otherCountry, setOtherCountry] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
   const aliveRef = useRef(true)
@@ -79,9 +87,12 @@ export function LocationField({
     [query]
   )
 
+  // Treffet øverst er markert mens man skriver, så Enter tar det. Uten søk
+  // er ingenting markert: Enter i et tomt felt valgte før Oslo, og et trykk
+  // på feil rad i startlisten ga Bergen til folk som ikke bor der.
   const onQueryChange = (next: string) => {
     setQuery(next)
-    setActiveIndex(0)
+    setActiveIndex(next.trim() ? 0 : NO_ROW)
     setPickCountry(false)
   }
 
@@ -90,8 +101,9 @@ export function LocationField({
     if (!next) {
       setQuery('')
       setStatus('idle')
-      setActiveIndex(0)
+      setActiveIndex(NO_ROW)
       setPickCountry(false)
+      setOtherCountry('')
     }
   }
 
@@ -143,10 +155,11 @@ export function LocationField({
       setActiveIndex((index) => (index + 1) % rows.length)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setActiveIndex((index) => (index - 1 + rows.length) % rows.length)
+      // Fra «ingenting markert» (-1) går pil opp til siste rad, ikke nest siste.
+      setActiveIndex((index) => (index <= 0 ? rows.length - 1 : index - 1))
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      const place = rows[activeIndex]
+      const place = activeIndex === NO_ROW ? undefined : rows[activeIndex]
       if (place) select(place)
     }
   }
@@ -256,7 +269,7 @@ export function LocationField({
 
           {!query.trim() && (
             <p className="px-1 text-[12px] text-[var(--ev-faint)]">
-              Type to search cities in Norway, the Nordics, the UK, Europe and the US.
+              Type your city. If it is not in the list, you can still use it and pick your country.
             </p>
           )}
 
@@ -276,7 +289,7 @@ export function LocationField({
                 {`Use “${query.trim()}” and pick the country it's in:`}
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {COUNTRIES.map((country) => (
+                {FEATURED_COUNTRIES.map((country) => (
                   <button
                     key={country.code}
                     type="button"
@@ -286,6 +299,42 @@ export function LocationField({
                     {country.name}
                   </button>
                 ))}
+              </div>
+              {/* Resten av verden — en liste, ikke 250 knapper. */}
+              <label htmlFor={`${id}-country`} className="sr-only">
+                Another country
+              </label>
+              {/* 16px: alt mindre får iOS Safari til å zoome inn ved fokus. */}
+              {/* Valget lagres først med «Use»: en lukket select bytter verdi når
+                  man skriver eller bruker piltastene, så «P» for Polen ville
+                  lagret Pakistan med en gang. */}
+              <div className="flex gap-2">
+                <select
+                  id={`${id}-country`}
+                  value={otherCountry}
+                  onChange={(event) => setOtherCountry(event.target.value)}
+                  className="h-10 min-w-0 flex-1 cursor-pointer rounded-xl bg-transparent px-3 text-[16px] outline-none ring-1 ring-inset ring-[var(--ev-line)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:text-[13px]"
+                >
+                  <option value="" disabled>
+                    Another country…
+                  </option>
+                  {COUNTRIES.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!lookupCountry(otherCountry)}
+                  onClick={() => {
+                    const country = lookupCountry(otherCountry)
+                    if (country) selectUnlisted(country.code)
+                  }}
+                  className="h-10 shrink-0 cursor-pointer rounded-xl px-4 text-[13px] font-medium ring-1 ring-inset ring-[var(--ev-line-strong)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Use
+                </button>
               </div>
             </div>
           )}

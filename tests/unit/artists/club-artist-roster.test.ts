@@ -49,9 +49,18 @@ describe('club comedian roster', () => {
     await expect(clubArtistRoster(db, 'club-1')).resolves.toEqual([
       {
         artist,
-        review: { category: ['headliner'], admin_energy_level: 'high', admin_notes: null, is_flagged: false, flag_reason: null, flagged_at: null, score: 8.3 },
+        review: { category: ['headliner'], admin_energy_level: 'high', admin_notes: null, is_flagged: false, flag_reason: null, flagged_at: null, score: 8.3, skill_level_override: null },
       },
     ])
+  })
+
+  it('carries the skill level the club set, and drops a value that is not a level', async () => {
+    const row = { artist_id: 'a1', category: null, admin_energy_level: null, admin_notes: null, is_flagged: false, flag_reason: null, flagged_at: null, score: '5.0', artists: artist }
+    const { db } = rosterQuery({ data: [{ ...row, skill_level_override: 'high' }, { ...row, skill_level_override: 'expert' }] })
+
+    const [set, unknown] = await clubArtistRoster(db, 'club-1')
+    expect(set.review.skill_level_override).toBe('high')
+    expect(unknown.review.skill_level_override).toBeNull()
   })
 
   it('does not query without a club', async () => {
