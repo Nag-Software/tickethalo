@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { formatDuration } from '@/lib/spot-duration'
+import { gigTypesText } from '@/lib/gig-types'
 import { cn } from '@/lib/utils'
 import { BookingOfferStatusToast } from '../booking-offers/status-toast'
 import { OfferButtons } from '@/components/artist/offer-buttons'
@@ -39,7 +40,7 @@ export default async function ConfirmedBookingsPage({
     ...(offers ?? []).map((offer) => offer.show_id),
   ])]
   const { data: shows } = showIds.length > 0
-    ? await db.from('shows').select('id, title, date, start_time, venue_name, venue_address, status').in('id', showIds)
+    ? await db.from('shows').select('id, title, date, start_time, venue_name, venue_address, status, gig_types').in('id', showIds)
     : { data: [] }
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
 
@@ -123,6 +124,7 @@ export default async function ConfirmedBookingsPage({
                       </Chip>
                       <Chip>{offerFee(offer)}</Chip>
                       {spotLabel(offer.show_requirement_id) && <Chip>{spotLabel(offer.show_requirement_id)}</Chip>}
+                      {gigTypesText(show?.gig_types) && <Chip>{gigTypesText(show?.gig_types)}</Chip>}
                     </div>
                   </div>
 
@@ -199,8 +201,9 @@ export default async function ConfirmedBookingsPage({
                     <Chip tone={spot.status === 'confirmed' ? 'accent' : 'neutral'}>
                       {spot.status === 'confirmed' ? 'Confirmed' : spot.status}
                     </Chip>
+                    {/* Prosentavtaler har ikke noe beløp — da står avtalen, ikke «0 kr». */}
                     <span className="text-[14px] font-medium tabular-nums">
-                      {formatMoney(spot.fee_amount, spot.currency)}
+                      {offerFee(spot)}
                     </span>
                   </div>
                 </Row>

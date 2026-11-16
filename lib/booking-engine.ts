@@ -21,6 +21,7 @@ import type { ArtistGender, ArtistType, EnergyLevel, RequirementCompensationType
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import { appUrl } from '@/lib/app-url'
 import { showVenue } from '@/lib/show-venue'
+import { gigTypesText } from '@/lib/gig-types'
 
 /**
  * Bookingmotoren: hvem som får tilbud på et show, og utsendingen av dem.
@@ -60,6 +61,8 @@ type OfferShow = {
   venue_name: string | null
   venue_address: string | null
   currency: string | null
+  /** Valgfri, så en spørring som ikke henter den fortsatt typesjekker — da står ikke linja. */
+  gig_types?: string[] | null
 }
 
 type OfferRequirement = {
@@ -80,6 +83,7 @@ export function offerDetails(show: OfferShow, requirement: OfferRequirement) {
     duration_label: formatDuration(requirement.duration_minutes),
     show_time: show.start_time?.slice(0, 5) ?? null,
     venue: showVenue(show).line,
+    gig_type_label: gigTypesText(show.gig_types),
   }
 }
 
@@ -358,7 +362,7 @@ async function loadShowPlan(
 ): Promise<{ ok: true; plan: ShowPlan } | { ok: false; reason: PlanSkipReason }> {
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id')
+    .select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id, gig_types')
     .eq('id', showId)
     .single()
 
@@ -634,6 +638,7 @@ export async function runBookingWave(showId: string) {
       role_name: details.role_name,
       duration_label: details.duration_label,
       fee_label: details.fee_label,
+      gig_type_label: details.gig_type_label,
       expires_at: expiresAt,
       token: offer.token,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,

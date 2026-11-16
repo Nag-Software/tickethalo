@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { publicAcceptOfferAction, publicDeclineOfferAction } from './actions'
 import { showVenue } from '@/lib/show-venue'
+import { gigTypesText } from '@/lib/gig-types'
 import { formatDuration } from '@/lib/spot-duration'
 
 export const metadata = { title: 'Booking offer — Tickethalo' }
@@ -44,7 +45,7 @@ export default async function PublicBookingOfferPage({
   const [{ data: show }, { data: requirements }] = await Promise.all([
     db
       .from('shows')
-      .select('title, date, start_time, venue_name, venue_address, currency')
+      .select('title, date, start_time, venue_name, venue_address, currency, gig_types')
       .eq('id', offer.show_id)
       .single(),
     // Hele lineupen, ikke bare plassen tilbudet gjelder: komikeren skal se
@@ -117,6 +118,7 @@ export default async function PublicBookingOfferPage({
           {venue.address && <Detail label="Address">{venue.address}</Detail>}
           <Detail label="Your role">{req?.role_name ?? 'Coming'}</Detail>
           {formatDuration(req?.duration_minutes) && <Detail label="Duration">{formatDuration(req?.duration_minutes)}</Detail>}
+          {gigTypesText(show?.gig_types) && <Detail label="Gig type">{gigTypesText(show?.gig_types)}</Detail>}
           <Detail label="Lineup">
             {lineupNumber && totalSpots
               ? `No. ${lineupNumber} of ${totalSpots} spots`

@@ -10,12 +10,13 @@ import { formatShowDate, formatShowTime } from '@/lib/public-show-format'
 import {
   getClubOpenCalls,
   getOpenCallStateForArtist,
-  lineupSummary,
+  showAvailability,
   submissionStatusLabel,
   type OpenCallState,
 } from '@/lib/open-spots'
 import { getOpenCallViewer } from '@/lib/open-call-viewer'
 import { applyForShowAction } from '@/app/artist-app/open-spots/actions'
+import { gigTypeLabels } from '@/lib/gig-types'
 
 /**
  * Ett show fra «Apply for a spot» på klubbsiden: det en komiker trenger for
@@ -142,20 +143,26 @@ export default async function ApplyForShowPage({ params }: Props) {
             )}
           </div>
 
-          <ul className="flex flex-col gap-2">
-            {lineupSummary(call.spots).map((role) => (
-              <li
-                key={`${role.roleName}|${role.feeLabel}`}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 bg-[var(--ev-card)] px-4 py-3 sm:px-5"
-                style={{ borderRadius: 'var(--ev-r-card)' }}
-              >
-                <span className="text-[17px] font-semibold">{role.roleName}</span>
-                <span className="text-[15px] text-[var(--ev-faint)] sm:text-[14px]">
-                  {[role.feeLabel, availability(role)].filter(Boolean).join(' · ')}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {/* Rolle og honorar står i bookingtilbudet, ikke her (ClickUp
+              «Apply for spot, begrense info», 2026-11-16). */}
+          <div
+            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-[var(--ev-card)] px-4 py-3 sm:px-5"
+            style={{ borderRadius: 'var(--ev-r-card)' }}
+          >
+            <span className="text-[17px] font-semibold">{availability(showAvailability(call.spots))}</span>
+            {gigTypeLabels(call.gigTypes).length > 0 && (
+              <span className="flex flex-wrap gap-1.5">
+                {gigTypeLabels(call.gigTypes).map((label) => (
+                  <span
+                    key={label}
+                    className="rounded-full px-2.5 py-0.5 text-[13px] font-medium ring-1 ring-[var(--ev-line-strong)]"
+                  >
+                    {label}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
 
           <p className="mt-4 text-[15px] leading-relaxed text-[var(--ev-muted)]">
             {call.waitlistOnly
@@ -218,12 +225,9 @@ export default async function ApplyForShowPage({ params }: Props) {
   )
 }
 
-function availability(role: { quantity: number; spotsLeft: number }) {
-  if (role.spotsLeft === 0) return 'Full'
-  if (role.quantity === 1) return '1 spot open'
-  return role.spotsLeft < role.quantity
-    ? `${role.spotsLeft} of ${role.quantity} spots open`
-    : `${role.quantity} spots open`
+function availability({ spotsLeft }: { spotsLeft: number }) {
+  if (spotsLeft === 0) return 'Line-up full'
+  return `${spotsLeft} ${spotsLeft === 1 ? 'spot' : 'spots'} available`
 }
 
 function ApplyBox({ state, showId, waitlist }: { state: OpenCallState; showId: string; waitlist: boolean }) {

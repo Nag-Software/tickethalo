@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import type { ArtistStatus, ConfirmedSpotStatus, SubmissionStatus, SubmissionsAudience } from '@/types/database'
 import { showVenue } from '@/lib/show-venue'
+import { normalizeGigTypes, type GigType } from '@/lib/gig-types'
 
 /**
  * Showene én komiker kan søke på.
@@ -200,6 +201,12 @@ export type OpenSpotShow = {
   closeAt: string | null
   /** Klubben har invitert komikeren til å søke på dette showet. */
   invited: boolean
+  /** Type gig klubben har merket kvelden med. Tom = ikke satt. */
+  gigTypes: GigType[]
+  /**
+   * Plassene, for tellingen. Rolle og honorar vises ikke for komikeren før
+   * bookingtilbudet (ClickUp «Apply for spot, begrense info», 2026-11-16).
+   */
   spots: OpenSpot[]
   /** Ledige seter på de åpne plassene til sammen. */
   spotsLeft: number
@@ -243,7 +250,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
 
   const { data: shows, error: showError } = await db
     .from('shows')
-    .select('id, title, date, start_time, venue_name, venue_address, currency, club_id, submissions_audience, submissions_close_at')
+    .select('id, title, date, start_time, venue_name, venue_address, currency, club_id, submissions_audience, submissions_close_at, gig_types')
     .in('id', showIds)
     .in('status', [...APPLY_SHOW_STATUSES])
     .is('deleted_at', null)
@@ -359,6 +366,7 @@ export async function getOpenSpotsForArtist(artistId: string): Promise<OpenSpotS
       audience,
       closeAt: show.submissions_close_at,
       invited: invitedShows.has(show.id),
+      gigTypes: normalizeGigTypes(show.gig_types),
       spots,
     })
   }
@@ -400,6 +408,9 @@ export type OpenCall = {
   address: string | null
   closeAt: string | null
   audience: SubmissionsAudience
+  /** Type gig klubben har merket kvelden med. Tom = ikke satt. */
+  gigTypes: GigType[]
+  /** Plassene, for tellingen. Rolle og honorar vises ikke før bookingtilbudet. */
   spots: OpenCallSpot[]
   /** Hver eneste åpne plass er full — hele showet er venteliste. */
   waitlistOnly: boolean
@@ -424,7 +435,7 @@ export async function getClubOpenCalls(
 ): Promise<OpenCall[]> {
   let showQuery = db
     .from('shows')
-    .select('id, title, description, date, start_time, end_time, venue_name, venue_address, currency, status, submissions_audience, submissions_close_at')
+    .select('id, title, description, date, start_time, end_time, venue_name, venue_address, currency, status, submissions_audience, submissions_close_at, gig_types')
     .eq('club_id', clubId)
     .in('status', [...APPLY_SHOW_STATUSES])
     .is('deleted_at', null)
@@ -496,6 +507,7 @@ export async function getClubOpenCalls(
       address,
       closeAt: show.submissions_close_at,
       audience,
+      gigTypes: normalizeGigTypes(show.gig_types),
       spots,
       waitlistOnly: spots.every((spot) => spot.waitlist),
     }]

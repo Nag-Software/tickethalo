@@ -242,7 +242,7 @@ function clubDb({ review = null as { is_flagged: boolean } | null } = {}) {
   return fakeQueryDb({
     shows: () => ({
       data: [
-        show('open', 'everyone'),
+        show('open', 'everyone', { gig_types: ['stayer', 'paid'] }),
         show('full', 'everyone', { status: 'fullbooked' }),
         show('roster', 'roster'),
         show('late', 'everyone', { submissions_close_at: '2026-10-01T21:59:59Z' }),
@@ -273,6 +273,13 @@ describe('the club page list', () => {
     expect(calls[0].spots[0]).toMatchObject({ spotsLeft: 1, waitlist: false, feeLabel: requirementFeeLabel({ compensation_type: 'fixed', compensation_amount: 50000, compensation_percent: null }, 'NOK') })
     // «Not set» er bookerens intern-tekst og skal ikke stå offentlig.
     expect(calls[1].spots[0]).toMatchObject({ spotsLeft: 0, waitlist: true, feeLabel: null })
+  })
+
+  it('carries the gig type, and none when the show has not set it', async () => {
+    const { db } = clubDb()
+    const calls = await getClubOpenCalls('club-1', null, { db, now: NOW })
+    expect(calls[0].gigTypes).toEqual(['paid', 'stayer'])
+    expect(calls[1].gigTypes).toEqual([])
   })
 
   it('adds the roster shows for a comedian the club works with', async () => {

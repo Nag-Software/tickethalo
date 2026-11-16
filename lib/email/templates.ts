@@ -168,6 +168,8 @@ export type OfferTemplateInput = {
   duration_label?: string | null
   /** Ferdig formatert honorar — samme etikett som lineup-plassen viser. */
   fee_label?: string | null
+  /** «Paid · Stayer», eller null når klubben ikke har satt type gig. Se lib/gig-types.ts. */
+  gig_type_label?: string | null
   /**
    * Når tilbudet går ut, som ISO-tid. Fristen er ikke alltid sju dager:
    * den kortes ned mot lineup-fristen og showdagen, så teksten må lese den
@@ -191,6 +193,11 @@ function durationLine(label: string | null | undefined) {
   return label ? `\nDuration: ${label}` : ''
 }
 
+/** Type gig i tekstversjonen. Tom når klubben ikke har satt den. */
+function gigTypeLine(label: string | null | undefined) {
+  return label ? `\nGig type: ${label}` : ''
+}
+
 function offerBody(opts: OfferTemplateInput, intro: string) {
   return (
     paragraph(`Hi ${escapeHtml(opts.full_name)}, ${intro}`) +
@@ -201,6 +208,7 @@ function offerBody(opts: OfferTemplateInput, intro: string) {
       ['Role', opts.role_name],
       ['Duration', opts.duration_label],
       ['Fee', opts.fee_label],
+      ['Gig type', opts.gig_type_label],
     ]) +
     button(opts.response_url, 'See the offer and reply') +
     paragraph(
@@ -213,7 +221,7 @@ function offerBody(opts: OfferTemplateInput, intro: string) {
 }
 
 function offerText(opts: OfferTemplateInput, intro: string) {
-  return `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}${durationLine(opts.duration_label)}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\n${deadlineLabel(opts.expires_at) ? `Reply by ${deadlineLabel(opts.expires_at)}. ` : ''}First to accept gets the spot.`
+  return `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}${durationLine(opts.duration_label)}\nFee: ${opts.fee_label ?? 'See the offer'}${gigTypeLine(opts.gig_type_label)}\n\nReply here: ${opts.response_url}\n\n${deadlineLabel(opts.expires_at) ? `Reply by ${deadlineLabel(opts.expires_at)}. ` : ''}First to accept gets the spot.`
 }
 
 export function bookingOfferTemplate(opts: OfferTemplateInput): EmailTemplate {
@@ -254,6 +262,7 @@ export function bookingConfirmedTemplate(opts: {
   /** «15 min», eller null — da står ikke linja. */
   duration_label?: string | null
   fee_label?: string | null
+  gig_type_label?: string | null
   portal_url?: string | null
   /**
    * Klubben satte komikeren rett inn i lineupen. Da har hen ikke svart på noe,
@@ -265,7 +274,7 @@ export function bookingConfirmedTemplate(opts: {
   const how = opts.added_by_club ? 'The club has put you on the lineup.' : 'The club has been told.'
   return {
     subject: `Booking confirmed: ${opts.show_title}`,
-    text: `Hi ${opts.full_name}\n\nYou are booked for ${opts.show_title}. ${how}\n\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}${opts.role_name ? `\nRole: ${opts.role_name}` : ''}${durationLine(opts.duration_label)}\nFee: ${opts.fee_label ?? 'See the portal'}\n\nYour bookings: ${portal}`,
+    text: `Hi ${opts.full_name}\n\nYou are booked for ${opts.show_title}. ${how}\n\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}${opts.role_name ? `\nRole: ${opts.role_name}` : ''}${durationLine(opts.duration_label)}\nFee: ${opts.fee_label ?? 'See the portal'}${gigTypeLine(opts.gig_type_label)}\n\nYour bookings: ${portal}`,
     html: shell({
       eyebrow: 'Booking confirmed',
       heading: 'You are on the lineup',
@@ -278,6 +287,7 @@ export function bookingConfirmedTemplate(opts: {
           ['Role', opts.role_name],
           ['Duration', opts.duration_label],
           ['Fee', opts.fee_label],
+          ['Gig type', opts.gig_type_label],
         ]) +
         button(portal, 'See your bookings') +
         paragraph('Something comes up? Tell us as early as you can — a spot we can refill is no problem.', true),
@@ -341,7 +351,7 @@ export function offerReminderTemplate(opts: OfferTemplateInput): EmailTemplate {
 
   return {
     subject: `Reminder: ${opts.show_title}`,
-    text: `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}${durationLine(opts.duration_label)}\nFee: ${opts.fee_label ?? 'See the offer'}\n\nReply here: ${opts.response_url}\n\nA no is just as useful to us as a yes — then the spot goes on.`,
+    text: `Hi ${opts.full_name}\n\n${intro}\n\n${opts.show_title}\nDate: ${showDateLabel(opts.show_date)}\nTime: ${opts.show_time ?? 'Coming'}\nVenue: ${opts.venue ?? 'Coming'}\nRole: ${opts.role_name ?? 'Coming'}${durationLine(opts.duration_label)}\nFee: ${opts.fee_label ?? 'See the offer'}${gigTypeLine(opts.gig_type_label)}\n\nReply here: ${opts.response_url}\n\nA no is just as useful to us as a yes — then the spot goes on.`,
     html: shell({
       eyebrow: 'Reminder',
       heading: opts.show_title,
@@ -354,6 +364,7 @@ export function offerReminderTemplate(opts: OfferTemplateInput): EmailTemplate {
           ['Role', opts.role_name],
           ['Duration', opts.duration_label],
           ['Fee', opts.fee_label],
+          ['Gig type', opts.gig_type_label],
         ]) +
         button(opts.response_url, 'Reply now') +
         paragraph('A no is just as useful to us as a yes — then the spot goes on to the next comedian.', true),

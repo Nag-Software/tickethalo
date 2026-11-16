@@ -18,6 +18,7 @@ const VALUES: ShowDetailsValues = {
   save_location: '',
   capacity: '70',
   description: '',
+  gig_types: '',
 }
 
 const LOCATIONS = [
@@ -115,6 +116,32 @@ describe('show details form', () => {
     await wait(800)
     expect(action).toHaveBeenCalledTimes(1)
     expect(action.mock.calls[0][0].get('date')).toBe('2026-10-24')
+  })
+
+  it('saves the gig types picked, several at once, in a fixed order', async () => {
+    const { action } = renderForm()
+    const gig = screen.getByRole('group', { name: 'Gig type' })
+
+    fireEvent.click(within(gig).getByLabelText('Stayer'))
+    fireEvent.click(within(gig).getByLabelText('Paid'))
+    await wait(800)
+
+    expect(action).toHaveBeenCalledTimes(1)
+    expect(action.mock.calls[0][0].get('gig_types')).toBe('paid,stayer')
+  })
+
+  it('shows the saved gig types as ticked and can clear them', async () => {
+    const { action } = renderForm({ ...VALUES, gig_types: 'unpaid,bringer' })
+    const gig = screen.getByRole('group', { name: 'Gig type' })
+    expect(within(gig).getByLabelText('Unpaid')).toBeChecked()
+    expect(within(gig).getByLabelText('Bringer')).toBeChecked()
+    expect(within(gig).getByLabelText('Paid')).not.toBeChecked()
+
+    fireEvent.click(within(gig).getByLabelText('Unpaid'))
+    fireEvent.click(within(gig).getByLabelText('Bringer'))
+    await wait(800)
+
+    expect(action.mock.calls.at(-1)?.[0].get('gig_types')).toBe('')
   })
 
   it('copies the event link as it stands in the field', async () => {

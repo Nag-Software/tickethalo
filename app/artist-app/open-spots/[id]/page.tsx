@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
+import { gigTypesText } from '@/lib/gig-types'
 import { Chip, DataRow, PageHeader, Panel, portalButton } from '@/components/artist/portal-ui'
 import { updateSubmissionMessageAction, withdrawSubmissionAction } from '../actions'
 import { showVenue } from '@/lib/show-venue'
@@ -76,7 +77,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
   // Plassen finnes bare når klubben har godkjent søknaden og valgt den.
   const [{ data: show }, { data: requirements }, { data: assigned }, { count: applicants }] = await Promise.all([
     db.from('shows')
-      .select('title, date, start_time, venue_name, venue_address, currency, club_id')
+      .select('title, date, start_time, venue_name, venue_address, currency, club_id, gig_types')
       .eq('id', submission.show_id)
       .single(),
     db.from('show_requirements')
@@ -143,6 +144,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
           <DataRow label="Time" value={show?.start_time ? show.start_time.slice(0, 5) : '—'} />
           <DataRow label="Venue" value={showVenue(show).venue ?? '—'} />
           {showVenue(show).address && <DataRow label="Address" value={showVenue(show).address ?? ''} />}
+          {gigTypesText(show?.gig_types) && <DataRow label="Gig type" value={gigTypesText(show?.gig_types) ?? ''} />}
           {assigned && (
             <>
               <DataRow label="Your spot" value={assigned.role_name} />

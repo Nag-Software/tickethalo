@@ -174,7 +174,7 @@ export async function sendBookingReminders() {
   const [{ data: artists }, { data: shows }, { data: requirements }] = await Promise.all([
     admin.from('artists').select('id, email, full_name').in('id', [...new Set(due.map((o) => o.artist_id))]),
     admin.from('shows')
-      .select('id, title, date, start_time, venue_name, venue_address, currency')
+      .select('id, title, date, start_time, venue_name, venue_address, currency, gig_types')
       .in('id', [...new Set(due.map((o) => o.show_id))]),
     admin.from('show_requirements')
       .select('id, role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
@@ -204,6 +204,7 @@ export async function sendBookingReminders() {
       role_name: details.role_name,
       duration_label: details.duration_label,
       fee_label: details.fee_label,
+      gig_type_label: details.gig_type_label,
       expires_at: offer.expires_at,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,
     })
@@ -470,7 +471,7 @@ export async function acceptBookingOffer(token: string) {
       admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
       admin
         .from('shows')
-        .select('title, date, start_time, venue_name, venue_address, currency')
+        .select('title, date, start_time, venue_name, venue_address, currency, gig_types')
         .eq('id', accepted.show_id)
         .single(),
       admin
@@ -492,6 +493,7 @@ export async function acceptBookingOffer(token: string) {
         role_name: details?.role_name,
         duration_label: details?.duration_label,
         fee_label: details?.fee_label,
+        gig_type_label: details?.gig_type_label,
         portal_url: `${appUrl()}/artist-app/bookings`,
       })
     }
@@ -745,7 +747,7 @@ export async function sendManualBookingOffer(
   const admin = createAdminClient()
 
   const [{ data: show }, { data: requirement }, { data: artist }] = await Promise.all([
-    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id').eq('id', showId).single(),
+    admin.from('shows').select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id, gig_types').eq('id', showId).single(),
     admin
       .from('show_requirements')
       .select('id, role_name, quantity, duration_minutes, compensation_type, compensation_amount, compensation_percent')
@@ -856,6 +858,7 @@ export async function sendManualBookingOffer(
     role_name: details.role_name,
     duration_label: details.duration_label,
     fee_label: details.fee_label,
+    gig_type_label: details.gig_type_label,
     expires_at: expiresAt,
     token: offer.token,
     response_url: `${baseUrl}/booking-offer/${offer.token}`,

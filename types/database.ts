@@ -1,5 +1,7 @@
 // Auto-generated types matching the database schema in 001_initial_schema.sql
 
+import type { GigType } from '@/lib/gig-types'
+
 export type Role = 'superadmin' | 'owner' | 'admin' | 'staff' | 'artist'
 export type ArtistStatus = 'pending_review' | 'approved' | 'rejected' | 'inactive' | 'flagged'
 export type ArtistGender = 'woman' | 'man' | 'non_binary' | 'prefer_not_to_say'
@@ -378,6 +380,8 @@ export type Show = {
   submissions_audience: SubmissionsAudience
   /** Siste tidspunkt en søknad kan sendes. Null = ingen frist satt. */
   submissions_close_at: string | null
+  /** Type gig — Paid / Unpaid / Bringer / Stayer. Tom = ikke satt. Se `lib/gig-types.ts`. */
+  gig_types: GigType[]
   stripe_product_id: string | null
   stripe_price_id: string | null
   is_template: boolean
@@ -1326,6 +1330,7 @@ export type Database = {
           status?: ShowStatus
           submissions_audience?: SubmissionsAudience
           submissions_close_at?: string | null
+          gig_types?: GigType[]
           stripe_product_id?: string | null
           stripe_price_id?: string | null
           is_template?: boolean
