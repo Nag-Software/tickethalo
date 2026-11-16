@@ -68,6 +68,8 @@ export function LocationField({
   const [status, setStatus] = useState<'idle' | 'locating' | 'failed'>('idle')
   const [activeIndex, setActiveIndex] = useState(NO_ROW)
   const [pickCountry, setPickCountry] = useState(false)
+  /** Landet valgt i lista, før det bekreftes — se «Use» under. */
+  const [otherCountry, setOtherCountry] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
   const aliveRef = useRef(true)
@@ -101,6 +103,7 @@ export function LocationField({
       setStatus('idle')
       setActiveIndex(NO_ROW)
       setPickCountry(false)
+      setOtherCountry('')
     }
   }
 
@@ -152,7 +155,8 @@ export function LocationField({
       setActiveIndex((index) => (index + 1) % rows.length)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setActiveIndex((index) => (index - 1 + rows.length) % rows.length)
+      // Fra «ingenting markert» (-1) går pil opp til siste rad, ikke nest siste.
+      setActiveIndex((index) => (index <= 0 ? rows.length - 1 : index - 1))
     } else if (event.key === 'Enter') {
       event.preventDefault()
       const place = activeIndex === NO_ROW ? undefined : rows[activeIndex]
@@ -301,24 +305,37 @@ export function LocationField({
                 Another country
               </label>
               {/* 16px: alt mindre får iOS Safari til å zoome inn ved fokus. */}
-              <select
-                id={`${id}-country`}
-                value=""
-                onChange={(event) => {
-                  const country = lookupCountry(event.target.value)
-                  if (country) selectUnlisted(country.code)
-                }}
-                className="h-10 w-full cursor-pointer rounded-xl bg-transparent px-3 text-[16px] outline-none ring-1 ring-inset ring-[var(--ev-line)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:text-[13px]"
-              >
-                <option value="" disabled>
-                  Another country…
-                </option>
-                {COUNTRIES.map((country) => (
-                  <option key={country.code} value={country.code}>
-                    {country.name}
+              {/* Valget lagres først med «Use»: en lukket select bytter verdi når
+                  man skriver eller bruker piltastene, så «P» for Polen ville
+                  lagret Pakistan med en gang. */}
+              <div className="flex gap-2">
+                <select
+                  id={`${id}-country`}
+                  value={otherCountry}
+                  onChange={(event) => setOtherCountry(event.target.value)}
+                  className="h-10 min-w-0 flex-1 cursor-pointer rounded-xl bg-transparent px-3 text-[16px] outline-none ring-1 ring-inset ring-[var(--ev-line)] focus:ring-2 focus:ring-[var(--ev-accent-fill)] sm:text-[13px]"
+                >
+                  <option value="" disabled>
+                    Another country…
                   </option>
-                ))}
-              </select>
+                  {COUNTRIES.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!lookupCountry(otherCountry)}
+                  onClick={() => {
+                    const country = lookupCountry(otherCountry)
+                    if (country) selectUnlisted(country.code)
+                  }}
+                  className="h-10 shrink-0 cursor-pointer rounded-xl px-4 text-[13px] font-medium ring-1 ring-inset ring-[var(--ev-line-strong)] transition-colors hover:bg-[var(--ev-card-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ev-accent-fill)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Use
+                </button>
+              </div>
             </div>
           )}
 
