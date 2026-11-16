@@ -396,6 +396,11 @@ export type Show = {
   lineup_full_notified_at: string | null
   /** Påminnelsen 5 dager før. Null = følg `Club.lineup_reminder_default`. Se lib/lineup-reminders.ts. */
   lineup_reminder_enabled: boolean | null
+  /**
+   * Søkerne foreslås til plassene som passer profilen deres, og plassene som
+   * er åpne for søknader tas med i forslaget. Se migrasjon 101.
+   */
+  suggest_from_submissions: boolean
   /** Når lineupen skal være på plass, `HH:MM:SS`. Står i påminnelsen. */
   lineup_arrival_time: string | null
   /** Endringer lineupen ikke har fått beskjed om. Se lib/lineup-changes.ts. */
@@ -1377,6 +1382,7 @@ export type Database = {
           published_at?: string | null
           lineup_full_notified_at?: string | null
           lineup_reminder_enabled?: boolean | null
+          suggest_from_submissions?: boolean
           lineup_arrival_time?: string | null
           lineup_change_notice?: LineupChangeNotice | null
           lineup_group_link?: string | null

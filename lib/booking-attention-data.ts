@@ -55,7 +55,7 @@ export async function loadBookingAttention(
 
   const { data: showRows, error: showError } = await db
     .from('shows')
-    .select('id, title, date, start_time, status, club_id')
+    .select('id, title, date, start_time, status, club_id, suggest_from_submissions')
     .in('club_id', clubIds)
     .is('deleted_at', null)
     .gte('date', lookback)
@@ -178,6 +178,7 @@ export async function loadBookingAttention(
     bookedByShow.set(spot.show_id, booked)
   }
   const statusByShow = new Map(shows.map((show) => [show.id, show.status]))
+  const suggestsFromSubmissions = new Set(shows.filter((show) => show.suggest_from_submissions).map((show) => show.id))
 
   // Søknadene gjelder showet: ventelisten slår inn først når hver åpne plass
   // er full.
@@ -276,7 +277,9 @@ export async function loadBookingAttention(
           .filter((sent): sent is string => Boolean(sent))
           .sort()[0] ?? null,
         declined: showOffers.filter((offer) => offer.show_requirement_id === req.id && offer.status === 'declined').length,
-        submissionsOpen: Boolean(req.submissions_open),
+        // Showet foreslår fra søknadene (migrasjon 101): motoren fyller plassen
+        // som de andre, så varslene skal gjelde den også.
+        submissionsOpen: Boolean(req.submissions_open) && !suggestsFromSubmissions.has(req.show_id),
         autoStarted: Boolean(req.auto_started_at),
         rebookPaused: Boolean(req.rebook_paused_at),
         matching: matching.length,
