@@ -213,6 +213,7 @@ export async function sendBookingConfirmedEmail(opts: {
   role_name?: string | null
   duration_label?: string | null
   fee_label?: string | null
+  gig_type_label?: string | null
   portal_url?: string | null
   /** true når klubben satte komikeren rett inn, uten at hen svarte på et tilbud. */
   added_by_club?: boolean

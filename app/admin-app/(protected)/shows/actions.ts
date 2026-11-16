@@ -52,6 +52,7 @@ import {
 import { ticketSalesState } from '@/lib/ticket-sales'
 import { ticketPriceError } from '@/lib/tickets'
 import { noteLineupChange } from '@/lib/lineup-messages'
+import { normalizeGigTypes } from '@/lib/gig-types'
 import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -500,8 +501,14 @@ export async function cloneShowAction(formData: FormData) {
     club_id: clubId,
   })
 
-  // Billettypene følger malen.
+  // Billettypene og type gig følger malen.
   await copyTicketTypes(templateId, show.id)
+  const { data: template } = await db.from('shows').select('gig_types').eq('id', templateId).maybeSingle()
+  const templateGigTypes = normalizeGigTypes(template?.gig_types)
+  if (templateGigTypes.length > 0) {
+    const { error: gigError } = await db.from('shows').update({ gig_types: templateGigTypes }).eq('id', show.id)
+    if (gigError) console.warn(`[Shows] Could not copy gig type to show ${show.id}: ${gigError.message}`)
+  }
 
   // Collect requirements from indexed form fields (req_0_*, req_1_*, …)
   const newReqs: Array<{
@@ -772,6 +779,8 @@ export async function updateShowDetailsAction(formData: FormData) {
     ...(title !== current.title ? { stripe_product_id: null } : {}),
     slug: String(formData.get('slug') ?? '').trim(),
     description: optionalText(formData.get('description')),
+    // Bare når skjemaet sendte feltet, så en annen kaller ikke tømmer typene.
+    ...(formData.has('gig_types') ? { gig_types: normalizeGigTypes(formData.get('gig_types')) } : {}),
     date,
     start_time: startTime,
     end_time: optionalText(formData.get('end_time')),

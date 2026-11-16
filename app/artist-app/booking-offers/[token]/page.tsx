@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CalendarDays, Clock, MapPin, Mic, Timer } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Clock, MapPin, Mic, Tag, Timer } from 'lucide-react'
 import { formatMoney, getCurrentArtist } from '@/lib/artist-portal'
 import { requirementFeeLabel } from '@/lib/booking-spots'
 import { Chip, Panel, portalButton } from '@/components/artist/portal-ui'
 import { OfferButtons } from '@/components/artist/offer-buttons'
 import { showVenue } from '@/lib/show-venue'
 import { formatDuration } from '@/lib/spot-duration'
+import { gigTypesText } from '@/lib/gig-types'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
   sent: 'Awaiting response',
@@ -26,7 +27,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   const [{ data: show }, { data: req }] = await Promise.all([
     db
       .from('shows')
-      .select('title, date, start_time, venue_name, venue_address')
+      .select('title, date, start_time, venue_name, venue_address, gig_types')
       .eq('id', offer.show_id)
       .single(),
     db
@@ -81,6 +82,9 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
           {req?.role_name && <Detail icon={<Mic className="size-4" />}>{req.role_name}</Detail>}
           {formatDuration(req?.duration_minutes) && (
             <Detail icon={<Timer className="size-4" />}>{formatDuration(req?.duration_minutes)}</Detail>
+          )}
+          {gigTypesText(show?.gig_types) && (
+            <Detail icon={<Tag className="size-4" />}>{gigTypesText(show?.gig_types)}</Detail>
           )}
         </div>
 

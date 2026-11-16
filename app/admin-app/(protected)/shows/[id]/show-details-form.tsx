@@ -26,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Textarea } from '@/components/ui/textarea'
 import { VenuePicker } from '@/components/admin/venue-picker'
 import type { VenueLocation } from '@/lib/show-venue'
+import { GIG_TYPES, GIG_TYPE_LABELS, normalizeGigTypes, type GigType } from '@/lib/gig-types'
 import { cn } from '@/lib/utils'
 
 /**
@@ -49,6 +50,8 @@ export type ShowDetailsValues = {
   save_location: string
   capacity: string
   description: string
+  /** Type gig som kommaliste: `'paid,stayer'`. Tom = ikke satt. Se `lib/gig-types.ts`. */
+  gig_types: string
 }
 
 /** Det serveren faktisk lagret som sted — se `resolveShowVenue`. */
@@ -66,6 +69,7 @@ const FIELD_KEYS = [
   'save_location',
   'capacity',
   'description',
+  'gig_types',
 ] as const
 
 /**
@@ -208,6 +212,18 @@ export function ShowDetailsForm({
   function update(key: keyof ShowDetailsValues, value: string) {
     setValues((previous) => ({ ...previous, [key]: value }))
   }
+
+  /** Slår én type av eller på. Rekkefølgen følger `GIG_TYPES`, ikke klikkene. */
+  function toggleGigType(type: GigType, on: boolean) {
+    setValues((previous) => {
+      const current = new Set(normalizeGigTypes(previous.gig_types))
+      if (on) current.add(type)
+      else current.delete(type)
+      return { ...previous, gig_types: normalizeGigTypes([...current]).join(',') }
+    })
+  }
+
+  const pickedGigTypes = normalizeGigTypes(values.gig_types)
 
   /** Lenken slik den står i feltet — det bookeren ser, er det som kopieres. */
   async function copyEventLink() {
@@ -360,6 +376,28 @@ export function ShowDetailsForm({
             />
             <FieldDescription className={FIELD_HINT_CLASS}>Shown on the event page, under the poster.</FieldDescription>
           </Field>
+        </FieldSection>
+
+        <FieldSection id="show-details-gig" title="For comedians">
+          <fieldset className="col-span-12 min-w-0 space-y-1.5">
+            <legend className="text-sm font-medium">Gig type</legend>
+            <div className="flex flex-wrap gap-x-5 gap-y-2 pt-1">
+              {GIG_TYPES.map((type) => (
+                <label key={type} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={pickedGigTypes.includes(type)}
+                    onChange={(event) => toggleGigType(type, event.target.checked)}
+                    className="size-4 rounded border-input"
+                  />
+                  {GIG_TYPE_LABELS[type]}
+                </label>
+              ))}
+            </div>
+            <p className={FIELD_HINT_CLASS}>
+              Pick all that apply. Comedians see it on Open spots and in the booking offer — not on the event page.
+            </p>
+          </fieldset>
         </FieldSection>
       </FieldFrame>
     </form>

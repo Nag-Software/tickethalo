@@ -3,13 +3,13 @@ import { getCurrentArtist } from '@/lib/artist-portal'
 import {
   artistCanApply,
   getOpenSpotsForArtist,
-  lineupSummary,
   OPEN_SUBMISSION_STATUSES,
   submissionStatusLabel,
   type OpenSpotShow,
 } from '@/lib/open-spots'
 import { Chip, Empty, PageHeader, Panel, Row, portalButton } from '@/components/artist/portal-ui'
 import { applyForShowAction } from './actions'
+import { gigTypeLabels } from '@/lib/gig-types'
 
 export const metadata = { title: 'Open spots — Tickethalo' }
 export const dynamic = 'force-dynamic'
@@ -91,12 +91,18 @@ function ShowPanel({ show, focused }: { show: OpenSpotShow; focused: boolean }) 
   const applied = show.submission
   const settled = applied != null && !OPEN_SUBMISSION_STATUSES.includes(applied.status)
 
+  // Rolle og honorar vises ikke her — komikerne ble forvirret av «Stand-up /
+  // Open Mic / Headliner» og ulike prosenter på samme kveld. De står i
+  // bookingtilbudet (ClickUp «Apply for spot, begrense info», 2026-11-16).
+  const availability = show.waitlist
+    ? 'Line-up full'
+    : `${show.spotsLeft} ${show.spotsLeft === 1 ? 'spot' : 'spots'} available`
+  const gigTypes = gigTypeLabels(show.gigTypes)
+
   const detail = applied
     ? submissionStatusLabel(applied.status, show.waitlist)
     : [
-      show.waitlist
-        ? 'Line-up full — join the waitlist in case someone drops out'
-        : `${show.spotsLeft} ${show.spotsLeft === 1 ? 'spot' : 'spots'} open`,
+      show.waitlist ? 'Join the waitlist in case someone drops out' : null,
       show.applicantCount > 0
         ? `${show.applicantCount} ${show.applicantCount === 1 ? 'has' : 'have'} applied`
         : null,
@@ -116,22 +122,13 @@ function ShowPanel({ show, focused }: { show: OpenSpotShow; focused: boolean }) 
       }
     >
       <div className="flex flex-col gap-3">
-        <ul className="flex flex-col gap-1 text-[14px]">
-          {lineupSummary(show.spots).map((role) => (
-            <li key={`${role.roleName}|${role.feeLabel}`} className="flex flex-wrap items-baseline justify-between gap-x-4">
-              <span>
-                <span className="font-semibold">{role.roleName}</span>
-                <span className="text-[var(--ev-muted)]">
-                  {' '}· {role.spotsLeft === 0 ? 'full' : role.spotsLeft < role.quantity ? `${role.spotsLeft} of ${role.quantity} open` : `${role.quantity} ${role.quantity === 1 ? 'spot' : 'spots'}`}
-                </span>
-              </span>
-              <span className="tabular-nums text-[var(--ev-muted)]">{role.feeLabel}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[15px] font-semibold">{availability}</span>
+          {gigTypes.map((label) => <Chip key={label}>{label}</Chip>)}
+        </div>
 
         <Row muted={settled}>
-          <div className="min-w-0 text-[13px] text-[var(--ev-muted)]">{detail}</div>
+          <div className="min-w-0 text-[13px] text-[var(--ev-muted)]">{detail || 'Apply once — the club picks the spot.'}</div>
 
           {applied ? (
             <Link href={`/artist-app/open-spots/${applied.id}`} className={portalButton.secondary}>

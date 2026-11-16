@@ -14,6 +14,7 @@ import type { VenueLocation } from '@/lib/show-venue'
 import { ticketSalesNote, toTicketSalesStateDto } from '@/lib/show-sales-shared'
 import { ticketSalesState } from '@/lib/ticket-sales'
 import type { ShowStatus } from '@/types/database'
+import { normalizeGigTypes } from '@/lib/gig-types'
 
 type OverviewShow = {
   id: string
@@ -26,6 +27,7 @@ type OverviewShow = {
   venue_address: string | null
   club_location_id: string | null
   description: string | null
+  gig_types?: string[] | null
   capacity: number | null
   ticket_price: number | null
   currency: string
@@ -107,6 +109,7 @@ export function OverviewTab({
             save_location: '',
             capacity: show.capacity == null ? '' : String(show.capacity),
             description: show.description ?? '',
+            gig_types: normalizeGigTypes(show.gig_types).join(','),
           }}
         />
 
