@@ -94,6 +94,11 @@ type Props = {
   mode: 'start' | 'review'
   canStartBooking?: boolean
   bookingBlockers?: string[]
+  /**
+   * Bare disse plassene startes — kortet for resten av plassene på et show
+   * i booking. Utelatt = alle (utkast).
+   */
+  spotIds?: string[]
 }
 
 /**
@@ -108,7 +113,8 @@ type Props = {
  * funksjonen motoren bruker. Står noen først i to køer, viser raden hvilken
  * plass som får hen.
  */
-export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBooking = true, bookingBlockers = [] }: Props) {
+export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBooking = true, bookingBlockers = [], spotIds }: Props) {
+  const spotIdsKey = spotIds?.join(',') ?? ''
   const router = useRouter()
   const [data, setData] = React.useState<LoadedQueue | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -121,7 +127,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
   const load = React.useCallback(() => {
     startLoading(async () => {
       try {
-        const result = await getLineupQueueAction(showId)
+        const result = await getLineupQueueAction(showId, spotIdsKey ? spotIdsKey.split(',') : undefined)
         if (!result.ok) {
           setData(null)
           setError(SKIP_TEXT[result.reason])
@@ -140,7 +146,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
         setError((err as Error)?.message ?? 'Could not load the line-up')
       }
     })
-  }, [showId])
+  }, [showId, spotIdsKey])
 
   React.useEffect(() => {
     if (open) load()
@@ -227,15 +233,17 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
     const fd = new FormData()
     fd.set('show_id', showId)
     fd.set('queues', queuesPayload())
+    if (spotIdsKey) fd.set('spot_ids', spotIdsKey)
 
     startSaving(async () => {
       try {
         if (mode === 'start') {
           const result = await startBookingAction(fd)
           const sent = result?.offersSent
+          const what = spotIdsKey ? 'Auto-booking started on the remaining spots' : 'Booking started'
           toast.success(sent == null
-            ? 'Booking started! Offers go out to matching artists.'
-            : `Booking started! ${sent} offer${sent === 1 ? '' : 's'} sent.`)
+            ? `${what}! Offers go out to matching artists.`
+            : `${what}! ${sent} offer${sent === 1 ? '' : 's'} sent.`)
         } else {
           await saveLineupQueueAction(fd)
           toast.success('Queue saved. Offers follow the new order.')
@@ -327,6 +335,8 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
                             ? 'Paused'
                             : spot.note === 'filled'
                             ? 'Filled'
+                            : spot.note === 'not_started'
+                            ? 'Not started'
                             : first ? `${firstName(first)} first` : 'No one in the queue'}
                       </span>
                     </span>
@@ -442,6 +452,8 @@ function SpotQueue({
   const criterion = spot.minSkillLevel && spot.minSkillLevel !== 'low' ? SKILL_REQUIREMENT_LABELS[spot.minSkillLevel] : 'Any skill level'
   // En pauset plass kan ordnes før bookeren velger «Auto-book new» — det er
   // nettopp da køen betyr noe.
+  // En plass som ikke er startet, er ikke med i det som lagres (`activeSpots`),
+  // så den kan ikke ordnes her — det gjøres når den startes fra kortet.
   const editable = !spot.note || spot.note === 'paused'
 
   // Skillelinjene telles bare over dem som faktisk spørres her: en som får
@@ -489,6 +501,10 @@ function SpotQueue({
       ) : spot.note === 'paused' ? (
         <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
           A comedian was removed from this spot. No offers go out until you choose yourself or pick Auto-book new in the line-up.
+        </p>
+      ) : spot.note === 'not_started' ? (
+        <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
+          Auto-booking has not started on this spot, so no offers go out. Start it from Fill the remaining spots in the line-up.
         </p>
       ) : spot.note === 'filled' ? (
         <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
@@ -653,19 +669,30 @@ const EXPLANATION =
   'The algorithm suggests a line-up based on your criteria, comedians availability and when they have performed at your club last. It aims to provide your audience with a varied line-up.'
 
 /**
- * Start booking-kortet på et utkast.
+ * Start booking-kortet.
  *
  * «Suggest line-up now» åpner køen; Start booking uten den lar motoren velge
  * selv, som før.
+ *
+ * `remaining` er samme kort på et show som alt er i booking, men der
+ * automatikken ikke er startet på alle plassene — typisk etter at bookeren
+ * har sendt ett tilbud for hånd. Da gjelder forslaget bare resten; det
+ * manuelle tilbudet og plassene som er startet, røres ikke.
  */
 export function StartBookingCard({
   showId,
   canStartBooking,
   bookingBlockers,
+  remaining,
+  spotIds,
 }: {
   showId: string
   canStartBooking: boolean
   bookingBlockers: string[]
+  /** Antall plasser forslaget gjelder når showet alt er i booking. */
+  remaining?: number
+  /** Plassene som startes. Utelatt = alle (utkast). */
+  spotIds?: string[]
 }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -674,11 +701,14 @@ export function StartBookingCard({
   function startWithoutQueue() {
     const fd = new FormData()
     fd.set('show_id', showId)
+    if (spotIds?.length) fd.set('spot_ids', spotIds.join(','))
     startStarting(async () => {
       try {
         await startBookingAction(fd)
         router.refresh()
-        toast.success('Booking started! Offers go out to matching artists.')
+        toast.success(remaining
+          ? 'Auto-booking started on the remaining spots.'
+          : 'Booking started! Offers go out to matching artists.')
       } catch (err: unknown) {
         toast.error((err as Error)?.message ?? 'Could not start booking')
       }
@@ -686,8 +716,17 @@ export function StartBookingCard({
   }
 
   return (
-    <LineupCallout title="Ready to start booking?">
-      <p className="text-sm text-muted-foreground">{EXPLANATION}</p>
+    <LineupCallout
+      title={remaining
+        ? `Fill the remaining ${remaining === 1 ? 'spot' : `${remaining} spots`} automatically?`
+        : 'Ready to start booking?'}
+    >
+      <p className="text-sm text-muted-foreground">
+        {remaining
+          ? 'The spots you have already filled or offered stay as they are. '
+          : ''}
+        {EXPLANATION}
+      </p>
       {!canStartBooking && (
         <ul className="space-y-0.5 pt-1">
           {bookingBlockers.map((reason) => (
@@ -704,7 +743,11 @@ export function StartBookingCard({
           Suggest line-up now
         </Button>
         <Button type="button" variant="outline" className="rounded-xl" onClick={startWithoutQueue} disabled={isStarting || !canStartBooking}>
-          {isStarting ? 'Starting…' : 'Start booking without a suggestion →'}
+          {isStarting
+            ? 'Starting…'
+            : remaining
+              ? 'Auto-book without a suggestion →'
+              : 'Start booking without a suggestion →'}
         </Button>
       </div>
       <LineupQueueDialog
@@ -714,6 +757,7 @@ export function StartBookingCard({
         mode="start"
         canStartBooking={canStartBooking}
         bookingBlockers={bookingBlockers}
+        spotIds={spotIds}
       />
     </LineupCallout>
   )

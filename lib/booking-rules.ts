@@ -542,3 +542,39 @@ export function planOfferWave<C extends PlanCandidate, R extends WaveRequirement
     return candidate && req ? [{ candidate, req }] : []
   })
 }
+
+// ─── Plasser automatikken ikke er startet på ───────────────────────────────
+
+/** Det som trengs for å se om en plass venter på at automatikken startes. */
+export type UnstartedSpotInput = {
+  id: string
+  quantity: number
+  submissions_open: boolean
+  auto_started_at: string | null
+  rebook_paused_at: string | null
+}
+
+/**
+ * Plassene som fortsatt kan fylles av forslaget: automatikken er ikke startet
+ * på dem, de er ikke åpne for søknader, de venter ikke på bookerens valg etter
+ * en fjerning, og de har ledige seter.
+ *
+ * Et manuelt tilbud flytter showet fra utkast til booking uten å starte
+ * automatikken (`sendManualBookingOffer`). Før dette forsvant «Suggest
+ * line-up now» med utkastet, og resten av lineupen kunne bare fylles for hånd
+ * (ClickUp «Auto suggest selv om valgt en eller flere spots manuelt»).
+ *
+ * `taken` er seter som er tatt per plass: bekreftede komikere og tilbud som
+ * venter på svar.
+ */
+export function unstartedSpots<T extends UnstartedSpotInput>(
+  requirements: T[],
+  taken: ReadonlyMap<string, number>,
+): T[] {
+  return requirements.filter((req) =>
+    !req.submissions_open
+    && !req.auto_started_at
+    && !req.rebook_paused_at
+    && (taken.get(req.id) ?? 0) < Math.max(1, req.quantity),
+  )
+}

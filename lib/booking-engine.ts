@@ -362,6 +362,8 @@ async function loadShowPlan(
   admin: Db,
   showId: string,
   mode: PlanMode,
+  /** Forhåndsvisning: plassene som regnes som startet i dag. Utkast = alle. */
+  previewStartIds?: ReadonlySet<string>,
 ): Promise<{ ok: true; plan: ShowPlan } | { ok: false; reason: PlanSkipReason }> {
   const { data: show, error: showError } = await admin
     .from('shows')
@@ -394,8 +396,13 @@ async function loadShowPlan(
     ...req,
     min_skill_level: req.min_skill_level ?? null,
     // Start booking er dag 1 for hver plass som ikke tar imot søknader —
-    // samme regel som `startAutoBooking`.
-    auto_started_at: mode === 'preview' && !req.submissions_open
+    // samme regel som `startAutoBooking`. Bare for plassene starten gjelder:
+    // alle på et utkast, de valgte på kortet for resten av plassene, og
+    // ingen når bookeren bare ser på køen. Ellers lovet «Review queue»
+    // tilbud på plasser som aldri ble startet.
+    auto_started_at: mode === 'preview' && !req.submissions_open && (
+      show.status === 'draft' || previewStartIds?.has(req.id)
+    )
       ? req.auto_started_at ?? now.toISOString()
       : req.auto_started_at,
   }))
@@ -692,7 +699,8 @@ export type LineupQueueSpot = {
    * Hvorfor motoren ikke sender noe på plassen nå. Null = den gjør det.
    * `paused`: en komiker er tatt ut, og bookeren har ikke valgt ennå.
    */
-  note: 'submissions_open' | 'paused' | 'filled' | null
+  /** `not_started`: automatikken er ikke startet på plassen (se `unstartedSpots`). */
+  note: 'submissions_open' | 'paused' | 'filled' | 'not_started' | null
   slotsNeeded: number
   /** Tilbud som går ut nå (bølge 1, eller neste påfyll om showet er i gang). */
   nowCount: number
@@ -736,9 +744,12 @@ function initialsOf(name: string): string {
  * gjør dialogen selv med `allocateWave`, så den følger med mens bookeren
  * flytter på folk.
  */
-export async function getLineupQueue(showId: string): Promise<LineupQueue> {
+export async function getLineupQueue(
+  showId: string,
+  { startSpotIds }: { startSpotIds?: string[] } = {},
+): Promise<LineupQueue> {
   const admin = createAdminClient()
-  const result = await loadShowPlan(admin, showId, 'preview')
+  const result = await loadShowPlan(admin, showId, 'preview', startSpotIds ? new Set(startSpotIds) : undefined)
   if (!result.ok) return result
   const { plan } = result
 
@@ -801,6 +812,12 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
       tomorrowCount = Math.max(0, (next - today) * entry.slotsNeeded)
     }
 
+    // Seter som er tatt: bekreftede og tilbud som venter. En plass som er
+    // tilbudt for hånd, har ikke stempel med vilje — den er tatt, ikke
+    // «ikke startet».
+    const taken = (plan.bookedByRequirement.get(req.id)?.length ?? 0)
+      + plan.offers.filter((offer) => offer.show_requirement_id === req.id && offer.status === 'sent').length
+
     return {
       requirementId: req.id,
       position: index + 1,
@@ -808,7 +825,15 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
       minSkillLevel: req.min_skill_level && req.min_skill_level !== 'low' ? req.min_skill_level : null,
       durationMinutes: req.duration_minutes ?? null,
       matchCount: plan.pool.filter((candidate) => isEligibleForSpot(candidate, req, new Set())).length,
-      note: req.submissions_open ? 'submissions_open' : req.rebook_paused_at ? 'paused' : entry ? null : 'filled',
+      note: req.submissions_open
+        ? 'submissions_open'
+        : req.rebook_paused_at
+          ? 'paused'
+          : entry
+            ? null
+            : req.auto_started_at || taken >= Math.max(1, req.quantity)
+              ? 'filled'
+              : 'not_started',
       slotsNeeded: entry?.slotsNeeded ?? 0,
       nowCount,
       tomorrowCount,
