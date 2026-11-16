@@ -51,6 +51,7 @@ export function OverviewTab({
   locations,
   ticketTypes,
   updateShowDetailsAction,
+  spotTypeNames,
 }: {
   show: OverviewShow
   /** Showets aktive billettyper, med antall solgt. */
@@ -64,6 +65,8 @@ export function OverviewTab({
   hasRequirements: boolean
   allSlotsFilled: boolean
   updateShowDetailsAction: React.ComponentProps<typeof ShowDetailsForm>['action']
+  /** Klubbens aktive spot-typer. Se lib/spot-types.ts. */
+  spotTypeNames?: string[]
 }) {
   // Solgt-tallet alene sier ikke om salget står stille fordi det ikke har
   // åpnet ennå, eller fordi bookeren har stengt det.
@@ -74,6 +77,7 @@ export function OverviewTab({
       <InteractiveBookingCard
         currency={show.currency}
         artists={bookingCandidates}
+        spotTypeNames={spotTypeNames}
         show={{
           id: show.id,
           title: show.title,

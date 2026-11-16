@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NEUTRAL_SCORE, isSkillLevel } from '@/lib/artist-score'
-import type { Artist, ArtistType, ClubArtist, EnergyLevel, SkillLevel } from '@/types/database'
+import type { Artist, ClubArtist, EnergyLevel, SkillLevel } from '@/types/database'
 
 type Db = ReturnType<typeof createAdminClient>
 
@@ -192,7 +192,7 @@ export async function saveClubArtistReview(
 
 function toReview(row: Record<string, unknown>): ClubArtistReview {
   return {
-    category: (row.category as ArtistType[] | null) ?? null,
+    category: (row.category as string[] | null) ?? null,
     admin_energy_level: (row.admin_energy_level as EnergyLevel | null) ?? null,
     admin_notes: (row.admin_notes as string | null) ?? null,
     is_flagged: Boolean(row.is_flagged),
@@ -216,7 +216,7 @@ function toReview(row: Record<string, unknown>): ClubArtistReview {
 export function withClubReview<T extends { id: string }>(
   artists: T[],
   reviews: Map<string, ClubArtistReview>,
-): Array<T & { category: ArtistType[] | null; admin_energy_level: EnergyLevel | null; score: number; skill_level_override: SkillLevel | null }> {
+): Array<T & { category: string[] | null; admin_energy_level: EnergyLevel | null; score: number; skill_level_override: SkillLevel | null }> {
   return artists.flatMap((artist) => {
     const review = reviews.get(artist.id)
     if (!review || review.is_flagged) return []

@@ -12,7 +12,8 @@ export type ArtistGender = 'woman' | 'man' | 'non_binary' | 'prefer_not_to_say'
  */
 export type RequirementGender = 'any' | 'woman' | 'man' | 'non_binary'
 export type EnergyLevel = 'high' | 'medium' | 'low' | 'uncertain'
-export type ArtistType = 'headliner' | 'konferansier' | 'stand-up' | 'open mic'
+/** Standardtypenes nøkler. Se lib/artist-roles.ts og migrasjon 100. */
+export type ArtistType = 'konferansier' | 'opener' | 'stand-up' | 'showcase' | 'open mic' | 'headliner'
 export type ShowStatus = 'draft' | 'booking' | 'fullbooked' | 'published' | 'completed' | 'cancelled'
 export type RequirementEnergy = 'high' | 'low' | 'any' | 'uncertain'
 
@@ -251,8 +252,11 @@ export type ClubArtist = {
   club_id: string
   artist_id: string
   created_at: string
-  /** Rollene *denne* klubben booker hen i. Komikerens egen: `Artist.category`. */
-  category: ArtistType[] | null
+  /**
+   * Rollene *denne* klubben booker hen i: nøkkelen for en standardtype, navnet
+   * for klubbens egen type (`clubRoleValues`). Komikerens egen: `Artist.category`.
+   */
+  category: string[] | null
   admin_energy_level: EnergyLevel | null
   admin_notes: string | null
   is_flagged: boolean
@@ -1104,7 +1108,7 @@ export type Database = {
           club_id: string
           artist_id: string
           created_at?: string
-          category?: ArtistType[] | null
+          category?: string[] | null
           admin_energy_level?: EnergyLevel | null
           admin_notes?: string | null
           is_flagged?: boolean
@@ -1115,6 +1119,39 @@ export type Database = {
           joined_via_invite?: boolean
         }
         Update: Partial<ClubArtist>
+        Relationships: []
+      }
+      club_spot_types: {
+        Row: {
+          id: string
+          club_id: string
+          standard_key: ArtistType | null
+          name: string
+          position: number
+          active: boolean
+          is_unpaid: boolean
+          default_compensation_percent: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          standard_key?: ArtistType | null
+          name: string
+          position?: number
+          active?: boolean
+          is_unpaid?: boolean
+          default_compensation_percent?: number | null
+          created_at?: string
+        }
+        Update: Partial<{
+          standard_key: ArtistType | null
+          name: string
+          position: number
+          active: boolean
+          is_unpaid: boolean
+          default_compensation_percent: number | null
+        }>
         Relationships: []
       }
       club_artist_invites: {

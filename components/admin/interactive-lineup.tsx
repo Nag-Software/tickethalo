@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { RoleIcon, SpotStatusBadge } from '@/components/admin/show-booking-card'
-import { ARTIST_ROLE_OPTIONS, artistMatchesRole, canonicalRoleLabel, canonicalRoleValue } from '@/lib/artist-roles'
+import { ARTIST_ROLE_LABEL_OPTIONS, artistMatchesRole, canonicalRoleLabel } from '@/lib/artist-roles'
+import { sameSpotType, spotTypeMenuOptions } from '@/lib/spot-types'
 import type { BookingSpot } from '@/lib/booking-spots'
 import { cn } from '@/lib/utils'
 import { RebookChoiceDialog } from '@/components/admin/rebook-choice-dialog'
@@ -71,6 +72,7 @@ export function InteractiveLineup({
   spots,
   artists,
   readOnly = false,
+  spotTypeNames = ARTIST_ROLE_LABEL_OPTIONS,
 }: {
   showId: string
   currency: string
@@ -78,6 +80,8 @@ export function InteractiveLineup({
   artists: LineupArtist[]
   /** true once the show is over or cancelled — the lineup is then a record. */
   readOnly?: boolean
+  /** The club's active spot types, in the club's order. See lib/spot-types.ts. */
+  spotTypeNames?: string[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -115,7 +119,7 @@ export function InteractiveLineup({
       <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-4">
         <p className="text-xs text-muted-foreground">Set up lineup spots to start booking.</p>
         {!readOnly && (
-          <AddSpotButton
+          <AddSpotButton spotTypeNames={spotTypeNames}
             disabled={isPending}
             onAdd={(role) => run(() => addRequirementAction(fd({ role_name: role })), `${role} spot added.`)}
           />
@@ -128,7 +132,7 @@ export function InteractiveLineup({
     <div className="border-t">
       <ul>
         {spots.map((spot) => (
-          <SpotRow
+          <SpotRow spotTypeNames={spotTypeNames}
             key={spot.key}
             spot={spot}
             currency={currency}
@@ -219,7 +223,7 @@ export function InteractiveLineup({
 
       {!readOnly && (
         <div className="border-t px-3 py-2">
-          <AddSpotButton
+          <AddSpotButton spotTypeNames={spotTypeNames}
             disabled={isPending}
             onAdd={(role) => run(() => addRequirementAction(fd({ role_name: role })), `${role} spot added.`)}
           />
@@ -229,7 +233,7 @@ export function InteractiveLineup({
   )
 }
 
-function AddSpotButton({ disabled, onAdd }: { disabled: boolean; onAdd: (role: string) => void }) {
+function AddSpotButton({ disabled, onAdd, spotTypeNames }: { disabled: boolean; onAdd: (role: string) => void; spotTypeNames: string[] }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -241,10 +245,10 @@ function AddSpotButton({ disabled, onAdd }: { disabled: boolean; onAdd: (role: s
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
         <DropdownMenuLabel>New spot</DropdownMenuLabel>
-        {ARTIST_ROLE_OPTIONS.map((option) => (
-          <DropdownMenuItem key={option.value} onSelect={() => onAdd(option.label)}>
-            <RoleIcon roleName={option.value} className="size-4" />
-            {option.label}
+        {spotTypeNames.map((name) => (
+          <DropdownMenuItem key={name} onSelect={() => onAdd(name)}>
+            <RoleIcon roleName={name} className="size-4" />
+            {name}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -264,7 +268,9 @@ function SpotRow({
   onPickArtist,
   onRemoveArtist,
   onAutoBookNew,
+  spotTypeNames,
 }: {
+  spotTypeNames: string[]
   spot: BookingSpot
   currency: string
   artists: LineupArtist[]
@@ -278,7 +284,6 @@ function SpotRow({
   onAutoBookNew: () => void
 }) {
   const roleLabel = canonicalRoleLabel(spot.roleName) ?? spot.roleName
-  const currentRole = canonicalRoleValue(spot.roleName)
   const isOpen = spot.state === 'open'
 
   return (
@@ -317,11 +322,11 @@ function SpotRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-52">
           <DropdownMenuLabel>Lineup type</DropdownMenuLabel>
-          {ARTIST_ROLE_OPTIONS.map((option) => (
-            <DropdownMenuItem key={option.value} onSelect={() => onRole(option.label)}>
-              <RoleIcon roleName={option.value} className="size-4" />
-              {option.label}
-              {currentRole === option.value && <Check className="ml-auto size-3.5" />}
+          {spotTypeMenuOptions(spotTypeNames, roleLabel).map((name) => (
+            <DropdownMenuItem key={name} onSelect={() => onRole(name)}>
+              <RoleIcon roleName={name} className="size-4" />
+              {name}
+              {sameSpotType(roleLabel, name) && <Check className="ml-auto size-3.5" />}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

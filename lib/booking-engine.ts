@@ -17,11 +17,13 @@ import { isRushMode, lineupDeadlineAt, offerExpiresAt, offerTarget } from '@/lib
 import { lineupDeadlineDaysFor, type BookingSettings } from '@/lib/booking-settings'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { effectiveSkillLevel, type SkillLevel } from '@/lib/artist-score'
-import type { ArtistGender, ArtistType, EnergyLevel, RequirementCompensationType } from '@/types/database'
+import type { ArtistGender, EnergyLevel, RequirementCompensationType } from '@/types/database'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import { appUrl } from '@/lib/app-url'
 import { showVenue } from '@/lib/show-venue'
 import { gigTypesText } from '@/lib/gig-types'
+import { unpaidNoteForRole, type ClubSpotType } from '@/lib/spot-types'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
 
 /**
  * Bookingmotoren: hvem som får tilbud på et show, og utsendingen av dem.
@@ -73,7 +75,12 @@ type OfferRequirement = {
   compensation_percent: number | null
 }
 
-export function offerDetails(show: OfferShow, requirement: OfferRequirement) {
+export function offerDetails(
+  show: OfferShow,
+  requirement: OfferRequirement,
+  /** Klubbens spot-typer. Uten dem gjelder standarden: Open Spot er ubetalt. */
+  spotTypes: readonly ClubSpotType[] | null = null,
+) {
   const currency = show.currency || 'NOK'
   return {
     currency,
@@ -84,6 +91,7 @@ export function offerDetails(show: OfferShow, requirement: OfferRequirement) {
     show_time: show.start_time?.slice(0, 5) ?? null,
     venue: showVenue(show).line,
     gig_type_label: gigTypesText(show.gig_types),
+    unpaid_note: unpaidNoteForRole(spotTypes, requirement.role_name),
   }
 }
 
@@ -131,7 +139,7 @@ export type Candidate = {
   profile_image_url: string | null
   admin_energy_level: EnergyLevel | null
   gender: ArtistGender | null
-  category: ArtistType[] | null
+  category: string[] | null
   /** Snittet av klubbens egne vurderinger, 0–10. Se lib/artist-reviews.ts. */
   score: number
   /** Klubbens eget valg av nivå. Null = følg scoren. Se `effectiveSkillLevel`. */
@@ -326,7 +334,7 @@ type PlanMode = 'run' | 'preview'
 export type PlanSkipReason = 'not_running' | 'no_spots' | 'show_day' | 'no_candidates' | 'load_failed'
 
 type ShowPlan = {
-  show: OfferShow & { id: string; title: string; date: string; status: string }
+  show: OfferShow & { id: string; title: string; date: string; status: string; club_id: string | null }
   requirements: EngineRequirement[]
   pool: Candidate[]
   entries: WaveEntry<EngineRequirement>[]
@@ -618,8 +626,14 @@ export async function runBookingWave(showId: string) {
 
   const baseUrl = appUrl()
   const { show, expiresAt } = plan
+  // Ubetalt-beskjeden i tilbudet. Feiler oppslaget, går tilbudene ut med
+  // standarden (Open Spot er ubetalt) — de stoppes ikke.
+  const spotTypes = await getClubSpotTypes(admin, show.club_id).catch((error) => {
+    console.error('[Booking] Could not load spot types:', error)
+    return null
+  })
   for (const { candidate, req } of assignments) {
-    const details = offerDetails(show, req)
+    const details = offerDetails(show, req, spotTypes)
     const { data: offer, error: offerError } = await admin
       .from('booking_offers')
       .insert({
@@ -649,6 +663,7 @@ export async function runBookingWave(showId: string) {
       duration_label: details.duration_label,
       fee_label: details.fee_label,
       gig_type_label: details.gig_type_label,
+      unpaid_note: details.unpaid_note,
       expires_at: expiresAt,
       token: offer.token,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,

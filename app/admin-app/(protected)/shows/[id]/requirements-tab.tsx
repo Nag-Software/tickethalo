@@ -30,6 +30,7 @@ import {
 } from '../actions'
 import { SKILL_LEVELS, SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
 import { ARTIST_ROLE_LABEL_OPTIONS, canonicalRoleLabel } from '@/lib/artist-roles'
+import { spotTypeMenuOptions } from '@/lib/spot-types'
 import { MAX_SPOT_DURATION, MIN_SPOT_DURATION } from '@/lib/spot-duration'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { StartBookingCard } from './lineup-queue-dialog'
@@ -103,6 +104,8 @@ type Props = {
    * `requirementMatchCounts` i page.tsx.
    */
   matchCounts: Record<string, { total: number; withoutSkill: number }>
+  /** Klubbens aktive spot-typer, i klubbens rekkefølge. Se lib/spot-types.ts. */
+  spotTypeNames?: string[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -397,6 +400,7 @@ export function RequirementsTab({
   pendingSubmissionTotal,
   percentLimit,
   matchCounts,
+  spotTypeNames = ARTIST_ROLE_LABEL_OPTIONS,
 }: Props) {
   const router = useRouter()
 
@@ -706,7 +710,8 @@ export function RequirementsTab({
     const fd = new FormData()
 
     fd.set('show_id', showId)
-    fd.set('role_name', "Stand-up")
+    // Første aktive type uten egen rolle i lineupen står først; ellers Middle / Feature.
+    fd.set('role_name', spotTypeNames.includes('Middle / Feature') ? 'Middle / Feature' : spotTypeNames[0] ?? 'Middle / Feature')
     fd.set('quantity', '1')
     fd.set('energy_level', "any")
     fd.set('required_gender', "any")
@@ -862,7 +867,7 @@ export function RequirementsTab({
                       aria-label="Role"
                       className="w-full min-w-0 appearance-none rounded-lg bg-transparent py-0.5 pl-1 pr-6 text-[15px] font-bold outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
                     >
-                      {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
+                      {spotTypeMenuOptions(spotTypeNames, state.role_name).map((role) => (
                         <option key={role} value={role}>{role}</option>
                       ))}
                     </select>
@@ -1066,6 +1071,7 @@ export function RequirementsTab({
             isSubmitting={isAdding}
             showCurrency={showCurrency}
             existingPercentTotal={totalPercent}
+            spotTypeNames={spotTypeNames}
           />
         )
       )}
@@ -1148,7 +1154,9 @@ function AddWizard({
   isSubmitting,
   showCurrency,
   existingPercentTotal,
+  spotTypeNames,
 }: {
+  spotTypeNames: string[]
   wizard: WizardState
   setWizard: React.Dispatch<React.SetStateAction<WizardState>>
   onSubmit: () => void
@@ -1265,7 +1273,7 @@ function AddWizard({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__unset">Select role</SelectItem>
-                {ARTIST_ROLE_LABEL_OPTIONS.map((role) => (
+                {spotTypeNames.map((role) => (
                   <SelectItem key={role} value={role}>{role}</SelectItem>
                 ))}
               </SelectContent>

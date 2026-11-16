@@ -8,6 +8,8 @@ import { OfferButtons } from '@/components/artist/offer-buttons'
 import { showVenue } from '@/lib/show-venue'
 import { formatDuration } from '@/lib/spot-duration'
 import { gigTypesText } from '@/lib/gig-types'
+import { unpaidNoteForRole } from '@/lib/spot-types'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
 
 const OFFER_STATUS_LABELS: Record<string, string> = {
   sent: 'Awaiting response',
@@ -27,7 +29,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   const [{ data: show }, { data: req }] = await Promise.all([
     db
       .from('shows')
-      .select('title, date, start_time, venue_name, venue_address, gig_types')
+      .select('title, date, start_time, venue_name, venue_address, gig_types, club_id')
       .eq('id', offer.show_id)
       .single(),
     db
@@ -38,6 +40,10 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   ])
 
   const isOpen = offer.status === 'sent'
+  const unpaidNote = unpaidNoteForRole(
+    show?.club_id ? await getClubSpotTypes(db, show.club_id).catch(() => null) : null,
+    req?.role_name,
+  )
   const venue = showVenue(show).line
 
   /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
@@ -69,6 +75,8 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
 
         {/* Honoraret er tallet svaret henger på — det får stå alene. */}
         <p className="text-[2.25rem] font-semibold leading-none tabular-nums">{feeLabel}</p>
+        {/* Ubetalt plass: sagt rett ut før komikeren svarer (ClickUp «Ekstra info på Open Spot»). */}
+        {unpaidNote && <p className="rounded-xl bg-[var(--ev-card-hover)] px-4 py-3 text-[14px] leading-relaxed">{unpaidNote}</p>}
 
         <div className="flex flex-col gap-2.5 text-[14px]">
           <Detail icon={<CalendarDays className="size-4" />}>

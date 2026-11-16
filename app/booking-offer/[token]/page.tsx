@@ -8,6 +8,8 @@ import { requirementFeeLabel } from '@/lib/booking-spots'
 import { publicAcceptOfferAction, publicDeclineOfferAction } from './actions'
 import { showVenue } from '@/lib/show-venue'
 import { gigTypesText } from '@/lib/gig-types'
+import { unpaidNoteForRole } from '@/lib/spot-types'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
 import { formatDuration } from '@/lib/spot-duration'
 
 export const metadata = { title: 'Booking offer — Tickethalo' }
@@ -45,7 +47,7 @@ export default async function PublicBookingOfferPage({
   const [{ data: show }, { data: requirements }] = await Promise.all([
     db
       .from('shows')
-      .select('title, date, start_time, venue_name, venue_address, currency, gig_types')
+      .select('title, date, start_time, venue_name, venue_address, currency, gig_types, club_id')
       .eq('id', offer.show_id)
       .single(),
     // Hele lineupen, ikke bare plassen tilbudet gjelder: komikeren skal se
@@ -65,6 +67,11 @@ export default async function PublicBookingOfferPage({
   const index = lineup.findIndex((item) => item.id === offer.show_requirement_id)
   const req = index >= 0 ? lineup[index] : null
   const lineupNumber = index >= 0 ? seats(index) + 1 : null
+
+  const unpaidNote = unpaidNoteForRole(
+    show?.club_id ? await getClubSpotTypes(db, show.club_id).catch(() => null) : null,
+    req?.role_name,
+  )
 
   const isExpired = offer.expires_at ? new Date(offer.expires_at) < new Date() : false
   const canRespond = offer.status === 'sent' && !isExpired
@@ -110,6 +117,9 @@ export default async function PublicBookingOfferPage({
             {statusLabel}
           </span>
         </div>
+
+        {/* Ubetalt plass: sagt rett ut før komikeren svarer (ClickUp «Ekstra info på Open Spot»). */}
+        {unpaidNote && <p className="mt-3 rounded-xl bg-[var(--ev-card-hover)] px-4 py-3 text-[14px] leading-relaxed">{unpaidNote}</p>}
 
         <dl className="mt-7 flex flex-col divide-y divide-[var(--ev-line)] border-y border-[var(--ev-line)] text-[14px]">
           <Detail label="Date">{show?.date ? formatDate(show.date) : 'Coming'}</Detail>

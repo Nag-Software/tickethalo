@@ -214,6 +214,7 @@ export async function sendBookingConfirmedEmail(opts: {
   duration_label?: string | null
   fee_label?: string | null
   gig_type_label?: string | null
+  unpaid_note?: string | null
   portal_url?: string | null
   /** true når klubben satte komikeren rett inn, uten at hen svarte på et tilbud. */
   added_by_club?: boolean

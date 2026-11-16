@@ -17,6 +17,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/components/admin/admin-header', () => ({ AdminHeader: () => null }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
+vi.mock('@/lib/spot-types-data', () => ({ getClubSpotTypes: vi.fn(async () => []) }))
 vi.mock('@/lib/club-auth', () => ({ getClubAccess: vi.fn(), getDefaultClubIdForAdmin: vi.fn() }))
 // Scoren og antall vurderinger leses rett fra databasen; her holder det å
 // vite at kolonnen får tallene sine et sted fra.

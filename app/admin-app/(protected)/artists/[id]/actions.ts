@@ -5,11 +5,13 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { saveClubArtistReview, type ClubArtistReview } from '@/lib/club-artist-profile'
-import { canonicalRoleValues } from '@/lib/artist-roles'
+import { clubRoleValues } from '@/lib/artist-roles'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { customSpotTypeNames } from '@/lib/spot-types'
 import { isSkillLevel } from '@/lib/artist-score'
 import { runAutomaticBookingForClub } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
-import type { ArtistType, EnergyLevel } from '@/types/database'
+import type { EnergyLevel } from '@/types/database'
 
 /**
  * Alt som eksporteres fra en `'use server'`-modul er et kallbart endepunkt, og
@@ -55,8 +57,11 @@ export async function saveClubArtistReviewAction(formData: FormData) {
   // Flagget skiller «ingen roller valgt» fra «rollene ble ikke sendt» — uten
   // det kunne lista aldri tømmes igjen.
   if (formData.has('category') || formData.has('category_present')) {
-    const values = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
-    patch.category = values.length > 0 ? (values as ArtistType[]) : null
+    // Standardtypene og klubbens egne (migrasjon 100). Et navn klubben ikke
+    // har som type, faller bort.
+    const customNames = customSpotTypeNames(await getClubSpotTypes(db, clubId))
+    const values = clubRoleValues(formData.getAll('category').map((value) => String(value)), customNames)
+    patch.category = values.length > 0 ? values : null
   }
 
   // «Auto» sendes som tom streng og betyr: følg scoren igjen.

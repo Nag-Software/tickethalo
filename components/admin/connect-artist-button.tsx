@@ -21,16 +21,21 @@ export function ConnectArtistButton({
   artistName,
   suggestedRoles,
   className,
+  roleOptions = ARTIST_ROLE_OPTIONS,
 }: {
   artistId: string
   artistName: string
   /** Komikerens egen beskrivelse — bare et forslag. */
   suggestedRoles: string[] | null
   className?: string
+  /** Klubbens spot-typer (`bookAsOptions`). Uten dem: standardlista. */
+  roleOptions?: Array<{ value: string; label: string }>
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [roles, setRoles] = useState<string[]>(() => normalizeArtistRoleList(suggestedRoles))
+  const [roles, setRoles] = useState<string[]>(() =>
+    normalizeArtistRoleList(suggestedRoles).filter((role) => roleOptions.some((option) => option.value === role)),
+  )
   const [isPending, startTransition] = useTransition()
 
   function toggle(role: string) {
@@ -74,7 +79,7 @@ export function ConnectArtistButton({
         </p>
 
         <div className="mt-3 flex flex-col gap-1">
-          {ARTIST_ROLE_OPTIONS.map((role) => (
+          {roleOptions.map((role) => (
             <label
               key={role.value}
               className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-muted"

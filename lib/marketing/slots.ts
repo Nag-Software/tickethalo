@@ -13,14 +13,16 @@
  * Ingen Node-avhengigheter: både server og klient bruker den.
  */
 
-import { normalizeArtistRole } from '@/lib/artist-roles'
+import { canonicalRoleLabel, normalizeArtistRole } from '@/lib/artist-roles'
 
 /** Lav verdi = høyt på plakaten. */
 const ROLE_RANK: Record<string, number> = {
   headliner: 0,
   konferansier: 1,
   'stand-up': 2,
-  'open mic': 3,
+  showcase: 3,
+  opener: 4,
+  'open mic': 5,
 }
 
 export type SlotRequirement = {
@@ -90,12 +92,9 @@ function rankRequirements(requirements: SlotRequirement[]): SlotRequirement[] {
 }
 
 function slotLabel(roleName: string, indexWithinRole: number, totalForRole: number): string {
-  const canonical = normalizeArtistRole(roleName)
-  const base = canonical === 'headliner' ? 'Headliner'
-    : canonical === 'konferansier' ? 'Host'
-    : canonical === 'stand-up' ? 'Stand-up'
-    : canonical === 'open mic' ? 'Open Mic'
-    : roleName
+  // Plassens eget navn: et show som var i gang før de nye typene, beholder
+  // «Headliner» og «Stand-up» på plakaten. Se `canonicalRoleLabel`.
+  const base = canonicalRoleLabel(roleName) ?? roleName
   return totalForRole > 1 ? `${base} ${indexWithinRole + 1}` : base
 }
 

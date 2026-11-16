@@ -2,7 +2,7 @@ import { artistMatchesRole } from '@/lib/artist-roles'
 import { meetsSkillLevel, type SkillLevel } from '@/lib/artist-score'
 import { offerTarget } from '@/lib/booking-schedule'
 import type { BookingSettings } from '@/lib/booking-settings'
-import type { ArtistGender, ArtistType, BookingOfferSource, EnergyLevel } from '@/types/database'
+import type { ArtistGender, BookingOfferSource, EnergyLevel } from '@/types/database'
 
 /**
  * Reglene bookingmotoren følger, uten databasen.
@@ -20,7 +20,7 @@ import type { ArtistGender, ArtistType, BookingOfferSource, EnergyLevel } from '
 export type MatchableArtist = {
   admin_energy_level: EnergyLevel | null
   gender: ArtistGender | null
-  category: ArtistType[] | null
+  category: string[] | null
   /** `club_artists.score`, 0–10. Gir skill level — se `effectiveSkillLevel`. */
   score: number
   /** Klubbens eget valg av nivå. Null/utelatt = følg scoren. */
