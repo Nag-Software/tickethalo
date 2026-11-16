@@ -16,7 +16,7 @@ import {
 import { isRushMode, lineupDeadlineAt, offerExpiresAt, offerTarget } from '@/lib/booking-schedule'
 import { lineupDeadlineDaysFor, type BookingSettings } from '@/lib/booking-settings'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
-import { skillLevelFromScore, type SkillLevel } from '@/lib/artist-score'
+import { effectiveSkillLevel, type SkillLevel } from '@/lib/artist-score'
 import type { ArtistGender, ArtistType, EnergyLevel, RequirementCompensationType } from '@/types/database'
 import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
 import { appUrl } from '@/lib/app-url'
@@ -134,6 +134,8 @@ export type Candidate = {
   category: ArtistType[] | null
   /** Snittet av klubbens egne vurderinger, 0–10. Se lib/artist-reviews.ts. */
   score: number
+  /** Klubbens eget valg av nivå. Null = følg scoren. Se `effectiveSkillLevel`. */
+  skill_level_override: SkillLevel | null
   /** Bekreftede plasser i samme klubb innenfor rotasjonsvinduet. */
   clubBookingsInWindow: number
   lastClubBookingDate: string | null
@@ -277,6 +279,7 @@ async function loadCandidates(
     gender: (artist.gender ?? null) as ArtistGender | null,
     category: artist.category,
     score: artist.score,
+    skill_level_override: artist.skill_level_override ?? null,
     clubBookingsInWindow: rotationCount.get(artist.id) ?? 0,
     lastClubBookingDate: lastClubBooking.get(artist.id) ?? null,
     unavailable: unavailableIds.has(artist.id),
@@ -747,7 +750,7 @@ export async function getLineupQueue(showId: string): Promise<LineupQueue> {
       name,
       initials: initialsOf(name),
       imageUrl: candidate.profile_image_url,
-      skillLevel: skillLevelFromScore(candidate.score),
+      skillLevel: effectiveSkillLevel(candidate.score, candidate.skill_level_override),
       lastClubBookingDate: candidate.lastClubBookingDate,
     }
   }

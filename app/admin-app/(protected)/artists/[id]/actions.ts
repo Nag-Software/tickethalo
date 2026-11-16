@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getClubAccess, getDefaultClubIdForAdmin } from '@/lib/club-auth'
 import { saveClubArtistReview, type ClubArtistReview } from '@/lib/club-artist-profile'
 import { canonicalRoleValues } from '@/lib/artist-roles'
+import { isSkillLevel } from '@/lib/artist-score'
 import { runAutomaticBookingForClub } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import type { ArtistType, EnergyLevel } from '@/types/database'
@@ -58,6 +59,12 @@ export async function saveClubArtistReviewAction(formData: FormData) {
     patch.category = values.length > 0 ? (values as ArtistType[]) : null
   }
 
+  // «Auto» sendes som tom streng og betyr: følg scoren igjen.
+  if (formData.has('skill_level_override')) {
+    const value = formData.get('skill_level_override')
+    patch.skill_level_override = isSkillLevel(value) ? value : null
+  }
+
   if (formData.has('admin_notes')) {
     patch.admin_notes = (formData.get('admin_notes') as string) || null
   }
@@ -71,10 +78,15 @@ export async function saveClubArtistReviewAction(formData: FormData) {
 
   await saveClubArtistReview(db, clubId, artistId, patch)
 
-  // Rolle, energi og flagg avgjør hvilke plasser komikeren matcher. Endres
+  // Rolle, energi, nivå og flagg avgjør hvilke plasser komikeren matcher. Endres
   // de, har klubbens show en ny kandidatliste — eller én kandidat mindre,
   // og da skal motoren trekke tilbudene hens.
-  if (patch.category !== undefined || patch.admin_energy_level !== undefined || patch.is_flagged !== undefined) {
+  if (
+    patch.category !== undefined
+    || patch.admin_energy_level !== undefined
+    || patch.is_flagged !== undefined
+    || patch.skill_level_override !== undefined
+  ) {
     runAfterResponse(`club-review-${artistId}`, async () => {
       await runAutomaticBookingForClub(clubId)
       revalidatePath(`/admin-app/artists/${artistId}`)

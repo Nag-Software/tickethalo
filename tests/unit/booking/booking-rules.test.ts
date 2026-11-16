@@ -99,6 +99,15 @@ describe('hard requirements', () => {
     expect(requirementBlocker({ ...weak, score: 8.3 }, strict)).toBeNull()
   })
 
+  it('uses the level the club set over the score', () => {
+    const unrated: MatchableArtist = { ...lowEnergyStandUp, score: 5 }
+    const strict: HardRequirement = { ...standUpSpot, min_skill_level: 'high' }
+    expect(requirementBlocker(unrated, strict)).toBe('skill')
+    expect(requirementBlocker({ ...unrated, skill_level_override: 'high' }, strict)).toBeNull()
+    expect(requirementBlocker({ ...unrated, score: 8.3, skill_level_override: 'medium' }, strict)).toBe('skill')
+    expect(requirementBlocker({ ...unrated, skill_level_override: null }, strict)).toBe('skill')
+  })
+
   it('reports the role first, because that is the one the booker cannot relax', () => {
     const wrongEverything: MatchableArtist = { category: ['headliner'], admin_energy_level: 'high', gender: 'woman', score: 1 }
     expect(requirementBlocker(wrongEverything, standUpSpot)).toBe('role')

@@ -108,8 +108,12 @@ export function formatScore(score: number | null | undefined): string {
  *
  * Bookerne ville ha et nivå å sette krav etter, men et tall med desimaler er
  * både for presist og for lett å lese som en dom over personen. Nivået
- * avledes av klubbens egen score og settes aldri for hånd: da ville det
- * blitt et felt ingen holdt ved like, slik scoren var før vurderingene.
+ * avledes av klubbens egen score.
+ *
+ * Klubben kan likevel sette nivået selv (migrasjon 098): en ny komiker står
+ * på 5,0 = Medium til noen har vurdert hen, og klubben kjenner ofte komikeren
+ * fra før. Valget vinner over scoren til klubben setter det tilbake til Auto.
+ * Bruk `effectiveSkillLevel` overalt nivået vises eller sjekkes.
  */
 
 /**
@@ -150,11 +154,27 @@ export function skillLevelFromScore(score: number | null | undefined): SkillLeve
 }
 
 /**
- * Om scoren holder til plassens minstekrav. Null og `low` slipper alle inn.
+ * Nivået klubben ser og booker etter: klubbens eget valg når det er satt,
+ * ellers det scoren gir.
  */
-export function meetsSkillLevel(score: number | null | undefined, minimum: SkillLevel | null | undefined): boolean {
+export function effectiveSkillLevel(
+  score: number | null | undefined,
+  override: SkillLevel | null | undefined,
+): SkillLevel {
+  return isSkillLevel(override) ? override : skillLevelFromScore(score)
+}
+
+/**
+ * Om komikeren holder til plassens minstekrav. Null og `low` slipper alle inn.
+ * `override` er klubbens eget valg av nivå — se `effectiveSkillLevel`.
+ */
+export function meetsSkillLevel(
+  score: number | null | undefined,
+  minimum: SkillLevel | null | undefined,
+  override?: SkillLevel | null,
+): boolean {
   if (!minimum || minimum === 'low') return true
-  return SKILL_RANK[skillLevelFromScore(score)] >= SKILL_RANK[minimum]
+  return SKILL_RANK[effectiveSkillLevel(score, override)] >= SKILL_RANK[minimum]
 }
 
 export function isSkillLevel(value: unknown): value is SkillLevel {

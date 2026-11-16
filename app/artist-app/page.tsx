@@ -31,8 +31,13 @@ export default async function ArtistDashboardPage() {
   const showMap = new Map((shows ?? []).map((show) => [show.id, show]))
 
   /* Tilbud fra før honoraret ble kopiert til raden — og alle prosentavtaler,
-     som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet. */
-  const requirementIds = [...new Set(offers.flatMap((offer) => offer.show_requirement_id ?? []))]
+     som ikke har noe beløp — leser honoraret fra lineup-plassen i stedet.
+     Bookingene også: en prosentavtale har ikke noe beløp før oppgjøret, og
+     sto som «NOK 0». */
+  const requirementIds = [...new Set([
+    ...offers.flatMap((offer) => offer.show_requirement_id ?? []),
+    ...spots.flatMap((spot) => spot.show_requirement_id ?? []),
+  ])]
   const { data: requirements } = requirementIds.length > 0
     ? await db
         .from('show_requirements')
@@ -114,7 +119,7 @@ export default async function ArtistDashboardPage() {
               </p>
               {nextSpot && (
                 <p className="mt-2 text-[14px] font-medium tabular-nums">
-                  {formatMoney(nextSpot.fee_amount, nextSpot.currency)}
+                  {offerFee(nextSpot)}
                 </p>
               )}
             </div>
@@ -197,7 +202,7 @@ export default async function ArtistDashboardPage() {
                       </p>
                     </div>
                     <span className="text-[14px] font-medium tabular-nums text-[var(--ev-muted)]">
-                      {formatMoney(spot.fee_amount, spot.currency)}
+                      {offerFee(spot)}
                     </span>
                   </Row>
                 )

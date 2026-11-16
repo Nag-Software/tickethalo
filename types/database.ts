@@ -260,6 +260,8 @@ export type ClubArtist = {
   flagged_at: string | null
   /** Snittet av klubbens egne vurderinger, 0–10. Se lib/artist-reviews.ts. */
   score: number
+  /** Klubbens eget valg av nivå. Null = Auto, følger scoren. Se migrasjon 098 og `effectiveSkillLevel`. */
+  skill_level_override: SkillLevel | null
   /** Komikeren la seg selv til via klubbens invitasjonslenke. Se migrasjon 095. */
   joined_via_invite: boolean
 }
@@ -1109,6 +1111,7 @@ export type Database = {
           flag_reason?: string | null
           flagged_at?: string | null
           score?: number
+          skill_level_override?: SkillLevel | null
           joined_via_invite?: boolean
         }
         Update: Partial<ClubArtist>

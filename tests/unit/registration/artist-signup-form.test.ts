@@ -50,6 +50,15 @@ describe('parseArtistSignupForm', () => {
     expect(parsed.profile).toMatchObject({ full_name: 'Kari Komiker', city: 'Oslo', country: 'NO', gender: 'woman' })
   })
 
+  it('accepts a comedian from any country, with a city that is not in our list', async () => {
+    const parsed = await parseArtistSignupForm(form({ city: 'Kraków', country: 'PL' }), 'new-account')
+    expect(parsed.profile).toMatchObject({ city: 'Kraków', country: 'PL' })
+  })
+
+  it('still refuses a country code that does not exist', async () => {
+    expect(await codeFor(parseArtistSignupForm(form({ country: 'XX' }), 'new-account'))).not.toBe('ok')
+  })
+
   it('still demands matching passwords for a new account', async () => {
     await expect(codeFor(parseArtistSignupForm(form({ password_confirm: 'annet' }), 'new-account'))).resolves.toBe('password_mismatch')
     await expect(codeFor(parseArtistSignupForm(form({ password: null }), 'new-account'))).resolves.toBe('missing')

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COUNTRIES,
+  FEATURED_COUNTRY_CODES,
   defaultLanguagesForCountry,
   distanceToCity,
   foldName,
@@ -29,6 +31,30 @@ describe('registration country and language normalization', () => {
   it('returns no defaults for an unknown country', () => {
     expect(defaultLanguagesForCountry('XX')).toEqual([])
     expect(lookupCountry('XX')).toBeUndefined()
+  })
+
+  it('knows every country, not just the Nordics, the UK and the US', () => {
+    expect(lookupCountry('PL')?.name).toBe('Poland')
+    expect(lookupCountry('IT')?.name).toBe('Italy')
+    expect(lookupCountry('BR')?.name).toBe('Brazil')
+    expect(lookupCountry('XK')?.name).toBe('Kosovo')
+    expect(COUNTRIES.length).toBeGreaterThan(240)
+    expect(new Set(COUNTRIES.map((country) => country.code)).size).toBe(COUNTRIES.length)
+  })
+
+  it('leaves out codes that are not countries', () => {
+    for (const code of ['EU', 'UN', 'ZZ', 'UK', 'SU']) expect(lookupCountry(code)).toBeUndefined()
+  })
+
+  it('lists countries by name, with the featured ones all known', () => {
+    const names = COUNTRIES.map((country) => country.name)
+    expect(names).toEqual([...names].sort((left, right) => left.localeCompare(right, 'en')))
+    for (const code of FEATURED_COUNTRY_CODES) expect(lookupCountry(code)).toBeDefined()
+  })
+
+  it('suggests no language for a country we have none for', () => {
+    expect(defaultLanguagesForCountry('PL')).toEqual(['pl'])
+    expect(defaultLanguagesForCountry('JP')).toEqual([])
   })
 
   it.each(languageCases)('normalizes language input %#', (input, expected) => {
