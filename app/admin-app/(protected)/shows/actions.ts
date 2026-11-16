@@ -618,9 +618,15 @@ export async function addRequirementAction(formData: FormData): Promise<Requirem
  * Bare navn, nivå og når komikeren spilte her sist går til nettleseren.
  * Scoren blir på serveren — se `getLineupQueue` i lib/booking-engine.ts.
  */
-export async function getLineupQueueAction(showId: string): Promise<LineupQueue> {
+export async function getLineupQueueAction(showId: string, startSpotIds?: string[]): Promise<LineupQueue> {
   await assertShowAccess(showId)
-  return getLineupQueue(showId)
+  return getLineupQueue(showId, { startSpotIds })
+}
+
+/** `spot_ids` fra kortet for resten av plassene: kommaliste med id-er. Null = alle. */
+function spotIdsFromForm(value: FormDataEntryValue | null): string[] | null {
+  const ids = String(value ?? '').split(',').map((id) => id.trim()).filter(Boolean)
+  return ids.length > 0 ? ids : null
 }
 
 /**
@@ -676,7 +682,7 @@ export async function startBookingAction(formData: FormData) {
 
   const { data: reqs, error: reqError } = await db
     .from('show_requirements')
-    .select('role_name, compensation_type, compensation_amount, compensation_percent, quantity')
+    .select('id, role_name, compensation_type, compensation_amount, compensation_percent, quantity')
     .eq('show_id', showId)
 
   if (reqError) throw new Error(reqError.message)
@@ -685,6 +691,13 @@ export async function startBookingAction(formData: FormData) {
   for (const req of reqs) {
     if (!req.role_name?.trim()) throw new Error('Every lineup spot must have a role name.')
     if (!req.compensation_type) throw new Error('Every lineup spot must have a fee model set.')
+    // En fast avtale uten beløp ga tilbud med «Fixed fee» og ingenting mer.
+    if (req.compensation_type === 'fixed' && req.compensation_amount == null) {
+      throw new Error('Every lineup spot must have an amount or a percentage.')
+    }
+    if (req.compensation_type === 'percent' && req.compensation_percent == null) {
+      throw new Error('Every lineup spot must have an amount or a percentage.')
+    }
   }
 
   const percentTotal = reqs.reduce((sum, r) => sum + percentCommitted(r), 0)
@@ -710,7 +723,19 @@ export async function startBookingAction(formData: FormData) {
   // plassene: Start booking *er* dag 1. Var showet allerede i gang (to
   // klikk), fylles bare plasser som mangler stempel, så pågående bølger
   // ikke settes tilbake til start.
-  await startAutoBooking(showId, undefined, { restart: (started ?? []).length > 0 })
+  // Fra kortet for resten av plassene (et show i booking etter et tilbud
+  // sendt for hånd) startes bare plassene kortet gjaldt. Plassen med det
+  // manuelle tilbudet skal ikke få et stempel: trekkes tilbudet senere, ville
+  // den stått på dag 6 og sendt hele kvoten på én gang.
+  const onlySpots = spotIdsFromForm(formData.get('spot_ids'))
+  if (onlySpots && (started ?? []).length === 0) {
+    const known = new Set((reqs ?? []).map((req) => req.id))
+    for (const spotId of onlySpots) {
+      if (known.has(spotId)) await startAutoBooking(showId, spotId)
+    }
+  } else {
+    await startAutoBooking(showId, undefined, { restart: (started ?? []).length > 0 })
+  }
 
   // Fra dialogen går den første bølgen ut nå, mens bookeren venter, så
   // tallet i bekreftelsen er det som faktisk ble sendt. Bølgene etter følger

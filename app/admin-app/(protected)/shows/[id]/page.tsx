@@ -524,6 +524,7 @@ export default async function ShowDetailPage({
                 rosterSize={roster.length}
                 pendingSubmissionTotal={pendingSubmissionTotal}
                 removedArtistIds={[...excludedArtistIds]}
+                percentLimit={percentLimit}
               />
         )}
 

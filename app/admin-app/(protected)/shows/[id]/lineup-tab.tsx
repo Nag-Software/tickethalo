@@ -17,6 +17,7 @@ import { RoleIcon } from '@/components/admin/show-booking-card'
 import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
 import { LineupQueueDialog, StartBookingCard } from './lineup-queue-dialog'
 import { unstartedSpots } from '@/lib/booking-rules'
+import { startBookingBlockers } from '@/lib/start-booking-blockers'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { PublishShowDialog } from '@/components/admin/publish-show-dialog'
@@ -200,6 +201,7 @@ export function LineupTab({
   rosterSize,
   pendingSubmissionTotal,
   removedArtistIds,
+  percentLimit,
 }: {
   showId: string
   showTitle: string
@@ -225,6 +227,8 @@ export function LineupTab({
    * bookeren kan fortsatt velge dem for hånd — da står det hvorfor.
    */
   removedArtistIds: string[]
+  /** Taket for prosentavtalene, som på utkastet. */
+  percentLimit: number
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -279,11 +283,8 @@ export function LineupTab({
     takenSeats.set(offer.show_requirement_id, (takenSeats.get(offer.show_requirement_id) ?? 0) + 1)
   }
   const remainingSpots = showStatus === 'booking' ? unstartedSpots(requirements, takenSeats) : []
-  // Samme krav som Start booking stiller (`startBookingAction`).
-  const remainingBlockers = [
-    requirements.some((req) => !req.role_name?.trim()) ? 'Every spot needs a role name' : null,
-    requirements.some((req) => !req.compensation_type) ? 'Every spot needs a fee model' : null,
-  ].filter((reason): reason is string => reason !== null)
+  // Samme krav som Start booking stiller på et utkast og på serveren.
+  const remainingBlockers = startBookingBlockers(requirements, percentLimit)
   const shouldAutoRefresh = showStatus === 'booking' && (!allSlotsFilled || sentOfferCount > 0)
   // Etter showet er lineupen en protokoll, ikke en plan. Da slettes ingenting.
   const isPastShow = showStatus === 'completed' || showStatus === 'cancelled'
@@ -726,6 +727,7 @@ export function LineupTab({
           canStartBooking={remainingBlockers.length === 0}
           bookingBlockers={remainingBlockers}
           remaining={remainingSpots.length}
+          spotIds={remainingSpots.map((req) => req.id)}
         />
       )}
 
