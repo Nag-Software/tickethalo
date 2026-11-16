@@ -812,6 +812,12 @@ export async function getLineupQueue(
       tomorrowCount = Math.max(0, (next - today) * entry.slotsNeeded)
     }
 
+    // Seter som er tatt: bekreftede og tilbud som venter. En plass som er
+    // tilbudt for hånd, har ikke stempel med vilje — den er tatt, ikke
+    // «ikke startet».
+    const taken = (plan.bookedByRequirement.get(req.id)?.length ?? 0)
+      + plan.offers.filter((offer) => offer.show_requirement_id === req.id && offer.status === 'sent').length
+
     return {
       requirementId: req.id,
       position: index + 1,
@@ -825,7 +831,7 @@ export async function getLineupQueue(
           ? 'paused'
           : entry
             ? null
-            : req.auto_started_at
+            : req.auto_started_at || taken >= Math.max(1, req.quantity)
               ? 'filled'
               : 'not_started',
       slotsNeeded: entry?.slotsNeeded ?? 0,

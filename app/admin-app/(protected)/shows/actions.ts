@@ -53,6 +53,7 @@ import { ticketSalesState } from '@/lib/ticket-sales'
 import { ticketPriceError } from '@/lib/tickets'
 import { noteLineupChange } from '@/lib/lineup-messages'
 import { normalizeGigTypes } from '@/lib/gig-types'
+import { unstartedSpots } from '@/lib/booking-rules'
 import type { BookingOfferStatus, MarketingDesignFileType, MarketingDesignKind, RequirementCompensationType, RequirementEnergy, RequirementGender, SkillLevel } from '@/types/database'
 
 export type ManualSpotActionState = {
@@ -623,6 +624,41 @@ export async function getLineupQueueAction(showId: string, startSpotIds?: string
   return getLineupQueue(showId, { startSpotIds })
 }
 
+/** De av `spotIds` på showet som fortsatt står ustartet med ledige seter. Se `unstartedSpots`. */
+async function stillUnstartedSpots(db: ReturnType<typeof createAdminClient>, showId: string, spotIds: string[]) {
+  const [{ data: rows, error }, { data: spots }, { data: offers }] = await Promise.all([
+    db.from('show_requirements')
+      .select('id, quantity, submissions_open, auto_started_at, rebook_paused_at')
+      .eq('show_id', showId)
+      .in('id', spotIds),
+    db.from('confirmed_spots')
+      .select('show_requirement_id')
+      .eq('show_id', showId)
+      .in('status', ['confirmed', 'completed', 'paid']),
+    db.from('booking_offers')
+      .select('show_requirement_id')
+      .eq('show_id', showId)
+      .eq('status', 'sent'),
+  ])
+  if (error) throw new Error(error.message)
+
+  const taken = new Map<string, number>()
+  for (const row of [...(spots ?? []), ...(offers ?? [])]) {
+    if (!row.show_requirement_id) continue
+    taken.set(row.show_requirement_id, (taken.get(row.show_requirement_id) ?? 0) + 1)
+  }
+  return unstartedSpots(
+    (rows ?? []).map((row) => ({
+      id: row.id,
+      quantity: row.quantity,
+      submissions_open: Boolean(row.submissions_open),
+      auto_started_at: row.auto_started_at ?? null,
+      rebook_paused_at: row.rebook_paused_at ?? null,
+    })),
+    taken,
+  ).map((row) => row.id)
+}
+
 /** `spot_ids` fra kortet for resten av plassene: kommaliste med id-er. Null = alle. */
 function spotIdsFromForm(value: FormDataEntryValue | null): string[] | null {
   const ids = String(value ?? '').split(',').map((id) => id.trim()).filter(Boolean)
@@ -729,9 +765,11 @@ export async function startBookingAction(formData: FormData) {
   // den stått på dag 6 og sendt hele kvoten på én gang.
   const onlySpots = spotIdsFromForm(formData.get('spot_ids'))
   if (onlySpots && (started ?? []).length === 0) {
-    const known = new Set((reqs ?? []).map((req) => req.id))
-    for (const spotId of onlySpots) {
-      if (known.has(spotId)) await startAutoBooking(showId, spotId)
+    // Kortet kan være utdatert: et tilbud sendt for hånd etter at siden ble
+    // lastet, gjør plassen tatt. Serveren sjekker derfor selv hvilke av de
+    // valgte plassene som fortsatt står ustartet med ledige seter.
+    for (const spotId of await stillUnstartedSpots(db, showId, onlySpots)) {
+      await startAutoBooking(showId, spotId)
     }
   } else {
     await startAutoBooking(showId, undefined, { restart: (started ?? []).length > 0 })

@@ -58,15 +58,36 @@ vi.mock('@/lib/ticket-types-copy', () => ({ copyTicketTypes: vi.fn() }))
 
 const { startBookingAction } = await import('@/app/admin-app/(protected)/shows/actions')
 
-const spots = [
+type Spot = {
+  id: string
+  role_name: string
+  compensation_type: string | null
+  compensation_amount: number | null
+  compensation_percent: number | null
+  quantity: number
+  submissions_open?: boolean
+  auto_started_at?: string | null
+  rebook_paused_at?: string | null
+}
+
+const spots: Spot[] = [
   { id: 'host', role_name: 'Host', compensation_type: 'percent', compensation_amount: null, compensation_percent: 15, quantity: 1 },
   { id: 'closer', role_name: 'Headliner', compensation_type: 'percent', compensation_amount: null, compensation_percent: 15, quantity: 1 },
 ]
 
-function setup({ wasDraft = false, requirements = spots } = {}) {
+function setup({
+  wasDraft = false,
+  requirements = spots,
+  sentOffers = [] as Array<{ show_requirement_id: string }>,
+}: { wasDraft?: boolean; requirements?: Spot[]; sentOffers?: Array<{ show_requirement_id: string }> } = {}) {
   const { db } = fakeQueryDb({
-    show_requirements: () => ({ data: requirements }),
+    show_requirements: (query) => {
+      const ids = query.filters['id:in'] as string[] | undefined
+      return { data: ids ? requirements.filter((req) => ids.includes(req.id)) : requirements }
+    },
     shows: (query) => (query.write ? { data: wasDraft ? [{ id: 'show-1' }] : [] } : { data: { club_id: null } }),
+    confirmed_spots: () => ({ data: [] }),
+    booking_offers: () => ({ data: sentOffers }),
   })
   mocks.db = db
 }
@@ -92,6 +113,18 @@ describe('start booking on the remaining spots', () => {
     await startBookingAction(form({ show_id: 'show-1', spot_ids: 'closer,someone-elses' }))
     expect(mocks.startAutoBooking).toHaveBeenCalledTimes(1)
     expect(mocks.startAutoBooking).toHaveBeenCalledWith('show-1', 'closer')
+  })
+
+  it('skips a chosen spot that was offered by hand after the page loaded', async () => {
+    setup({ sentOffers: [{ show_requirement_id: 'closer' }] })
+    await startBookingAction(form({ show_id: 'show-1', spot_ids: 'closer' }))
+    expect(mocks.startAutoBooking).not.toHaveBeenCalled()
+  })
+
+  it('skips a chosen spot that is already running', async () => {
+    setup({ requirements: [spots[0], { ...spots[1], auto_started_at: '2026-11-10T10:00:00Z' }] })
+    await startBookingAction(form({ show_id: 'show-1', spot_ids: 'closer' }))
+    expect(mocks.startAutoBooking).not.toHaveBeenCalled()
   })
 
   it('starts every spot from a draft, as before', async () => {

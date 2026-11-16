@@ -452,7 +452,9 @@ function SpotQueue({
   const criterion = spot.minSkillLevel && spot.minSkillLevel !== 'low' ? SKILL_REQUIREMENT_LABELS[spot.minSkillLevel] : 'Any skill level'
   // En pauset plass kan ordnes før bookeren velger «Auto-book new» — det er
   // nettopp da køen betyr noe.
-  const editable = !spot.note || spot.note === 'paused' || spot.note === 'not_started'
+  // En plass som ikke er startet, er ikke med i det som lagres (`activeSpots`),
+  // så den kan ikke ordnes her — det gjøres når den startes fra kortet.
+  const editable = !spot.note || spot.note === 'paused'
 
   // Skillelinjene telles bare over dem som faktisk spørres her: en som får
   // tilbudet på en annen plass, hoppes over av motoren.
