@@ -653,19 +653,27 @@ const EXPLANATION =
   'The algorithm suggests a line-up based on your criteria, comedians availability and when they have performed at your club last. It aims to provide your audience with a varied line-up.'
 
 /**
- * Start booking-kortet på et utkast.
+ * Start booking-kortet.
  *
  * «Suggest line-up now» åpner køen; Start booking uten den lar motoren velge
  * selv, som før.
+ *
+ * `remaining` er samme kort på et show som alt er i booking, men der
+ * automatikken ikke er startet på alle plassene — typisk etter at bookeren
+ * har sendt ett tilbud for hånd. Da gjelder forslaget bare resten; det
+ * manuelle tilbudet og plassene som er startet, røres ikke.
  */
 export function StartBookingCard({
   showId,
   canStartBooking,
   bookingBlockers,
+  remaining,
 }: {
   showId: string
   canStartBooking: boolean
   bookingBlockers: string[]
+  /** Antall plasser forslaget gjelder når showet alt er i booking. */
+  remaining?: number
 }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -678,7 +686,9 @@ export function StartBookingCard({
       try {
         await startBookingAction(fd)
         router.refresh()
-        toast.success('Booking started! Offers go out to matching artists.')
+        toast.success(remaining
+          ? 'Auto-booking started on the remaining spots.'
+          : 'Booking started! Offers go out to matching artists.')
       } catch (err: unknown) {
         toast.error((err as Error)?.message ?? 'Could not start booking')
       }
@@ -686,8 +696,17 @@ export function StartBookingCard({
   }
 
   return (
-    <LineupCallout title="Ready to start booking?">
-      <p className="text-sm text-muted-foreground">{EXPLANATION}</p>
+    <LineupCallout
+      title={remaining
+        ? `Fill the remaining ${remaining === 1 ? 'spot' : `${remaining} spots`} automatically?`
+        : 'Ready to start booking?'}
+    >
+      <p className="text-sm text-muted-foreground">
+        {remaining
+          ? 'The spots you have already filled or offered stay as they are. '
+          : ''}
+        {EXPLANATION}
+      </p>
       {!canStartBooking && (
         <ul className="space-y-0.5 pt-1">
           {bookingBlockers.map((reason) => (
@@ -704,7 +723,11 @@ export function StartBookingCard({
           Suggest line-up now
         </Button>
         <Button type="button" variant="outline" className="rounded-xl" onClick={startWithoutQueue} disabled={isStarting || !canStartBooking}>
-          {isStarting ? 'Starting…' : 'Start booking without a suggestion →'}
+          {isStarting
+            ? 'Starting…'
+            : remaining
+              ? 'Auto-book without a suggestion →'
+              : 'Start booking without a suggestion →'}
         </Button>
       </div>
       <LineupQueueDialog

@@ -15,7 +15,8 @@ import {
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
-import { LineupQueueDialog } from './lineup-queue-dialog'
+import { LineupQueueDialog, StartBookingCard } from './lineup-queue-dialog'
+import { unstartedSpots } from '@/lib/booking-rules'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { PublishShowDialog } from '@/components/admin/publish-show-dialog'
@@ -68,6 +69,8 @@ type Requirement = {
   duration_minutes: number | null
   /** Satt etter «Remove»: plassen venter på at bookeren velger. Se migrasjon 094. */
   rebook_paused_at: string | null
+  /** Dag 1 i automatikken. Null = ikke startet, se `unstartedSpots`. */
+  auto_started_at: string | null
   submissions_open: boolean
   compensation_type: RequirementCompensationType | null
   compensation_amount: number | null
@@ -264,6 +267,23 @@ export function LineupTab({
     ['confirmed', 'completed', 'paid'].includes(s.status)
   )
   const sentOfferCount = allOffers.filter(o => o.status === 'sent').length
+
+  // Plassene automatikken ikke er startet på — etter et tilbud sendt for hånd
+  // fra et utkast. Forslaget skal fortsatt kunne fylle dem.
+  const takenSeats = new Map<string, number>()
+  for (const spot of activeSpots) {
+    takenSeats.set(spot.show_requirement_id, (takenSeats.get(spot.show_requirement_id) ?? 0) + 1)
+  }
+  for (const offer of allOffers) {
+    if (offer.status !== 'sent' || !offer.show_requirement_id) continue
+    takenSeats.set(offer.show_requirement_id, (takenSeats.get(offer.show_requirement_id) ?? 0) + 1)
+  }
+  const remainingSpots = showStatus === 'booking' ? unstartedSpots(requirements, takenSeats) : []
+  // Samme krav som Start booking stiller (`startBookingAction`).
+  const remainingBlockers = [
+    requirements.some((req) => !req.role_name?.trim()) ? 'Every spot needs a role name' : null,
+    requirements.some((req) => !req.compensation_type) ? 'Every spot needs a fee model' : null,
+  ].filter((reason): reason is string => reason !== null)
   const shouldAutoRefresh = showStatus === 'booking' && (!allSlotsFilled || sentOfferCount > 0)
   // Etter showet er lineupen en protokoll, ikke en plan. Da slettes ingenting.
   const isPastShow = showStatus === 'completed' || showStatus === 'cancelled'
@@ -697,6 +717,15 @@ export function LineupTab({
           rosterSize={rosterSize}
           pendingTotal={pendingSubmissionTotal}
           disabled={showStatus === 'completed' || showStatus === 'cancelled'}
+        />
+      )}
+
+      {remainingSpots.length > 0 && (
+        <StartBookingCard
+          showId={showId}
+          canStartBooking={remainingBlockers.length === 0}
+          bookingBlockers={remainingBlockers}
+          remaining={remainingSpots.length}
         />
       )}
 

@@ -489,6 +489,7 @@ export default async function ShowDetailPage({
                   min_skill_level: (r.min_skill_level ?? null) as SkillLevel | null,
                   duration_minutes: r.duration_minutes ?? null,
                   rebook_paused_at: r.rebook_paused_at ?? null,
+                  auto_started_at: r.auto_started_at ?? null,
                   submissions_open: Boolean(r.submissions_open),
                   compensation_type: (r.compensation_type ?? null) as RequirementCompensationType | null,
                   compensation_amount: r.compensation_amount ?? null,
