@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { bookAsOptions } from '@/lib/spot-types'
 import { formatArtistRoleList } from '@/lib/artist-roles'
 import type { ArtistType } from '@/types/database'
 import { ConnectArtistButton } from '@/components/admin/connect-artist-button'
@@ -59,6 +61,8 @@ export default async function DiscoverPage({
   const db = createAdminClient()
   const clubId = await getDefaultClubIdForAdmin()
   const order = SORTS[sort]
+  // «Book X as» viser klubbens egne spot-typer (migrasjon 100).
+  const roleOptions = bookAsOptions(await getClubSpotTypes(db, clubId))
 
   // Må hentes før katalogspørringen: den bygger på hvem som skal utelates.
   const { data: connections } = await db
@@ -178,7 +182,7 @@ export default async function DiscoverPage({
         ) : (
           <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {artists.map((artist) => (
-              <ArtistCard key={artist.id} artist={artist} />
+              <ArtistCard key={artist.id} artist={artist} roleOptions={roleOptions} />
             ))}
           </div>
         )}
@@ -213,7 +217,7 @@ function buildHref({
   return search ? `/admin-app/discover?${search}` : '/admin-app/discover'
 }
 
-function ArtistCard({ artist }: { artist: DirectoryArtist }) {
+function ArtistCard({ artist, roleOptions }: { artist: DirectoryArtist; roleOptions: Array<{ value: string; label: string }> }) {
   const name = artist.stage_name?.trim() || artist.full_name
   const place = [artist.city, artist.country].filter(Boolean).join(', ')
   const roles = formatArtistRoleList(artist.category)
@@ -247,6 +251,7 @@ function ArtistCard({ artist }: { artist: DirectoryArtist }) {
             artistName={name}
             suggestedRoles={artist.category}
             className="text-xs sm:text-md w-full"
+            roleOptions={roleOptions}
           />
 
           <Button variant="outline" className="text-xs sm:text-md w-full" asChild>

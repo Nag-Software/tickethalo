@@ -16,11 +16,14 @@ export function InteractiveBookingCard({
   show,
   currency,
   artists,
+  spotTypeNames,
 }: {
   show: BookingCardShow
   currency: string
   /** Artists still free to take a spot on this show. */
   artists: LineupArtist[]
+  /** The club's active spot types. See lib/spot-types.ts. */
+  spotTypeNames?: string[]
 }) {
   const readOnly = show.status === 'completed' || show.status === 'cancelled'
 
@@ -36,6 +39,7 @@ export function InteractiveBookingCard({
           spots={show.spots}
           artists={artists}
           readOnly={readOnly}
+          spotTypeNames={spotTypeNames}
         />
       }
     />

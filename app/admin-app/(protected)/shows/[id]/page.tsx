@@ -21,6 +21,8 @@ import { SubmissionsTab } from './submissions-tab'
 import { loadSubmissions } from './submissions-data'
 import { isWaitlisted, showAvailability, spotAvailability } from '@/lib/open-spots'
 import { matchesHardRequirements } from '@/lib/booking-rules'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { activeSpotTypes } from '@/lib/spot-types'
 import { canReviewShow, reviewCounts, reviewsForShow } from '@/lib/artist-reviews'
 import { LineupReviewPanel, type ReviewableSpot } from '@/components/admin/lineup-review-panel'
 import { assertShowAccess } from '@/lib/club-auth'
@@ -99,6 +101,14 @@ export default async function ShowDetailPage({
   if (!show) notFound()
 
   const percentLimit = (club?.artist_share_bps ?? 10000) / 100
+
+  // Klubbens spot-typer til rollemenyene (migrasjon 100). Bare der de vises.
+  // Uten klubb (eller uten aktive typer) gjelder standardlista — `undefined`
+  // gir komponentene den.
+  const clubTypeNames = tab === 'overview' || tab === 'lineup'
+    ? activeSpotTypes(await getClubSpotTypes(db, show.club_id)).map((type) => type.name)
+    : []
+  const spotTypeNames = clubTypeNames.length > 0 ? clubTypeNames : undefined
 
   const soldByType = new Map((ticketTypeCounts ?? []).map((row) => [row.ticket_type_id, row.sold_tickets]))
   const typeNameById = new Map((ticketTypeRows ?? []).map((type) => [type.id, type.name]))
@@ -428,6 +438,7 @@ export default async function ShowDetailPage({
             locations={locations}
             ticketTypes={adminTicketTypes}
             updateShowDetailsAction={updateShowDetailsAction}
+            spotTypeNames={spotTypeNames}
           />
         )}
 
@@ -473,6 +484,7 @@ export default async function ShowDetailPage({
                 pendingSubmissionTotal={pendingSubmissionTotal}
                 percentLimit={percentLimit}
                 matchCounts={requirementMatchCounts}
+                spotTypeNames={spotTypeNames}
               />
             : <LineupTab
                 showId={show.id}

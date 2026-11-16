@@ -3,7 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getDefaultClubIdForAdmin } from '@/lib/club-auth'
-import { canonicalRoleValues } from '@/lib/artist-roles'
+import { clubRoleValues } from '@/lib/artist-roles'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { customSpotTypeNames } from '@/lib/spot-types'
 import { runAutomaticBookingForClub } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { addArtistToClub, ROSTER_PATHS } from '@/lib/club-roster'
@@ -22,12 +24,14 @@ export async function connectArtistAction(formData: FormData): Promise<{ error?:
   // Rollene er klubbens egne, ikke komikerens beskrivelse av seg selv, så de
   // settes her og ikke arves. Uten minst én rolle matcher komikeren ingen
   // show-krav og ville blitt stående usynlig i booking.
-  const category = canonicalRoleValues(formData.getAll('category').map((value) => String(value)))
-  if (category.length === 0) return { error: 'Pick at least one role for the comedian.' }
-
   try {
     const clubId = await getDefaultClubIdForAdmin()
-    await addArtistToClub(createAdminClient(), { clubId, artistId, category })
+    const db = createAdminClient()
+    // Standardtypene og klubbens egne spot-typer (migrasjon 100).
+    const customNames = customSpotTypeNames(await getClubSpotTypes(db, clubId))
+    const category = clubRoleValues(formData.getAll('category').map((value) => String(value)), customNames)
+    if (category.length === 0) return { error: 'Pick at least one role for the comedian.' }
+    await addArtistToClub(db, { clubId, artistId, category })
   } catch (error) {
     console.error('[Discover] Could not connect artist:', error)
     return { error: 'Could not add the comedian right now. Try again in a moment.' }

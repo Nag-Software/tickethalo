@@ -9,12 +9,14 @@ import { appUrl } from '@/lib/app-url'
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { isClubRole } from '@/lib/portal-auth'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { SpotTypesEditor } from '@/components/admin/spot-types-editor'
 
 export default async function MyClubPage() {
   const clubId = await getDefaultClubIdForAdmin()
   const db = createAdminClient()
 
-  const [{ data: club, error: clubError }, { data: locations }, settings, comedianCard] = await Promise.all([
+  const [{ data: club, error: clubError }, { data: locations }, settings, comedianCard, spotTypes] = await Promise.all([
     db
       .from('clubs')
       .select('id, name, slug, description, logo_url, city, currency, lineup_deadline_days, lineup_reminder_default, contact_email, contact_phone, support_email, country')
@@ -28,6 +30,7 @@ export default async function MyClubPage() {
       .order('created_at', { ascending: true }),
     loadBookingSettings(db),
     loadComedianCard(),
+    getClubSpotTypes(db, clubId),
   ])
 
   if (clubError || !club) {
@@ -60,6 +63,9 @@ export default async function MyClubPage() {
           clubUrl={`${origin}/clubs/${club.slug}`}
           defaultLineupDeadlineDays={settings.lineup_deadline_days}
         />
+        <div className="mt-8">
+          <SpotTypesEditor types={spotTypes} />
+        </div>
         {comedianCard.show ? (
           <div className="mt-8">
             <ComedianProfileLink comedian={comedianCard.comedian} />

@@ -3,7 +3,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { runAutomaticBookingForClub } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { recalculateClubArtistScore } from '@/lib/artist-reviews'
-import type { ArtistType } from '@/types/database'
 
 type Db = ReturnType<typeof createAdminClient>
 
@@ -29,7 +28,8 @@ export async function addArtistToClub(
   input: {
     clubId: string
     artistId: string
-    category: ArtistType[]
+    /** Standardnøkler og klubbens egne typer — se `clubRoleValues`. */
+    category: string[]
     joinedViaInvite?: boolean
     keepExisting?: boolean
   },

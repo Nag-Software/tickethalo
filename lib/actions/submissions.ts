@@ -4,7 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertRequirementAccess, assertShowAccess } from '@/lib/club-auth'
 import { clubIdForShow } from '@/lib/club-artists'
-import { canonicalRoleValues } from '@/lib/artist-roles'
+import { clubRoleValues } from '@/lib/artist-roles'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { customSpotTypeNames } from '@/lib/spot-types'
 import { runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
 import { recalculateClubArtistScore } from '@/lib/artist-reviews'
@@ -218,9 +220,11 @@ export async function approveSubmissionAction(formData: FormData): Promise<{ art
         .eq('id', requirementId)
         .single()
 
+      // Typen til plassen, også når det er klubbens egen (migrasjon 100).
+      const customNames = customSpotTypeNames(await getClubSpotTypes(db, clubId))
       const { error } = await db
         .from('club_artists')
-        .insert({ club_id: clubId, artist_id: artistId, category: canonicalRoleValues(requirement?.role_name ?? null) })
+        .insert({ club_id: clubId, artist_id: artistId, category: clubRoleValues(requirement?.role_name ?? null, customNames) })
 
       if (error) throw new Error(error.message)
       connectedHere = true

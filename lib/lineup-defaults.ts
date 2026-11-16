@@ -1,22 +1,20 @@
 import type { RequirementCompensationType, RequirementEnergy, RequirementGender } from '@/types/database'
+import { STANDARD_SPOT_TYPES, activeSpotTypes, type ClubSpotType } from '@/lib/spot-types'
 
 /**
  * The lineup a blank show starts with.
  *
- * A new event is almost always the club's standard bill — one headliner, one
- * host, three stand-up spots and an open mic — so the booker gets those rows
- * already laid out instead of building them by hand every time. They are plain
- * requirements: rename, re-fee, reorder or delete them from the Lineup tab.
+ * One seat per spot type the club uses, in the club's order (migration 100,
+ * My Club → Spot types). A club that has not changed anything gets Tom's
+ * standard bill: Host / MC, Opener / Bullet, Middle / Feature, Showcase Spot,
+ * Open Spot and Closer / Headliner — the Opener is only ever the first act.
+ * They are plain requirements: rename, re-fee, reorder or delete them from
+ * the Lineup tab.
  *
- * Open Mic sits on `percent` with 0, which is the fee model's way of saying
- * «no fee» — leaving the type unset would block Start booking.
+ * Every seat sits on `percent`. A type without a default fee gets 0, which is
+ * the fee model's way of saying «no fee» — leaving the type unset would block
+ * Start booking.
  */
-const STANDARD_LINEUP: Array<{ roleName: string; count: number; percent: number }> = [
-  { roleName: 'Headliner', count: 1, percent: 15 },
-  { roleName: 'Host', count: 1, percent: 15 },
-  { roleName: 'Stand-up', count: 3, percent: 10 },
-  { roleName: 'Open Mic', count: 1, percent: 0 },
-]
 
 export type DefaultLineupSpot = {
   role_name: string
@@ -29,27 +27,21 @@ export type DefaultLineupSpot = {
   compensation_percent: number
 }
 
-/**
- * One row per seat — three stand-up spots are three requirements, the way the
- * Lineup tab draws them, so each can be tuned on its own.
- */
-export function defaultLineupSpots(): DefaultLineupSpot[] {
-  let position = 0
+type LineupType = Pick<ClubSpotType, 'name' | 'position' | 'active' | 'default_compensation_percent'>
 
-  return STANDARD_LINEUP.flatMap((spot) =>
-    Array.from({ length: spot.count }, () => {
-      position += 1
+const STANDARD_TYPES: LineupType[] = STANDARD_SPOT_TYPES.map((type) => ({ ...type, active: true }))
 
-      return {
-        role_name: spot.roleName,
-        quantity: 1,
-        lineup_position: position,
-        energy_level: 'any' as RequirementEnergy,
-        required_gender: 'any' as RequirementGender,
-        compensation_type: 'percent' as RequirementCompensationType,
-        compensation_amount: null,
-        compensation_percent: spot.percent,
-      }
-    })
-  )
+/** One row per seat, so each can be tuned on its own. */
+export function defaultLineupSpots(types: readonly LineupType[] = STANDARD_TYPES): DefaultLineupSpot[] {
+  const active = activeSpotTypes(types)
+  return (active.length > 0 ? active : activeSpotTypes(STANDARD_TYPES)).map((type, index) => ({
+    role_name: type.name,
+    quantity: 1,
+    lineup_position: index + 1,
+    energy_level: 'any' as RequirementEnergy,
+    required_gender: 'any' as RequirementGender,
+    compensation_type: 'percent' as RequirementCompensationType,
+    compensation_amount: null,
+    compensation_percent: Number(type.default_compensation_percent ?? 0),
+  }))
 }

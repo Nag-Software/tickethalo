@@ -19,6 +19,7 @@ import type { PerformanceRating } from '@/types/database'
 import { assertArtistBookableForShow } from '@/lib/club-artists'
 import { canonicalRoleLabel } from '@/lib/artist-roles'
 import { defaultLineupSpots } from '@/lib/lineup-defaults'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
 import { normalizeCurrency } from '@/lib/currencies'
 import { MARKETING_DESIGN_BUCKET, sanitizeStorageFileName } from '@/lib/marketing/storage'
 import { getAuthUser, getSessionProfile } from '@/lib/session'
@@ -443,11 +444,13 @@ async function cloneMarketingDesigns(
  * Radene er vanlige krav — bookeren døper om, endrer honorar eller sletter
  * dem fra Lineup-fanen. Se `defaultLineupSpots` for selve oppsettet.
  */
-async function seedDefaultLineup(showId: string) {
+async function seedDefaultLineup(showId: string, clubId: string | null) {
   const db = createAdminClient()
+  // Klubbens egne spot-typer, i klubbens rekkefølge. Se migrasjon 100.
+  const types = await getClubSpotTypes(db, clubId)
   const { error } = await db
     .from('show_requirements')
-    .insert(defaultLineupSpots().map((spot) => ({ show_id: showId, ...spot })))
+    .insert(defaultLineupSpots(types.length > 0 ? types : undefined).map((spot) => ({ show_id: showId, ...spot })))
 
   // Showet er allerede opprettet her, så feilen sier hva som mangler — ikke
   // at opprettelsen feilet.
@@ -477,7 +480,7 @@ export async function createShowAction(formData: FormData) {
   if (priceError) throw new Error(priceError)
 
   const show = await createShow(input)
-  await seedDefaultLineup(show.id)
+  await seedDefaultLineup(show.id, clubId)
   // Standardoppsettet er det første bookeren skal se på — ikke oversikten.
   redirect(`/admin-app/shows/${show.id}?tab=lineup`)
 }
@@ -578,7 +581,7 @@ export async function cloneShowAction(formData: FormData) {
   } else {
     // Malen har ingen lineup å kopiere — da starter kopien på standardoppsettet,
     // som et hvilket som helst nytt show.
-    await seedDefaultLineup(show.id)
+    await seedDefaultLineup(show.id, clubId)
   }
 
   await cloneMarketingDesigns(db, templateId, show.id)

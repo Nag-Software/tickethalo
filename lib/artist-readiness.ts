@@ -1,4 +1,4 @@
-import { normalizeArtistRoleList } from '@/lib/artist-roles'
+import { clubRoleNames } from '@/lib/artist-roles'
 
 /**
  * Hva som skal til for at *denne klubben* kan booke komikeren.
@@ -45,7 +45,9 @@ export function artistReadinessBlockers(artist: ArtistReadinessInput): Readiness
   const blockers = new Set<ReadinessBlocker>()
 
   if (artist.status !== 'approved') blockers.add('approval')
-  if (normalizeArtistRoleList(artist.category).length === 0) blockers.add('role')
+  // En klubbs egen spot-type (migrasjon 100) er også en rolle — den lagres med
+  // navnet sitt og matcher plasser av den typen.
+  if (clubRoleNames(artist.category).length === 0) blockers.add('role')
 
   return BLOCKER_ORDER.filter((blocker) => blockers.has(blocker))
 }

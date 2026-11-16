@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { normalizeArtistRole } from '@/lib/artist-roles'
 import { appPath } from '@/lib/app-url'
 import { buildMarketingSlots } from '@/lib/marketing/slots'
 import { formatTicketPrice } from '@/lib/public-show-format'
@@ -112,7 +113,9 @@ export async function loadShowMaterial(showId: string): Promise<ShowMaterial | n
       // Headliner og host er det som sier noe.
       lineup: comedians.map((comedian) => {
         const role = comedian.roleLabel.replace(/\s+\d+$/, '')
-        return { name: comedian.name, roleLabel: role === 'Headliner' || role === 'Host' ? role : null }
+        // Headliner og host, også med de nye navnene (Closer / Headliner, Host / MC).
+        const key = normalizeArtistRole(role)
+        return { name: comedian.name, roleLabel: key === 'headliner' || key === 'konferansier' ? role : null }
       }),
     },
   }

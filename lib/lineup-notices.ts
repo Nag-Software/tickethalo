@@ -12,6 +12,8 @@ import {
 } from '@/lib/email/mailer'
 import { showVenue } from '@/lib/show-venue'
 import { gigTypesText } from '@/lib/gig-types'
+import { unpaidNoteForRole } from '@/lib/spot-types'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
 
 /**
  * Beskjedene komikeren får når klubben endrer noe hen regner med.
@@ -224,7 +226,7 @@ export async function notifyAddedToLineup(showId: string, artistId: string, requ
   const db = createAdminClient()
   const { data: show } = await db
     .from('shows')
-    .select('title, date, start_time, venue_name, venue_address, currency, gig_types')
+    .select('title, date, start_time, venue_name, venue_address, currency, gig_types, club_id')
     .eq('id', showId)
     .maybeSingle()
   if (!show || isPlayedShow(show.date)) return { sent: 0, failed: 0 }
@@ -254,6 +256,7 @@ export async function notifyAddedToLineup(showId: string, artistId: string, requ
     duration_label: formatDuration(requirement?.duration_minutes),
     fee_label: requirement ? requirementFeeLabel(requirement, show.currency || 'NOK') : null,
     gig_type_label: gigTypesText(show.gig_types),
+    unpaid_note: unpaidNoteForRole(await getClubSpotTypes(db, show.club_id).catch(() => null), requirement?.role_name, requirement),
     portal_url: appPath('/artist-app/bookings'),
     added_by_club: true,
   })

@@ -9,8 +9,10 @@ import {
   Clock,
   Crown,
   Mic,
+  Sparkles,
   Star,
   Ticket,
+  Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { DeleteShowDialog } from '@/components/admin/delete-show-dialog'
@@ -54,7 +56,9 @@ export const SHOW_STATUS_CHIP: Record<ShowStatus, string> = {
 const ROLE_ICONS: Record<CanonicalArtistRole, LucideIcon> = {
   headliner: Crown,
   konferansier: Star,
+  opener: Zap,
   'stand-up': Mic,
+  showcase: Sparkles,
   'open mic': AudioLines,
 }
 

@@ -12,7 +12,7 @@ describe('default admin lineup', () => {
 
   it('creates the standard role order', () => {
     expect(defaultLineupSpots().map((spot) => spot.role_name)).toEqual([
-      'Headliner', 'Host', 'Stand-up', 'Stand-up', 'Stand-up', 'Open Mic',
+      'Host / MC', 'Opener / Bullet', 'Middle / Feature', 'Showcase Spot', 'Open Spot', 'Closer / Headliner',
     ])
   })
 
@@ -28,13 +28,33 @@ describe('default admin lineup', () => {
     expect(defaultLineupSpots().reduce((sum, spot) => sum + spot.compensation_percent, 0)).toBe(60)
   })
 
-  it('sets the open mic to an explicit no-fee agreement', () => {
-    expect(defaultLineupSpots().at(-1)).toMatchObject({ role_name: 'Open Mic', compensation_percent: 0 })
+  it('puts the opener second, right after the host, as the first act', () => {
+    expect(defaultLineupSpots()[1].role_name).toBe('Opener / Bullet')
+  })
+
+  it('sets the open spot to an explicit no-fee agreement', () => {
+    expect(defaultLineupSpots().find((spot) => spot.role_name === 'Open Spot')).toMatchObject({ compensation_percent: 0 })
+  })
+
+  it('follows the club: only active types, in the club order, with their fees', () => {
+    const spots = defaultLineupSpots([
+      { name: 'Closer / Headliner', position: 3, active: true, default_compensation_percent: 20 },
+      { name: 'Improv', position: 1, active: true, default_compensation_percent: null },
+      { name: 'Showcase Spot', position: 2, active: false, default_compensation_percent: 10 },
+    ])
+    expect(spots.map((spot) => [spot.role_name, spot.lineup_position, spot.compensation_percent])).toEqual([
+      ['Improv', 1, 0],
+      ['Closer / Headliner', 2, 20],
+    ])
+  })
+
+  it('falls back to the standard bill when the club has switched everything off', () => {
+    expect(defaultLineupSpots([{ name: 'Improv', position: 1, active: false, default_compensation_percent: 0 }])).toHaveLength(6)
   })
 
   it('does not share mutable rows between calls', () => {
     const first = defaultLineupSpots()
     first[0].role_name = 'Changed'
-    expect(defaultLineupSpots()[0].role_name).toBe('Headliner')
+    expect(defaultLineupSpots()[0].role_name).toBe('Host / MC')
   })
 })

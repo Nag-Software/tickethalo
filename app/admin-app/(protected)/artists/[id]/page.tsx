@@ -14,7 +14,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { ARTIST_ROLE_OPTIONS, normalizeArtistRoleList } from '@/lib/artist-roles'
+import { clubRoleValues } from '@/lib/artist-roles'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { bookAsOptions, customSpotTypeNames } from '@/lib/spot-types'
 import { READINESS_BLOCKER_LABELS, artistReadinessBlockers } from '@/lib/artist-readiness'
 import { disconnectArtistAction } from '../../discover/actions'
 import { ConnectArtistButton } from '@/components/admin/connect-artist-button'
@@ -50,9 +52,11 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
   // ikke på komikeren. Klubbens vurdering finnes bare når komikeren er knyttet
   // til klubben, så den svarer også på det; et eget oppslag for koblingen
   // trengs ikke.
-  const [{ data: artist }, clubReview] = await Promise.all([
+  const clubIdPromise = getDefaultClubIdForAdmin()
+  const [{ data: artist }, clubReview, spotTypes] = await Promise.all([
     db.from('artists').select('*').eq('id', id).maybeSingle(),
-    getDefaultClubIdForAdmin().then((clubId) => clubArtistReview(db, clubId, id)),
+    clubIdPromise.then((clubId) => clubArtistReview(db, clubId, id)),
+    clubIdPromise.then((clubId) => getClubSpotTypes(db, clubId)),
   ])
   if (!artist) notFound()
 
@@ -62,7 +66,10 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
   // vises et tomt utgangspunkt, og skjemaene er stengt.
   const review = clubReview ?? EMPTY_REVIEW
   const blockers = artistReadinessBlockers({ status: artist.status, category: review.category })
-  const normalizedCategories = normalizeArtistRoleList(review.category ?? [])
+  // Klubbens egne spot-typer (migrasjon 100): nøkkelen for en standardtype,
+  // navnet for klubbens egen. Se `clubRoleValues`.
+  const normalizedCategories = clubRoleValues(review.category ?? [], customSpotTypeNames(spotTypes))
+  const roleOptions = bookAsOptions(spotTypes, normalizedCategories)
   const name = artist.stage_name?.trim() || artist.full_name
   const place = [artist.city, artist.country].filter(Boolean).join(', ')
 
@@ -144,6 +151,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                 artistId={artist.id}
                 artistName={name}
                 suggestedRoles={artist.category}
+                roleOptions={bookAsOptions(spotTypes)}
               />
             )}
           </CardContent>
@@ -227,7 +235,7 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                     <div className="flex flex-col gap-2">
                       <Label>Book them as</Label>
                       <div className="flex flex-wrap gap-1.5">
-                        {ARTIST_ROLE_OPTIONS.map((role) => (
+                        {roleOptions.map((role) => (
                           <label key={role.value} className="cursor-pointer">
                             <input
                               type="checkbox"

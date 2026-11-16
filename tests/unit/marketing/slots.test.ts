@@ -28,7 +28,29 @@ describe('marketing slot matching', () => {
   it('ranks headliner, host, then stand-up independently of requirement order', () => {
     const result = buildMarketingSlots({ requirements, spots, artists })
     expect(result.map((slot) => slot.artistId)).toEqual(['head', 'host', 'support'])
+    // «MC» er fritekst og får den nye etiketten; de gamle navnene står som de er.
+    expect(result.map((slot) => slot.roleLabel)).toEqual(['Headliner', 'Host / MC', 'Stand-up'])
+  })
+
+  it('keeps the old spot names on shows booked before the new spot types', () => {
+    const legacy = requirements.map((req) => (req.id === 'host-r' ? { ...req, role_name: 'Host' } : req))
+    const result = buildMarketingSlots({ requirements: legacy, spots, artists })
     expect(result.map((slot) => slot.roleLabel)).toEqual(['Headliner', 'Host', 'Stand-up'])
+  })
+
+  it('ranks the new types: closer, host, middle, showcase, opener, open spot', () => {
+    const fresh = [
+      { id: 'o', role_name: 'Open Spot', quantity: 1, lineup_position: 1 },
+      { id: 'op', role_name: 'Opener / Bullet', quantity: 1, lineup_position: 2 },
+      { id: 's', role_name: 'Showcase Spot', quantity: 1, lineup_position: 3 },
+      { id: 'm', role_name: 'Middle / Feature', quantity: 1, lineup_position: 4 },
+      { id: 'h', role_name: 'Host / MC', quantity: 1, lineup_position: 5 },
+      { id: 'c', role_name: 'Closer / Headliner', quantity: 1, lineup_position: 6 },
+    ]
+    const result = buildMarketingSlots({ requirements: fresh, spots: [], artists: [] })
+    expect(result.map((slot) => slot.roleLabel)).toEqual([
+      'Closer / Headliner', 'Host / MC', 'Middle / Feature', 'Showcase Spot', 'Opener / Bullet', 'Open Spot',
+    ])
   })
 
   it.each(['confirmed', 'completed', 'paid'])('accepts %s spots', (status) => {

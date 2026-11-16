@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getClubSpotTypes } from '@/lib/spot-types-data'
 import {
   sendBookingOfferEmail,
   sendBookingConfirmedEmail,
@@ -62,6 +63,20 @@ export async function bookShow(showId: string) {
  * Settes den på nytt, begynner bølgen forfra. Det er poenget når en komiker
  * faller fra: da skal de beste få sjansen først også andre gangen.
  */
+/**
+ * Klubbens spot-typer til tilbudsteksten (ubetalt-beskjeden). Feiler
+ * oppslaget, sendes tilbudet likevel — da med standarden (Open Spot er
+ * ubetalt), ikke uten e-post.
+ */
+async function spotTypesForClub(clubId: string | null | undefined) {
+  try {
+    return await getClubSpotTypes(createAdminClient(), clubId)
+  } catch (error) {
+    console.error('[Booking] Could not load spot types:', error)
+    return null
+  }
+}
+
 export async function startAutoBooking(showId: string, requirementId?: string, options: { restart?: boolean } = {}) {
   const admin = createAdminClient()
 
@@ -174,7 +189,7 @@ export async function sendBookingReminders() {
   const [{ data: artists }, { data: shows }, { data: requirements }] = await Promise.all([
     admin.from('artists').select('id, email, full_name').in('id', [...new Set(due.map((o) => o.artist_id))]),
     admin.from('shows')
-      .select('id, title, date, start_time, venue_name, venue_address, currency, gig_types')
+      .select('id, title, date, start_time, venue_name, venue_address, currency, gig_types, club_id')
       .in('id', [...new Set(due.map((o) => o.show_id))]),
     admin.from('show_requirements')
       .select('id, role_name, duration_minutes, compensation_type, compensation_amount, compensation_percent')
@@ -193,7 +208,7 @@ export async function sendBookingReminders() {
     const requirement = offer.show_requirement_id ? requirementById.get(offer.show_requirement_id) : null
     if (!artist || !show || !requirement) continue
 
-    const details = offerDetails(show, requirement)
+    const details = offerDetails(show, requirement, await spotTypesForClub(show.club_id))
     const delivery = await sendOfferReminderEmail({
       email: artist.email,
       full_name: artist.full_name,
@@ -205,6 +220,7 @@ export async function sendBookingReminders() {
       duration_label: details.duration_label,
       fee_label: details.fee_label,
       gig_type_label: details.gig_type_label,
+      unpaid_note: details.unpaid_note,
       expires_at: offer.expires_at,
       response_url: `${baseUrl}/booking-offer/${offer.token}`,
     })
@@ -471,7 +487,7 @@ export async function acceptBookingOffer(token: string) {
       admin.from('artists').select('email, full_name').eq('id', accepted.artist_id).single(),
       admin
         .from('shows')
-        .select('title, date, start_time, venue_name, venue_address, currency, gig_types')
+        .select('title, date, start_time, venue_name, venue_address, currency, gig_types, club_id')
         .eq('id', accepted.show_id)
         .single(),
       admin
@@ -482,7 +498,7 @@ export async function acceptBookingOffer(token: string) {
     ])
 
     if (artist) {
-      const details = show && requirement ? offerDetails(show, requirement) : null
+      const details = show && requirement ? offerDetails(show, requirement, await spotTypesForClub(show.club_id)) : null
       await sendBookingConfirmedEmail({
         email: artist.email,
         full_name: artist.full_name,
@@ -494,6 +510,7 @@ export async function acceptBookingOffer(token: string) {
         duration_label: details?.duration_label,
         fee_label: details?.fee_label,
         gig_type_label: details?.gig_type_label,
+        unpaid_note: details?.unpaid_note,
         portal_url: `${appUrl()}/artist-app/bookings`,
       })
     }
@@ -801,7 +818,7 @@ export async function sendManualBookingOffer(
     settings,
   }) ?? new Date(Date.parse(`${show.date}T23:59:59Z`)).toISOString()
 
-  const details = offerDetails(show, requirement)
+  const details = offerDetails(show, requirement, await spotTypesForClub(show.club_id))
   const { data: offer, error } = await admin
     .from('booking_offers')
     .insert({
@@ -859,6 +876,7 @@ export async function sendManualBookingOffer(
     duration_label: details.duration_label,
     fee_label: details.fee_label,
     gig_type_label: details.gig_type_label,
+    unpaid_note: details.unpaid_note,
     expires_at: expiresAt,
     token: offer.token,
     response_url: `${baseUrl}/booking-offer/${offer.token}`,
