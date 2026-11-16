@@ -53,17 +53,6 @@ export async function bookShow(showId: string) {
 }
 
 /**
- * Setter i gang automatikken på plassene i et show.
- *
- * `auto_started_at` er dag 1 i bølgen. Den settes av Start booking, når en
- * plass legges til på et show som allerede er i gang, og når en plass
- * lukkes for søknader. Uten den rører motoren ikke plassen — det er slik en
- * plass som står i utkast ikke sender ut ti tilbud den dagen den startes.
- *
- * Settes den på nytt, begynner bølgen forfra. Det er poenget når en komiker
- * faller fra: da skal de beste få sjansen først også andre gangen.
- */
-/**
  * Klubbens spot-typer til tilbudsteksten (ubetalt-beskjeden). Feiler
  * oppslaget, sendes tilbudet likevel — da med standarden (Open Spot er
  * ubetalt), ikke uten e-post.
@@ -77,6 +66,17 @@ async function spotTypesForClub(clubId: string | null | undefined) {
   }
 }
 
+/**
+ * Setter i gang automatikken på plassene i et show.
+ *
+ * `auto_started_at` er dag 1 i bølgen. Den settes av Start booking, når en
+ * plass legges til på et show som allerede er i gang, og når en plass
+ * lukkes for søknader. Uten den rører motoren ikke plassen — det er slik en
+ * plass som står i utkast ikke sender ut ti tilbud den dagen den startes.
+ *
+ * Settes den på nytt, begynner bølgen forfra. Det er poenget når en komiker
+ * faller fra: da skal de beste få sjansen først også andre gangen.
+ */
 export async function startAutoBooking(showId: string, requirementId?: string, options: { restart?: boolean } = {}) {
   const admin = createAdminClient()
 
@@ -87,7 +87,7 @@ export async function startAutoBooking(showId: string, requirementId?: string, o
   // omsider starter — og et utkast som har ligget i ti dager sender da hele
   // taket med tilbud på det som skulle vært dag én. Hele poenget med bølgene
   // er borte, og ingenting feiler.
-  const { data: show } = await admin.from('shows').select('status').eq('id', showId).maybeSingle()
+  const { data: show } = await admin.from('shows').select('status, suggest_from_submissions').eq('id', showId).maybeSingle()
   if (!show || !ENGINE_STATUSES.includes(show.status as (typeof ENGINE_STATUSES)[number])) return
 
   // En omstart er et valg om å booke plassen på nytt. Ventet den på
@@ -98,8 +98,10 @@ export async function startAutoBooking(showId: string, requirementId?: string, o
       ? { auto_started_at: new Date().toISOString(), rebook_paused_at: null }
       : { auto_started_at: new Date().toISOString() })
     .eq('show_id', showId)
-    .neq('submissions_open', true)
 
+  // Plassene åpne for søknader fylles bare når klubben vil ha forslag fra
+  // søknadene (migrasjon 101) — da startes de som de andre.
+  if (!show.suggest_from_submissions) query = query.neq('submissions_open', true)
   if (requirementId) query = query.eq('id', requirementId)
   if (!options.restart) query = query.is('auto_started_at', null)
 

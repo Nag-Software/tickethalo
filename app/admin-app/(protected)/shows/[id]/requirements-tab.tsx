@@ -106,6 +106,8 @@ type Props = {
   matchCounts: Record<string, { total: number; withoutSkill: number }>
   /** Klubbens aktive spot-typer, i klubbens rekkefølge. Se lib/spot-types.ts. */
   spotTypeNames?: string[]
+  /** `shows.suggest_from_submissions` — se migrasjon 101. */
+  suggestFromSubmissions?: boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -401,6 +403,7 @@ export function RequirementsTab({
   percentLimit,
   matchCounts,
   spotTypeNames = ARTIST_ROLE_LABEL_OPTIONS,
+  suggestFromSubmissions = false,
 }: Props) {
   const router = useRouter()
 
@@ -1082,6 +1085,7 @@ export function RequirementsTab({
           showId={showId}
           canStartBooking={canStartBooking}
           bookingBlockers={bookingBlockers}
+          suggestFromSubmissions={suggestFromSubmissions}
         />
       )}
     </div>

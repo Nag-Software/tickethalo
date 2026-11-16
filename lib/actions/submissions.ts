@@ -4,12 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertRequirementAccess, assertShowAccess } from '@/lib/club-auth'
 import { clubIdForShow } from '@/lib/club-artists'
-import { clubRoleValues } from '@/lib/artist-roles'
-import { getClubSpotTypes } from '@/lib/spot-types-data'
-import { customSpotTypeNames } from '@/lib/spot-types'
 import { runAutomaticBookingForShow, sendManualBookingOffer, startAutoBooking } from '@/lib/actions/booking'
 import { runAfterResponse } from '@/lib/background'
-import { recalculateClubArtistScore } from '@/lib/artist-reviews'
+import { ensureClubArtistForApplicant } from '@/lib/applicant-offers'
 import type { SubmissionStatus, SubmissionsAudience } from '@/types/database'
 
 /**
@@ -49,6 +46,27 @@ function endOfDayIso(value: FormDataEntryValue | null): string | null {
 
 function revalidateShow(showId: string) {
   revalidatePath(`/admin-app/shows/${showId}`)
+}
+
+/**
+ * «Suggest line-up based on submissions» (migrasjon 101). Samme kolonne bak
+ * avkrysningen på Submissions- og Lineup-fanen, så de alltid står likt.
+ *
+ * Ingenting sendes når den skrus på: forslaget vises først i «Suggest line-up
+ * now», og bookeren bekrefter før noe går ut.
+ */
+export async function setSuggestFromSubmissionsAction(input: { showId: string; enabled: boolean }) {
+  const showId = String(input.showId ?? '')
+  await assertShowAccess(showId)
+
+  const { error } = await createAdminClient()
+    .from('shows')
+    .update({ suggest_from_submissions: Boolean(input.enabled) })
+    .eq('id', showId)
+
+  if (error) return { ok: false as const, error: 'Could not save the setting. Try again.' }
+  revalidateShow(showId)
+  return { ok: true as const }
 }
 
 /** Hvem som får søke på showets åpne plasser. */
@@ -206,33 +224,16 @@ export async function approveSubmissionAction(formData: FormData): Promise<{ art
   try {
     if (!clubId) throw new Error('This show is not connected to a club, so no comedians can be booked for it.')
 
-    const { data: review } = await db
-      .from('club_artists')
-      .select('artist_id')
-      .eq('club_id', clubId)
-      .eq('artist_id', artistId)
-      .maybeSingle()
-
-    if (!review) {
-      const { data: requirement } = await db
-        .from('show_requirements')
-        .select('role_name')
-        .eq('id', requirementId)
-        .single()
-
-      // Typen til plassen, også når det er klubbens egen (migrasjon 100).
-      const customNames = customSpotTypeNames(await getClubSpotTypes(db, clubId))
-      const { error } = await db
-        .from('club_artists')
-        .insert({ club_id: clubId, artist_id: artistId, category: clubRoleValues(requirement?.role_name ?? null, customNames) })
-
-      if (error) throw new Error(error.message)
-      connectedHere = true
-
-      // Klubbens tidligere vurderinger av komikeren, om de finnes, skal telle
-      // fra første tilbud — se `recalculateClubArtistScore`.
-      await recalculateClubArtistScore(db, clubId, artistId)
-    }
+    const { data: requirement } = await db
+      .from('show_requirements')
+      .select('role_name')
+      .eq('id', requirementId)
+      .single()
+    connectedHere = await ensureClubArtistForApplicant(db, {
+      clubId,
+      artistId,
+      roleName: requirement?.role_name ?? null,
+    })
 
     // Har bookeren tidligere tatt komikeren av dette showet, er et ja nå et
     // nytt valg — samme opprydding som «Send offer…» gjør.

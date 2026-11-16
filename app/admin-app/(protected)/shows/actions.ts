@@ -629,7 +629,7 @@ export async function getLineupQueueAction(showId: string, startSpotIds?: string
 
 /** De av `spotIds` på showet som fortsatt står ustartet med ledige seter. Se `unstartedSpots`. */
 async function stillUnstartedSpots(db: ReturnType<typeof createAdminClient>, showId: string, spotIds: string[]) {
-  const [{ data: rows, error }, { data: spots }, { data: offers }] = await Promise.all([
+  const [{ data: rows, error }, { data: spots }, { data: offers }, { data: show }] = await Promise.all([
     db.from('show_requirements')
       .select('id, quantity, submissions_open, auto_started_at, rebook_paused_at')
       .eq('show_id', showId)
@@ -642,6 +642,7 @@ async function stillUnstartedSpots(db: ReturnType<typeof createAdminClient>, sho
       .select('show_requirement_id')
       .eq('show_id', showId)
       .eq('status', 'sent'),
+    db.from('shows').select('suggest_from_submissions').eq('id', showId).maybeSingle(),
   ])
   if (error) throw new Error(error.message)
 
@@ -659,6 +660,7 @@ async function stillUnstartedSpots(db: ReturnType<typeof createAdminClient>, sho
       rebook_paused_at: row.rebook_paused_at ?? null,
     })),
     taken,
+    { fromSubmissions: Boolean(show?.suggest_from_submissions) },
   ).map((row) => row.id)
 }
 

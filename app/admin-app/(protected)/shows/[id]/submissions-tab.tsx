@@ -22,7 +22,7 @@ import {
   declineSubmissionAction,
   reopenSubmissionAction,
 } from '@/lib/actions/submissions'
-import { LineupCallout, SpotNumber, spotCardClass } from './lineup-ui'
+import { LineupCallout, SpotNumber, SuggestFromSubmissionsToggle, spotCardClass } from './lineup-ui'
 import type { SubmissionItem, SubmissionSpot, SubmissionsView } from './submissions-data'
 
 /**
@@ -101,10 +101,14 @@ function initials(name: string) {
 export function SubmissionsTab({
   showId,
   view,
+  suggestFromSubmissions = false,
 }: {
   showId: string
   view: SubmissionsView
+  /** `shows.suggest_from_submissions` — samme avkrysning som på Lineup-fanen. */
+  suggestFromSubmissions?: boolean
 }) {
+  const suggestToggle = <SuggestFromSubmissionsToggle showId={showId} enabled={suggestFromSubmissions} />
   const allItems = view.items
   const waitingCount = allItems.filter(isWaiting).length
   const waitlistCount = allItems.filter((item) => item.waitlist).length
@@ -124,6 +128,8 @@ export function SubmissionsTab({
 
   if (allItems.length === 0) {
     return (
+      <div className="space-y-3">
+      {suggestToggle}
       <LineupCallout
         title={openSpots.length > 0 ? 'No applications yet' : 'No spots are open for submissions'}
         action={
@@ -141,6 +147,7 @@ export function SubmissionsTab({
             : 'Open lineup spots for submissions and comedians can apply for the show themselves. Their applications land here.'}
         </p>
       </LineupCallout>
+      </div>
     )
   }
 
@@ -161,6 +168,7 @@ export function SubmissionsTab({
 
   return (
     <div className="space-y-3">
+      {suggestToggle}
       {/* ── Oppsummering og filter ─────────────────────────────── */}
       <div className={cn(spotCardClass, 'flex flex-wrap items-center gap-x-3 gap-y-2 py-2 pl-4 pr-3')}>
         <Inbox className="size-[18px] shrink-0 text-[var(--ev-accent-fill)]" aria-hidden />

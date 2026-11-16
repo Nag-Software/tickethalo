@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { RoleIcon } from '@/components/admin/show-booking-card'
-import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, spotCardClass } from './lineup-ui'
+import { SpotIconButton, SpotNumber, SubmissionsBar, SubmissionsToggle, SuggestFromSubmissionsToggle, spotCardClass } from './lineup-ui'
 import { LineupQueueDialog, StartBookingCard } from './lineup-queue-dialog'
 import { unstartedSpots } from '@/lib/booking-rules'
 import { startBookingBlockers } from '@/lib/start-booking-blockers'
@@ -202,6 +202,7 @@ export function LineupTab({
   pendingSubmissionTotal,
   removedArtistIds,
   percentLimit,
+  suggestFromSubmissions = false,
 }: {
   showId: string
   showTitle: string
@@ -229,6 +230,8 @@ export function LineupTab({
   removedArtistIds: string[]
   /** Taket for prosentavtalene, som på utkastet. */
   percentLimit: number
+  /** `shows.suggest_from_submissions` — se migrasjon 101. */
+  suggestFromSubmissions?: boolean
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -282,7 +285,9 @@ export function LineupTab({
     if (offer.status !== 'sent' || !offer.show_requirement_id) continue
     takenSeats.set(offer.show_requirement_id, (takenSeats.get(offer.show_requirement_id) ?? 0) + 1)
   }
-  const remainingSpots = showStatus === 'booking' ? unstartedSpots(requirements, takenSeats) : []
+  const remainingSpots = showStatus === 'booking'
+    ? unstartedSpots(requirements, takenSeats, { fromSubmissions: suggestFromSubmissions })
+    : []
   // Samme krav som Start booking stiller på et utkast og på serveren.
   const remainingBlockers = startBookingBlockers(requirements, percentLimit)
   const shouldAutoRefresh = showStatus === 'booking' && (!allSlotsFilled || sentOfferCount > 0)
@@ -728,6 +733,7 @@ export function LineupTab({
           bookingBlockers={remainingBlockers}
           remaining={remainingSpots.length}
           spotIds={remainingSpots.map((req) => req.id)}
+          suggestFromSubmissions={suggestFromSubmissions}
         />
       )}
 
@@ -740,6 +746,7 @@ export function LineupTab({
             <p className="text-sm font-semibold">Offer queue</p>
             <p className="text-xs text-muted-foreground">See who gets asked next on each spot, and change the order.</p>
           </div>
+          <SuggestFromSubmissionsToggle showId={showId} enabled={suggestFromSubmissions} variant="compact" />
           <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setQueueOpen(true)}>
             Review queue
           </Button>

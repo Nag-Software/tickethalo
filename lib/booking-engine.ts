@@ -18,12 +18,14 @@ import { lineupDeadlineDaysFor, type BookingSettings } from '@/lib/booking-setti
 import { loadBookingSettings } from '@/lib/booking-settings-store'
 import { effectiveSkillLevel, type SkillLevel } from '@/lib/artist-score'
 import type { ArtistGender, EnergyLevel, RequirementCompensationType } from '@/types/database'
-import { clubArtistReviews, withClubReview } from '@/lib/club-artist-profile'
+import { EMPTY_REVIEW, clubArtistReviews, withClubReview, type ClubArtistReview } from '@/lib/club-artist-profile'
+import { normalizeArtistRoleList } from '@/lib/artist-roles'
 import { appUrl } from '@/lib/app-url'
 import { showVenue } from '@/lib/show-venue'
 import { gigTypesText } from '@/lib/gig-types'
 import { unpaidNoteForRole, type ClubSpotType } from '@/lib/spot-types'
 import { getClubSpotTypes } from '@/lib/spot-types-data'
+import { ensureClubArtistForApplicant, markApplicationOffered } from '@/lib/applicant-offers'
 
 /**
  * Bookingmotoren: hvem som får tilbud på et show, og utsendingen av dem.
@@ -151,6 +153,8 @@ export type Candidate = {
   unavailable: boolean
   /** Komikeren står allerede på en annen scene den kvelden. */
   conflicted: boolean
+  /** Har søkt på showet, og showet foreslår fra søknadene. */
+  applied: boolean
 }
 
 type EngineShow = {
@@ -158,12 +162,51 @@ type EngineShow = {
   date: string
   start_time: string | null
   club_id: string | null
+  /** Søkerne er med i forslaget og står først. Se migrasjon 101. */
+  suggest_from_submissions?: boolean | null
 }
+
+/** Søknadene bookeren fortsatt kan ta stilling til — samme som `OPEN_SUBMISSION_STATUSES`. */
+const OPEN_APPLICATION_STATUSES = ['pending', 'shortlisted'] as const
 
 function addDays(date: string, days: number): string {
   const base = Date.parse(`${date}T00:00:00Z`)
   if (Number.isNaN(base)) return date
   return new Date(base + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/** Komikerne med en åpen søknad på showet. */
+async function openApplicantIds(admin: ReturnType<typeof createAdminClient>, showId: string): Promise<string[]> {
+  const { data, error } = await admin
+    .from('show_submissions')
+    .select('artist_id')
+    .eq('show_id', showId)
+    .in('status', [...OPEN_APPLICATION_STATUSES])
+  // Uten søknadene blir forslaget som før — ikke feil.
+  if (error) {
+    console.error(`[Booking] Could not load applicants for show ${showId}: ${error.message}`)
+    return []
+  }
+  return [...new Set((data ?? []).map((row) => row.artist_id as string))]
+}
+
+/**
+ * Klubbens vurderinger, pluss en for hver søker klubben ikke har vurdert:
+ * rollene hen har på profilen sin, ellers som en ny komiker. Klubbens egen
+ * vurdering vinner alltid, og en flagget søker forblir flagget.
+ */
+export function mergeApplicantReviews(
+  reviews: ReadonlyMap<string, ClubArtistReview>,
+  artists: ReadonlyArray<{ id: string; category?: string[] | string | null }>,
+  applicants: ReadonlySet<string>,
+): Map<string, ClubArtistReview> {
+  const merged = new Map(reviews)
+  for (const artist of artists) {
+    if (applicants.has(artist.id) && !merged.has(artist.id)) {
+      merged.set(artist.id, { ...EMPTY_REVIEW, category: normalizeArtistRoleList(artist.category) })
+    }
+  }
+  return merged
 }
 
 /**
@@ -178,7 +221,16 @@ async function loadCandidates(
   settings: BookingSettings,
 ): Promise<Candidate[]> {
   const reviews = await clubArtistReviews(admin, show.club_id)
-  const bookableIds = [...reviews.keys()]
+
+  // Søkerne på showet, når klubben vil ha forslag fra søknadene. De som ikke
+  // står på klubbens liste ennå, er med likevel — de har søkt på nettopp dette
+  // showet — og matches på sin egen profil til de får et tilbud.
+  const applicantIds = show.suggest_from_submissions
+    ? await openApplicantIds(admin, show.id)
+    : []
+  const applied = new Set(applicantIds)
+
+  const bookableIds = [...new Set([...reviews.keys(), ...applicantIds])]
   if (bookableIds.length === 0) return []
 
   const windowStart = addDays(show.date, -settings.rotation_window_days)
@@ -196,7 +248,7 @@ async function loadCandidates(
     { data: clubShows, error: clubShowError },
   ] = await Promise.all([
     admin.from('artists')
-      .select('id, email, full_name, stage_name, profile_image_url, gender')
+      .select('id, email, full_name, stage_name, profile_image_url, gender, category')
       .eq('status', 'approved')
       .in('id', bookableIds),
     admin.from('artist_unavailable_dates')
@@ -230,7 +282,12 @@ async function loadCandidates(
     return []
   }
 
-  const artists = withClubReview(artistRows ?? [], reviews)
+  // En søker klubben ikke har vurdert: rollene hen har på profilen sin, ellers
+  // som en ny komiker. Klubbens egen vurdering vinner alltid når den finnes,
+  // og en søker klubben har flagget, er ikke med (`withClubReview`).
+  const withApplicants = mergeApplicantReviews(reviews, artistRows ?? [], applied)
+
+  const artists = withClubReview(artistRows ?? [], withApplicants)
   if (artists.length === 0) return []
 
   const artistIds = artists.map((artist) => artist.id)
@@ -288,6 +345,7 @@ async function loadCandidates(
     category: artist.category,
     score: artist.score,
     skill_level_override: artist.skill_level_override ?? null,
+    applied: applied.has(artist.id),
     clubBookingsInWindow: rotationCount.get(artist.id) ?? 0,
     lastClubBookingDate: lastClubBooking.get(artist.id) ?? null,
     unavailable: unavailableIds.has(artist.id),
@@ -375,7 +433,7 @@ async function loadShowPlan(
 ): Promise<{ ok: true; plan: ShowPlan } | { ok: false; reason: PlanSkipReason }> {
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id, gig_types')
+    .select('id, title, date, start_time, venue_name, venue_address, currency, status, club_id, gig_types, suggest_from_submissions')
     .eq('id', showId)
     .single()
 
@@ -400,15 +458,20 @@ async function loadShowPlan(
   const settings = await loadBookingSettings(admin)
   const now = new Date()
 
+  // «Suggest line-up based on submissions» (migrasjon 101): plassene som er
+  // åpne for søknader, fylles da som de andre — med søkerne først. Ellers
+  // holder motoren seg unna dem, som før.
+  const fromSubmissions = Boolean(show.suggest_from_submissions)
   const requirements = (requirementRows as unknown as EngineRequirement[]).map((req) => ({
     ...req,
+    submissions_open: fromSubmissions ? false : req.submissions_open,
     min_skill_level: req.min_skill_level ?? null,
     // Start booking er dag 1 for hver plass som ikke tar imot søknader —
     // samme regel som `startAutoBooking`. Bare for plassene starten gjelder:
     // alle på et utkast, de valgte på kortet for resten av plassene, og
     // ingen når bookeren bare ser på køen. Ellers lovet «Review queue»
     // tilbud på plasser som aldri ble startet.
-    auto_started_at: mode === 'preview' && !req.submissions_open && (
+    auto_started_at: mode === 'preview' && (fromSubmissions || !req.submissions_open) && (
       show.status === 'draft' || previewStartIds?.has(req.id)
     )
       ? req.auto_started_at ?? now.toISOString()
@@ -646,11 +709,23 @@ export async function runBookingWave(showId: string) {
         fee_amount: details.feeAmount,
         currency: details.currency,
       })
-      .select('token')
+      .select('id, token')
       .single()
 
     if (offerError || !offer) continue
     offersCreated++
+
+    // En søker som får tilbud fra forslaget: samme som Approve gjør — hen
+    // kommer på klubbens liste, og søknaden er besvart. Feiler det, står
+    // tilbudet likevel; søknaden kan fortsatt godkjennes for hånd.
+    if (candidate.applied && show.club_id) {
+      try {
+        await ensureClubArtistForApplicant(admin, { clubId: show.club_id, artistId: candidate.id, roleName: req.role_name })
+        await markApplicationOffered(admin, { showId, artistId: candidate.id, requirementId: req.id, offerId: offer.id })
+      } catch (error) {
+        console.error(`[Booking] Could not connect applicant ${candidate.id} on show ${showId}:`, error)
+      }
+    }
 
     const email = {
       email: candidate.email,
@@ -695,6 +770,8 @@ export type QueueComedian = {
   skillLevel: SkillLevel
   /** Siste kveld i klubben, `YYYY-MM-DD`. Null = har aldri spilt der. */
   lastClubBookingDate: string | null
+  /** Har søkt på showet (forslag fra søknadene). Vises som «Applied». */
+  applied?: boolean
 }
 
 /** Hvor en komiker som alt er spurt på plassen, står. */
@@ -778,6 +855,7 @@ export async function getLineupQueue(
       imageUrl: candidate.profile_image_url,
       skillLevel: effectiveSkillLevel(candidate.score, candidate.skill_level_override),
       lastClubBookingDate: candidate.lastClubBookingDate,
+      applied: candidate.applied,
     }
   }
 
@@ -896,7 +974,11 @@ export async function saveLineupQueues(showId: string, clubId: string | null, in
   if (reqError ?? rosterError) throw new Error((reqError ?? rosterError)!.message)
 
   const spotIds = new Set((requirementRows ?? []).map((row) => row.id))
-  const roster = new Set((rosterRows ?? []).map((row) => row.artist_id))
+  // Søkerne er med i køen når showet foreslår fra søknadene (migrasjon 101),
+  // også før de står på klubbens liste — de kommer dit med tilbudet.
+  const { data: show } = await admin.from('shows').select('suggest_from_submissions').eq('id', showId).maybeSingle()
+  const applicants = show?.suggest_from_submissions ? await openApplicantIds(admin, showId) : []
+  const roster = new Set([...(rosterRows ?? []).map((row) => row.artist_id), ...applicants])
   const updatedAt = new Date().toISOString()
 
   const rows = Object.entries(input).flatMap(([requirementId, { order, removed }]) => {

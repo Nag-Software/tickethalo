@@ -21,7 +21,7 @@ import type {
 } from '@/lib/booking-engine'
 import { SKILL_REQUIREMENT_LABELS } from '@/lib/artist-score'
 import { getLineupQueueAction, saveLineupQueueAction, startBookingAction } from '../actions'
-import { LineupCallout } from './lineup-ui'
+import { LineupCallout, SuggestFromSubmissionsToggle } from './lineup-ui'
 
 type LoadedQueue = Extract<LineupQueue, { ok: true }>
 type Addable = QueueComedian & { removed: boolean }
@@ -218,6 +218,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
         imageUrl: row.imageUrl,
         skillLevel: row.skillLevel,
         lastClubBookingDate: row.lastClubBookingDate,
+        applied: row.applied,
       }],
     }))
   }
@@ -575,6 +576,11 @@ function SpotQueue({
                   <div className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-sm font-medium" title={row.name}>{row.name}</span>
                     <span className="shrink-0"><SkillLevelBadge level={row.skillLevel} compact /></span>
+                    {row.applied && (
+                      <span className="shrink-0 rounded-full bg-[var(--ev-accent-fill)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ev-accent-fill)]">
+                        Applied
+                      </span>
+                    )}
                   </div>
                   {/* Brytes på mobil i stedet for å kuttes: det er grunnen til
                       at raden står der, og den må kunne leses. */}
@@ -685,7 +691,10 @@ export function StartBookingCard({
   bookingBlockers,
   remaining,
   spotIds,
+  suggestFromSubmissions,
 }: {
+  /** «Based on submissions» under knappen. Utelatt = vises ikke. */
+  suggestFromSubmissions?: boolean
   showId: string
   canStartBooking: boolean
   bookingBlockers: string[]
@@ -750,6 +759,11 @@ export function StartBookingCard({
               : 'Start booking without a suggestion →'}
         </Button>
       </div>
+      {suggestFromSubmissions !== undefined && (
+        <div className="pt-2">
+          <SuggestFromSubmissionsToggle showId={showId} enabled={suggestFromSubmissions} variant="compact" />
+        </div>
+      )}
       <LineupQueueDialog
         showId={showId}
         open={open}

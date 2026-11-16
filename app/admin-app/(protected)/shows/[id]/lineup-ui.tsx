@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import {
   setSubmissionsAudienceAction,
   setSubmissionsDeadlineAction,
+  setSuggestFromSubmissionsAction,
   toggleRequirementSubmissionsAction,
 } from '@/lib/actions/submissions'
 import type { SubmissionsAudience } from '@/types/database'
@@ -275,3 +276,83 @@ export function SubmissionsBar({
  * mer enn «Energy» gjør inne i ruten, og lineupen ble dobbelt så høy som
  * den trengte.
  */
+
+// ─── SuggestFromSubmissionsToggle ─────────────────────────────────────────────
+
+/**
+ * «Suggest line-up based on submissions» (ClickUp, Tom 2026-11-16).
+ *
+ * Står på Submissions-fanen og ved «Suggest line-up now» på Lineup-fanen.
+ * Begge leser og skriver `shows.suggest_from_submissions`, så det som krysses
+ * av på den ene fanen, står krysset av på den andre.
+ *
+ * `variant="full"` har overskrift og forklaring (Submissions);
+ * `variant="compact"` er én linje under forslagsknappen (Lineup).
+ */
+export function SuggestFromSubmissionsToggle({
+  showId,
+  enabled,
+  disabled,
+  variant = 'full',
+}: {
+  showId: string
+  enabled: boolean
+  disabled?: boolean
+  variant?: 'full' | 'compact'
+}) {
+  const router = useRouter()
+  // Klikket vises med en gang; når siden er tegnet på nytt, er serverens
+  // verdi (`enabled`) fasiten igjen.
+  const [optimistic, setOptimistic] = React.useState<boolean | null>(null)
+  const [pending, startTransition] = React.useTransition()
+  const checked = pending && optimistic !== null ? optimistic : enabled
+
+  function toggle(next: boolean) {
+    setOptimistic(next)
+    startTransition(async () => {
+      const result = await setSuggestFromSubmissionsAction({ showId, enabled: next })
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  const id = `suggest-from-submissions-${variant}`
+
+  if (variant === 'compact') {
+    return (
+      <label htmlFor={id} className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+        <input
+          id={id}
+          type="checkbox"
+          checked={checked}
+          disabled={disabled || pending}
+          onChange={(event) => toggle(event.target.checked)}
+          className="size-3.5"
+        />
+        Based on submissions
+      </label>
+    )
+  }
+
+  return (
+    <label htmlFor={id} className={cn(spotCardClass, 'flex cursor-pointer items-start gap-3 px-4 py-3')}>
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled || pending}
+        onChange={(event) => toggle(event.target.checked)}
+        className="mt-0.5 size-4 shrink-0"
+      />
+      <span className="space-y-0.5">
+        <span className="block text-sm font-semibold">Suggest line-up based on submissions</span>
+        <span className="block text-xs text-muted-foreground">
+          Comedians that have applied to be on this show will be suggested for spots that match their profile.
+        </span>
+      </span>
+    </label>
+  )
+}

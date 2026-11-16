@@ -300,11 +300,13 @@ export default async function ShowDetailPage({
 
 
   const TABS: { key: ShowTab; label: string; badge?: number }[] = [
+    // Submissions før Lineup: søknadene kommer først, så settes lineupen
+    // (ClickUp «Flytte submissions - rekkefølge faner»).
     { key: 'overview', label: 'Overview' },
+    { key: 'submissions', label: 'Submissions', badge: pendingSubmissionTotal || undefined },
     { key: 'lineup', label: 'Lineup', badge: (offerStats.sent || activeLineup.length) ? Math.max(offerStats.sent, activeLineup.length) : undefined },
     // Tallet er endringer lineupen ikke har fått beskjed om — se lib/lineup-changes.ts.
     { key: 'communication', label: 'Communication', badge: changeCount(show.lineup_change_notice) || undefined },
-    { key: 'submissions', label: 'Submissions', badge: pendingSubmissionTotal || undefined },
     { key: 'marketing', label: 'Marketing' },
     { key: 'tickets', label: 'Tickets' },
   ]
@@ -485,6 +487,7 @@ export default async function ShowDetailPage({
                 percentLimit={percentLimit}
                 matchCounts={requirementMatchCounts}
                 spotTypeNames={spotTypeNames}
+                suggestFromSubmissions={Boolean(show.suggest_from_submissions)}
               />
             : <LineupTab
                 showId={show.id}
@@ -537,6 +540,7 @@ export default async function ShowDetailPage({
                 pendingSubmissionTotal={pendingSubmissionTotal}
                 removedArtistIds={[...excludedArtistIds]}
                 percentLimit={percentLimit}
+                suggestFromSubmissions={Boolean(show.suggest_from_submissions)}
               />
         )}
 
@@ -544,7 +548,7 @@ export default async function ShowDetailPage({
         {tab === 'communication' && <CommunicationTab showId={show.id} />}
 
         {/* ══════════════════ SUBMISSIONS ══════════════════ */}
-        {tab === 'submissions' && submissionsView && <SubmissionsTab showId={show.id} view={submissionsView} />}
+        {tab === 'submissions' && submissionsView && <SubmissionsTab showId={show.id} view={submissionsView} suggestFromSubmissions={Boolean(show.suggest_from_submissions)} />}
 
         {/* ══════════════════ MARKETING ══════════════════ */}
         {tab === 'marketing' && <MarketingTab showId={id} />}

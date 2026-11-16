@@ -126,6 +126,11 @@ export type RankedCandidate = {
   clubBookingsInWindow: number
   /** Siste kveld i klubben, `YYYY-MM-DD`. Null = har aldri spilt der. */
   lastClubBookingDate: string | null
+  /**
+   * Har søkt på showet, og showet foreslår fra søknadene
+   * (`suggest_from_submissions`, migrasjon 101). Står først — se `spotOrder`.
+   */
+  applied?: boolean
 }
 
 /**
@@ -430,15 +435,24 @@ export function spotOrder<C extends RankedCandidate>(
   queue: SpotQueue | undefined,
   settings: BookingSettings,
 ): C[] {
-  if (!queue) return rankCandidates(eligible, settings)
+  if (!queue) return applicantsFirst(rankCandidates(eligible, settings))
 
   const allowed = eligible.filter((candidate) => !queue.removed.has(candidate.id))
   const position = new Map(queue.order.map((id, index) => [id, index]))
   const placed = allowed
     .filter((candidate) => position.has(candidate.id))
     .sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0))
-  const rest = rankCandidates(allowed.filter((candidate) => !position.has(candidate.id)), settings)
+  const rest = applicantsFirst(rankCandidates(allowed.filter((candidate) => !position.has(candidate.id)), settings))
   return [...placed, ...rest]
+}
+
+/**
+ * Søkerne først, ellers samme rekkefølge (ClickUp «Suggest line-up based on
+ * submissions»). Bookerens egen kø vinner fortsatt: den står foran, og en
+ * søker bookeren har flyttet ned, blir stående der.
+ */
+function applicantsFirst<C extends RankedCandidate>(ranked: C[]): C[] {
+  return [...ranked.filter((candidate) => candidate.applied), ...ranked.filter((candidate) => !candidate.applied)]
 }
 
 /** Én plass slik fordelingen ser den: hvor mange, og hvem i hvilken rekkefølge. */
@@ -570,9 +584,11 @@ export type UnstartedSpotInput = {
 export function unstartedSpots<T extends UnstartedSpotInput>(
   requirements: T[],
   taken: ReadonlyMap<string, number>,
+  /** Showet foreslår fra søknadene (migrasjon 101): plassene åpne for søknader er med. */
+  { fromSubmissions = false }: { fromSubmissions?: boolean } = {},
 ): T[] {
   return requirements.filter((req) =>
-    !req.submissions_open
+    (fromSubmissions || !req.submissions_open)
     && !req.auto_started_at
     && !req.rebook_paused_at
     && (taken.get(req.id) ?? 0) < Math.max(1, req.quantity),
