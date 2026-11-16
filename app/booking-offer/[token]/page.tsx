@@ -71,6 +71,7 @@ export default async function PublicBookingOfferPage({
   const unpaidNote = unpaidNoteForRole(
     show?.club_id ? await getClubSpotTypes(db, show.club_id).catch(() => null) : null,
     req?.role_name,
+    req ? { ...req, fee_amount: offer.fee_amount } : { fee_amount: offer.fee_amount },
   )
 
   const isExpired = offer.expires_at ? new Date(offer.expires_at) < new Date() : false

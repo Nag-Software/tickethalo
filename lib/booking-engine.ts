@@ -91,7 +91,7 @@ export function offerDetails(
     show_time: show.start_time?.slice(0, 5) ?? null,
     venue: showVenue(show).line,
     gig_type_label: gigTypesText(show.gig_types),
-    unpaid_note: unpaidNoteForRole(spotTypes, requirement.role_name),
+    unpaid_note: unpaidNoteForRole(spotTypes, requirement.role_name, requirement),
   }
 }
 

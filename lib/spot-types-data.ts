@@ -21,6 +21,7 @@ export async function getClubSpotTypes(db: Db, clubId: string | null | undefined
   )
   // To sider som åpnes samtidig, kan begge prøve. Den ene vinner, og den
   // andre leser det den første la inn.
+  if (error && MISSING_TABLE_CODES.has(String(error.code))) return []
   if (error && error.code !== '23505') throw new Error(error.message)
   return readTypes(db, clubId)
 }
@@ -32,9 +33,14 @@ async function readTypes(db: Db, clubId: string): Promise<ClubSpotType[]> {
     .eq('club_id', clubId)
     .order('position')
     .order('name')
+  // Tabellen finnes ikke ennå (koden kom ut før migrasjon 100): standardlista
+  // gjelder, og sidene virker som før i stedet for å feile.
+  if (error && MISSING_TABLE_CODES.has(String(error.code))) return []
   if (error) throw new Error(error.message)
   return (data ?? []).map(toSpotType)
 }
+
+const MISSING_TABLE_CODES = new Set(['42P01', 'PGRST205'])
 
 function toSpotType(row: Record<string, unknown>): ClubSpotType {
   const percent = row.default_compensation_percent

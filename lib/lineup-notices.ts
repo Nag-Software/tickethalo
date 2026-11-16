@@ -256,7 +256,7 @@ export async function notifyAddedToLineup(showId: string, artistId: string, requ
     duration_label: formatDuration(requirement?.duration_minutes),
     fee_label: requirement ? requirementFeeLabel(requirement, show.currency || 'NOK') : null,
     gig_type_label: gigTypesText(show.gig_types),
-    unpaid_note: unpaidNoteForRole(await getClubSpotTypes(db, show.club_id).catch(() => null), requirement?.role_name),
+    unpaid_note: unpaidNoteForRole(await getClubSpotTypes(db, show.club_id).catch(() => null), requirement?.role_name, requirement),
     portal_url: appPath('/artist-app/bookings'),
     added_by_club: true,
   })

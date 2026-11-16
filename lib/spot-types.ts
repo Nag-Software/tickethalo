@@ -1,4 +1,4 @@
-import { ARTIST_ROLE_OPTIONS, normalizeArtistRole, type CanonicalArtistRole } from '@/lib/artist-roles'
+import { ARTIST_ROLE_OPTIONS, isLegacySpotName, normalizeArtistRole, type CanonicalArtistRole } from '@/lib/artist-roles'
 
 /**
  * Klubbens spot-typer, uten databasen (migrasjon 100).
@@ -80,16 +80,40 @@ function articleFor(word: string) {
   return /^[aeiou]/i.test(word) ? 'an' : 'a'
 }
 
+/** Honoraret plassen faktisk har — det tilbudet viser. */
+export type SpotFee = {
+  compensation_type?: string | null
+  compensation_amount?: number | null
+  compensation_percent?: number | null
+  /** Beløpet kopiert til tilbudet. Går foran plassens. */
+  fee_amount?: number | null
+}
+
+function hasPaidFee(fee: SpotFee | null | undefined) {
+  if (!fee) return false
+  if (Number(fee.fee_amount ?? 0) > 0) return true
+  if (fee.compensation_type === 'fixed') return Number(fee.compensation_amount ?? 0) > 0
+  if (fee.compensation_type === 'percent') return Number(fee.compensation_percent ?? 0) > 0
+  return false
+}
+
 /**
  * Notatet for en plass, eller null når plassen ikke er ubetalt.
  *
  * Uten klubbens typer (en klubb som ikke er satt opp ennå) gjelder
  * standarden: Open Spot er ubetalt, resten er det ikke.
+ *
+ * To unntak, så teksten aldri sier noe som ikke stemmer:
+ *  - en plass med et gammelt navn («Open Mic») på et show som var i gang
+ *    før de nye typene, får ingen ny tekst — det showet skal stå som før;
+ *  - en plass som faktisk har et honorar, er ikke ubetalt, uansett type.
  */
 export function unpaidNoteForRole(
   types: readonly Pick<ClubSpotType, 'standard_key' | 'name' | 'is_unpaid'>[] | null,
   roleName: string | null | undefined,
+  fee?: SpotFee | null,
 ): string | null {
+  if (isLegacySpotName(roleName) || hasPaidFee(fee)) return null
   const type = types ? spotTypeForRole(types, roleName) : null
   if (type) return type.is_unpaid ? unpaidSpotNote(type.name) : null
   return normalizeArtistRole(roleName) === 'open mic' ? unpaidSpotNote('Open Spot') : null

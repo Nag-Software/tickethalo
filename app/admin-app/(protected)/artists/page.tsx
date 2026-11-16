@@ -10,7 +10,7 @@ import { countInviteJoins, getOrCreateClubInviteToken, inviteJoinPath } from '@/
 import { appPath } from '@/lib/app-url'
 import { artistReadinessBlockers, READINESS_BLOCKER_LABELS } from '@/lib/artist-readiness'
 import { clubArtistRoster } from '@/lib/club-artist-profile'
-import { formatArtistRoleList } from '@/lib/artist-roles'
+import { clubRoleNames } from '@/lib/artist-roles'
 import { shouldBypassImageOptimization } from '@/lib/utils'
 import { ArtistEnergyBadge, ArtistStatusBadge, FlaggedBadge } from '@/components/admin/artist-badges'
 import type { ArtistStatus } from '@/types/database'
@@ -186,7 +186,7 @@ export default async function ArtistsPage({
               </thead>
               <tbody>
                 {visible.map(({ artist, review, blockers }) => {
-                  const roles = formatArtistRoleList(review.category)
+                  const roles = clubRoleNames(review.category)
                   // «Ikke godkjent» står allerede i statuskolonnen. Her vises
                   // bare det som ellers ikke er synlig noe sted i tabellen.
                   const missing = blockers.filter((blocker) => blocker !== 'approval')

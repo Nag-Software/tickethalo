@@ -23,3 +23,11 @@ describe('artist readiness', () => {
     ])
   })
 })
+
+describe('club spot types and readiness', () => {
+  it('counts a club’s own spot type as a role', async () => {
+    const { artistReadinessBlockers } = await import('@/lib/artist-readiness')
+    expect(artistReadinessBlockers({ status: 'approved', category: ['Improv'] })).toEqual([])
+    expect(artistReadinessBlockers({ status: 'approved', category: [] })).toEqual(['role'])
+  })
+})

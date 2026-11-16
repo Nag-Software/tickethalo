@@ -43,6 +43,7 @@ export default async function BookingOfferTokenPage({ params }: { params: Promis
   const unpaidNote = unpaidNoteForRole(
     show?.club_id ? await getClubSpotTypes(db, show.club_id).catch(() => null) : null,
     req?.role_name,
+    req ? { ...req, fee_amount: offer.fee_amount } : { fee_amount: offer.fee_amount },
   )
   const venue = showVenue(show).line
 

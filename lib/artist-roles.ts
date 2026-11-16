@@ -167,6 +167,22 @@ export function clubRoleValues(values: string | string[] | null | undefined, cus
   return next
 }
 
+/**
+ * Rollene klubben har gitt en komiker, slik de vises: etiketten for en
+ * standardtype, navnet for klubbens egen (migrasjon 100). I motsetning til
+ * `formatArtistRoleList` faller ikke klubbens egne typer bort.
+ */
+export function clubRoleNames(values: string | string[] | null | undefined) {
+  const tokens = values == null ? [] : tokenizeRoles(values)
+  const next: string[] = []
+  for (const token of tokens) {
+    const standard = normalizeArtistRoleList(token)
+    const names = standard.length > 0 ? standard.map((key) => ARTIST_ROLE_LABELS[key]) : [token.trim()]
+    for (const name of names) if (name && !next.includes(name)) next.push(name)
+  }
+  return next
+}
+
 export function formatArtistRoleList(values: string | string[] | null | undefined) {
   return normalizeArtistRoleList(values).map((value) => ARTIST_ROLE_LABELS[value])
 }
@@ -182,6 +198,12 @@ export function formatArtistRoleSummary(values: string | string[] | null | undef
  * plassen på nytt, og i e-postene til dem som alt er booket.
  */
 const LEGACY_SPOT_NAMES = ['Host', 'Headliner', 'Stand-up', 'Open Mic']
+
+/** Om plassen har et navn fra før de nye typene — et show som var i gang. */
+export function isLegacySpotName(value: string | null | undefined) {
+  const text = String(value ?? '').trim().toLowerCase()
+  return LEGACY_SPOT_NAMES.some((name) => name.toLowerCase() === text)
+}
 
 /**
  * Navnet en plass lagres og vises med. Et gammelt navn eller en ny etikett

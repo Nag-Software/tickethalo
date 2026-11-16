@@ -49,6 +49,11 @@ export async function updateSpotTypeAction(input: {
   const type = types.find((row) => row.id === input.id)
   if (!type) return { ok: false, error: 'That spot type is not in your club.' }
 
+  // Uten noen type i bruk ville et nytt show falt tilbake til hele standardlista.
+  if (input.active === false && type.active && types.filter((row) => row.active).length <= 1) {
+    return { ok: false, error: 'Keep at least one spot type in use.' }
+  }
+
   const patch: { active?: boolean; is_unpaid?: boolean; default_compensation_percent?: number | null } = {}
   if (input.active !== undefined) patch.active = Boolean(input.active)
   if (input.is_unpaid !== undefined) patch.is_unpaid = Boolean(input.is_unpaid)
@@ -73,6 +78,9 @@ export async function addSpotTypeAction(input: {
   const name = String(input.name ?? '').trim().replace(/\s+/g, ' ')
   if (!name) return { ok: false, error: 'Give the spot type a name.' }
   if (name.length > MAX_SPOT_TYPE_NAME) return { ok: false, error: `Keep the name under ${MAX_SPOT_TYPE_NAME} characters.` }
+  // Rollene lagres som en liste der disse tegnene skiller to roller. «Host /
+  // Guest» ville matchet alle Host-plassene, og «Late, Night» aldri noen.
+  if (/[\/,;|]/.test(name)) return { ok: false, error: 'Use letters and spaces only — no / , ; or |.' }
   // Et navn som allerede betyr en standardtype («Host», «Open Mic»), ville
   // blitt lest som den — og matchet andre komikere enn klubben tror.
   if (normalizeArtistRole(name)) {

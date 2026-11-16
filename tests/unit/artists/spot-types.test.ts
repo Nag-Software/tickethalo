@@ -104,8 +104,8 @@ describe('club spot types', () => {
   })
 
   it('follows the standard when the club has no types', () => {
-    expect(unpaidNoteForRole(null, 'Open Mic')).not.toBeNull()
-    expect(unpaidNoteForRole(null, 'Headliner')).toBeNull()
+    expect(unpaidNoteForRole(null, 'Open Spot')).not.toBeNull()
+    expect(unpaidNoteForRole(null, 'Closer / Headliner')).toBeNull()
   })
 
   it('lists the active types for Book them as, and keeps a switched-off type a comedian already has', () => {
@@ -139,5 +139,19 @@ describe('the unpaid note in the offer', () => {
     const paid = offerDetails(show, { ...openSpot, role_name: 'Closer / Headliner', compensation_percent: 15 })
     expect(paid.unpaid_note).toBeNull()
     expect(bookingOfferTemplate({ ...input, unpaid_note: paid.unpaid_note }).html).not.toContain('unpaid')
+  })
+})
+
+describe('review fixes', () => {
+  const show = { start_time: '20:00:00', venue_name: 'Bar', venue_address: null, currency: 'NOK' }
+
+  it('adds no new text to a spot still called Open Mic on a show that was already running', () => {
+    expect(offerDetails(show, { role_name: 'Open Mic', compensation_type: 'percent', compensation_amount: null, compensation_percent: 0 }).unpaid_note).toBeNull()
+  })
+
+  it('never calls a spot unpaid when it has a fee', () => {
+    expect(offerDetails(show, { role_name: 'Open Spot', compensation_type: 'fixed', compensation_amount: 50000, compensation_percent: null }).unpaid_note).toBeNull()
+    expect(unpaidNoteForRole(null, 'Open Spot', { compensation_type: 'percent', compensation_percent: 0, fee_amount: 30000 })).toBeNull()
+    expect(unpaidNoteForRole(null, 'Open Spot', { compensation_type: 'percent', compensation_percent: 0 })).not.toBeNull()
   })
 })

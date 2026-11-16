@@ -89,3 +89,24 @@ describe('spot type actions', () => {
     ])
   })
 })
+
+describe('spot type actions after review', () => {
+  beforeEach(() => {
+    mocks.types = [
+      type({ id: 'host', standard_key: 'konferansier', name: 'Host / MC', position: 1 }),
+      type({ id: 'open', standard_key: 'open mic', name: 'Open Spot', position: 2, active: false }),
+    ]
+  })
+
+  it('refuses names with list separators, which would match other spots or never save', async () => {
+    setup()
+    for (const name of ['Host / Guest', 'Late, Night', 'A;B', 'A|B']) {
+      expect(await addSpotTypeAction({ name })).toMatchObject({ ok: false })
+    }
+  })
+
+  it('keeps at least one spot type in use', async () => {
+    setup()
+    expect(await updateSpotTypeAction({ id: 'host', active: false })).toMatchObject({ ok: false })
+  })
+})
