@@ -38,7 +38,13 @@ export async function ensureClubArtistForApplicant(
   if (error && error.code !== '23505') throw new Error(error.message)
   if (error) return false
 
-  await recalculateClubArtistScore(db, clubId, artistId)
+  // Koblingen er laget; scoren er en oppfølging. Feiler den, skal Approve
+  // fortsatt vite at raden er ny (og kunne fjerne den om tilbudet feiler).
+  try {
+    await recalculateClubArtistScore(db, clubId, artistId)
+  } catch (error) {
+    console.error(`[Applicants] Could not recalculate score for ${artistId} at ${clubId}:`, error)
+  }
   return true
 }
 

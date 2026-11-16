@@ -59,12 +59,27 @@ export async function setSuggestFromSubmissionsAction(input: { showId: string; e
   const showId = String(input.showId ?? '')
   await assertShowAccess(showId)
 
-  const { error } = await createAdminClient()
+  const db = createAdminClient()
+  const { error } = await db
     .from('shows')
     .update({ suggest_from_submissions: Boolean(input.enabled) })
     .eq('id', showId)
 
   if (error) return { ok: false as const, error: 'Could not save the setting. Try again.' }
+
+  // En plass som ble åpnet for søknader mens showet var i gang, har fortsatt
+  // sin gamle dag 1. Uten nullstilling ville motoren tatt den opp igjen på
+  // dag 6 og sendt hele kvoten på én gang — uten at bookeren har sagt ja.
+  // Nå står den som ikke startet, og fylles først fra «Fill the remaining
+  // spots» etter forslaget.
+  if (input.enabled) {
+    const { error: resetError } = await db
+      .from('show_requirements')
+      .update({ auto_started_at: null })
+      .eq('show_id', showId)
+      .eq('submissions_open', true)
+    if (resetError) console.error(`[Submissions] Could not reset spots on show ${showId}: ${resetError.message}`)
+  }
   revalidateShow(showId)
   return { ok: true as const }
 }

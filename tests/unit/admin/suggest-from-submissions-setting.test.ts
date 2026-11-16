@@ -26,6 +26,22 @@ describe('suggest line-up based on submissions', () => {
     expect(update?.filters).toMatchObject({ id: 'show-1' })
   })
 
+  it('resets the start of spots open for submissions when switched on, so nothing goes out before the booker confirms', async () => {
+    const { db, queries } = fakeQueryDb({ shows: () => ({}), show_requirements: () => ({}) })
+    mocks.db = db
+    await setSuggestFromSubmissionsAction({ showId: 'show-1', enabled: true })
+    const reset = queries.find((query) => query.table === 'show_requirements' && query.write === 'update')
+    expect(reset?.values).toEqual({ auto_started_at: null })
+    expect(reset?.filters).toMatchObject({ show_id: 'show-1', submissions_open: true })
+  })
+
+  it('touches no spots when switched off', async () => {
+    const { db, queries } = fakeQueryDb({ shows: () => ({}), show_requirements: () => ({}) })
+    mocks.db = db
+    await setSuggestFromSubmissionsAction({ showId: 'show-1', enabled: false })
+    expect(queries.some((query) => query.table === 'show_requirements')).toBe(false)
+  })
+
   it('puts Submissions before Lineup in the show tabs', () => {
     const page = readFileSync('app/admin-app/(protected)/shows/[id]/page.tsx', 'utf8')
     const keys = [...page.matchAll(/\{ key: '(\w+)', label:/g)].map((match) => match[1])

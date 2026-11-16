@@ -319,7 +319,7 @@ export function SuggestFromSubmissionsToggle({
     })
   }
 
-  const id = `suggest-from-submissions-${variant}`
+  const id = `suggest-from-submissions-${React.useId()}`
 
   if (variant === 'compact') {
     return (

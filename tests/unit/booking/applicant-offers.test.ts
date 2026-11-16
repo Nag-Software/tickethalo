@@ -42,3 +42,11 @@ describe('an applicant who gets an offer', () => {
     expect(update?.filters).toMatchObject({ show_id: 's1', artist_id: 'a1', 'status:in': ['pending', 'shortlisted'] })
   })
 })
+
+describe('after review', () => {
+  it('still reports a new link when the score recalculation fails, so Approve can undo it', async () => {
+    vi.mocked(recalculateClubArtistScore).mockRejectedValueOnce(new Error('boom'))
+    const { db } = fakeQueryDb({ club_artists: (query) => (query.write ? {} : { data: null }) })
+    await expect(ensureClubArtistForApplicant(db as never, { clubId: 'club-1', artistId: 'a1', roleName: 'Host / MC' })).resolves.toBe(true)
+  })
+})

@@ -442,14 +442,16 @@ export function spotOrder<C extends RankedCandidate>(
   const placed = allowed
     .filter((candidate) => position.has(candidate.id))
     .sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0))
-  const rest = applicantsFirst(rankCandidates(allowed.filter((candidate) => !position.has(candidate.id)), settings))
-  return [...placed, ...rest]
+  const rest = rankCandidates(allowed.filter((candidate) => !position.has(candidate.id)), settings)
+  return applicantsFirst([...placed, ...rest])
 }
 
 /**
  * Søkerne først, ellers samme rekkefølge (ClickUp «Suggest line-up based on
- * submissions»). Bookerens egen kø vinner fortsatt: den står foran, og en
- * søker bookeren har flyttet ned, blir stående der.
+ * submissions»). Gjelder også over en lagret kø: dialogen lagrer hele
+ * rekkefølgen den viste, så en kø fra før innstillingen ble skrudd på, ville
+ * ellers sendt søkerne bakerst. Innbyrdes står søkerne i køens rekkefølge, og
+ * en som er tatt ut av køen, er fortsatt ute. Uten søkere er alt som før.
  */
 function applicantsFirst<C extends RankedCandidate>(ranked: C[]): C[] {
   return [...ranked.filter((candidate) => candidate.applied), ...ranked.filter((candidate) => !candidate.applied)]

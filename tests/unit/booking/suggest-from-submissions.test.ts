@@ -23,10 +23,20 @@ describe('applicants first in the suggestion', () => {
     expect(order.map((row) => row.id)).toEqual(['b', 'a'])
   })
 
-  it('lets the booker’s own queue win over the applicants', () => {
-    const queue = { order: ['star'], removed: new Set<string>() }
-    const order = spotOrder([candidate('star', { score: 9 }), candidate('applicant', { applied: true })], queue, DEFAULT_BOOKING_SETTINGS)
-    expect(order.map((row) => row.id)).toEqual(['star', 'applicant'])
+  it('puts applicants ahead of a queue saved before the setting was on, in the queue’s own order', () => {
+    const queue = { order: ['star', 'b', 'mid', 'a'], removed: new Set<string>() }
+    const order = spotOrder(
+      [candidate('star', { score: 9 }), candidate('a', { applied: true }), candidate('mid'), candidate('b', { applied: true })],
+      queue,
+      DEFAULT_BOOKING_SETTINGS,
+    )
+    expect(order.map((row) => row.id)).toEqual(['b', 'a', 'star', 'mid'])
+  })
+
+  it('keeps an applicant the booker took out of the queue out', () => {
+    const queue = { order: ['star'], removed: new Set(['applicant']) }
+    const order = spotOrder([candidate('star'), candidate('applicant', { applied: true })], queue, DEFAULT_BOOKING_SETTINGS)
+    expect(order.map((row) => row.id)).toEqual(['star'])
   })
 
   it('changes nothing when nobody applied', () => {

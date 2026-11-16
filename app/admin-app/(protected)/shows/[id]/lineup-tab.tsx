@@ -285,7 +285,10 @@ export function LineupTab({
     if (offer.status !== 'sent' || !offer.show_requirement_id) continue
     takenSeats.set(offer.show_requirement_id, (takenSeats.get(offer.show_requirement_id) ?? 0) + 1)
   }
-  const remainingSpots = showStatus === 'booking'
+  // Også på et show som er lagt ut eller fullbooket: en plass åpen for
+  // søknader som skal fylles fra forslaget, står ellers urørt for alltid.
+  // Uten innstillingen bare i booking, som før.
+  const remainingSpots = showStatus === 'booking' || (suggestFromSubmissions && ['fullbooked', 'published'].includes(showStatus))
     ? unstartedSpots(requirements, takenSeats, { fromSubmissions: suggestFromSubmissions })
     : []
   // Samme krav som Start booking stiller på et utkast og på serveren.

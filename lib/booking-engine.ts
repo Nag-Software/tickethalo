@@ -225,7 +225,9 @@ async function loadCandidates(
   // Søkerne på showet, når klubben vil ha forslag fra søknadene. De som ikke
   // står på klubbens liste ennå, er med likevel — de har søkt på nettopp dette
   // showet — og matches på sin egen profil til de får et tilbud.
-  const applicantIds = show.suggest_from_submissions
+  // Bare på et show som hører til en klubb: et tilbud til en søker er å ta
+  // hen inn på klubbens liste, og uten klubb finnes ingen liste.
+  const applicantIds = show.suggest_from_submissions && show.club_id
     ? await openApplicantIds(admin, show.id)
     : []
   const applied = new Set(applicantIds)
@@ -696,6 +698,19 @@ export async function runBookingWave(showId: string) {
     return null
   })
   for (const { candidate, req } of assignments) {
+    // En søker kommer på klubbens liste før tilbudet går ut, slik Approve gjør.
+    // Feiler det, får hen ikke tilbudet nå — ellers sto det et tilbud ute til
+    // en komiker utenfor lista, som motoren senere kunne trukket uten beskjed.
+    if (candidate.applied) {
+      if (!show.club_id) continue
+      try {
+        await ensureClubArtistForApplicant(admin, { clubId: show.club_id, artistId: candidate.id, roleName: req.role_name })
+      } catch (error) {
+        console.error(`[Booking] Could not connect applicant ${candidate.id} on show ${showId}:`, error)
+        continue
+      }
+    }
+
     const details = offerDetails(show, req, spotTypes)
     const { data: offer, error: offerError } = await admin
       .from('booking_offers')
@@ -715,16 +730,9 @@ export async function runBookingWave(showId: string) {
     if (offerError || !offer) continue
     offersCreated++
 
-    // En søker som får tilbud fra forslaget: samme som Approve gjør — hen
-    // kommer på klubbens liste, og søknaden er besvart. Feiler det, står
-    // tilbudet likevel; søknaden kan fortsatt godkjennes for hånd.
-    if (candidate.applied && show.club_id) {
-      try {
-        await ensureClubArtistForApplicant(admin, { clubId: show.club_id, artistId: candidate.id, roleName: req.role_name })
-        await markApplicationOffered(admin, { showId, artistId: candidate.id, requirementId: req.id, offerId: offer.id })
-      } catch (error) {
-        console.error(`[Booking] Could not connect applicant ${candidate.id} on show ${showId}:`, error)
-      }
+    // Søknaden er besvart med tilbudet, som når bookeren trykker Approve.
+    if (candidate.applied) {
+      await markApplicationOffered(admin, { showId, artistId: candidate.id, requirementId: req.id, offerId: offer.id })
     }
 
     const email = {
