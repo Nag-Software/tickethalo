@@ -16,16 +16,18 @@ describe('checkout consent boxes', () => {
   })
 
   it('shows the ads box only once the email box is ticked, and clears it with the email box', () => {
-    render(<MarketingConsent clubName="Crønch Comedy" />)
+    const { container } = render(<form><MarketingConsent clubName="Crønch Comedy" /></form>)
+    const posted = () => Object.fromEntries(new FormData(container.querySelector('form')!))
     const emails = screen.getByRole('checkbox', { name: EMAILS })
 
     fireEvent.click(emails)
     const ads = screen.getByRole('checkbox', { name: ADS })
     expect(ads).not.toBeChecked()
-    expect(ads).toHaveAttribute('name', 'ads_opt_in')
 
     fireEvent.click(ads)
     expect(ads).toBeChecked()
+    // Skjemaet sender de samme feltene som før byttet til shadcn-checkboxen.
+    expect(posted()).toMatchObject({ marketing_opt_in: 'on', ads_opt_in: 'on' })
 
     fireEvent.click(emails)
     expect(screen.queryByRole('checkbox', { name: ADS })).toBeNull()

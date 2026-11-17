@@ -731,7 +731,6 @@ export async function startBookingAction(formData: FormData) {
 
   for (const req of reqs) {
     if (!req.role_name?.trim()) throw new Error('Every lineup spot must have a role name.')
-    if (!req.compensation_type) throw new Error('Every lineup spot must have a fee model set.')
     // En fast avtale uten beløp ga tilbud med «Fixed fee» og ingenting mer.
     if (req.compensation_type === 'fixed' && req.compensation_amount == null) {
       throw new Error('Every lineup spot must have an amount or a percentage.')
@@ -1314,6 +1313,57 @@ export async function cancelOfferAction(formData: FormData) {
   }
   scheduleShowAutomation(showId, 'cancel-offer')
   revalidatePath(`/admin-app/shows/${showId}`)
+}
+
+/**
+ * Setter et show i booking tilbake til planlegging («Planning», `draft`).
+ *
+ * Bookeren vil kunne stoppe opp og endre lineupen uten at motoren sender mer.
+ * Valgt av prosjektleder (2026-11-17):
+ *  - Tilbud som er ute trekkes, og komikerne får beskjed. I planlegging
+ *    går det ingen tilbud, heller ikke de som allerede står ute.
+ *  - Bookede komikere beholder plassen. Lineup-fanen viser da booking-
+ *    visningen, så de ikke forsvinner (se page.tsx).
+ *
+ * Stempelet `auto_started_at` nullstilles på alle plassene: når bookingen
+ * startes igjen, er det dag 1. Uten det ville en plass som sto på dag 6
+ * sendt hele kvoten på én gang. De som får tilbudet trukket, holdes ikke
+ * utenfor — de kan spørres igjen når bookingen starter på nytt.
+ */
+export async function moveShowToPlanningAction(formData: FormData): Promise<{ ok: true; withdrawn: number } | { ok: false; error: string }> {
+  const showId = String(formData.get('show_id') ?? '')
+  await assertShowAccess(showId)
+  const db = createAdminClient()
+
+  const { data: moved, error: moveError } = await db
+    .from('shows')
+    .update({ status: 'draft' })
+    .eq('id', showId)
+    .in('status', ['booking', 'fullbooked'])
+    .select('id')
+  if (moveError) return { ok: false, error: moveError.message }
+  if (!moved || moved.length === 0) {
+    return { ok: false, error: 'Only a show that is booking can go back to planning.' }
+  }
+
+  const { data: withdrawn, error: offersError } = await db
+    .from('booking_offers')
+    .update({ status: 'cancelled', responded_at: new Date().toISOString() })
+    .eq('show_id', showId)
+    .eq('status', 'sent')
+    .select('artist_id')
+  if (offersError) return { ok: false, error: offersError.message }
+
+  const { error: reqError } = await db
+    .from('show_requirements')
+    .update({ auto_started_at: null })
+    .eq('show_id', showId)
+  if (reqError) return { ok: false, error: reqError.message }
+
+  notifyLineupChange(showId, { removed: [], withdrawn: (withdrawn ?? []).map((offer) => offer.artist_id) })
+  revalidatePath(`/admin-app/shows/${showId}`)
+  revalidatePath('/admin-app/shows')
+  return { ok: true, withdrawn: withdrawn?.length ?? 0 }
 }
 
 export async function removeSpotAndReopenAction(formData: FormData) {

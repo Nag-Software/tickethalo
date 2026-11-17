@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ChevronDown, ChevronUp, GripVertical, Plus, RefreshCw, Sparkles, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronUp, CircleHelp, GripVertical, Plus, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,7 @@ import { formatDuration } from '@/lib/spot-duration'
 import { Avatar as UiAvatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SkillLevelBadge } from '@/components/admin/artist-badges'
 import { RoleIcon } from '@/components/admin/show-booking-card'
 import { allocateWave, type AllocationSpot } from '@/lib/booking-rules'
@@ -280,6 +281,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
                 : 'Loading the queue…'}
             </DialogDescription>
           </div>
+          <QueueHelp rush={data?.rush ?? false} started={data?.show.started ?? false} />
           <Button
             type="button"
             variant="ghost"
@@ -295,6 +297,22 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
             <X className="size-4" />
           </Button>
         </div>
+
+        {/* ── Garantien ──
+            Bookerne var redde for at samme komiker kunne bli booket på to
+            plasser. Det står derfor framme, over hele lineupen, ikke bak Help.
+            Motoren hopper over alle som alt er spurt på showet (`involved` i
+            loadShowPlan: tilbud ute, booket, sagt nei eller ikke svart), og
+            fordeler hver bølge med `allocateWave`. */}
+        {data && (
+          <div className="flex items-center gap-2 border-b bg-emerald-50 px-4 py-2 text-xs text-emerald-900 sm:px-5 dark:bg-emerald-950/40 dark:text-emerald-200">
+            <ShieldCheck className="size-4 shrink-0" aria-hidden />
+            <p>
+              <span className="font-semibold">One spot per comedian.</span>{' '}
+              No one gets offers for two spots on this show — not even after saying no.
+            </p>
+          </div>
+        )}
 
         {/* ── Body ── */}
         {error ? (
@@ -361,6 +379,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
                   onMove={(from, to) => move(selected.requirementId, from, to)}
                   onRemove={(index) => remove(selected.requirementId, index)}
                   onAdd={(artistId) => add(selected.requirementId, artistId)}
+                  onSelectSpot={setSelectedId}
                 />
               )}
             </div>
@@ -375,7 +394,7 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
             ) : data ? (
               <>
                 <span className="font-semibold text-foreground">{offersNow} offer{offersNow === 1 ? '' : 's'}</span>
-                {` go${offersNow === 1 ? 'es' : ''} out now · ${spotsNow} spot${spotsNow === 1 ? '' : 's'}`}
+                {` to ${offersNow === 1 ? 'one comedian' : `${countWord(offersNow)} different comedians`} · ${spotsNow} spot${spotsNow === 1 ? '' : 's'}`}
               </>
             ) : null}
           </div>
@@ -396,6 +415,49 @@ export function LineupQueueDialog({ showId, open, onOpenChange, mode, canStartBo
   )
 }
 
+/**
+ * Forklaringen bak (?) i hodet.
+ *
+ * Hjelpeteksten på hver plass ble for mye å lese hver gang. Køen sier selv
+ * hvem som spørres og hvem som hoppes over; hvordan det virker, står her,
+ * ett klikk unna. Garantien om én plass per komiker står ikke her, men
+ * framme i båndet øverst — den skal ses uten å lete.
+ */
+function QueueHelp({ rush, started }: { rush: boolean; started: boolean }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+          <CircleHelp className="size-4" />
+          Help
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 gap-3 text-sm leading-relaxed">
+        <div className="flex gap-2.5">
+          <GripVertical className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div>
+            <p className="font-semibold">Who gets asked first</p>
+            <p className="text-muted-foreground">
+              {rush
+                ? `Drag to set the order. The line-up deadline is close, so the top of each queue gets offers at once when you ${started ? 'save' : 'start'}.`
+                : `Drag to set the order. The top of each queue gets offers when you ${started ? 'save' : 'start'}. If none of them accept, the next ones get an offer the next morning, until the spot is filled.`}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2.5">
+          <ArrowRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div>
+            <p className="font-semibold">Skipped here</p>
+            <p className="text-muted-foreground">
+              A comedian at the top of two queues gets the offer for one of them. On the other spot they are listed under Skipped here, with the spot they get instead.
+            </p>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 /** Den som spørres først på plassen: den som får tilbudet nå, ellers toppen av køen. */
 function firstInLine(spot: LineupQueueSpot, rows: QueueComedian[], offeredFor: ReadonlyMap<string, string>) {
   const offered = rows.find((row) => offeredFor.get(row.artistId) === spot.requirementId)
@@ -404,6 +466,12 @@ function firstInLine(spot: LineupQueueSpot, rows: QueueComedian[], offeredFor: R
 }
 
 type Divider = 'now' | 'tomorrow' | 'later' | 'rush'
+
+/**
+ * Så mange i køen vises før «Show more». Bookerne leste en lang kø som en
+ * liste over alle som kanskje fikk tilbud; de fem øverste er dem det gjelder.
+ */
+const VISIBLE_QUEUE = 5
 
 function dividerText(kind: Divider, started: boolean) {
   switch (kind) {
@@ -431,6 +499,7 @@ function SpotQueue({
   onMove,
   onRemove,
   onAdd,
+  onSelectSpot,
 }: {
   spot: LineupQueueSpot
   rows: QueueComedian[]
@@ -444,6 +513,7 @@ function SpotQueue({
   onMove: (from: number, to: number) => void
   onRemove: (index: number) => void
   onAdd: (artistId: string) => void
+  onSelectSpot: (requirementId: string) => void
 }) {
   const [dragIndex, setDragIndex] = React.useState<number | null>(null)
   const [dropIndex, setDropIndex] = React.useState<number | null>(null)
@@ -457,31 +527,39 @@ function SpotQueue({
   // så den kan ikke ordnes her — det gjøres når den startes fra kortet.
   const editable = !spot.note || spot.note === 'paused'
 
-  // Skillelinjene telles bare over dem som faktisk spørres her: en som får
-  // tilbudet på en annen plass, hoppes over av motoren.
-  // Den første linjen står alltid øverst: også en som går til en annen
-  // plass, står i bølgen — hen bare hoppes over her.
-  let counted = 0
-  const items = rows.map((row, index) => {
-    const elsewhere = offeredFor.get(row.artistId)
-    const takenElsewhere = elsewhere != null && elsewhere !== spot.requirementId
-    let divider: Divider | null = null
-    if (index === 0 && spot.nowCount > 0) divider = rush ? 'rush' : 'now'
-    if (!takenElsewhere) {
-      if (counted > 0 || spot.nowCount === 0) {
-        if (rush) {
-          if (counted === spot.nowCount) divider = 'later'
-        } else if (counted === spot.nowCount && spot.tomorrowCount > 0) divider = 'tomorrow'
-        else if (counted === spot.nowCount + spot.tomorrowCount) divider = 'later'
-      }
-      counted++
+  const [showAll, setShowAll] = React.useState(false)
+
+  // En komiker får aldri to tilbud på samme show (`allocateWave`). Den som får
+  // tilbudet på en annen plass, hoppes over her — og flyttes ned i en egen
+  // liste, så den som står øverst alltid er den som spørres først.
+  const here: Array<{ row: QueueComedian; index: number }> = []
+  const elsewhere: Array<{ row: QueueComedian; index: number; spot: LineupQueueSpot | null }> = []
+  rows.forEach((row, index) => {
+    const offeredOn = offeredFor.get(row.artistId)
+    if (offeredOn != null && offeredOn !== spot.requirementId) {
+      elsewhere.push({ row, index, spot: spotById.get(offeredOn) ?? null })
+    } else {
+      here.push({ row, index })
     }
-    return { row, index, divider, takenFor: takenElsewhere ? spotById.get(elsewhere) ?? null : null }
   })
 
-  const helpText = spot.nowCount > 0
-    ? `Drag to set who gets asked first. The top ${countWord(spot.nowCount)} get${spot.nowCount === 1 ? 's' : ''} ${spot.nowCount === 1 ? 'an offer' : 'offers'} when you ${started ? 'save' : 'start'}, the next ones only if nobody says yes.`
-    : 'Drag to set who gets asked next. The next offers go out as soon as someone says no or the next wave starts.'
+  const items = here.map(({ row, index }, place) => {
+    let divider: Divider | null = null
+    if (place === 0 && spot.nowCount > 0) divider = rush ? 'rush' : 'now'
+    else if (place > 0 || spot.nowCount === 0) {
+      if (rush) {
+        if (place === spot.nowCount) divider = 'later'
+      } else if (place === spot.nowCount && spot.tomorrowCount > 0) divider = 'tomorrow'
+      else if (place === spot.nowCount + spot.tomorrowCount) divider = 'later'
+    }
+    // Opp/ned bytter med naboen i den synlige køen, ikke med en som er
+    // flyttet ned fordi hen spørres på en annen plass.
+    const before = here[place - 1]?.index
+    const after = here[place + 1]?.index
+    return { row, index, place, divider, before, after }
+  })
+  const shown = showAll ? items : items.slice(0, VISIBLE_QUEUE)
+  const hiddenCount = items.length - shown.length
 
   return (
     <div className="space-y-3">
@@ -511,9 +589,7 @@ function SpotQueue({
         <p className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
           This spot is filled, or every seat has an offer waiting for an answer.
         </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">{helpText}</p>
-      )}
+      ) : null}
 
       {spot.asked.length > 0 && (
         <ul className="space-y-1.5" aria-label="Already asked">
@@ -531,7 +607,7 @@ function SpotQueue({
 
       {editable && (
         <ol className="space-y-1.5" aria-label={`Queue for ${spot.roleName}`}>
-          {items.map(({ row, index, divider, takenFor }) => (
+          {shown.map(({ row, index, place, divider, before, after }) => (
             <React.Fragment key={row.artistId}>
               {divider && (
                 <li aria-hidden className="flex items-center gap-2 pt-1.5 text-[11px] font-medium text-muted-foreground">
@@ -564,13 +640,12 @@ function SpotQueue({
                   'flex items-center gap-2 rounded-xl border bg-background px-1.5 py-1.5 transition-colors sm:gap-2.5 sm:px-2',
                   dragIndex === index && 'opacity-50',
                   dropIndex === index && dragIndex !== index && 'border-[var(--ev-accent-fill)]',
-                  takenFor && 'bg-muted/30',
                 )}
               >
                 <GripVertical className="hidden size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing sm:block" aria-hidden />
                 {/* Nummeret viker for bildet på mobil: rekkefølgen ses uansett,
                     ansiktet er det bookeren kjenner igjen. */}
-                <span className="hidden w-5 shrink-0 text-center text-xs font-semibold tabular-nums text-muted-foreground sm:block">{index + 1}</span>
+                <span className="hidden w-5 shrink-0 text-center text-xs font-semibold tabular-nums text-muted-foreground sm:block">{place + 1}</span>
                 <Avatar comedian={row} />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
@@ -585,16 +660,14 @@ function SpotQueue({
                   {/* Brytes på mobil i stedet for å kuttes: det er grunnen til
                       at raden står der, og den må kunne leses. */}
                   <p className="text-[11px] leading-snug text-muted-foreground sm:truncate">
-                    {takenFor
-                      ? `Gets the offer for #${takenFor.position} ${takenFor.roleName} instead`
-                      : lastHereText(row.lastClubBookingDate, today)}
+                    {lastHereText(row.lastClubBookingDate, today)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center">
-                  <IconButton label={`Move ${row.name} up`} onClick={() => onMove(index, index - 1)} disabled={disabled || index === 0}>
+                  <IconButton label={`Move ${row.name} up`} onClick={() => before != null && onMove(index, before)} disabled={disabled || before == null}>
                     <ChevronUp className="size-4" />
                   </IconButton>
-                  <IconButton label={`Move ${row.name} down`} onClick={() => onMove(index, index + 1)} disabled={disabled || index === rows.length - 1}>
+                  <IconButton label={`Move ${row.name} down`} onClick={() => after != null && onMove(index, after)} disabled={disabled || after == null}>
                     <ChevronDown className="size-4" />
                   </IconButton>
                   <IconButton label={`Remove ${row.name} from the queue`} onClick={() => onRemove(index)} disabled={disabled}>
@@ -604,12 +677,68 @@ function SpotQueue({
               </li>
             </React.Fragment>
           ))}
-          {rows.length === 0 && (
+          {hiddenCount > 0 && (
+            <li>
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="w-full rounded-xl px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              >
+                Show {hiddenCount} more in the queue
+              </button>
+            </li>
+          )}
+          {showAll && items.length > VISIBLE_QUEUE && (
+            <li>
+              <button
+                type="button"
+                onClick={() => setShowAll(false)}
+                className="w-full rounded-xl px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              >
+                Show only the top {VISIBLE_QUEUE}
+              </button>
+            </li>
+          )}
+          {here.length === 0 && (
             <li className="rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
               No one on your list can take this spot that evening.
             </li>
           )}
         </ol>
+      )}
+
+      {editable && elsewhere.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5 pt-1.5 text-[11px] font-medium text-muted-foreground">
+            <ShieldCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+            Skipped here
+          </p>
+          <ul className="space-y-1.5" aria-label="Asked for another spot">
+            {elsewhere.map(({ row, index, spot: other }) => (
+              <li key={row.artistId} className="flex items-center gap-2.5 rounded-xl border border-dashed px-2.5 py-1.5">
+                <span className="opacity-60"><Avatar comedian={row} /></span>
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-muted-foreground">{row.name}</span>
+                  {other ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectSpot(other.requirementId)}
+                      className="inline-flex max-w-full items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      <ArrowRight className="size-3 shrink-0" aria-hidden />
+                      <span className="truncate">Gets #{other.position} {other.roleName} instead</span>
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Gets another spot instead</span>
+                  )}
+                </div>
+                <IconButton label={`Remove ${row.name} from the queue`} onClick={() => onRemove(index)} disabled={disabled}>
+                  <X className="size-4" />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {editable && addable.length > 0 && (
@@ -693,7 +822,7 @@ export function StartBookingCard({
   spotIds,
   suggestFromSubmissions,
 }: {
-  /** «Based on submissions» under knappen. Utelatt = vises ikke. */
+  /** «Applicants first» under knappen. Utelatt = vises ikke. */
   suggestFromSubmissions?: boolean
   showId: string
   canStartBooking: boolean

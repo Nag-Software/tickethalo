@@ -42,9 +42,9 @@ describe('suggest line-up based on submissions', () => {
     expect(queries.some((query) => query.table === 'show_requirements')).toBe(false)
   })
 
-  it('puts Submissions before Lineup in the show tabs', () => {
+  it('puts Lineup before Submissions in the show tabs', () => {
     const page = readFileSync('app/admin-app/(protected)/shows/[id]/page.tsx', 'utf8')
     const keys = [...page.matchAll(/\{ key: '(\w+)', label:/g)].map((match) => match[1])
-    expect(keys).toEqual(['overview', 'submissions', 'lineup', 'communication', 'marketing', 'tickets'])
+    expect(keys).toEqual(['overview', 'lineup', 'submissions', 'communication', 'marketing', 'tickets'])
   })
 })

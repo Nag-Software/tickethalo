@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { Check, Megaphone } from 'lucide-react'
+import { Megaphone } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import {
   setSubmissionsAudienceAction,
@@ -105,30 +106,46 @@ export function LineupCallout({
  * virke i det den trykkes. Lukking rører ikke søknadene som allerede ligger
  * der. Søknadene gjelder showet, ikke plassen, så tellingen står i
  * `SubmissionsBar`, ikke her.
+ *
+ * Bryteren slår om med en gang (`useOptimistic`). Før ventet den på at siden
+ * ble hentet på nytt, og bookerne trodde den ikke virket. Den er tegnet som en
+ * bryter med «On»/«Off», så den ikke kan leses som et merke som forteller at
+ * plassen allerede er åpen.
+ *
+ * `onChange` er for kort som holder sin egen kopi av plassen
+ * (`RequirementsTab`): uten den sto kopien med den gamle verdien, og neste
+ * autolagring av et annet felt skrev den tilbake.
  */
 export function SubmissionsToggle({
   showId,
   reqId,
   open,
   disabled,
+  onChange,
 }: {
   showId: string
   reqId: string
   open: boolean
   disabled: boolean
+  onChange?: (open: boolean) => void
 }) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
+  const [shown, setShown] = React.useOptimistic(open)
 
   function toggle() {
+    const next = !shown
     const fd = new FormData()
     fd.set('show_id', showId)
     fd.set('req_id', reqId)
-    fd.set('submissions_open', String(!open))
+    fd.set('submissions_open', String(next))
 
     startTransition(async () => {
+      setShown(next)
       try {
         await toggleRequirementSubmissionsAction(fd)
+        onChange?.(next)
+        toast.success(next ? 'Spot open for submissions' : 'Spot closed for submissions')
         router.refresh()
       } catch (err: unknown) {
         toast.error((err as Error)?.message ?? 'Could not change the spot')
@@ -137,25 +154,38 @@ export function SubmissionsToggle({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={disabled || pending}
-        aria-pressed={open}
-        title={open ? 'Comedians can apply for this show, and you can give them this spot' : 'Open this spot for submissions'}
+    <button
+      type="button"
+      role="switch"
+      onClick={toggle}
+      disabled={disabled || pending}
+      aria-checked={shown}
+      title={shown ? 'Comedians can apply for this spot. Click to close it.' : 'Let comedians apply for this spot'}
+      className={cn(
+        'inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-2 rounded-4xl border px-2.5 text-xs font-medium transition-colors',
+        'disabled:cursor-not-allowed disabled:opacity-60',
+        shown
+          ? 'border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15'
+          : 'border-border bg-background text-muted-foreground hover:text-foreground'
+      )}
+    >
+      <span>Submissions</span>
+      <span
+        aria-hidden
         className={cn(
-          'inline-flex h-[26px] cursor-pointer items-center gap-1.5 rounded-4xl px-2.5 text-xs font-medium transition-colors',
-          'disabled:cursor-not-allowed disabled:opacity-60',
-          open
-            ? 'bg-primary text-primary-foreground hover:bg-primary/80'
-            : 'border border-border bg-input/30 text-muted-foreground hover:text-foreground'
+          'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors',
+          shown ? 'bg-primary' : 'bg-muted-foreground/30'
         )}
       >
-        {open && <Check className="size-3.5" aria-hidden />}
-        {open ? 'Open' : 'Open for submissions'}
-      </button>
-    </div>
+        <span
+          className={cn(
+            'absolute size-2.5 rounded-full bg-background shadow-sm transition-transform',
+            shown ? 'translate-x-3' : 'translate-x-0.5'
+          )}
+        />
+      </span>
+      <span className={cn('w-5 text-left', shown && 'text-primary')}>{shown ? 'On' : 'Off'}</span>
+    </button>
   )
 }
 
@@ -321,38 +351,42 @@ export function SuggestFromSubmissionsToggle({
 
   const id = `suggest-from-submissions-${React.useId()}`
 
+  // Teksten sier hva som skjer, ikke hva innstillingen heter: en booker som
+  // er ny på plattformen skal skjønne det uten å kjenne «forslaget».
   if (variant === 'compact') {
     return (
-      <label htmlFor={id} className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-        <input
+      <div className="flex items-start gap-2">
+        <Checkbox
           id={id}
-          type="checkbox"
           checked={checked}
           disabled={disabled || pending}
-          onChange={(event) => toggle(event.target.checked)}
-          className="size-3.5"
+          onCheckedChange={(value) => toggle(value === true)}
+          className="mt-0.5"
         />
-        Based on submissions
-      </label>
+        <label htmlFor={id} className="cursor-pointer text-xs leading-snug">
+          <span className="font-medium text-foreground">Applicants first</span>
+          <span className="block text-muted-foreground">Comedians who applied to this show are suggested before the rest of your list.</span>
+        </label>
+      </div>
     )
   }
 
   return (
-    <label htmlFor={id} className={cn(spotCardClass, 'flex cursor-pointer items-start gap-3 px-4 py-3')}>
-      <input
+    <div className={cn(spotCardClass, 'flex items-start gap-3 px-4 py-3')}>
+      <Checkbox
         id={id}
-        type="checkbox"
         checked={checked}
         disabled={disabled || pending}
-        onChange={(event) => toggle(event.target.checked)}
-        className="mt-0.5 size-4 shrink-0"
+        onCheckedChange={(value) => toggle(value === true)}
+        className="mt-0.5"
       />
-      <span className="space-y-0.5">
-        <span className="block text-sm font-semibold">Suggest line-up based on submissions</span>
+      <label htmlFor={id} className="cursor-pointer space-y-0.5">
+        <span className="block text-sm font-semibold">Put applicants first in the line-up</span>
         <span className="block text-xs text-muted-foreground">
-          Comedians that have applied to be on this show will be suggested for spots that match their profile.
+          When you suggest a line-up, comedians who applied to this show are picked first for the spots that fit them.
+          Nothing is sent until you start booking.
         </span>
-      </span>
-    </label>
+      </label>
+    </div>
   )
 }

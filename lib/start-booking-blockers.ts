@@ -27,7 +27,6 @@ function count(n: number, one: string, many: string) {
 
 export function startBookingBlockers(spots: StartBookingSpot[], percentLimit: number): string[] {
   const missingRole = spots.filter((spot) => !spot.role_name?.trim()).length
-  const missingType = spots.filter((spot) => !spot.compensation_type).length
   const missingAmount = spots.filter((spot) =>
     (spot.compensation_type === 'fixed' && spot.compensation_amount == null)
     || (spot.compensation_type === 'percent' && spot.compensation_percent == null),
@@ -37,7 +36,6 @@ export function startBookingBlockers(spots: StartBookingSpot[], percentLimit: nu
   const blockers: string[] = []
   if (spots.length === 0) blockers.push('Add at least one lineup spot')
   if (missingRole > 0) blockers.push(`${count(missingRole, 'is', 'are')} missing a role name`)
-  if (missingType > 0) blockers.push(`${count(missingType, 'is', 'are')} missing a fee model`)
   if (missingAmount > 0) blockers.push(`${count(missingAmount, 'is', 'are')} missing an amount or percentage`)
   if (percentTotal > percentLimit + 0.0001) {
     blockers.push(`Percentage allocation is ${Math.round(percentTotal * 10) / 10}% (max ${percentLimit}%)`)

@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { Check, ChevronLeft, Mail, MapPin, Phone } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -237,14 +238,14 @@ export default async function ArtistDetailPage({ params }: { params: Promise<{ i
                       <div className="flex flex-wrap gap-1.5">
                         {roleOptions.map((role) => (
                           <label key={role.value} className="cursor-pointer">
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               name="category"
                               value={role.value}
                               defaultChecked={normalizedCategories.includes(role.value)}
                               className="peer sr-only"
                             />
-                            <span className="inline-flex select-none items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:bg-muted peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground">
+                            {/* Radix-checkboxen er en knapp: tilstanden står i `data-state`, ikke `:checked`. */}
+                            <span className="inline-flex select-none items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:bg-muted peer-focus-visible:ring-[3px] peer-focus-visible:ring-ring/50 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary peer-data-[state=checked]:text-primary-foreground">
                               {role.label}
                             </span>
                           </label>

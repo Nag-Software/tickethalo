@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Building2, Trash2, Upload } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { ClubLocationsField } from '@/components/admin/club-locations-field'
@@ -195,11 +196,9 @@ export function ClubProfileForm({ club, locations, clubUrl, defaultLineupDeadlin
             {/* Uten markøren kan ikke handlingen skille en avkrysning som er tatt bort fra et skjema uten feltet. */}
             <input type="hidden" name="lineup_reminder_default_field" value="1" />
             <label className="flex cursor-pointer items-start gap-3 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 name="lineup_reminder_default"
-                defaultChecked={club.lineup_reminder_default}
-                className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+                defaultChecked={club.lineup_reminder_default} className="mt-0.5 shrink-0"
               />
               <span>
                 <span className="font-medium">Remind the line-up 5 days before each show</span>

@@ -90,7 +90,8 @@ export function requirementFeeLabel(requirement: RequirementFeeInput, currency: 
     return new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount / 100)
   }
 
-  return 'Not set'
+  // Ingen fee-modell betyr en ubetalt plass («Unpaid» i lineupen).
+  return 'No fee'
 }
 
 /**

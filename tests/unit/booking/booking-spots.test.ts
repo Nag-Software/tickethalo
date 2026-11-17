@@ -4,7 +4,7 @@ import { requirementFactory, resetFactorySequence } from '@/tests/factories/doma
 
 describe('booking spot fees', () => {
   it.each([
-    [{ compensation_type: null, compensation_amount: null, compensation_percent: null }, 'Not set'],
+    [{ compensation_type: null, compensation_amount: null, compensation_percent: null }, 'No fee'],
     [{ compensation_type: 'percent', compensation_amount: null, compensation_percent: null }, 'Not set'],
     [{ compensation_type: 'percent', compensation_amount: null, compensation_percent: 0 }, 'No fee'],
     [{ compensation_type: 'percent', compensation_amount: null, compensation_percent: 12.5 }, '12.5% of sales'],

@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { ToastActionForm } from '@/components/toast-action-form'
 import { YouTubePlayerCard } from '@/components/youtube-player-card'
@@ -63,11 +64,9 @@ export default async function ArtistProfilePage() {
                   />
                 </Field>
                 <label className="flex items-start gap-3 self-end rounded-xl bg-[var(--ev-bg)] p-3 text-[13px] leading-relaxed ring-1 ring-inset ring-[var(--ev-line)]">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     name="whatsapp_consent"
-                    defaultChecked={Boolean(artist.whatsapp_consent_at)}
-                    className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+                    defaultChecked={Boolean(artist.whatsapp_consent_at)} className="mt-0.5 shrink-0"
                   />
                   <span>
                     Clubs that book me can see this number and add me to a group chat for the show. When I host a

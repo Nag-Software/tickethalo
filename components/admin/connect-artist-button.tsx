@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -84,11 +85,9 @@ export function ConnectArtistButton({
               key={role.value}
               className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-muted"
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={roles.includes(role.value)}
-                onChange={() => toggle(role.value)}
-                className="size-3.5"
+                onCheckedChange={() => toggle(role.value)}
               />
               {role.label}
             </label>
