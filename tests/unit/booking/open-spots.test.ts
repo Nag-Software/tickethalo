@@ -43,15 +43,15 @@ describe('open spot artist gate', () => {
 describe('which shows take applications', () => {
   // Et show som er fullbooket eller lagt ut kan miste en komiker. Da skal
   // plassen kunne fylles fra ventelisten, akkurat som motoren fyller sine.
-  it('follows the same statuses as the booking engine', () => {
-    expect([...APPLY_SHOW_STATUSES]).toEqual([...ENGINE_STATUSES])
+  it('follows the booking engine, plus planning', () => {
+    expect([...APPLY_SHOW_STATUSES]).toEqual(['draft', ...ENGINE_STATUSES])
   })
 
-  it.each(['booking', 'fullbooked', 'published'])('takes applications while the show is %s', (status) => {
+  it.each(['draft', 'booking', 'fullbooked', 'published'])('takes applications while the show is %s', (status) => {
     expect(showClosedReason({ status, date: FUTURE, submissions_close_at: null }, NOW)).toBeNull()
   })
 
-  it.each(['draft', 'completed', 'cancelled'])('is closed while the show is %s', (status) => {
+  it.each(['completed', 'cancelled'])('is closed while the show is %s', (status) => {
     expect(showClosedReason({ status, date: FUTURE, submissions_close_at: null }, NOW)).toBe(
       'This show is not taking submissions.',
     )
@@ -194,8 +194,13 @@ describe('applying for a show', () => {
     await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('This show is not open for submissions.')
   })
 
-  it('refuses a draft', async () => {
+  it('takes applications on a show in planning', async () => {
     const { db } = applyDb({ status: 'draft' })
+    await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).resolves.toBeTruthy()
+  })
+
+  it('refuses a cancelled show', async () => {
+    const { db } = applyDb({ status: 'cancelled' })
     await expect(assertArtistCanApply(db, 'artist-1', 'show-1')).rejects.toThrow('This show is not taking submissions.')
   })
 

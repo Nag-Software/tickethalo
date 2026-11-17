@@ -18,7 +18,8 @@ import { normalizeGigTypes, type GigType } from '@/lib/gig-types'
  * spredd i sidene.
  *
  * Et show er synlig når *alle* disse holder:
- *   1. showet er i gang med booking eller lagt ut (`APPLY_SHOW_STATUSES`) og
+ *   1. showet planlegges, er i gang med booking eller lagt ut
+ *      (`APPLY_SHOW_STATUSES`) og
  *      ikke har vært
  *   2. minst én plass er åpnet av klubben (`submissions_open`)
  *   3. fristen har ikke gått (`submissions_close_at`)
@@ -47,13 +48,21 @@ type Db = ReturnType<typeof createAdminClient>
 // ─── Reglene ─────────────────────────────────────────────────────────────
 
 /**
- * Showene som tar imot søknader. Samme liste som `ENGINE_STATUSES` i
- * lib/booking-engine.ts, og av samme grunn: et show som er fullbooket eller
- * lagt ut kan miste en komiker, og da skal plassen kunne fylles igjen — her
- * fra ventelisten. Kopiert i stedet for importert, så den offentlige
- * klubbsiden ikke drar motoren og e-postoppsettet med seg.
+ * Showene som tar imot søknader.
+ *
+ * Statusene motoren kjører på (`ENGINE_STATUSES` i lib/booking-engine.ts):
+ * et show som er fullbooket eller lagt ut kan miste en komiker, og da skal
+ * plassen kunne fylles igjen — her fra ventelisten.
+ *
+ * Pluss planlegging (`draft`), valgt av prosjektleder 2026-11-17: søknadene
+ * kommer før lineupen, og «Applicants first» foreslår lineupen fra søkerne
+ * før bookingen startes. Da må et show i planlegging kunne få søknader.
+ * Bookeren kunne allerede åpne plassene der, men søknadene ble stille avvist.
+ *
+ * Kopiert i stedet for importert, så den offentlige klubbsiden ikke drar
+ * motoren og e-postoppsettet med seg.
  */
-export const APPLY_SHOW_STATUSES = ['booking', 'fullbooked', 'published'] as const
+export const APPLY_SHOW_STATUSES = ['draft', 'booking', 'fullbooked', 'published'] as const
 
 /** Statusene til en søknad bookeren fortsatt kan ta stilling til. */
 export const OPEN_SUBMISSION_STATUSES: SubmissionStatus[] = ['pending', 'shortlisted']
