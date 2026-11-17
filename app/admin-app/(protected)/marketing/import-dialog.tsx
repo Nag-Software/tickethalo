@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 import { FileUp, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -299,15 +300,13 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
       {/* Grunnlaget for å sende (markedsføringsloven § 15): klubben bekrefter
           at folkene har sagt ja. Teksten lagres på importen. */}
       <label className="flex items-start gap-3 rounded-lg border bg-muted/30 p-3">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={consent}
           disabled={importing}
-          onChange={(event) => {
-            setConsent(event.target.checked)
-            if (!event.target.checked) setAdsConsent(false)
-          }}
-          className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+          onCheckedChange={(value) => {
+            setConsent((value === true))
+            if (!(value === true)) setAdsConsent(false)
+          }} className="mt-0.5 shrink-0"
         />
         <span>
           <span className="font-medium">{importConsentStatement(clubName)}</span>
@@ -321,12 +320,10 @@ function ImportFlow({ clubName, onDone }: { clubName: string; onDone: () => void
       {/* Annonser er et eget formål og et eget ja. Av som standard, og bare
           sammen med e-postbekreftelsen — se migrasjon 090. */}
       <label className={`-mt-2 flex items-start gap-3 rounded-lg border p-3 ${consent ? 'bg-muted/30' : 'opacity-50'}`}>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={adsConsent}
           disabled={importing || !consent}
-          onChange={(event) => setAdsConsent(event.target.checked)}
-          className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+          onCheckedChange={(value) => setAdsConsent((value === true))} className="mt-0.5 shrink-0"
         />
         <span>
           <span className="font-medium">{importAdsConsentStatement(clubName)}</span>

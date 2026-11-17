@@ -271,8 +271,8 @@ describe('the club page list', () => {
       ['full', true],
     ])
     expect(calls[0].spots[0]).toMatchObject({ spotsLeft: 1, waitlist: false, feeLabel: requirementFeeLabel({ compensation_type: 'fixed', compensation_amount: 50000, compensation_percent: null }, 'NOK') })
-    // «Not set» er bookerens intern-tekst og skal ikke stå offentlig.
-    expect(calls[1].spots[0]).toMatchObject({ spotsLeft: 0, waitlist: true, feeLabel: null })
+    // Ingen fee-modell er en ubetalt plass, og det står rett ut.
+    expect(calls[1].spots[0]).toMatchObject({ spotsLeft: 0, waitlist: true, feeLabel: 'No fee' })
   })
 
   it('carries the gig type, and none when the show has not set it', async () => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { Link2, MapPin } from 'lucide-react'
 import { FIELD_GROUP_CLASS, FIELD_HINT_CLASS, FIELD_INPUT_CLASS, FieldIcon } from '@/components/admin/form-fields'
@@ -210,13 +211,11 @@ export function VenuePicker({
 
         {canSave && (
           <label className={cn(FIELD_HINT_CLASS, 'flex items-center gap-2 text-muted-foreground')}>
-            <input
-              type="checkbox"
+            <Checkbox
               name="save_location"
               value="true"
               checked={current.save_location === 'true'}
-              onChange={(event) => set({ ...current, save_location: event.target.checked ? 'true' : '' })}
-              className="size-3.5 rounded border-input"
+              onCheckedChange={(value) => set({ ...current, save_location: (value === true) ? 'true' : '' })}
             />
             Save to My club, so it can be picked next time
           </label>

@@ -8,14 +8,13 @@ describe('what stops start booking', () => {
     expect(startBookingBlockers([spot, { ...spot, role_name: 'Headliner' }], 100)).toEqual([])
   })
 
-  it('names a missing amount, fee model and role', () => {
+  it('names a missing amount and role, and lets an unpaid spot through', () => {
     expect(startBookingBlockers([
       { ...spot, compensation_type: 'fixed', compensation_percent: null },
       { ...spot, compensation_type: null },
       { ...spot, role_name: ' ' },
     ], 100)).toEqual([
       '1 spot is missing a role name',
-      '1 spot is missing a fee model',
       '1 spot is missing an amount or percentage',
     ])
   })

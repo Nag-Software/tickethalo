@@ -51,7 +51,8 @@ function artistLabel(artist: LineupArtist) {
 
 function feeModeOf(fee: BookingSpot['fee']): FeeMode {
   if (fee.type === 'percent') return 'percent'
-  if (fee.type === 'fixed' && fee.amount === 0) return 'none'
+  // Ingen fee-modell er en ubetalt plass, samme som et fast beløp på 0.
+  if (fee.type == null || (fee.type === 'fixed' && fee.amount === 0)) return 'none'
   return 'fixed'
 }
 
@@ -714,7 +715,7 @@ function FeeCell({
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
           {(
             [
-              { value: 'none', label: 'No fee' },
+              { value: 'none', label: 'Unpaid' },
               { value: 'fixed', label: 'Fixed' },
               { value: 'percent', label: '% of sales' },
             ] as const

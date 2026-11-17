@@ -300,11 +300,10 @@ export default async function ShowDetailPage({
 
 
   const TABS: { key: ShowTab; label: string; badge?: number }[] = [
-    // Submissions før Lineup: søknadene kommer først, så settes lineupen
-    // (ClickUp «Flytte submissions - rekkefølge faner»).
+    // Lineup før Submissions (prosjektleder, 2026-11-17).
     { key: 'overview', label: 'Overview' },
-    { key: 'submissions', label: 'Submissions', badge: pendingSubmissionTotal || undefined },
     { key: 'lineup', label: 'Lineup', badge: (offerStats.sent || activeLineup.length) ? Math.max(offerStats.sent, activeLineup.length) : undefined },
+    { key: 'submissions', label: 'Submissions', badge: pendingSubmissionTotal || undefined },
     // Tallet er endringer lineupen ikke har fått beskjed om — se lib/lineup-changes.ts.
     { key: 'communication', label: 'Communication', badge: changeCount(show.lineup_change_notice) || undefined },
     { key: 'marketing', label: 'Marketing' },
@@ -450,7 +449,10 @@ export default async function ShowDetailPage({
         )}
 
         {tab === 'lineup' && (
-          show.status === 'draft'
+          // Planleggingsvisningen viser ikke bookede komikere. Et show som er
+          // satt tilbake til planlegging med noen booket, vises derfor i
+          // booking-visningen — se `moveShowToPlanningAction`.
+          show.status === 'draft' && !(lineup ?? []).some((spot) => ['confirmed', 'completed', 'paid'].includes(spot.status))
             ? <RequirementsTab
                 key={(requirements ?? []).map((r) => [
                   r.id,

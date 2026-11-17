@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -133,7 +132,6 @@ const WIZARD_INITIAL: WizardState = {
  * hver rute bærer to linjer informasjon på under halve høyden. Seks plasser
  * skal få plass på skjermen uten å scrolle.
  */
-const FIELD_CONTROL_CLASS = 'h-[30px] w-full rounded-lg border border-input bg-background px-2.5 text-[13px] shadow-none'
 
 const ENERGY_OPTIONS: { value: RequirementEnergy; label: string; icon: string }[] = [
   { value: 'any', label: 'Any', icon: '∞' },
@@ -175,7 +173,7 @@ const COMPENSATION_TYPE_OPTIONS: Array<{
 }> = [
   { value: 'fixed', label: 'Fixed amount', hint: 'Set a specific fee per comedian.', accent: 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20' },
   { value: 'percent', label: 'Percentage', hint: 'Share a cut of the total between the comedians.', accent: 'bg-sky-500/10 text-sky-700 ring-sky-500/20' },
-  { value: '', label: 'Set later', hint: 'Leave the spot without a fee for now.', accent: 'bg-muted text-muted-foreground ring-border' },
+  { value: '', label: 'Unpaid', hint: 'The comedian plays this spot without a fee.', accent: 'bg-muted text-muted-foreground ring-border' },
 ]
 
 const REQUIREMENT_DRAFTS_STORAGE_PREFIX = 'show-requirement-drafts:'
@@ -344,10 +342,6 @@ function compensationIssue(
     return { tone: 'destructive', message: blockingIssue }
   }
 
-  if (state.compensation_type === '') {
-    return { tone: 'warning', message: 'Pick a fee model' }
-  }
-
   if (state.compensation_type === 'fixed' && toPlainNumber(state.compensation_amount) == null) {
     return { tone: 'warning', message: 'Fixed amount missing' }
   }
@@ -370,7 +364,7 @@ function compensationSummary(state: ReqState, currency: string) {
     return percent == null ? 'Percentage missing' : `${formatPercent(percent)}%`
   }
 
-  return 'Not set'
+  return 'Unpaid'
 }
 
 function moveRequirementId(ids: string[], draggedId: string, targetId: string, edge: DragEdge) {
@@ -564,6 +558,17 @@ export function RequirementsTab({
     },
     [orderedIds, persistReq, percentLimit]
   )
+
+  /**
+   * Bryteren skriver selv (`toggleRequirementSubmissionsAction`). Kopien her
+   * må følge etter, ellers sender neste autolagring den gamle verdien og
+   * lukker plassen igjen.
+   */
+  function syncSubmissionsOpen(id: string, open: boolean) {
+    setReqStates((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], submissions_open: open } } : prev))
+    const saved = savedStates.current[id]
+    if (saved) savedStates.current[id] = { ...saved, submissions_open: open }
+  }
 
   function updateField(id: string, field: keyof ReqState, value: string) {
     const current = reqStates[id]
@@ -776,7 +781,6 @@ export function RequirementsTab({
   const totalPercent = totalPercentAllocation(orderedIds, reqStates)
   // ── Booking blockers ────────────────────────────────────────────────────
   const missingRoleName = orderedRequirements.filter((req) => !(reqStates[req.id]?.role_name ?? req.role_name).trim()).length
-  const missingCompType = orderedRequirements.filter((req) => !(reqStates[req.id]?.compensation_type ?? req.compensation_type ?? '')).length
   const missingAmount = orderedRequirements.filter((req) => {
     const state = reqStates[req.id]
     if (!state) return false
@@ -792,7 +796,6 @@ export function RequirementsTab({
   const bookingBlockers: string[] = []
   if (orderedRequirements.length === 0) bookingBlockers.push('Add at least one lineup spot')
   if (missingRoleName > 0) bookingBlockers.push(`${missingRoleName} spot${missingRoleName > 1 ? 's are' : ' is'} missing a role name`)
-  if (missingCompType > 0) bookingBlockers.push(`${missingCompType} spot${missingCompType > 1 ? 's are' : ' is'} missing a fee model`)
   if (missingAmount > 0) bookingBlockers.push(`${missingAmount} spot${missingAmount > 1 ? 's are' : ' is'} missing an amount or percentage`)
   if (blockingIssueCount > 0) bookingBlockers.push(`${blockingIssueCount} spot${blockingIssueCount > 1 ? 's have' : ' has'} invalid values`)
   if (totalPercent > percentLimit + 0.0001) bookingBlockers.push(`Percentage allocation is ${Math.round(totalPercent * 10) / 10}% (max ${percentLimit}%)`)
@@ -853,11 +856,11 @@ export function RequirementsTab({
                 )}
 
                 {/* ── Header row ── */}
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3.5 pt-2 pb-1 sm:px-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3 pb-2.5 sm:px-5">
                   <SpotNumber
                     position={index + 1}
                     title={canEdit ? 'Drag to reorder' : undefined}
-                    className={cn('size-[26px] text-xs', canEdit && 'cursor-grab active:cursor-grabbing')}
+                    className={cn('size-7 text-xs', canEdit && 'cursor-grab active:cursor-grabbing')}
                   />
 
                   <RoleIcon roleName={state.role_name} className="size-[18px] shrink-0 text-[var(--ev-accent-fill)]" />
@@ -884,6 +887,7 @@ export function RequirementsTab({
                     reqId={req.id}
                     open={state.submissions_open}
                     disabled={!canEdit}
+                    onChange={(open) => syncSubmissionsOpen(req.id, open)}
                   />
 
                   {issue && <StatusPill tone={issue.tone}>{issue.message}</StatusPill>}
@@ -898,7 +902,7 @@ export function RequirementsTab({
                     </span>
                   )}
 
-                  <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
                     <SpotIconButton
                       onClick={() => duplicateRequirement(state)}
                       disabled={isAdding}
@@ -919,70 +923,65 @@ export function RequirementsTab({
                   </div>
                 </div>
 
-                {/* ── Criteria ── */}
-                {/* Seks felt: kriteriene og varigheten på én rad og honoraret
-                    på neste til skjermen er bred nok til alle seks. */}
-                <div className="ml-3.5 mr-3.5 grid grid-cols-2 gap-1.5 sm:ml-[2.9rem] sm:mr-4 sm:grid-cols-3 xl:grid-cols-6">
-                  <FieldCell label="Energy">
-                    <Select
-                      value={state.energy_level}
-                      onValueChange={(value) => updateField(req.id, 'energy_level', value)}
-                    >
-                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Select energy level</SelectLabel>
-                          {ENERGY_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FieldCell>
+                {/* ── Criteria ──
+                    Én rad, som før — kortet skal ikke bli høyere. Etiketten
+                    står inni feltet i stedet for foran det, så hvert felt er
+                    én ramme med jevne mellomrom, og honoraret er ett felt med
+                    modell og beløp. Raden brytes etter kortets egen bredde
+                    (container query), ikke skjermens: hovedkolonnen er smal
+                    også på brede skjermer. */}
+                <div className="@container px-4 sm:px-5">
+                  <div className="grid grid-cols-2 gap-2 @2xl:grid-cols-3 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.25fr)_minmax(0,0.85fr)_minmax(0,1.35fr)]">
+                    <InlineField label="Energy">
+                      <Select value={state.energy_level} onValueChange={(value) => updateField(req.id, 'energy_level', value)}>
+                        <SelectTrigger aria-label="Energy" className={INLINE_TRIGGER_CLASS}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Select energy level</SelectLabel>
+                            {ENERGY_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </InlineField>
 
-                  <FieldCell label="Gender">
-                    <Select
-                      value={state.required_gender}
-                      onValueChange={(value) => updateField(req.id, 'required_gender', value)}
-                    >
-                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Select gender</SelectLabel>
-                          {GENDER_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FieldCell>
+                    <InlineField label="Gender">
+                      <Select value={state.required_gender} onValueChange={(value) => updateField(req.id, 'required_gender', value)}>
+                        <SelectTrigger aria-label="Gender" className={INLINE_TRIGGER_CLASS}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Select gender</SelectLabel>
+                            {GENDER_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </InlineField>
 
-                  <FieldCell label="Skill">
-                    <Select
-                      value={state.min_skill_level}
-                      onValueChange={(value) => updateField(req.id, 'min_skill_level', value)}
-                    >
-                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Minimum skill level</SelectLabel>
-                          {SKILL_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FieldCell>
+                    <InlineField label="Skill">
+                      <Select value={state.min_skill_level} onValueChange={(value) => updateField(req.id, 'min_skill_level', value)}>
+                        <SelectTrigger aria-label="Skill" className={INLINE_TRIGGER_CLASS}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Minimum skill level</SelectLabel>
+                            {SKILL_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </InlineField>
 
-                  <FieldCell label="Duration">
-                    <div className="relative">
-                      <Input
+                    <InlineField label="Duration">
+                      <input
                         type="number"
                         inputMode="numeric"
                         min={MIN_SPOT_DURATION}
@@ -993,58 +992,51 @@ export function RequirementsTab({
                         onBlur={() => flushAutosave(req.id)}
                         placeholder="—"
                         aria-label={`Duration of the ${state.role_name} spot in minutes`}
-                        className={cn(FIELD_CONTROL_CLASS, 'pr-10')}
+                        className={INLINE_INPUT_CLASS}
                       />
-                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-muted-foreground">
-                        min
-                      </span>
-                    </div>
-                  </FieldCell>
+                      <span className="shrink-0 pr-2 text-xs text-muted-foreground">min</span>
+                    </InlineField>
 
-                  <FieldCell label="Fee">
-                    <Select
-                      value={state.compensation_type || '__unset'}
-                      onValueChange={(value) => updateField(req.id, 'compensation_type', value === '__unset' ? '' : value)}
-                    >
-                      <SelectTrigger className={FIELD_CONTROL_CLASS}>
-                        <SelectValue placeholder="Not set" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Select fee model</SelectLabel>
-                          <SelectItem value="__unset">Not set</SelectItem>
-                          <SelectItem value="fixed">Fixed amount</SelectItem>
-                          <SelectItem value="percent">Percentage</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FieldCell>
-
-                  <FieldCell label={isPercent ? 'Percentage' : 'Amount'}>
-                    {state.compensation_type === '' ? (
-                      <span className={cn(FIELD_CONTROL_CLASS, 'flex items-center text-muted-foreground')}>—</span>
-                    ) : (
-                      <div className="relative">
-                        <Input
-                          type="number"
-                          min={0}
-                          step={isPercent ? '0.5' : '100'}
-                          value={isPercent ? state.compensation_percent : state.compensation_amount}
-                          onChange={(event) => updateField(
-                            req.id,
-                            isPercent ? 'compensation_percent' : 'compensation_amount',
-                            event.target.value
-                          )}
-                          onBlur={() => flushAutosave(req.id)}
-                          placeholder={isPercent ? '25' : '3500'}
-                          className={cn(FIELD_CONTROL_CLASS, 'pr-9')}
-                        />
-                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-muted-foreground">
-                          {isPercent ? '%' : showCurrency}
-                        </span>
-                      </div>
-                    )}
-                  </FieldCell>
+                    <InlineField label="Fee" className="col-span-2 @2xl:col-span-2 @3xl:col-span-1">
+                      <Select
+                        value={state.compensation_type || '__unset'}
+                        onValueChange={(value) => updateField(req.id, 'compensation_type', value === '__unset' ? '' : value)}
+                      >
+                        <SelectTrigger aria-label="Fee model" className={cn(INLINE_TRIGGER_CLASS, state.compensation_type !== '' && 'w-auto flex-none')}>
+                          <SelectValue placeholder="Unpaid" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Select fee model</SelectLabel>
+                            <SelectItem value="__unset">Unpaid</SelectItem>
+                            <SelectItem value="fixed">Fixed</SelectItem>
+                            <SelectItem value="percent">% of sales</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {state.compensation_type !== '' && (
+                        <>
+                          <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
+                          <input
+                            type="number"
+                            min={0}
+                            step={isPercent ? '0.5' : '100'}
+                            value={isPercent ? state.compensation_percent : state.compensation_amount}
+                            onChange={(event) => updateField(
+                              req.id,
+                              isPercent ? 'compensation_percent' : 'compensation_amount',
+                              event.target.value
+                            )}
+                            onBlur={() => flushAutosave(req.id)}
+                            placeholder={isPercent ? '25' : '3500'}
+                            aria-label={isPercent ? 'Percentage' : 'Amount'}
+                            className={cn(INLINE_INPUT_CLASS, 'pl-2')}
+                          />
+                          <span className="shrink-0 pr-2 text-xs text-muted-foreground">{isPercent ? '%' : showCurrency}</span>
+                        </>
+                      )}
+                    </InlineField>
+                  </div>
                 </div>
 
                 <MatchCount counts={matchCounts[req.id]} dirty={dirtyIds.has(req.id)} />
@@ -1100,7 +1092,7 @@ export function RequirementsTab({
  * ikke hvem som er ledig den kvelden, som forslaget under tar hensyn til.
  */
 function MatchCount({ counts, dirty }: { counts?: { total: number; withoutSkill: number }; dirty: boolean }) {
-  if (!counts || dirty) return <div className="h-2.5" />
+  if (!counts || dirty) return <div className="h-3" />
 
   const { total, withoutSkill } = counts
   const comedians = (n: number) => `${n} ${n === 1 ? 'comedian' : 'comedians'}`
@@ -1109,7 +1101,7 @@ function MatchCount({ counts, dirty }: { counts?: { total: number; withoutSkill:
   return (
     <p
       className={cn(
-        'mb-2.5 ml-3.5 mr-3.5 mt-1.5 text-xs sm:ml-[2.9rem] sm:mr-4',
+        'px-4 pb-3 pt-2 text-xs sm:px-5',
         total === 0 ? 'font-medium text-amber-700 dark:text-amber-400' : 'text-muted-foreground'
       )}
     >
@@ -1139,12 +1131,28 @@ function StatusPill({ tone, children }: { tone: CompensationIssue['tone']; child
   )
 }
 
-/** Én kriterierute i kortet: etiketten over, kontrollen i sin egen ramme. */
-function FieldCell({ label, children }: { label: string; children: React.ReactNode }) {
+/** Feltene inni en `InlineField`: uten egen ramme, rammen er feltets. */
+const INLINE_TRIGGER_CLASS = 'h-full min-w-0 flex-1 gap-1 border-0 bg-transparent px-1 text-[13px] shadow-none focus-visible:ring-0 dark:bg-transparent dark:hover:bg-transparent'
+const INLINE_INPUT_CLASS = 'h-full w-full min-w-0 flex-1 bg-transparent px-1 text-[13px] tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+
+/**
+ * Én kriterierute i kortet: etiketten inni rammen, foran verdien.
+ *
+ * Etiketten foran rammen ga seks etiketter og seks rammer om hverandre på
+ * én rad — tett og uoversiktlig. Inni rammen er hvert felt én enhet, og
+ * raden blir ikke høyere enn før.
+ */
+function InlineField({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <Label className="shrink-0 text-[11px] font-medium text-muted-foreground">{label}</Label>
-      <div className="min-w-0 flex-1">{children}</div>
+    <div
+      className={cn(
+        'flex h-[34px] min-w-0 items-center gap-1 rounded-lg border border-input bg-background pl-3 transition-colors',
+        'focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30',
+        className,
+      )}
+    >
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+      {children}
     </div>
   )
 }

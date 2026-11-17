@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Checkbox } from '@/components/ui/checkbox'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, ExternalLink } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -114,7 +115,7 @@ export default async function SuperadminArtistPage({ params }: { params: Promise
                 <Input id="email" name="email" type="email" defaultValue={artist.email} required />
                 {artist.auth_user_id && (
                   <label className="mt-1.5 flex items-start gap-2 text-xs text-muted-foreground">
-                    <input type="checkbox" name="sync_login_email" defaultChecked className="mt-0.5" />
+                    <Checkbox name="sync_login_email" defaultChecked className="mt-0.5" />
                     Also change the sign-in email. If the profile is linked to a club sign-in, that sign-in is changed.
                   </label>
                 )}
@@ -125,7 +126,7 @@ export default async function SuperadminArtistPage({ params }: { params: Promise
               <Field label="WhatsApp (with country code, digits only)" htmlFor="whatsapp_number">
                 <Input id="whatsapp_number" name="whatsapp_number" defaultValue={artist.whatsapp_number ?? ''} placeholder="4791234567" />
                 <label className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <input type="checkbox" name="whatsapp_consent" defaultChecked={Boolean(artist.whatsapp_consent_at)} />
+                  <Checkbox name="whatsapp_consent" defaultChecked={Boolean(artist.whatsapp_consent_at)} />
                   Consent to share the number with clubs
                   {artist.whatsapp_consent_at && ` (given ${formatDate(artist.whatsapp_consent_at)})`}
                 </label>
@@ -163,7 +164,7 @@ export default async function SuperadminArtistPage({ params }: { params: Promise
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {LANGUAGES.map((language) => (
                     <label key={language.code} className="flex items-center gap-1.5 text-sm">
-                      <input type="checkbox" name="language" value={language.code} defaultChecked={languages.has(language.code)} />
+                      <Checkbox name="language" value={language.code} defaultChecked={languages.has(language.code)} />
                       {language.label}
                     </label>
                   ))}
@@ -195,7 +196,7 @@ export default async function SuperadminArtistPage({ params }: { params: Promise
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {ARTIST_ROLE_OPTIONS.map((role) => (
                     <label key={role.value} className="flex items-center gap-1.5 text-sm">
-                      <input type="checkbox" name="category" value={role.value} defaultChecked={roles.has(role.value)} />
+                      <Checkbox name="category" value={role.value} defaultChecked={roles.has(role.value)} />
                       {role.label}
                     </label>
                   ))}
@@ -240,7 +241,7 @@ export default async function SuperadminArtistPage({ params }: { params: Promise
               <div className="grid gap-1.5">
                 <span className="text-sm font-medium">Flag (old global field)</span>
                 <label className="flex h-9 items-center gap-2 text-sm">
-                  <input type="checkbox" name="is_flagged" defaultChecked={artist.is_flagged} />
+                  <Checkbox name="is_flagged" defaultChecked={artist.is_flagged} />
                   Flagged
                   {artist.flagged_at && <span className="text-xs text-muted-foreground">({formatDate(artist.flagged_at)})</span>}
                 </label>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 import { BellRing, Check, Copy, Eye, Mail, MessageCircle, Send, TriangleAlert, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -298,12 +299,10 @@ function ReminderCard({ showId, reminder }: { showId: string; reminder: Communic
             <p className="mt-0.5 text-sm text-muted-foreground">Date, start time, venue and address, their spot and fee, and who to contact.</p>
           </div>
           <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={reminder.enabled}
               disabled={saving}
-              onChange={(event) => void setEnabled(event.target.checked)}
-              className="size-4 accent-[var(--ev-accent-fill)]"
+              onCheckedChange={(value) => void setEnabled((value === true))}
             />
             Yes, send this
           </label>

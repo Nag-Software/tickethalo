@@ -5,6 +5,7 @@ import { Separator } from '@/components/ui/separator'
 import { PublishShowDialog } from '@/components/admin/publish-show-dialog'
 import { ShowDetailsForm } from './show-details-form'
 import { TicketTypesEditor } from './ticket-types-editor'
+import { MoveToPlanningButton } from './move-to-planning-button'
 import type { AdminTicketType } from '@/lib/admin-ticket-types'
 import { publishReadiness } from '@/lib/publish-readiness'
 import { appPath } from '@/lib/app-url'
@@ -120,22 +121,11 @@ export function OverviewTab({
         <Separator />
 
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold">Automation</h2>
+          <h2 className="text-sm font-semibold">Booking</h2>
           {show.status === 'draft' && !hasRequirements && (
             <Button variant="outline" size="sm" asChild className="w-full border-dashed">
               <Link href={`/admin-app/shows/${show.id}?tab=lineup`}>+ Add requirements first</Link>
             </Button>
-          )}
-          {['draft', 'booking', 'fullbooked'].includes(show.status) && hasRequirements && !allSlotsFilled && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-              Offers are sent automatically when requirements are saved and when new artists are approved.
-              Spots are only filled once artists accept the offer. When the lineup is full you get an email,
-              and publish the show yourself. To run a shorter lineup,{' '}
-              <Link href={`/admin-app/shows/${show.id}?tab=lineup`} className="font-medium underline underline-offset-2">
-                delete a spot
-              </Link>
-              {' '}— then the lineup is full.
-            </p>
           )}
           {allSlotsFilled && ['draft', 'booking', 'fullbooked'].includes(show.status) && (
             <div className="space-y-2 rounded-lg border border-purple-300/50 bg-purple-50 px-3 py-3 dark:bg-purple-950/20">
@@ -151,6 +141,7 @@ export function OverviewTab({
               />
             </div>
           )}
+          {['booking', 'fullbooked'].includes(show.status) && <MoveToPlanningButton showId={show.id} />}
           {show.status === 'published' && (
             <Button variant="outline" size="sm" asChild className="w-full">
               <Link href={`/events/${show.slug}`} target="_blank">🔗 View event page</Link>

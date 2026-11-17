@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Minus, Plus, Ticket } from 'lucide-react'
 import { ToastActionForm } from '@/components/toast-action-form'
 import {
@@ -540,26 +541,22 @@ export function MarketingConsent({ clubName }: { clubName?: string | null }) {
   return (
     <div className="flex flex-col gap-3">
       <label className="flex items-start gap-3 text-[14px] leading-snug text-[var(--ev-muted)] sm:text-[13px]">
-        <input
-          type="checkbox"
+        <Checkbox
           name="marketing_opt_in"
           checked={emails}
-          onChange={(event) => {
-            setEmails(event.target.checked)
-            if (!event.target.checked) setAds(false)
-          }}
-          className="mt-0.5 size-5 shrink-0 accent-[var(--ev-accent-fill)] sm:size-4"
+          onCheckedChange={(value) => {
+            setEmails((value === true))
+            if (!(value === true)) setAds(false)
+          }} className="mt-0.5 shrink-0"
         />
         <span>{checkoutOptInLabel(clubName)}</span>
       </label>
       {emails && (
         <label className="ml-8 flex items-start gap-3 text-[14px] leading-snug text-[var(--ev-muted)] sm:ml-7 sm:text-[13px]">
-          <input
-            type="checkbox"
+          <Checkbox
             name="ads_opt_in"
             checked={ads}
-            onChange={(event) => setAds(event.target.checked)}
-            className="mt-0.5 size-5 shrink-0 accent-[var(--ev-accent-fill)] sm:size-4"
+            onCheckedChange={(value) => setAds((value === true))} className="mt-0.5 shrink-0"
           />
           <span>{checkoutAdsOptInLabel(clubName)}</span>
         </label>

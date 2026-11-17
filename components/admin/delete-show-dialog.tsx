@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Check, LoaderCircle, Trash2, TriangleAlert } from 'lucide-react'
@@ -317,12 +318,10 @@ function ArchiveLayout({
       </div>
 
       <label className="flex cursor-pointer items-start gap-2.5 text-sm">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={understood}
-          onChange={(event) => onUnderstoodChange(event.target.checked)}
-          disabled={pending}
-          className="mt-0.5 size-4 shrink-0"
+          onCheckedChange={(value) => onUnderstoodChange((value === true))}
+          disabled={pending} className="mt-0.5 shrink-0"
         />
         I understand that the show is removed from Tickethalo and can&apos;t be restored.
       </label>

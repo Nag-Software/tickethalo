@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 import { format, isValid, parseISO } from 'date-fns'
 import { toast } from 'sonner'
@@ -384,11 +385,9 @@ export function ShowDetailsForm({
             <div className="flex flex-wrap gap-x-5 gap-y-2 pt-1">
               {GIG_TYPES.map((type) => (
                 <label key={type} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={pickedGigTypes.includes(type)}
-                    onChange={(event) => toggleGigType(type, event.target.checked)}
-                    className="size-4 rounded border-input"
+                    onCheckedChange={(value) => toggleGigType(type, (value === true))}
                   />
                   {GIG_TYPE_LABELS[type]}
                 </label>

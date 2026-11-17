@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, Mail, Send } from 'lucide-react'
@@ -293,11 +294,9 @@ export function SendEmailCard({
           </div>
           {lastSent && (
             <label className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={confirmResend}
-                onChange={(event) => setConfirmResend(event.target.checked)}
-                className="mt-0.5 size-4 shrink-0 accent-[var(--ev-accent-fill)]"
+                onCheckedChange={(value) => setConfirmResend((value === true))} className="mt-0.5 shrink-0"
               />
               <span>
                 <span className="font-medium">Send again anyway</span>

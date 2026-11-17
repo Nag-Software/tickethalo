@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
@@ -108,7 +109,7 @@ export function SpotTypesEditor({ types }: { types: ClubSpotType[] }) {
               <PercentInput value={newPercent} onChange={setNewPercent} label="Default fee for the new type" />
             </label>
             <label className="flex h-10 items-center gap-2 text-sm">
-              <input type="checkbox" checked={newUnpaid} onChange={(event) => setNewUnpaid(event.target.checked)} className="size-4" />
+              <Checkbox checked={newUnpaid} onCheckedChange={(value) => setNewUnpaid((value === true))} />
               Unpaid
             </label>
             <Button type="submit" size="sm" className="h-10 rounded-xl" disabled={pending || !newName.trim()}>
@@ -186,23 +187,19 @@ function SpotTypeRow({
       </div>
 
       <label className="flex items-center gap-1.5 text-xs">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={type.is_unpaid}
           disabled={disabled}
-          onChange={(event) => onToggleUnpaid(event.target.checked)}
-          className="size-3.5"
+          onCheckedChange={(value) => onToggleUnpaid((value === true))}
         />
         Unpaid
       </label>
 
       <label className="flex items-center gap-1.5 text-xs">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={type.active}
           disabled={disabled}
-          onChange={(event) => onToggleActive(event.target.checked)}
-          className="size-3.5"
+          onCheckedChange={(value) => onToggleActive((value === true))}
         />
         In use
       </label>
